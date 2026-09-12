@@ -159,7 +159,7 @@ export default function GoalsPage() {
                     </span>
                   </div>
 
-                  {/* Barra de Progresso Fina estilo Apple */}
+                  {/* Barra de Progresso Fina estilo Pass Kit */}
                   <div className="w-full h-1.5 bg-[#F2F2F7] rounded-full overflow-hidden">
                     <div
                       className="h-full bg-[#1D1D1F] rounded-full transition-all duration-500"

@@ -170,7 +170,7 @@ export default function ProfilePage() {
           </Link>
           <div>
             <span className="text-xs font-semibold tracking-wider uppercase text-[#86868B]">
-              Apple ID & Configurações
+              Wallet ID & Configurações
             </span>
             <h1 className="text-3xl font-semibold tracking-tight text-[#1D1D1F] mt-0.5">
               Perfil & Arquétipo

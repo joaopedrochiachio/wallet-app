@@ -119,7 +119,7 @@ const INITIAL_CARDS: CardItem[] = [
   {
     id: "titanium",
     name: "Titanium Card",
-    brand: "Apple Cash / Débito",
+    brand: "Titanium Cash / Débito",
     type: "checking",
     balance: 4245.0,
     limit: 10000.0,
@@ -277,7 +277,7 @@ const INITIAL_RECURRING: RecurringItem[] = [
 
 const INITIAL_USER_PROFILE: UserProfile = {
   name: "Carlos Almeida",
-  email: "carlos.almeida@apple.com",
+  email: "carlos.almeida@wallet.io",
   role: "Lead Tech & Product Designer",
   avatarInitials: "CA",
   monthlyIncomeBase: 6318.0,

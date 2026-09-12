@@ -11,6 +11,7 @@ import {
   Target,
   MessageCircle,
   User,
+  Sparkles,
 } from "lucide-react";
 import { WalletProvider } from "@/context/WalletContext";
 
@@ -20,6 +21,17 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   const pathname = usePathname();
+  const isLandingPage = pathname === "/";
+
+  if (isLandingPage) {
+    return (
+      <html lang="pt-BR" className="scroll-smooth">
+        <body className="min-h-screen bg-[#F2F2F7]">
+          <WalletProvider>{children}</WalletProvider>
+        </body>
+      </html>
+    );
+  }
 
   return (
     <html lang="pt-BR">
@@ -27,19 +39,28 @@ export default function RootLayout({
         <WalletProvider>
           {/* SIDEBAR (Desktop) */}
           <aside className="hidden md:flex flex-col w-64 h-full bg-white/80 backdrop-blur-xl border-r border-gray-200/60 p-6 z-50">
-            <div className="text-xl font-semibold tracking-tight text-[#1D1D1F] mb-8 flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-[#1D1D1F] text-white flex items-center justify-center font-bold text-sm">
+            <Link
+              href="/"
+              className="text-xl font-semibold tracking-tight text-[#1D1D1F] mb-8 flex items-center gap-2 hover:opacity-80 transition-opacity"
+              title="Ir para a Apresentação Wallet Intelligence"
+            >
+              <div className="w-8 h-8 rounded-xl bg-[#1D1D1F] text-white flex items-center justify-center font-bold text-sm shadow-xs">
                 W
               </div>
-              <span>Wallet</span>
-            </div>
+              <div className="flex flex-col">
+                <span className="leading-none">Wallet</span>
+                <span className="text-[10px] text-[#86868B] font-mono tracking-wider uppercase mt-0.5">
+                  Intelligence
+                </span>
+              </div>
+            </Link>
 
             <nav className="flex flex-col gap-2 flex-1">
               <NavItem
-                href="/"
+                href="/dashboard"
                 icon={<Home strokeWidth={1.5} size={18} />}
                 label="Dashboard"
-                active={pathname === "/"}
+                active={pathname === "/dashboard"}
               />
               <NavItem
                 href="/transactions"
@@ -73,7 +94,13 @@ export default function RootLayout({
               />
             </nav>
 
-            <div className="mt-auto">
+            <div className="mt-auto space-y-1.5">
+              <NavItem
+                href="/"
+                icon={<Sparkles strokeWidth={1.5} size={18} className="text-purple-600" />}
+                label="Showcase 3D"
+                active={false}
+              />
               <NavItem
                 href="#"
                 icon={<MessageCircle strokeWidth={1.5} size={18} />}
@@ -92,9 +119,9 @@ export default function RootLayout({
           <nav className="md:hidden fixed bottom-0 w-full bg-white/90 backdrop-blur-xl border-t border-gray-200/60 pb-safe z-50">
             <div className="flex justify-around items-center h-16 px-3">
               <MobileNavItem
-                href="/"
+                href="/dashboard"
                 icon={<Home strokeWidth={1.5} size={20} />}
-                active={pathname === "/"}
+                active={pathname === "/dashboard"}
               />
               <MobileNavItem
                 href="/transactions"
