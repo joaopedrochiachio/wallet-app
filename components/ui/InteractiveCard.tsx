@@ -11,6 +11,7 @@ export interface InteractiveCardProps {
   onUpdateLimit: (cardId: string, newLimit: number) => void;
   onAddClick?: () => void;
   onPayInvoice?: () => void;
+  onOpenAddCard?: () => void;
 }
 
 export function InteractiveCard({
@@ -20,6 +21,7 @@ export function InteractiveCard({
   onUpdateLimit,
   onAddClick,
   onPayInvoice,
+  onOpenAddCard,
 }: InteractiveCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [rotation, setRotation] = useState({ x: 0, y: 0 });
@@ -82,7 +84,7 @@ export function InteractiveCard({
   return (
     <div className="space-y-4">
       {/* Seletor de Cartões Estilo Apple Wallet */}
-      <div className="flex items-center justify-between px-1">
+      <div className="flex items-center justify-between px-1 gap-2">
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
           {allCards.map((c) => {
             const isSelected = c.id === card.id;
@@ -94,25 +96,30 @@ export function InteractiveCard({
                   setTempLimit(c.limit.toString());
                   setIsEditingLimit(false);
                 }}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-all select-none flex items-center gap-1.5 ${
+                className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-all select-none flex items-center gap-1.5 shrink-0 ${
                   isSelected
                     ? "bg-[#1D1D1F] text-white shadow-xs"
                     : "bg-white text-[#86868B] hover:text-[#1D1D1F] border border-black/[0.04]"
                 }`}
               >
                 <div
-                  className={`w-2 h-2 rounded-full ${
-                    c.id === "titanium"
-                      ? "bg-gray-400"
-                      : c.id === "nubank"
-                      ? "bg-purple-500"
-                      : "bg-rose-500"
-                  }`}
+                  className={`w-2.5 h-2.5 rounded-full bg-gradient-to-br ${c.colorScheme.gradient} border border-white/20`}
                 />
                 <span>{c.name}</span>
               </button>
             );
           })}
+
+          {onOpenAddCard && (
+            <button
+              onClick={onOpenAddCard}
+              className="px-3 py-1.5 rounded-full text-xs font-medium bg-white text-[#86868B] hover:text-[#1D1D1F] border border-black/[0.04] transition-all flex items-center gap-1 shrink-0 cursor-pointer hover:shadow-2xs"
+              title="Adicionar Novo Cartão"
+            >
+              <Plus size={13} strokeWidth={2} />
+              <span>Novo Cartão</span>
+            </button>
+          )}
         </div>
 
         <button

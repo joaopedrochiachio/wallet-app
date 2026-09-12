@@ -10,6 +10,7 @@ import {
   CreditCard,
   Target,
   MessageCircle,
+  User,
 } from "lucide-react";
 import { WalletProvider } from "@/context/WalletContext";
 
@@ -64,6 +65,12 @@ export default function RootLayout({
                 label="Metas"
                 active={pathname === "/goals"}
               />
+              <NavItem
+                href="/profile"
+                icon={<User strokeWidth={1.5} size={18} />}
+                label="Perfil & Arquétipo"
+                active={pathname === "/profile"}
+              />
             </nav>
 
             <div className="mt-auto">
@@ -108,6 +115,11 @@ export default function RootLayout({
                 href="/goals"
                 icon={<Target strokeWidth={1.5} size={20} />}
                 active={pathname === "/goals"}
+              />
+              <MobileNavItem
+                href="/profile"
+                icon={<User strokeWidth={1.5} size={20} />}
+                active={pathname === "/profile"}
               />
             </div>
           </nav>

@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 
 export default function TransactionsPage() {
-  const { transactions, addTransaction } = useWallet();
+  const { transactions, addTransaction, accountOptions } = useWallet();
   const [selectedMonth, setSelectedMonth] = useState("Setembro");
   const [selectedFilter, setSelectedFilter] = useState("Todas");
   const [isSheetOpen, setIsSheetOpen] = useState(false);
@@ -74,7 +74,7 @@ export default function TransactionsPage() {
             <Filter strokeWidth={1.5} size={13} />
             <span>Filtro:</span>
           </div>
-          {["Todas", "Débito/Pix", "Nubank", "Santander"].map((filter) => (
+          {["Todas", ...accountOptions].map((filter) => (
             <button
               key={filter}
               onClick={() => setSelectedFilter(filter)}
@@ -129,7 +129,7 @@ export default function TransactionsPage() {
       <AddTransactionSheet
         isOpen={isSheetOpen}
         onClose={() => setIsSheetOpen(false)}
-        accounts={["Débito/Pix", "Nubank", "Santander"]}
+        accounts={accountOptions}
         onAdd={addTransaction}
       />
     </div>

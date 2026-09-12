@@ -54,7 +54,43 @@ export interface MonthProjection {
   projectedFreeBalance: number;
 }
 
+export type FinancialPersonaId = "optimizer" | "guardian" | "scaler" | "minimalist";
+export type RiskToleranceId = "low" | "moderate" | "high";
+export type AIToneId = "analytical" | "direct" | "collaborative";
+
+export interface UserProfile {
+  name: string;
+  email: string;
+  role: string;
+  avatarInitials: string;
+  monthlyIncomeBase: number;
+  currency: string;
+  persona: FinancialPersonaId;
+  riskTolerance: RiskToleranceId;
+  aiTone: AIToneId;
+  maxCommitmentAlertPercent: number;
+  primaryFocus: string;
+}
+
+export interface NewCardInput {
+  name: string;
+  brand: string;
+  type: "checking" | "credit";
+  balance?: number;
+  limit: number;
+  closingDay?: number;
+  dueDay?: number;
+  colorScheme: {
+    gradient: string;
+    border: string;
+    accent: string;
+    badgeText: string;
+    chipGradient: string;
+  };
+}
+
 interface WalletContextType {
+  userProfile: UserProfile;
   cards: CardItem[];
   activeCardId: string;
   activeCard: CardItem;
@@ -64,8 +100,12 @@ interface WalletContextType {
   totalInvoices: number;
   monthIncome: number;
   monthExpense: number;
+  accountOptions: string[];
   selectCard: (cardId: string) => void;
   updateCardLimit: (cardId: string, newLimit: number) => void;
+  addCard: (card: NewCardInput) => CardItem;
+  deleteCard: (cardId: string) => void;
+  updateUserProfile: (profile: Partial<UserProfile>) => void;
   addTransaction: (tx: Omit<TransactionItem, "id">) => void;
   payInvoice: (cardId: string) => void;
   deleteTransaction: (id: string) => void;
@@ -235,9 +275,24 @@ const INITIAL_RECURRING: RecurringItem[] = [
   },
 ];
 
+const INITIAL_USER_PROFILE: UserProfile = {
+  name: "Carlos Almeida",
+  email: "carlos.almeida@apple.com",
+  role: "Lead Tech & Product Designer",
+  avatarInitials: "CA",
+  monthlyIncomeBase: 6318.0,
+  currency: "BRL",
+  persona: "optimizer",
+  riskTolerance: "moderate",
+  aiTone: "analytical",
+  maxCommitmentAlertPercent: 35,
+  primaryFocus: "Maximizar Retorno de Cartões & Reserva de Emergência",
+};
+
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
+  const [userProfile, setUserProfile] = useState<UserProfile>(INITIAL_USER_PROFILE);
   const [cards, setCards] = useState<CardItem[]>(INITIAL_CARDS);
   const [activeCardId, setActiveCardId] = useState<string>("titanium");
   const [transactions, setTransactions] = useState<TransactionItem[]>(INITIAL_TRANSACTIONS);
@@ -246,10 +301,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   // Carregar do localStorage se disponível no cliente
   useEffect(() => {
     try {
+      const storedProfile = localStorage.getItem("wallet_user_profile");
       const storedCards = localStorage.getItem("wallet_cards");
       const storedTx = localStorage.getItem("wallet_transactions");
       const storedActive = localStorage.getItem("wallet_active_card");
       const storedRecurring = localStorage.getItem("wallet_recurring");
+      if (storedProfile) setUserProfile(JSON.parse(storedProfile));
       if (storedCards) setCards(JSON.parse(storedCards));
       if (storedTx) setTransactions(JSON.parse(storedTx));
       if (storedActive) setActiveCardId(storedActive);
@@ -262,6 +319,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   // Persistir alterações
   useEffect(() => {
     try {
+      localStorage.setItem("wallet_user_profile", JSON.stringify(userProfile));
       localStorage.setItem("wallet_cards", JSON.stringify(cards));
       localStorage.setItem("wallet_transactions", JSON.stringify(transactions));
       localStorage.setItem("wallet_active_card", activeCardId);
@@ -269,7 +327,22 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // Ignore storage errors
     }
-  }, [cards, transactions, activeCardId, recurringItems]);
+  }, [userProfile, cards, transactions, activeCardId, recurringItems]);
+
+  const updateUserProfile = (updated: Partial<UserProfile>) => {
+    setUserProfile((prev) => {
+      const next = { ...prev, ...updated };
+      if (updated.name && !updated.avatarInitials) {
+        const parts = updated.name.trim().split(" ");
+        if (parts.length >= 2) {
+          next.avatarInitials = `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+        } else if (parts[0]) {
+          next.avatarInitials = parts[0].slice(0, 2).toUpperCase();
+        }
+      }
+      return next;
+    });
+  };
 
   const activeCard = cards.find((c) => c.id === activeCardId) || cards[0];
 
@@ -298,6 +371,39 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     );
   };
 
+  const accountOptions = [
+    "Débito/Pix",
+    ...cards.filter((c) => c.type === "credit").map((c) => c.name),
+  ];
+
+  const addCard = (input: NewCardInput): CardItem => {
+    const newCardId = `card-${Date.now()}`;
+    const newCard: CardItem = {
+      ...input,
+      id: newCardId,
+      spent: 0,
+      invoiceAmount: input.type === "credit" ? 0 : undefined,
+      balance: input.type === "checking" ? input.balance ?? 0 : undefined,
+    };
+    setCards((prev) => [...prev, newCard]);
+    setActiveCardId(newCardId);
+    return newCard;
+  };
+
+  const deleteCard = (cardId: string) => {
+    const cardToDelete = cards.find((c) => c.id === cardId);
+    if (!cardToDelete) return;
+    if (cards.length <= 1) return;
+
+    setCards((prev) => {
+      const remaining = prev.filter((c) => c.id !== cardId);
+      if (activeCardId === cardId) {
+        setActiveCardId(remaining[0]?.id || "titanium");
+      }
+      return remaining;
+    });
+  };
+
   // Regra de negócio (agent.md Seção 5.3):
   const addTransaction = (tx: Omit<TransactionItem, "id">) => {
     const newTx: TransactionItem = {
@@ -324,10 +430,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setCards((prevCards) =>
       prevCards.map((card) => {
         const matchesCreditCard =
-          (card.id === "nubank" && tx.account === "Nubank") ||
-          (card.id === "santander" && tx.account === "Santander");
+          card.type === "credit" &&
+          (card.id === tx.account ||
+           card.name.toLowerCase() === tx.account.toLowerCase());
 
-        if (card.type === "credit" && matchesCreditCard) {
+        if (matchesCreditCard) {
           if (tx.type === "despesa") {
             const newInvoice = (card.invoiceAmount || 0) + tx.amount;
             const newSpent = card.spent + tx.amount;
@@ -345,7 +452,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
-        if (card.type === "checking" && (tx.account === "Débito/Pix" || tx.account === "Titanium Card")) {
+        const matchesCheckingCard =
+          card.type === "checking" &&
+          (tx.account === "Débito/Pix" ||
+           card.id === tx.account ||
+           card.name.toLowerCase() === tx.account.toLowerCase());
+
+        if (matchesCheckingCard) {
           if (tx.type === "despesa") {
             return {
               ...card,
@@ -436,8 +549,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     const safeIndex = Math.min(Math.max(0, monthIndex), months.length - 1);
     const m = months[safeIndex];
 
-    // Renda base estimada (salário fixo)
-    const projectedIncome = 3918.0;
+    // Renda base estimada (do perfil do usuário)
+    const projectedIncome = userProfile.monthlyIncomeBase || 6318.0;
 
     // Soma das contas recorrentes ativas no débito
     const recurringDebitTotal = recurringItems
@@ -470,6 +583,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   return (
     <WalletContext.Provider
       value={{
+        userProfile,
         cards,
         activeCardId,
         activeCard,
@@ -479,8 +593,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         totalInvoices,
         monthIncome,
         monthExpense,
+        accountOptions,
         selectCard,
         updateCardLimit,
+        addCard,
+        deleteCard,
+        updateUserProfile,
         addTransaction,
         payInvoice,
         deleteTransaction,

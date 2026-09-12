@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useWallet } from "@/context/WalletContext";
 import { InteractiveCard } from "@/components/ui/InteractiveCard";
 import { AddTransactionSheet } from "@/components/ui/AddTransactionSheet";
+import { AddCardSheet } from "@/components/ui/AddCardSheet";
 import { ListGroup, ListItem } from "@/components/ui/iOSList";
 import {
   Utensils,
@@ -20,6 +21,7 @@ import Link from "next/link";
 
 export default function Dashboard() {
   const {
+    userProfile,
     cards,
     activeCard,
     selectCard,
@@ -27,12 +29,15 @@ export default function Dashboard() {
     payInvoice,
     transactions,
     addTransaction,
+    addCard,
+    accountOptions,
     monthIncome,
     monthExpense,
     totalInvoices,
   } = useWallet();
 
   const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const [isCardSheetOpen, setIsCardSheetOpen] = useState(false);
 
   const formatCurrency = (val: number) =>
     val.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -69,13 +74,21 @@ export default function Dashboard() {
             <Plus strokeWidth={2} size={18} />
           </button>
 
-          <div className="hidden sm:flex flex-col items-end text-xs">
-            <span className="font-semibold text-[#1D1D1F]">Carlos Almeida</span>
-            <span className="text-[#86868B]">Conta Principal</span>
-          </div>
-          <div className="w-10 h-10 bg-[#E5E5EA] text-[#1D1D1F] font-semibold text-xs rounded-full flex items-center justify-center border border-black/5 shadow-xs">
-            CA
-          </div>
+          <Link
+            href="/profile"
+            className="flex items-center gap-2.5 p-1 rounded-full hover:bg-white/80 transition-all group cursor-pointer"
+            title="Acessar Perfil & Configurações"
+          >
+            <div className="hidden sm:flex flex-col items-end text-xs">
+              <span className="font-semibold text-[#1D1D1F] group-hover:text-black transition-colors">
+                {userProfile.name}
+              </span>
+              <span className="text-[#86868B] text-[11px]">{userProfile.role}</span>
+            </div>
+            <div className="w-10 h-10 bg-[#E5E5EA] text-[#1D1D1F] font-semibold text-xs rounded-full flex items-center justify-center border border-black/5 shadow-xs group-hover:border-black/20 group-hover:scale-105 transition-all">
+              {userProfile.avatarInitials}
+            </div>
+          </Link>
         </div>
       </header>
 
@@ -89,6 +102,7 @@ export default function Dashboard() {
             onUpdateLimit={updateCardLimit}
             onAddClick={() => setIsSheetOpen(true)}
             onPayInvoice={() => payInvoice(activeCard.id)}
+            onOpenAddCard={() => setIsCardSheetOpen(true)}
           />
         </section>
 
@@ -237,8 +251,15 @@ export default function Dashboard() {
       <AddTransactionSheet
         isOpen={isSheetOpen}
         onClose={() => setIsSheetOpen(false)}
-        accounts={["Débito/Pix", "Nubank", "Santander"]}
+        accounts={accountOptions}
         onAdd={addTransaction}
+      />
+
+      {/* Modal Bottom Sheet de Criação de Novo Cartão */}
+      <AddCardSheet
+        isOpen={isCardSheetOpen}
+        onClose={() => setIsCardSheetOpen(false)}
+        onAddCard={addCard}
       />
     </div>
   );

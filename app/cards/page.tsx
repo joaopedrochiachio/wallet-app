@@ -12,13 +12,17 @@ import {
   ShieldCheck,
   Check,
   X,
+  Plus,
+  Trash2,
 } from "lucide-react";
+import { AddCardSheet } from "@/components/ui/AddCardSheet";
 
 export default function CardsPage() {
-  const { cards, updateCardLimit, payInvoice, mainBalance } = useWallet();
+  const { cards, updateCardLimit, payInvoice, mainBalance, addCard, deleteCard } = useWallet();
   const [editingCardId, setEditingCardId] = useState<string | null>(null);
   const [newLimitInput, setNewLimitInput] = useState("");
   const [paymentSuccessMessage, setPaymentSuccessMessage] = useState<string | null>(null);
+  const [isAddCardOpen, setIsAddCardOpen] = useState(false);
 
   const formatCurrency = (val: number) =>
     val.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -61,11 +65,21 @@ export default function CardsPage() {
           </h1>
         </div>
 
-        <div className="flex items-center gap-2 bg-white px-3.5 py-1.5 rounded-full border border-black/[0.04] shadow-xs">
-          <span className="text-xs text-[#86868B]">Saldo Disponível p/ Pagamento:</span>
-          <span className="text-xs font-semibold text-[#1D1D1F]">
-            R$ {formatCurrency(mainBalance)}
-          </span>
+        <div className="flex items-center gap-3 self-start sm:self-auto">
+          <div className="flex items-center gap-2 bg-white px-3.5 py-2 rounded-full border border-black/[0.04] shadow-xs">
+            <span className="text-xs text-[#86868B]">Saldo Disponível:</span>
+            <span className="text-xs font-semibold text-[#1D1D1F]">
+              R$ {formatCurrency(mainBalance)}
+            </span>
+          </div>
+
+          <button
+            onClick={() => setIsAddCardOpen(true)}
+            className="bg-[#1D1D1F] hover:bg-black active:scale-[0.98] text-white text-xs font-semibold px-4 py-2 rounded-full transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+          >
+            <Plus strokeWidth={2} size={15} />
+            <span>Novo Cartão</span>
+          </button>
         </div>
       </header>
 
@@ -122,9 +136,25 @@ export default function CardsPage() {
                       </div>
                     </div>
 
-                    <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-[#F2F2F7] text-[#86868B]">
-                      Fecha dia {card.closingDay}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-[#F2F2F7] text-[#86868B]">
+                        Fecha dia {card.closingDay}
+                      </span>
+                      {cards.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm(`Deseja remover o cartão ${card.name}?`)) {
+                              deleteCard(card.id);
+                            }
+                          }}
+                          className="w-7 h-7 rounded-full bg-[#F2F2F7] text-[#86868B] hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors cursor-pointer"
+                          title="Excluir Cartão"
+                        >
+                          <Trash2 size={13} strokeWidth={1.5} />
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {/* Informação de Fatura Atual */}
@@ -259,6 +289,13 @@ export default function CardsPage() {
           </div>
         </section>
       </div>
+
+      {/* Modal Bottom Sheet de Criação de Novo Cartão */}
+      <AddCardSheet
+        isOpen={isAddCardOpen}
+        onClose={() => setIsAddCardOpen(false)}
+        onAddCard={addCard}
+      />
     </div>
   );
 }
