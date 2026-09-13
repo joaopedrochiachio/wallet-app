@@ -2,10 +2,11 @@ import { expect, test } from "@playwright/test";
 
 test("a pilha abre e permite arrastar um cartão para a frente", async ({ page }) => {
   await page.goto("/dashboard", { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(750);
+  test.skip(new URL(page.url()).pathname === "/", "Requer uma sessão autenticada.");
 
   const stack = page.getByTestId("wallet-card-stack");
   await expect(stack).toBeVisible();
-  await page.waitForTimeout(750);
 
   await page.getByRole("button", { name: "Ver todos os cartões" }).click();
   await expect(stack).toHaveAttribute("data-expanded", "true");
@@ -56,10 +57,11 @@ test("o mesmo gesto funciona por toque em uma tela de iPhone", async ({ browser 
 
   try {
     await page.goto("/dashboard", { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(750);
+    test.skip(new URL(page.url()).pathname === "/", "Requer uma sessão autenticada.");
 
     const stack = page.getByTestId("wallet-card-stack");
     await expect(stack).toBeVisible();
-    await page.waitForTimeout(750);
 
     await page.getByRole("button", { name: "Ver todos os cartões" }).tap();
     await expect(stack).toHaveAttribute("data-expanded", "true");

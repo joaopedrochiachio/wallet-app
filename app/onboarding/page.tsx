@@ -38,7 +38,7 @@ export default function OnboardingPage() {
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push("/login");
+      router.replace("/");
     }
   }, [user, authLoading, router]);
 
@@ -152,7 +152,7 @@ export default function OnboardingPage() {
       await saveCardToFirestore(user.uid, firstCard);
 
       // 3. Redirecionar ao Dashboard
-      router.push("/dashboard");
+      router.replace("/dashboard");
     } catch (err: unknown) {
       console.error("Erro ao finalizar onboarding:", err);
       alert(err instanceof Error ? err.message : "Ocorreu um erro ao salvar suas informações. Tente novamente.");

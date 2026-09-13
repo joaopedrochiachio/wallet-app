@@ -26,6 +26,10 @@ async function navigateAndWaitForLoad(page: Page, path: string) {
   await page.waitForTimeout(3000);
 }
 
+function isOnPublicEntry(page: Page) {
+  return ["/", "/login"].includes(new URL(page.url()).pathname);
+}
+
 // =====================================================
 // TESTES DE INTEGRIDADE
 // =====================================================
@@ -37,10 +41,10 @@ test.describe("Wallet App — Integridade de Dados E2E", () => {
     // Verificar que a aplicação carrega
     await navigateAndWaitForLoad(page, "/dashboard");
 
-    // Se redirecionou para login, o app está funcional
+    // Sem sessão, rotas internas voltam para a apresentação.
     const currentUrl = page.url();
-    const isOnAuthPage = currentUrl.includes("/login") || currentUrl.includes("/onboarding");
-    const isOnDashboard = currentUrl.includes("/dashboard") || currentUrl === "http://localhost:3000/";
+    const isOnAuthPage = isOnPublicEntry(page) || currentUrl.includes("/onboarding");
+    const isOnDashboard = currentUrl.includes("/dashboard");
 
     expect(isOnAuthPage || isOnDashboard).toBe(true);
 
@@ -52,33 +56,29 @@ test.describe("Wallet App — Integridade de Dados E2E", () => {
 
   test("2. Acesso direto a /cards funciona", async ({ page }) => {
     await navigateAndWaitForLoad(page, "/cards");
-    const currentUrl = page.url();
     // Se autenticado, deve estar em /cards
-    if (!currentUrl.includes("/login")) {
+    if (!isOnPublicEntry(page)) {
       await expect(page.locator("h1")).toContainText(/Cartões|Faturas/i, TIMEOUT);
     }
   });
 
   test("3. Acesso direto a /transactions funciona", async ({ page }) => {
     await navigateAndWaitForLoad(page, "/transactions");
-    const currentUrl = page.url();
-    if (!currentUrl.includes("/login")) {
+    if (!isOnPublicEntry(page)) {
       await expect(page.locator("h1")).toContainText(/Transações/i, TIMEOUT);
     }
   });
 
   test("4. Acesso direto a /goals funciona", async ({ page }) => {
     await navigateAndWaitForLoad(page, "/goals");
-    const currentUrl = page.url();
-    if (!currentUrl.includes("/login")) {
+    if (!isOnPublicEntry(page)) {
       await expect(page.locator("body")).not.toBeEmpty();
     }
   });
 
   test("5. Acesso direto a /planning funciona", async ({ page }) => {
     await navigateAndWaitForLoad(page, "/planning");
-    const currentUrl = page.url();
-    if (!currentUrl.includes("/login")) {
+    if (!isOnPublicEntry(page)) {
       await expect(page.locator("body")).not.toBeEmpty();
     }
   });
@@ -86,7 +86,7 @@ test.describe("Wallet App — Integridade de Dados E2E", () => {
   test("6. Dashboard exibe dados reais do Firestore (não dados fake)", async ({ page }) => {
     await navigateAndWaitForLoad(page, "/dashboard");
 
-    if (!page.url().includes("/login")) {
+    if (!isOnPublicEntry(page)) {
       // Verificar que não existem textos de dados mock/placeholder
       const bodyText = await page.locator("body").textContent();
       // Não deve haver "Seu Nome" como placeholder não substituído
@@ -98,7 +98,7 @@ test.describe("Wallet App — Integridade de Dados E2E", () => {
   test("7. Reload preserva estado — sem regressão de dados", async ({ page }) => {
     await navigateAndWaitForLoad(page, "/dashboard");
 
-    if (page.url().includes("/login")) {
+    if (isOnPublicEntry(page)) {
       test.skip();
       return;
     }
@@ -122,7 +122,7 @@ test.describe("Wallet App — Integridade de Dados E2E", () => {
   test("8. Cards page exibe saldo da conta corrente", async ({ page }) => {
     await navigateAndWaitForLoad(page, "/cards");
 
-    if (page.url().includes("/login")) {
+    if (isOnPublicEntry(page)) {
       test.skip();
       return;
     }
@@ -135,7 +135,7 @@ test.describe("Wallet App — Integridade de Dados E2E", () => {
   test("9. Transactions page sincroniza com Firestore", async ({ page }) => {
     await navigateAndWaitForLoad(page, "/transactions");
 
-    if (page.url().includes("/login")) {
+    if (isOnPublicEntry(page)) {
       test.skip();
       return;
     }
@@ -155,7 +155,7 @@ test.describe("Wallet App — Integridade de Dados E2E", () => {
   test("10. localStorage não contém dados financeiros (removido)", async ({ page }) => {
     await navigateAndWaitForLoad(page, "/dashboard");
 
-    if (page.url().includes("/login")) {
+    if (isOnPublicEntry(page)) {
       test.skip();
       return;
     }
@@ -183,7 +183,7 @@ test.describe("Wallet App — Integridade de Dados E2E", () => {
   test("11. Consistência entre Dashboard e Cards page", async ({ page }) => {
     await navigateAndWaitForLoad(page, "/dashboard");
 
-    if (page.url().includes("/login")) {
+    if (isOnPublicEntry(page)) {
       test.skip();
       return;
     }
@@ -208,7 +208,7 @@ test.describe("Wallet App — Integridade de Dados E2E", () => {
   test("12. Reload da página /cards não reseta faturas", async ({ page }) => {
     await navigateAndWaitForLoad(page, "/cards");
 
-    if (page.url().includes("/login")) {
+    if (isOnPublicEntry(page)) {
       test.skip();
       return;
     }
@@ -232,7 +232,7 @@ test.describe("Wallet App — Integridade de Dados E2E", () => {
   test("13. Reload da página /transactions preserva transações", async ({ page }) => {
     await navigateAndWaitForLoad(page, "/transactions");
 
-    if (page.url().includes("/login")) {
+    if (isOnPublicEntry(page)) {
       test.skip();
       return;
     }
@@ -257,7 +257,7 @@ test.describe("Wallet App — Integridade de Dados E2E", () => {
     // Dashboard → Cards → Transactions → Dashboard
     await navigateAndWaitForLoad(page, "/dashboard");
 
-    if (page.url().includes("/login")) {
+    if (isOnPublicEntry(page)) {
       test.skip();
       return;
     }
@@ -295,7 +295,7 @@ test.describe("Wallet App — Integridade de Dados E2E", () => {
     await navigateAndWaitForLoad(page, "/dashboard");
     await waitForFirestoreSync(page);
 
-    if (!page.url().includes("/login")) {
+    if (!isOnPublicEntry(page)) {
       await navigateAndWaitForLoad(page, "/cards");
       await navigateAndWaitForLoad(page, "/transactions");
     }

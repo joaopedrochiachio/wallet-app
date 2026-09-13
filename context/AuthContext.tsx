@@ -9,13 +9,15 @@ import {
   signOut as firebaseSignOut,
   GoogleAuthProvider,
   signInWithPopup,
+  browserLocalPersistence,
+  setPersistence,
 } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  signIn: (email: string, pass: string) => Promise<void>;
+  signIn: (email: string, pass: string) => Promise<User>;
   signUp: (email: string, pass: string) => Promise<User>;
   signInWithGoogle: () => Promise<User>;
   signOut: () => Promise<void>;
@@ -36,15 +38,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signIn = async (email: string, pass: string) => {
-    await signInWithEmailAndPassword(auth, email, pass);
+    await setPersistence(auth, browserLocalPersistence);
+    const cred = await signInWithEmailAndPassword(auth, email, pass);
+    return cred.user;
   };
 
   const signUp = async (email: string, pass: string) => {
+    await setPersistence(auth, browserLocalPersistence);
     const cred = await createUserWithEmailAndPassword(auth, email, pass);
     return cred.user;
   };
 
   const signInWithGoogle = async () => {
+    await setPersistence(auth, browserLocalPersistence);
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: "select_account" });
     const cred = await signInWithPopup(auth, provider);

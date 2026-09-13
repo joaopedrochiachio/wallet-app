@@ -11,10 +11,10 @@ import {
   Target,
   MessageCircle,
   User,
-  Sparkles,
 } from "lucide-react";
 import { WalletProvider } from "@/context/WalletContext";
 import { AuthProvider } from "@/context/AuthContext";
+import { AuthRouteGuard } from "@/components/auth/AuthRouteGuard";
 
 export default function RootLayout({
   children,
@@ -29,7 +29,9 @@ export default function RootLayout({
       <html lang="pt-BR" className="scroll-smooth">
         <body className="min-h-screen bg-[#F2F2F7]">
           <AuthProvider>
-            <WalletProvider>{children}</WalletProvider>
+            <AuthRouteGuard>
+              <WalletProvider>{children}</WalletProvider>
+            </AuthRouteGuard>
           </AuthProvider>
         </body>
       </html>
@@ -40,13 +42,14 @@ export default function RootLayout({
     <html lang="pt-BR">
       <body className="flex h-screen overflow-hidden bg-[#F2F2F7]">
         <AuthProvider>
-          <WalletProvider>
+          <AuthRouteGuard>
+            <WalletProvider>
             {/* SIDEBAR (Desktop) */}
             <aside className="hidden md:flex flex-col w-64 h-full bg-white/80 backdrop-blur-xl border-r border-gray-200/60 p-6 z-50">
               <Link
-                href="/"
+                href="/dashboard"
                 className="text-xl font-semibold tracking-tight text-[#1D1D1F] mb-8 flex items-center gap-2 hover:opacity-80 transition-opacity"
-                title="Ir para a Apresentação Wallet Intelligence"
+                title="Ir para o Dashboard"
               >
               <div className="w-8 h-8 rounded-xl bg-[#1D1D1F] text-white flex items-center justify-center font-bold text-sm shadow-xs">
                 W
@@ -100,12 +103,6 @@ export default function RootLayout({
 
             <div className="mt-auto space-y-1.5">
               <NavItem
-                href="/"
-                icon={<Sparkles strokeWidth={1.5} size={18} className="text-purple-600" />}
-                label="Showcase 3D"
-                active={false}
-              />
-              <NavItem
                 href="#"
                 icon={<MessageCircle strokeWidth={1.5} size={18} />}
                 label="AI Assistant"
@@ -154,7 +151,8 @@ export default function RootLayout({
               />
             </div>
           </nav>
-        </WalletProvider>
+            </WalletProvider>
+          </AuthRouteGuard>
       </AuthProvider>
     </body>
   </html>

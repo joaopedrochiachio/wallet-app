@@ -56,13 +56,13 @@ export default function PresentationPage() {
 
           <div className="flex items-center gap-3">
             <Link
-              href="/profile"
+              href="/login"
               className="hidden sm:inline-flex text-xs font-medium text-[#86868B] hover:text-[#1D1D1F] transition-colors"
             >
-              Meu Perfil
+              Entrar
             </Link>
             <Link
-              href="/dashboard"
+              href="/login"
               className="bg-[#1D1D1F] hover:bg-black text-white text-xs font-semibold px-4 py-2 rounded-full transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
             >
               <span>Acessar Carteira</span>
@@ -98,7 +98,7 @@ export default function PresentationPage() {
         {/* CTAs */}
         <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
           <Link
-            href="/dashboard"
+            href="/login"
             className="bg-[#1D1D1F] hover:bg-black text-white text-sm font-semibold px-6 py-3.5 rounded-full transition-all flex items-center gap-2 shadow-[0_4px_16px_rgba(0,0,0,0.15)] active:scale-98 cursor-pointer"
           >
             <span>Abrir Minha Carteira</span>
@@ -503,7 +503,7 @@ export default function PresentationPage() {
               Você pode alterar seu arquétipo a qualquer momento nas configurações do seu perfil.
             </span>
             <Link
-              href="/profile"
+              href="/login"
               className="font-semibold text-[#1D1D1F] hover:underline flex items-center gap-1 shrink-0"
             >
               <span>Ajustar meu Arquétipo no Perfil</span>
@@ -573,10 +573,10 @@ export default function PresentationPage() {
             </Link>
 
             <Link
-              href="/dashboard"
+              href="#showcase"
               className="w-full sm:w-auto bg-[#F2F2F7] hover:bg-[#E5E5EA] text-[#1D1D1F] text-sm font-semibold px-8 py-3.5 rounded-full transition-all border border-black/[0.05] flex items-center justify-center"
             >
-              <span>Explorar Demo no Dashboard</span>
+              <span>Ver demonstração 3D</span>
             </Link>
           </div>
 

@@ -119,7 +119,7 @@ export default function ProfilePage() {
   const handleSignOut = async () => {
     if (window.confirm("Deseja realmente encerrar sua sessão?")) {
       await signOut();
-      router.push("/login");
+      router.replace("/");
     }
   };
 

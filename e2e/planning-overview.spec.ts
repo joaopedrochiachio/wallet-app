@@ -2,6 +2,8 @@ import { expect, test } from "@playwright/test";
 
 test("planejamento mantém resumo visível enquanto os filtros mudam", async ({ page }) => {
   await page.goto("/planning", { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(750);
+  test.skip(new URL(page.url()).pathname === "/", "Requer uma sessão autenticada.");
 
   const macroSummary = page.getByTestId("monthly-macro-summary");
   const movementOverview = page.getByTestId("monthly-movement-overview");
@@ -37,6 +39,8 @@ test("filtros e visão macro continuam acessíveis no layout móvel", async ({ b
 
   try {
     await page.goto("/planning", { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(750);
+    test.skip(new URL(page.url()).pathname === "/", "Requer uma sessão autenticada.");
 
     const movementOverview = page.getByTestId("monthly-movement-overview");
     await expect(page.getByTestId("monthly-macro-summary")).toBeVisible();

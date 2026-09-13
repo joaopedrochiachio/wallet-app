@@ -26,9 +26,9 @@ export default function LoginPage() {
       const user = await signInWithGoogle();
       const existingProfile = await getUserProfile(user.uid);
       if (existingProfile && existingProfile.isOnboarded) {
-        router.push("/dashboard");
+        router.replace("/dashboard");
       } else {
-        router.push("/onboarding");
+        router.replace("/onboarding");
       }
     } catch (err: unknown) {
       console.error("Erro no login Google:", err);
@@ -66,11 +66,12 @@ export default function LoginPage() {
 
     try {
       if (mode === "login") {
-        await signIn(trimmedEmail, password);
-        router.push("/dashboard");
+        const user = await signIn(trimmedEmail, password);
+        const existingProfile = await getUserProfile(user.uid);
+        router.replace(existingProfile?.isOnboarded ? "/dashboard" : "/onboarding");
       } else {
         await signUp(trimmedEmail, password);
-        router.push("/onboarding");
+        router.replace("/onboarding");
       }
     } catch (err: unknown) {
       console.error("Erro na autenticação:", err);
