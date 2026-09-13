@@ -1,8 +1,10 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useWallet, FinancialPersonaId, RiskToleranceId, AIToneId } from "@/context/WalletContext";
+import { useAuth } from "@/context/AuthContext";
 import {
   User,
   Sparkles,
@@ -20,6 +22,7 @@ import {
   CreditCard,
   Target,
   ArrowRight,
+  LogOut,
 } from "lucide-react";
 
 interface PersonaConfig {
@@ -95,6 +98,8 @@ const PERSONAS: PersonaConfig[] = [
 ];
 
 export default function ProfilePage() {
+  const router = useRouter();
+  const { user, signOut } = useAuth();
   const { userProfile, updateUserProfile, cards, transactions, mainBalance } = useWallet();
 
   const [name, setName] = useState(userProfile.name);
@@ -104,6 +109,23 @@ export default function ProfilePage() {
   const [primaryFocus, setPrimaryFocus] = useState(userProfile.primaryFocus);
   const [maxCommitment, setMaxCommitment] = useState(userProfile.maxCommitmentAlertPercent);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Sincronizar inputs locais quando o perfil for carregado do Firestore
+  useEffect(() => {
+    setName(userProfile.name);
+    setEmail(userProfile.email);
+    setRole(userProfile.role);
+    setIncomeInput(userProfile.monthlyIncomeBase.toString());
+    setPrimaryFocus(userProfile.primaryFocus);
+    setMaxCommitment(userProfile.maxCommitmentAlertPercent);
+  }, [userProfile]);
+
+  const handleSignOut = async () => {
+    if (window.confirm("Deseja realmente encerrar sua sessão?")) {
+      await signOut();
+      router.push("/login");
+    }
+  };
 
   const formatCurrency = (val: number) =>
     val.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -522,6 +544,29 @@ export default function ProfilePage() {
             </button>
           </div>
         </form>
+      </section>
+
+      {/* Seção de Sessão e Logout Estilo Apple HIG */}
+      <section className="bg-white rounded-[24px] p-6 shadow-sm border border-black/[0.04] space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-[#1D1D1F]">
+              Sessão & Conta
+            </h3>
+            <p className="text-xs text-[#86868B] mt-0.5">
+              Conectado como {user?.email || userProfile.email}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleSignOut}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100/80 active:scale-95 transition-all cursor-pointer"
+          >
+            <LogOut size={14} strokeWidth={2} />
+            <span>Encerrar Sessão</span>
+          </button>
+        </div>
       </section>
 
     </div>

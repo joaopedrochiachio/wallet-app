@@ -1,7 +1,18 @@
 "use client";
 
-import React, { useState, useRef, useCallback } from "react";
-import { Wallet, Wifi, Plus, CreditCard, Edit3, Check, X } from "lucide-react";
+import React, { useState } from "react";
+import {
+  Wifi,
+  Plus,
+  CreditCard,
+  Edit3,
+  Check,
+  X,
+  MoreHorizontal,
+  Smartphone,
+  ShieldCheck,
+  Sparkles,
+} from "lucide-react";
 import { CardItem } from "@/context/WalletContext";
 
 export interface InteractiveCardProps {
@@ -23,53 +34,17 @@ export function InteractiveCard({
   onPayInvoice,
   onOpenAddCard,
 }: InteractiveCardProps) {
-  const cardRef = useRef<HTMLDivElement>(null);
-  const [rotation, setRotation] = useState({ x: 0, y: 0 });
-  const [glarePos, setGlarePos] = useState({ x: 50, y: 50, opacity: 0 });
-  const [isHovered, setIsHovered] = useState(false);
-
   // Estado para edição rápida do limite
   const [isEditingLimit, setIsEditingLimit] = useState(false);
   const [tempLimit, setTempLimit] = useState(card.limit.toString());
-
-  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (!cardRef.current) return;
-    const rect = cardRef.current.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
-
-    const mouseX = e.clientX - centerX;
-    const mouseY = e.clientY - centerY;
-
-    const maxRotateX = 12;
-    const maxRotateY = 12;
-
-    const rotateX = -((mouseY / (rect.height / 2)) * maxRotateX);
-    const rotateY = (mouseX / (rect.width / 2)) * maxRotateY;
-
-    const glareX = ((e.clientX - rect.left) / rect.width) * 100;
-    const glareY = ((e.clientY - rect.top) / rect.height) * 100;
-
-    setRotation({ x: rotateX, y: rotateY });
-    setGlarePos({ x: glareX, y: glareY, opacity: 1 });
-  }, []);
-
-  const handleMouseEnter = useCallback(() => {
-    setIsHovered(true);
-  }, []);
-
-  const handleMouseLeave = useCallback(() => {
-    setIsHovered(false);
-    setRotation({ x: 0, y: 0 });
-    setGlarePos((prev) => ({ ...prev, opacity: 0 }));
-  }, []);
+  const [showMenu, setShowMenu] = useState(false);
 
   const formatCurrency = (val: number) =>
     val.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const isCredit = card.type === "credit";
   const displayedMainValue = isCredit ? card.invoiceAmount || 0 : card.balance || 0;
-  const labelMainValue = isCredit ? "Fatura Atual" : "Saldo Atual";
+  const labelMainValue = isCredit ? "Fatura em Aberto" : "Saldo Disponível";
 
   const percentUsed = Math.min(100, Math.round((card.spent / card.limit) * 100));
 
@@ -82,10 +57,10 @@ export function InteractiveCard({
   };
 
   return (
-    <div className="space-y-4">
-      {/* Seletor de Cartões Estilo Apple Wallet */}
-      <div className="flex items-center justify-between px-1 gap-2">
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+    <div className="space-y-4 font-sans">
+      {/* Top Header / Seletor de Passes Apple Wallet */}
+      <div className="flex items-center justify-between px-1 gap-2 flex-wrap">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
           {allCards.map((c) => {
             const isSelected = c.id === card.id;
             return (
@@ -95,15 +70,16 @@ export function InteractiveCard({
                   onSelectCard(c.id);
                   setTempLimit(c.limit.toString());
                   setIsEditingLimit(false);
+                  setShowMenu(false);
                 }}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-all select-none flex items-center gap-1.5 shrink-0 ${
+                className={`px-4 py-2 rounded-full text-xs font-semibold transition-all select-none flex items-center gap-2 shrink-0 cursor-pointer ${
                   isSelected
                     ? "bg-[#1D1D1F] text-white shadow-xs"
-                    : "bg-white text-[#86868B] hover:text-[#1D1D1F] border border-black/[0.04]"
+                    : "bg-white text-[#86868B] hover:text-[#1D1D1F] border border-black/[0.05]"
                 }`}
               >
                 <div
-                  className={`w-2.5 h-2.5 rounded-full bg-gradient-to-br ${c.colorScheme.gradient} border border-white/20`}
+                  className={`w-2.5 h-2.5 rounded-full bg-gradient-to-br ${c.colorScheme.gradient} border border-white/30`}
                 />
                 <span>{c.name}</span>
               </button>
@@ -113,140 +89,128 @@ export function InteractiveCard({
           {onOpenAddCard && (
             <button
               onClick={onOpenAddCard}
-              className="px-3 py-1.5 rounded-full text-xs font-medium bg-white text-[#86868B] hover:text-[#1D1D1F] border border-black/[0.04] transition-all flex items-center gap-1 shrink-0 cursor-pointer hover:shadow-2xs"
-              title="Adicionar Novo Cartão"
+              className="px-3.5 py-2 rounded-full text-xs font-semibold bg-white text-[#86868B] hover:text-[#1D1D1F] border border-black/[0.05] transition-all flex items-center gap-1 shrink-0 cursor-pointer hover:shadow-2xs"
+              title="Adicionar Novo Pass"
             >
-              <Plus size={13} strokeWidth={2} />
-              <span>Novo Cartão</span>
+              <Plus size={13} strokeWidth={2.5} />
+              <span>Novo Pass</span>
             </button>
           )}
         </div>
 
-        <button
-          onClick={() => {
-            setTempLimit(card.limit.toString());
-            setIsEditingLimit(!isEditingLimit);
-          }}
-          className="text-xs font-medium text-[#86868B] hover:text-[#1D1D1F] flex items-center gap-1 transition-colors bg-white/70 hover:bg-white px-2.5 py-1 rounded-full border border-black/[0.04]"
-        >
-          <Edit3 strokeWidth={1.5} size={12} />
-          <span>Ajustar Limite</span>
-        </button>
+        {/* Botão de Ajustar Limite / Opções */}
+        <div className="relative">
+          <button
+            onClick={() => setShowMenu(!showMenu)}
+            className="w-8 h-8 rounded-full bg-white hover:bg-gray-100 text-[#86868B] hover:text-[#1D1D1F] border border-black/[0.05] flex items-center justify-center transition-colors cursor-pointer shadow-2xs"
+            title="Mais Opções do Pass"
+          >
+            <MoreHorizontal size={16} />
+          </button>
+
+          {showMenu && (
+            <div className="absolute right-0 top-10 w-48 bg-white rounded-2xl shadow-xl border border-black/[0.06] p-2 z-30 space-y-1 animate-in fade-in zoom-in-95 duration-150">
+              <button
+                onClick={() => {
+                  setTempLimit(card.limit.toString());
+                  setIsEditingLimit(true);
+                  setShowMenu(false);
+                }}
+                className="w-full text-left px-3 py-2 text-xs font-medium text-[#1D1D1F] hover:bg-[#F2F2F7] rounded-xl flex items-center gap-2 transition-colors cursor-pointer"
+              >
+                <Edit3 size={13} />
+                <span>Ajustar Limite</span>
+              </button>
+              {isCredit && onPayInvoice && (
+                <button
+                  onClick={() => {
+                    onPayInvoice();
+                    setShowMenu(false);
+                  }}
+                  className="w-full text-left px-3 py-2 text-xs font-medium text-[#1D1D1F] hover:bg-[#F2F2F7] rounded-xl flex items-center gap-2 transition-colors cursor-pointer"
+                >
+                  <CreditCard size={13} />
+                  <span>Pagar Fatura Atual</span>
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Cartão 3D Espacial */}
-      <div className="[perspective:1000px] w-full">
+      {/* PASS FÍSICO ESTILO NATIVO APPLE WALLET (SEM EFEITO 3D ROTACIONAL) */}
+      <div className="w-full max-w-xl mx-auto">
         <div
-          ref={cardRef}
-          onMouseMove={handleMouseMove}
-          onMouseEnter={handleMouseEnter}
-          onMouseLeave={handleMouseLeave}
-          style={{
-            transform: `perspective(1000px) rotateX(${rotation.x}deg) rotateY(${rotation.y}deg)`,
-            transition: isHovered
-              ? "transform 0.15s ease-out"
-              : "transform 0.5s ease-out",
-          }}
-          className={`relative group bg-gradient-to-br ${card.colorScheme.gradient} rounded-[24px] p-7 md:p-8 text-white border ${card.colorScheme.border} shadow-[0_20px_40px_rgba(0,0,0,0.25)] transform-gpu [transform-style:preserve-3d] select-none cursor-pointer overflow-hidden`}
+          className={`relative bg-gradient-to-br ${card.colorScheme.gradient} rounded-[28px] md:rounded-[32px] p-7 md:p-8 text-white border ${card.colorScheme.border} shadow-[0_16px_36px_rgba(0,0,0,0.14)] select-none overflow-hidden transition-all duration-300`}
         >
-          {/* Camada Dinâmica de Reflexo Glare */}
-          <div
-            className="pointer-events-none absolute inset-0 rounded-[24px] transition-opacity duration-300"
-            style={{
-              opacity: glarePos.opacity,
-              background: `radial-gradient(circle at ${glarePos.x}% ${glarePos.y}%, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.04) 45%, transparent 70%)`,
-            }}
-          />
+          {/* Top Notch / Recorte sutil de pegada do Pass Apple */}
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-16 h-1.5 bg-white/10 rounded-b-full" />
 
-          {/* Borda metálica superior */}
-          <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/40 to-transparent" />
+          {/* Borda metálica sutil superior */}
+          <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/30 to-transparent" />
 
-          {/* Top Row: Marca do Cartão e Ícone Contactless */}
-          <div className="flex justify-between items-center mb-6 relative z-10">
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-white/10 backdrop-blur-md border border-white/15 text-white flex items-center justify-center">
-                <Wallet strokeWidth={1.5} size={15} />
+          {/* Header do Pass: Marca, Nome e Status */}
+          <div className="flex justify-between items-start mb-8 relative z-10">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-2xl bg-white/10 backdrop-blur-md border border-white/15 text-white flex items-center justify-center shadow-xs">
+                {isCredit ? <CreditCard size={18} strokeWidth={1.5} /> : <ShieldCheck size={18} strokeWidth={1.5} />}
               </div>
               <div>
-                <span className="text-[11px] font-semibold tracking-widest text-white/70 uppercase block leading-none">
-                  {card.colorScheme.badgeText}
-                </span>
-                <span className="text-[9px] text-[#86868B] block mt-0.5">
+                <h2 className="text-base font-semibold tracking-tight text-white leading-tight">
+                  {card.name}
+                </h2>
+                <span className="text-[11px] font-medium text-white/60 block">
                   {card.brand}
                 </span>
               </div>
             </div>
 
+            {/* Badge de Categoria e Ícone Contactless */}
             <div className="flex items-center gap-3">
-              <Wifi strokeWidth={1.5} size={18} className="rotate-90 text-white/50" />
-              <div
-                className={`w-7 h-5 rounded bg-gradient-to-br ${card.colorScheme.chipGradient} opacity-75 border border-yellow-200/30`}
-              />
+              <span className="text-[10px] font-semibold uppercase tracking-wider px-2.5 py-1 rounded-full bg-white/15 text-white/90 border border-white/10">
+                {card.colorScheme.badgeText}
+              </span>
+              <Wifi size={18} strokeWidth={2} className="rotate-90 text-white/60" />
             </div>
           </div>
 
-          {/* Informações de Saldo ou Fatura */}
-          <div className="space-y-1 relative z-10">
-            <p className="text-xs uppercase tracking-[0.2em] font-medium text-[#86868B]">
+          {/* Valor Principal (Saldo Disponível ou Fatura) com Tipografia Gigante Apple */}
+          <div className="space-y-1 relative z-10 py-2">
+            <p className="text-[11px] uppercase tracking-[0.2em] font-semibold text-white/60">
               {labelMainValue}
             </p>
-            <div className="flex items-baseline gap-1.5">
-              <span className="text-2xl font-semibold text-white/90">R$</span>
-              <span className="text-4xl md:text-5xl font-light tracking-tight text-white">
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-light text-white/70">R$</span>
+              <span className="text-4xl sm:text-5xl font-light tracking-tight text-white">
                 {formatCurrency(displayedMainValue)}
               </span>
             </div>
           </div>
 
-          {/* Botões Rápidos */}
-          <div className="mt-7 flex flex-wrap items-center gap-3 relative z-10">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onAddClick?.();
-              }}
-              className="bg-white text-[#1D1D1F] hover:bg-white/90 active:scale-[0.98] text-xs font-semibold px-4 py-2.5 rounded-xl transition-all flex items-center gap-1.5 shadow-sm"
-            >
-              <Plus strokeWidth={2} size={14} />
-              <span>Novo Lançamento</span>
-            </button>
-
-            {isCredit && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onPayInvoice?.();
-                }}
-                className="bg-white/10 hover:bg-white/20 active:scale-[0.98] text-white border border-white/15 text-xs font-medium px-4 py-2.5 rounded-xl transition-all flex items-center gap-1.5"
-              >
-                <CreditCard strokeWidth={1.5} size={14} />
-                <span>Pagar Fatura</span>
-              </button>
-            )}
-
-            {isCredit && card.dueDay && (
-              <span className="text-[11px] text-white/60 ml-auto self-center">
-                Vence dia {card.dueDay}
-              </span>
-            )}
+          {/* Linha Divisória Perfurada Estilo Pass Kit */}
+          <div className="my-6 border-b border-white/15 relative">
+            <div className="absolute -left-10 -top-2.5 w-5 h-5 rounded-full bg-[#F2F2F7]" />
+            <div className="absolute -right-10 -top-2.5 w-5 h-5 rounded-full bg-[#F2F2F7]" />
           </div>
 
-          {/* Rodapé: Gastos vs Limite e Barra de Progresso */}
-          <div className="mt-7 pt-5 border-t border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs relative z-10">
-            <div className="flex items-center gap-2 text-[#86868B]">
-              <span>{isCredit ? "Fatura / Limite:" : "Gastos no mês:"}</span>
+          {/* Dados Auxiliares do Pass (Grade de Informações Físicas) */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs relative z-10">
+            <div>
+              <span className="text-[9px] uppercase font-semibold text-white/50 tracking-wider block">
+                {isCredit ? "Limite Total" : "Tipo de Conta"}
+              </span>
               {isEditingLimit ? (
                 <div
                   onClick={(e) => e.stopPropagation()}
-                  className="flex items-center gap-1 bg-black/60 px-2 py-0.5 rounded-lg border border-white/20"
+                  className="flex items-center gap-1 bg-black/60 px-2 py-0.5 rounded-lg border border-white/20 mt-0.5"
                 >
-                  <span className="text-white font-medium">R$ {formatCurrency(card.spent)} / R$</span>
+                  <span className="text-white text-xs">R$</span>
                   <input
                     type="number"
                     value={tempLimit}
                     onChange={(e) => setTempLimit(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && handleSaveLimit()}
-                    className="w-20 bg-transparent text-white font-medium outline-none text-xs"
+                    className="w-16 bg-transparent text-white font-semibold outline-none text-xs"
                     autoFocus
                   />
                   <button onClick={handleSaveLimit} className="text-emerald-400 hover:text-emerald-300">
@@ -257,25 +221,74 @@ export function InteractiveCard({
                   </button>
                 </div>
               ) : (
-                <span className="font-medium text-white">
-                  R$ {formatCurrency(card.spent)} / R$ {formatCurrency(card.limit)}
+                <span className="text-sm font-semibold text-white/90 block mt-0.5">
+                  {isCredit ? `R$ ${formatCurrency(card.limit)}` : "Movimentação Pix"}
                 </span>
               )}
             </div>
 
-            <div className="flex items-center gap-2 w-full sm:w-44">
-              <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden border border-white/10">
-                <div
-                  className={`h-full rounded-full transition-all duration-500 ${
-                    percentUsed > 85 ? "bg-rose-500" : "bg-white"
-                  }`}
-                  style={{ width: `${percentUsed}%` }}
-                />
-              </div>
-              <span className="text-[10px] text-white/60 shrink-0 font-medium">
-                {percentUsed}%
+            <div>
+              <span className="text-[9px] uppercase font-semibold text-white/50 tracking-wider block">
+                {isCredit ? "Vencimento" : "Status"}
+              </span>
+              <span className="text-sm font-semibold text-white/90 block mt-0.5">
+                {isCredit && card.dueDay ? `Todo dia ${card.dueDay}` : "Ativo • Protegido"}
               </span>
             </div>
+
+            <div className="col-span-2 sm:col-span-1 flex items-center justify-start sm:justify-end gap-2">
+              <div
+                className={`w-8 h-5 rounded bg-gradient-to-br ${card.colorScheme.chipGradient} border border-yellow-200/40 opacity-90 shadow-2xs`}
+                title="Microchip EMV"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* NATIVE APPLE WALLET READER / ACTION BAR (Inspirado no visual da imagem 2) */}
+        <div className="pt-6 pb-2 flex flex-col items-center justify-center space-y-4 text-center">
+          {/* Símbolo Circular do Leitor Apple Wallet */}
+          <div
+            onClick={onAddClick}
+            className="w-16 h-16 rounded-full border-2 border-[#007AFF] bg-[#007AFF]/5 hover:bg-[#007AFF]/10 active:scale-95 transition-all flex items-center justify-center cursor-pointer shadow-xs group"
+            title="Lançamento Rápido"
+          >
+            <Smartphone size={26} strokeWidth={1.5} className="text-[#007AFF] group-hover:scale-105 transition-transform" />
+          </div>
+
+          <div className="space-y-1">
+            <span className="text-xs font-semibold text-[#1D1D1F] block">
+              Wallet Pass • Pronto para uso
+            </span>
+            <p className="text-[11px] text-[#86868B]">
+              Toque no leitor acima ou no botão abaixo para adicionar uma movimentação
+            </p>
+          </div>
+
+          {/* Botões de Ação Táteis */}
+          <div className="flex items-center gap-3 pt-1">
+            <button
+              onClick={onAddClick}
+              className="bg-[#1D1D1F] hover:bg-black text-white text-xs font-semibold px-5 py-3 rounded-full transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
+            >
+              <Plus strokeWidth={2.5} size={15} />
+              <span>Novo Lançamento</span>
+            </button>
+
+            {isCredit && onPayInvoice && (
+              <button
+                onClick={onPayInvoice}
+                disabled={card.invoiceAmount === 0}
+                className={`text-xs font-semibold px-4 py-3 rounded-full transition-all flex items-center gap-1.5 border cursor-pointer active:scale-95 ${
+                  (card.invoiceAmount || 0) > 0
+                    ? "bg-white text-[#1D1D1F] border-black/10 hover:bg-gray-50 shadow-2xs"
+                    : "bg-gray-100 text-gray-400 border-transparent cursor-not-allowed"
+                }`}
+              >
+                <CreditCard size={14} />
+                <span>Pagar Fatura</span>
+              </button>
+            )}
           </div>
         </div>
       </div>

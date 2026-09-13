@@ -14,6 +14,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { WalletProvider } from "@/context/WalletContext";
+import { AuthProvider } from "@/context/AuthContext";
 
 export default function RootLayout({
   children,
@@ -21,13 +22,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   const pathname = usePathname();
-  const isLandingPage = pathname === "/";
+  const isStandalonePage = pathname === "/" || pathname === "/login" || pathname === "/onboarding";
 
-  if (isLandingPage) {
+  if (isStandalonePage) {
     return (
       <html lang="pt-BR" className="scroll-smooth">
         <body className="min-h-screen bg-[#F2F2F7]">
-          <WalletProvider>{children}</WalletProvider>
+          <AuthProvider>
+            <WalletProvider>{children}</WalletProvider>
+          </AuthProvider>
         </body>
       </html>
     );
@@ -36,14 +39,15 @@ export default function RootLayout({
   return (
     <html lang="pt-BR">
       <body className="flex h-screen overflow-hidden bg-[#F2F2F7]">
-        <WalletProvider>
-          {/* SIDEBAR (Desktop) */}
-          <aside className="hidden md:flex flex-col w-64 h-full bg-white/80 backdrop-blur-xl border-r border-gray-200/60 p-6 z-50">
-            <Link
-              href="/"
-              className="text-xl font-semibold tracking-tight text-[#1D1D1F] mb-8 flex items-center gap-2 hover:opacity-80 transition-opacity"
-              title="Ir para a Apresentação Wallet Intelligence"
-            >
+        <AuthProvider>
+          <WalletProvider>
+            {/* SIDEBAR (Desktop) */}
+            <aside className="hidden md:flex flex-col w-64 h-full bg-white/80 backdrop-blur-xl border-r border-gray-200/60 p-6 z-50">
+              <Link
+                href="/"
+                className="text-xl font-semibold tracking-tight text-[#1D1D1F] mb-8 flex items-center gap-2 hover:opacity-80 transition-opacity"
+                title="Ir para a Apresentação Wallet Intelligence"
+              >
               <div className="w-8 h-8 rounded-xl bg-[#1D1D1F] text-white flex items-center justify-center font-bold text-sm shadow-xs">
                 W
               </div>
@@ -151,9 +155,10 @@ export default function RootLayout({
             </div>
           </nav>
         </WalletProvider>
-      </body>
-    </html>
-  );
+      </AuthProvider>
+    </body>
+  </html>
+);
 }
 
 function NavItem({

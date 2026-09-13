@@ -1,9 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useWallet } from "@/context/WalletContext";
+import { useAuth } from "@/context/AuthContext";
 import { ListGroup, ListItem } from "@/components/ui/iOSList";
 import { AddTransactionSheet } from "@/components/ui/AddTransactionSheet";
+import { subscribeToTransactions } from "@/lib/services/transactionsService";
+import { Transaction } from "@/types";
 import {
   Briefcase,
   Utensils,
@@ -12,13 +15,28 @@ import {
   Filter,
   ShoppingBag,
   Tv,
+  Trash2,
 } from "lucide-react";
+import { AppleConfirmModal } from "@/components/ui/AppleConfirmModal";
 
 export default function TransactionsPage() {
-  const { transactions, addTransaction, accountOptions } = useWallet();
+  const { user } = useAuth();
+  const { accountOptions, addTransaction, deleteTransaction } = useWallet();
+  const [firestoreTransactions, setFirestoreTransactions] = useState<Transaction[]>([]);
+  const [isSyncing, setIsSyncing] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState("Setembro");
   const [selectedFilter, setSelectedFilter] = useState("Todas");
   const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const [txToDelete, setTxToDelete] = useState<Transaction | null>(null);
+
+  // Escuta em tempo real do Cloud Firestore (isolado pelo usuário autenticado)
+  useEffect(() => {
+    const unsubscribe = subscribeToTransactions((items) => {
+      setFirestoreTransactions(items);
+      setIsSyncing(false);
+    }, user?.uid);
+    return () => unsubscribe();
+  }, [user]);
 
   const formatCurrency = (val: number) =>
     val.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -31,9 +49,9 @@ export default function TransactionsPage() {
     return <ShoppingBag strokeWidth={1.5} size={16} />;
   };
 
-  const filteredTransactions = transactions.filter((t) => {
+  const filteredTransactions = firestoreTransactions.filter((t) => {
     if (selectedFilter === "Todas") return true;
-    return t.account === selectedFilter;
+    return t.paymentMethod === selectedFilter;
   });
 
   return (
@@ -96,41 +114,76 @@ export default function TransactionsPage() {
           </span>
           <button
             onClick={() => setIsSheetOpen(true)}
-            className="text-xs font-semibold text-[#1D1D1F] hover:underline flex items-center gap-1 bg-white px-3 py-1.5 rounded-full border border-black/[0.04] shadow-2xs"
+            className="text-xs font-semibold text-[#1D1D1F] hover:underline flex items-center gap-1 bg-white px-3 py-1.5 rounded-full border border-black/[0.04] shadow-2xs cursor-pointer"
           >
             <Plus strokeWidth={1.5} size={14} /> Nova Transação
           </button>
         </div>
 
-        {/* Lista de Transações (Componente iOSList) */}
+        {/* Lista de Transações (Componente iOSList com Cloud Firestore) */}
         <ListGroup>
-          {filteredTransactions.length === 0 ? (
+          {isSyncing ? (
+            <div className="py-12 text-center text-xs text-[#86868B]">
+              Sincronizando lançamentos com Cloud Firestore...
+            </div>
+          ) : filteredTransactions.length === 0 ? (
             <div className="py-12 text-center text-xs text-[#86868B]">
               Nenhum lançamento encontrado para este filtro.
             </div>
           ) : (
             filteredTransactions.map((item, index) => (
               <ListItem
-                key={item.id}
-                title={item.title}
-                subtitle={`${item.category} • ${item.date}`}
-                amount={`${item.type === "receita" ? "+" : "-"} R$ ${formatCurrency(item.amount)}`}
-                isIncome={item.type === "receita"}
+                key={item.id || index}
+                title={item.description}
+                subtitle={`${item.category} • ${typeof item.date === "string" ? item.date : new Date(item.date).toLocaleDateString("pt-BR")}`}
+                amount={`${item.type === "in" ? "+" : "-"} R$ ${formatCurrency(item.amount)}`}
+                isIncome={item.type === "in"}
                 icon={getTransactionIcon(item.category)}
-                badge={item.account}
+                badge={item.paymentMethod}
                 isLast={index === filteredTransactions.length - 1}
+                rightElement={
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setTxToDelete(item);
+                    }}
+                    className="p-1.5 text-gray-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer ml-1"
+                    title="Excluir Lançamento"
+                  >
+                    <Trash2 size={13} strokeWidth={1.5} />
+                  </button>
+                }
               />
             ))
           )}
         </ListGroup>
       </div>
 
-      {/* Modal de Inserção Integrado */}
+      {/* Modal de Inserção Integrado ao Firestore */}
       <AddTransactionSheet
         isOpen={isSheetOpen}
         onClose={() => setIsSheetOpen(false)}
         accounts={accountOptions}
         onAdd={addTransaction}
+      />
+
+      {/* Modal de Confirmação para Excluir Lançamento */}
+      <AppleConfirmModal
+        isOpen={!!txToDelete}
+        onClose={() => setTxToDelete(null)}
+        onConfirm={() => {
+          if (txToDelete?.id) {
+            deleteTransaction(txToDelete.id);
+            setTxToDelete(null);
+          }
+        }}
+        title="Excluir Lançamento"
+        description={`Tem certeza que deseja remover "${txToDelete?.description}" no valor de R$ ${txToDelete ? formatCurrency(txToDelete.amount) : ""}? Esta ação recalculará o saldo disponível.`}
+        confirmLabel="Excluir"
+        cancelLabel="Cancelar"
+        variant="danger"
+        iconType="trash"
       />
     </div>
   );

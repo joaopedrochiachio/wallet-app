@@ -139,104 +139,161 @@ export default function PresentationPage() {
         </div>
       </section>
 
-      {/* SEÇÃO DA INTELIGÊNCIA INTEGRADA (Estilo Pass Kit Minimalista) */}
+      {/* SEÇÃO DA INTELIGÊNCIA INTEGRADA (Estilo Cupertino Minimalista & Tátil) */}
       <section id="ai-engine" className="max-w-5xl mx-auto px-6 py-16 space-y-10">
         
         <div className="text-center max-w-2xl mx-auto space-y-2">
-          <span className="text-[11px] uppercase font-semibold tracking-widest text-[#86868B] font-mono">
-            Motor de Inteligência Contextual
-          </span>
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white border border-black/[0.05] shadow-2xs text-[11px] font-semibold uppercase tracking-widest text-[#86868B]">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#1D1D1F]" />
+            <span>Engenharia de Dados Financeiros</span>
+          </div>
           <h2 className="text-3xl sm:text-4xl font-semibold text-[#1D1D1F] tracking-tight">
-            Como a IA do Wallet Intelligence funciona na prática.
+            Como o Wallet Intelligence opera na prática.
           </h2>
           <p className="text-sm text-[#86868B] leading-relaxed">
-            Em vez de um chatbot genérico que exige perguntas soltas, o Wallet Intelligence
-            opera como um sistema silencioso em segundo plano, monitorando snapshots da sua carteira.
+            Sem chatbots invasivos ou assistentes ruidosos. O sistema atua silenciosamente no núcleo da sua carteira,
+            alinhando calendários de vencimento, blindando sua conta corrente e projetando sua liquidez futura com precisão cirúrgica.
           </p>
         </div>
 
-        {/* Grade de Passes de Inteligência (Pass Kit Anatomy) */}
+        {/* Grade de 4 Módulos Visuais 3D Táteis */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           
-          {/* Pass 1: Otimização Preditiva de Fatura */}
-          <div className="bg-white rounded-[26px] p-6 border border-black/[0.05] shadow-[0_4px_16px_rgba(0,0,0,0.03)] flex flex-col justify-between space-y-4 relative overflow-hidden">
-            <div className="flex items-start justify-between border-b border-gray-100 pb-3">
+          {/* Módulo 1: Timeline de Prazos Inteligente (Janela sem Juros) */}
+          <div className="bg-white rounded-[28px] p-6 sm:p-7 border border-black/[0.05] shadow-[0_4px_20px_rgba(0,0,0,0.03)] flex flex-col justify-between space-y-5 hover:shadow-[0_10px_30px_rgba(0,0,0,0.06)] transition-all group">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
               <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-purple-500" />
-                <span className="text-xs font-semibold uppercase tracking-wider font-mono text-[#1D1D1F]">
-                  PASS #01 • MOTOR PREDITIVO
+                <span className="w-2 h-2 rounded-full bg-[#1D1D1F]" />
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-[#86868B]">
+                  Prazos & Liquidez
                 </span>
               </div>
-              <span className="text-[10px] font-mono uppercase bg-[#F2F2F7] px-2 py-0.5 rounded-full text-[#86868B]">
-                TEMPO REAL
+              <span className="text-[10px] font-mono uppercase bg-[#F2F2F7] px-2.5 py-0.5 rounded-full text-[#1D1D1F] font-semibold">
+                +40 Dias sem Juros
               </span>
             </div>
 
             <div className="space-y-1.5">
               <h3 className="text-lg font-semibold text-[#1D1D1F] tracking-tight">
-                Janela Ideal de Compra sem Juros
+                Janela Ótima de Compra no Crédito
               </h3>
               <p className="text-xs text-[#86868B] leading-relaxed">
-                A IA cruza as datas de fechamento e vencimento de todos os seus cartões cadastrados. Ao registrar uma despesa, ela indica automaticamente qual cartão oferece a maior janela de prazo (até 40 dias para pagar) mantendo sua conta corrente intocada.
+                Ao selecionar o cartão no momento da compra, o motor sincroniza os dias de fechamento e vencimento de todos os seus passes, indicando o cartão com o maior prazo de pagamento para manter sua conta corrente rendendo.
               </p>
             </div>
 
-            <div className="bg-[#F2F2F7] rounded-xl p-3.5 border border-black/[0.03] space-y-1 text-xs">
-              <div className="flex justify-between items-center text-[10px] uppercase font-mono text-[#86868B]">
-                <span>DIRETRIZ DA IA</span>
-                <span className="text-purple-600 font-semibold">ATIVO</span>
+            {/* Visual 3D Tátil da Timeline de Prazos */}
+            <div className="bg-[#F2F2F7]/80 rounded-2xl p-4 border border-black/[0.03] space-y-3">
+              <div className="flex justify-between items-center text-[10px] uppercase font-semibold text-[#86868B]">
+                <span>Fluxo de Pagamento Otimizado</span>
+                <span className="text-emerald-600 font-bold">0% Juros</span>
               </div>
-              <p className="text-[#1D1D1F] font-medium leading-relaxed">
-                "Fatura do Nubank fecha dia 08. Compras realizadas hoje serão cobradas somente no mês seguinte."
-              </p>
+
+              {/* Timeline em cápsula elegante */}
+              <div className="relative flex items-center justify-between pt-1">
+                <div className="flex flex-col items-center gap-1 z-10">
+                  <div className="w-6 h-6 rounded-full bg-[#1D1D1F] text-white flex items-center justify-center text-[10px] font-bold shadow-xs">
+                    1
+                  </div>
+                  <span className="text-[10px] font-semibold text-[#1D1D1F]">Compra Hoje</span>
+                  <span className="text-[9px] text-[#86868B]">Dia 09</span>
+                </div>
+
+                <div className="flex-1 h-0.5 bg-gradient-to-r from-[#1D1D1F] via-gray-300 to-emerald-500 mx-2 -mt-4 relative">
+                  <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-white text-[9px] font-mono font-semibold text-[#1D1D1F] shadow-2xs border border-black/5">
+                    38 dias livres
+                  </div>
+                </div>
+
+                <div className="flex flex-col items-center gap-1 z-10">
+                  <div className="w-6 h-6 rounded-full bg-white border border-black/15 text-[#1D1D1F] flex items-center justify-center text-[10px] font-semibold shadow-2xs">
+                    2
+                  </div>
+                  <span className="text-[10px] font-semibold text-[#1D1D1F]">Fechamento</span>
+                  <span className="text-[9px] text-[#86868B]">08 do Mês Seg.</span>
+                </div>
+
+                <div className="flex-1 h-0.5 bg-gray-300 mx-2 -mt-4" />
+
+                <div className="flex flex-col items-center gap-1 z-10">
+                  <div className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[10px] font-bold shadow-xs">
+                    ✓
+                  </div>
+                  <span className="text-[10px] font-semibold text-[#1D1D1F]">Vencimento</span>
+                  <span className="text-[9px] text-emerald-600 font-semibold">18 Quitação</span>
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Pass 2: Proteção Anti-Juros Rotativos */}
-          <div className="bg-white rounded-[26px] p-6 border border-black/[0.05] shadow-[0_4px_16px_rgba(0,0,0,0.03)] flex flex-col justify-between space-y-4 relative overflow-hidden">
-            <div className="flex items-start justify-between border-b border-gray-100 pb-3">
+          {/* Módulo 2: Blindagem Estrutural da Conta Corrente */}
+          <div className="bg-white rounded-[28px] p-6 sm:p-7 border border-black/[0.05] shadow-[0_4px_20px_rgba(0,0,0,0.03)] flex flex-col justify-between space-y-5 hover:shadow-[0_10px_30px_rgba(0,0,0,0.06)] transition-all group">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
               <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-blue-500" />
-                <span className="text-xs font-semibold uppercase tracking-wider font-mono text-[#1D1D1F]">
-                  PASS #02 • BLINDAGEM DE CRÉDITO
+                <span className="w-2 h-2 rounded-full bg-[#1D1D1F]" />
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-[#86868B]">
+                  Arquitetura de Caixa
                 </span>
               </div>
-              <span className="text-[10px] font-mono uppercase bg-[#F2F2F7] px-2 py-0.5 rounded-full text-[#86868B]">
-                ZERO JUROS
+              <span className="text-[10px] font-mono uppercase bg-[#F2F2F7] px-2.5 py-0.5 rounded-full text-[#1D1D1F] font-semibold">
+                Isolamento Físico
               </span>
             </div>
 
             <div className="space-y-1.5">
               <h3 className="text-lg font-semibold text-[#1D1D1F] tracking-tight">
-                Separação Física de Faturas e Conta Corrente
+                Separação Física de Faturas e Débito
               </h3>
               <p className="text-xs text-[#86868B] leading-relaxed">
-                Nenhuma compra em cartão de crédito abate seu Saldo Principal imediatamente. A IA aloca na fatura aberta correspondente e só calcula o débito na liquidação consciente, eliminando o susto de faturas inesperadas.
+                Compras parceladas ou no crédito não descontam o seu saldo no ato. Elas são provisionadas em compartimentos virtuais separados, eliminando falsas impressões de saldo zerado e evitando o endividamento por desorganização.
               </p>
             </div>
 
-            <div className="bg-[#F2F2F7] rounded-xl p-3.5 border border-black/[0.03] space-y-1 text-xs">
-              <div className="flex justify-between items-center text-[10px] uppercase font-mono text-[#86868B]">
-                <span>MÉTRICA DE SEGURANÇA</span>
-                <span className="text-blue-600 font-semibold">100% QUITAÇÃO</span>
+            {/* Visual de 2 Mini Passes Sobrepostos 3D */}
+            <div className="bg-[#F2F2F7]/80 rounded-2xl p-4 border border-black/[0.03] space-y-2.5">
+              <div className="flex items-center justify-between bg-white rounded-xl p-3 border border-black/5 shadow-2xs">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-[#1D1D1F] text-white flex items-center justify-center text-[10px] font-bold">
+                    $
+                  </div>
+                  <div>
+                    <span className="text-xs font-semibold text-[#1D1D1F] block">Conta Corrente</span>
+                    <span className="text-[10px] text-[#86868B]">Saldo líquido disponível</span>
+                  </div>
+                </div>
+                <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md">
+                  100% Protegido
+                </span>
               </div>
-              <p className="text-[#1D1D1F] font-medium leading-relaxed">
-                "O saldo disponível para quitação cobre integralmente todas as faturas em aberto no ciclo atual."
-              </p>
+
+              <div className="flex items-center justify-between bg-white/70 rounded-xl p-3 border border-black/5">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-gray-200 text-[#1D1D1F] flex items-center justify-center text-[10px] font-bold">
+                    💳
+                  </div>
+                  <div>
+                    <span className="text-xs font-semibold text-[#1D1D1F] block">Faturas Provisionadas</span>
+                    <span className="text-[10px] text-[#86868B]">Compromisso isolado do mês</span>
+                  </div>
+                </div>
+                <span className="text-[10px] font-mono text-[#86868B]">
+                  Liquidação programada
+                </span>
+              </div>
             </div>
           </div>
 
-          {/* Pass 3: Previsibilidade Futura de 4 Meses */}
-          <div className="bg-white rounded-[26px] p-6 border border-black/[0.05] shadow-[0_4px_16px_rgba(0,0,0,0.03)] flex flex-col justify-between space-y-4 relative overflow-hidden">
-            <div className="flex items-start justify-between border-b border-gray-100 pb-3">
+          {/* Módulo 3: Horizonte Previsível de 4 Meses */}
+          <div className="bg-white rounded-[28px] p-6 sm:p-7 border border-black/[0.05] shadow-[0_4px_20px_rgba(0,0,0,0.03)] flex flex-col justify-between space-y-5 hover:shadow-[0_10px_30px_rgba(0,0,0,0.06)] transition-all group">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
               <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
-                <span className="text-xs font-semibold uppercase tracking-wider font-mono text-[#1D1D1F]">
-                  PASS #03 • FLUXO FUTURO
+                <span className="w-2 h-2 rounded-full bg-[#1D1D1F]" />
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-[#86868B]">
+                  Planejamento Futuro
                 </span>
               </div>
-              <span className="text-[10px] font-mono uppercase bg-[#F2F2F7] px-2 py-0.5 rounded-full text-[#86868B]">
-                PROJEÇÃO
+              <span className="text-[10px] font-mono uppercase bg-[#F2F2F7] px-2.5 py-0.5 rounded-full text-[#1D1D1F] font-semibold">
+                Projeção Contínua
               </span>
             </div>
 
@@ -245,142 +302,220 @@ export default function PresentationPage() {
                 Cálculo de Saldo Livre Antecipado
               </h3>
               <p className="text-xs text-[#86868B] leading-relaxed">
-                A IA projeta quanto dinheiro líquido você terá nos próximos meses, deduzindo automaticamente aluguel, condomínio, assinaturas fixas e parcelas de compras passadas.
+                O motor computa seus custos fixos e parcelas de compras passadas em um horizonte contínuo, revelando com precisão quanto dinheiro estará 100% desimpedido para aportes em cada um dos próximos meses.
               </p>
             </div>
 
-            <div className="bg-[#F2F2F7] rounded-xl p-3.5 border border-black/[0.03] space-y-1 text-xs">
-              <div className="flex justify-between items-center text-[10px] uppercase font-mono text-[#86868B]">
-                <span>HORIZONTE 2026</span>
-                <span className="text-amber-600 font-semibold">OUT • NOV • DEZ</span>
+            {/* Visual de Barras Delicadas de Projeção */}
+            <div className="bg-[#F2F2F7]/80 rounded-2xl p-4 border border-black/[0.03] space-y-2">
+              <div className="flex justify-between items-center text-[10px] font-semibold text-[#86868B] uppercase tracking-wider">
+                <span>Taxa de Liquidez Livre Estimada</span>
+                <span className="text-[#1D1D1F] font-mono">Ciclos 2026</span>
               </div>
-              <p className="text-[#1D1D1F] font-medium leading-relaxed">
-                "Comprometimento de 38% em Outubro reduzindo para 22% em Dezembro. Janela ideal para aportes em metas."
-              </p>
+
+              <div className="space-y-2 pt-1">
+                <div>
+                  <div className="flex justify-between text-[11px] font-medium text-[#1D1D1F] mb-1">
+                    <span>Mês Atual</span>
+                    <span className="font-semibold text-emerald-600">65% Livre</span>
+                  </div>
+                  <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div className="h-full bg-[#1D1D1F] rounded-full w-[65%]" />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-[11px] font-medium text-[#1D1D1F] mb-1">
+                    <span>Mês Seguinte</span>
+                    <span className="font-semibold text-emerald-600">74% Livre</span>
+                  </div>
+                  <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div className="h-full bg-[#1D1D1F] rounded-full w-[74%]" />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-[11px] font-medium text-[#1D1D1F] mb-1">
+                    <span>Em 60 Dias</span>
+                    <span className="font-semibold text-emerald-600">82% Livre</span>
+                  </div>
+                  <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div className="h-full bg-[#1D1D1F] rounded-full w-[82%]" />
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Pass 4: Calibração por Arquétipo */}
-          <div className="bg-white rounded-[26px] p-6 border border-black/[0.05] shadow-[0_4px_16px_rgba(0,0,0,0.03)] flex flex-col justify-between space-y-4 relative overflow-hidden">
-            <div className="flex items-start justify-between border-b border-gray-100 pb-3">
+          {/* Módulo 4: Monitoramento Silencioso */}
+          <div className="bg-white rounded-[28px] p-6 sm:p-7 border border-black/[0.05] shadow-[0_4px_20px_rgba(0,0,0,0.03)] flex flex-col justify-between space-y-5 hover:shadow-[0_10px_30px_rgba(0,0,0,0.06)] transition-all group">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
               <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-                <span className="text-xs font-semibold uppercase tracking-wider font-mono text-[#1D1D1F]">
-                  PASS #04 • ADAPTAÇÃO AO PERFIL
+                <span className="w-2 h-2 rounded-full bg-[#1D1D1F]" />
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-[#86868B]">
+                  Experiência Silenciosa
                 </span>
               </div>
-              <span className="text-[10px] font-mono uppercase bg-[#F2F2F7] px-2 py-0.5 rounded-full text-[#86868B]">
-                CUSTOMIZÁVEL
+              <span className="text-[10px] font-mono uppercase bg-[#F2F2F7] px-2.5 py-0.5 rounded-full text-[#1D1D1F] font-semibold">
+                Zero Poluição
               </span>
             </div>
 
             <div className="space-y-1.5">
               <h3 className="text-lg font-semibold text-[#1D1D1F] tracking-tight">
-                Raciocínio Moldado ao seu Momento
+                Insights Pontuais que Respeitam sua Atenção
               </h3>
               <p className="text-xs text-[#86868B] leading-relaxed">
-                A IA não aplica uma fórmula rígida para todos. Ela consulta seu Arquétipo e o tom escolhido (Analítico Suíço, Mentor Direto ou Parceiro Estratégico) antes de emitir qualquer parecer.
+                Sem banners intrusivos ou avisos de pânico. A inteligência contextual emite relatórios compactos e recomendações no momento exato em que você precisa decidir sobre faturas, investimentos ou metas.
               </p>
             </div>
 
-            <div className="bg-[#F2F2F7] rounded-xl p-3.5 border border-black/[0.03] space-y-1 text-xs">
-              <div className="flex justify-between items-center text-[10px] uppercase font-mono text-[#86868B]">
-                <span>ARQUÉTIPO ATIVO</span>
-                <span className="text-emerald-600 font-semibold">{userProfile.persona.toUpperCase()}</span>
+            {/* Micro Notificação Estilo Apple */}
+            <div className="bg-[#F2F2F7]/80 rounded-2xl p-4 border border-black/[0.03] space-y-2">
+              <div className="flex items-start gap-3 bg-white p-3 rounded-xl border border-black/5 shadow-2xs">
+                <div className="w-8 h-8 rounded-xl bg-[#1D1D1F] text-white flex items-center justify-center shrink-0">
+                  <ShieldCheck size={16} strokeWidth={1.5} />
+                </div>
+                <div className="space-y-0.5">
+                  <span className="text-xs font-semibold text-[#1D1D1F] block">
+                    Fatura Consolidada Liquidada
+                  </span>
+                  <p className="text-[11px] text-[#86868B] leading-relaxed">
+                    Saldo corrente intacto. Janela de 12 dias favorável para alocação do excedente na meta prioritária.
+                  </p>
+                </div>
               </div>
-              <p className="text-[#1D1D1F] font-medium leading-relaxed">
-                "Foco calibrado em: {userProfile.primaryFocus}."
-              </p>
             </div>
           </div>
 
         </div>
       </section>
 
-      {/* SEÇÃO DE ARQUÉTIPOS (Wallet Personas) */}
-      <section id="personas" className="max-w-5xl mx-auto px-6 py-12 space-y-6">
-        <div className="bg-gradient-to-br from-[#1C1C1E] via-[#151518] to-[#0D0D10] text-white rounded-[32px] p-8 md:p-12 border border-white/10 shadow-[0_20px_40px_rgba(0,0,0,0.2)] space-y-8">
+      {/* SEÇÃO DE ARQUÉTIPOS: VISUAL DELICADO, TÁTIL E COM ARQUITETURA DE PASSES */}
+      <section id="personas" className="max-w-5xl mx-auto px-6 py-14">
+        <div className="bg-gradient-to-b from-white/95 to-white/70 backdrop-blur-2xl rounded-[36px] p-8 md:p-12 border border-black/[0.06] shadow-[0_20px_50px_rgba(0,0,0,0.04)] space-y-10">
           
-          <div className="space-y-2 max-w-2xl">
-            <span className="text-[10px] uppercase font-mono tracking-widest text-purple-400 font-semibold">
-              WALLET ID • FINANCIAL PERSONAS
-            </span>
-            <h2 className="text-3xl font-semibold text-white tracking-tight">
-              Qual é o seu Arquétipo de Carteira?
+          <div className="text-center max-w-2xl mx-auto space-y-2">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-[#F2F2F7] border border-black/[0.04] text-[11px] font-semibold uppercase tracking-widest text-[#86868B]">
+              <span>Wallet Pass Kit • Filosofias Financeiras</span>
+            </div>
+            <h2 className="text-3xl sm:text-4xl font-semibold text-[#1D1D1F] tracking-tight">
+              Quatro arquétipos. Uma experiência sob medida.
             </h2>
-            <p className="text-xs text-white/70 leading-relaxed">
-              O Wallet Intelligence se adapta a 4 estratégias de conduta financeira reconhecidas globalmente.
+            <p className="text-sm text-[#86868B] leading-relaxed">
+              O Wallet Intelligence não impõe uma conduta única. Ele se calibra à sua mentalidade patrimonial,
+              priorizando retorno em pontos, liquidez de segurança ou aceleração contínua.
             </p>
           </div>
 
+          {/* Grid de Passes de Arquétipo com Estética Física Delicada */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {[
               {
                 id: "optimizer",
-                symbol: "💎",
-                title: "The Optimizer",
-                badge: "Milhas & Cashback",
-                desc: "Concentra gastos no crédito, maximiza pontos e paga 100% da fatura em dia.",
+                icon: TrendingUp,
+                name: "The Optimizer",
+                badge: "Pontos & Cashback",
+                desc: "Concentra o fluxo no crédito, maximiza prazos de vencimento e quita faturas no dia exato sem incidência de juros.",
+                metric: "Retorno por Gasto",
+                accent: "text-amber-500",
+                chipBorder: "border-amber-200/60",
               },
               {
                 id: "guardian",
-                symbol: "🛡️",
-                title: "The Guardian",
+                icon: ShieldCheck,
+                name: "The Guardian",
                 badge: "Segurança 12 Meses",
-                desc: "Alta previsibilidade, colchão de liquidez robusto e aversão a riscos desnecessários.",
+                desc: "Privilegia a previsibilidade absoluta, mantém colchão de liquidez protegido e evita compromissos de longo prazo.",
+                metric: "Reserva Intocável",
+                accent: "text-emerald-500",
+                chipBorder: "border-emerald-200/60",
               },
               {
                 id: "scaler",
-                symbol: "🚀",
-                title: "The Scaler",
-                badge: "Alto Crescimento",
-                desc: "Múltiplos fluxos, tolerância calculada ao risco e reinvestimento contínuo.",
+                icon: Compass,
+                name: "The Scaler",
+                badge: "Crescimento Ativo",
+                desc: "Gerencia múltiplos cartões com estratégia, suporta alavancagem planejada e direciona fluxo para metas de alto impacto.",
+                metric: "Aporte Patrimonial",
+                accent: "text-blue-500",
+                chipBorder: "border-blue-200/60",
               },
               {
                 id: "minimalist",
-                symbol: "🌿",
-                title: "The Minimalist",
-                badge: "Taxa Poupança >50%",
-                desc: "Custos essenciais enxutos, consumo consciente e meta de independência financeira.",
+                icon: Sliders,
+                name: "The Minimalist",
+                badge: "Poupança > 50%",
+                desc: "Elimina custos fixos supérfluos, mantém poucas assinaturas ativas e foca na clareza de viver abaixo da renda.",
+                metric: "Custo Fixo Mínimo",
+                accent: "text-purple-500",
+                chipBorder: "border-purple-200/60",
               },
             ].map((p) => {
+              const Icon = p.icon;
               const isActive = userProfile.persona === p.id;
               return (
                 <div
                   key={p.id}
-                  className={`rounded-2xl p-5 flex flex-col justify-between space-y-3 transition-all ${
+                  className={`bg-white rounded-[24px] p-5 border flex flex-col justify-between space-y-4 transition-all duration-300 shadow-2xs hover:shadow-md hover:-translate-y-1 relative overflow-hidden ${
                     isActive
-                      ? "bg-white/15 border-2 border-white/40 shadow-lg scale-102"
-                      : "bg-white/5 border border-white/10 hover:bg-white/10"
+                      ? "border-[#1D1D1F] ring-1 ring-[#1D1D1F]"
+                      : "border-black/[0.06] hover:border-black/20"
                   }`}
                 >
-                  <div>
-                    <div className="text-2xl mb-2">{p.symbol}</div>
-                    <h4 className="font-semibold text-sm text-white">{p.title}</h4>
-                    <span className="text-[10px] text-white/50 font-mono block mt-0.5">
-                      {p.badge}
+                  {/* Micro Chip EMV Tátil no topo do Pass */}
+                  <div className="flex items-center justify-between">
+                    <div className="w-9 h-9 rounded-xl bg-[#F2F2F7] border border-black/5 flex items-center justify-center shadow-2xs">
+                      <Icon size={17} className={p.accent} strokeWidth={1.5} />
+                    </div>
+
+                    <span className="text-[10px] font-mono uppercase tracking-wider bg-[#F2F2F7] px-2 py-0.5 rounded-full text-[#86868B] font-semibold">
+                      {p.metric}
                     </span>
                   </div>
-                  <p className="text-[11px] text-white/70 leading-relaxed">{p.desc}</p>
-                  {isActive && (
-                    <span className="text-[10px] font-semibold text-emerald-400 flex items-center gap-1 pt-1 border-t border-white/10">
-                      <CheckCircle2 size={12} /> Seu Arquétipo Ativo
+
+                  <div>
+                    <h3 className="font-semibold text-sm text-[#1D1D1F] tracking-tight">
+                      {p.name}
+                    </h3>
+                    <span className="text-[11px] text-[#86868B] font-medium block mt-0.5">
+                      {p.badge}
                     </span>
-                  )}
+                    <p className="text-[11px] text-gray-500 mt-2 leading-relaxed">
+                      {p.desc}
+                    </p>
+                  </div>
+
+                  <div className="pt-2 border-t border-gray-100 flex items-center justify-between text-[11px]">
+                    <span className="text-[#86868B]">Configuração</span>
+                    {isActive ? (
+                      <span className="font-semibold text-emerald-600 flex items-center gap-1">
+                        <CheckCircle2 size={12} /> Ativo
+                      </span>
+                    ) : (
+                      <span className="font-semibold text-[#1D1D1F] group-hover:underline">
+                        Selecionável
+                      </span>
+                    )}
+                  </div>
                 </div>
               );
             })}
           </div>
 
-          <div className="pt-2 flex justify-end">
+          <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-black/[0.04] text-xs text-[#86868B]">
+            <span>
+              Você pode alterar seu arquétipo a qualquer momento nas configurações do seu perfil.
+            </span>
             <Link
               href="/profile"
-              className="text-xs font-semibold text-white hover:underline flex items-center gap-1.5"
+              className="font-semibold text-[#1D1D1F] hover:underline flex items-center gap-1 shrink-0"
             >
-              <span>Personalizar meu Arquétipo no Perfil</span>
+              <span>Ajustar meu Arquétipo no Perfil</span>
               <ChevronRight size={14} />
             </Link>
           </div>
+
         </div>
       </section>
 
@@ -435,10 +570,10 @@ export default function PresentationPage() {
 
           <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
             <Link
-              href="/profile"
+              href="/login"
               className="w-full sm:w-auto bg-[#1D1D1F] hover:bg-black text-white text-sm font-semibold px-8 py-3.5 rounded-full transition-all flex items-center justify-center gap-2 shadow-md active:scale-95 cursor-pointer"
             >
-              <span>Criar Meu Perfil Agora</span>
+              <span>Criar Meu Wallet ID Agora</span>
               <ArrowRight size={16} />
             </Link>
 

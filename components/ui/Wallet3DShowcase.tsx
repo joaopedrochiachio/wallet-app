@@ -38,8 +38,8 @@ const DEFAULT_SHOWCASE_PASSES: PassItem[] = [
     primaryLabel: "BLACK PASS",
     primaryValue: "R$ 50.000",
     secondaryFields: [
-      { label: "MEMBER", value: "CARLOS ALMEIDA" },
-      { label: "STATUS", value: "VIP TITANIUM" },
+      { label: "MEMBER", value: "SEU NOME" },
+      { label: "STATUS", value: "WALLET PASS" },
       { label: "EXPIRE", value: "12/29" },
     ],
     gradient: "from-[#1C1C1E] via-[#141416] to-[#0A0A0C]",
@@ -104,11 +104,17 @@ const DEFAULT_SHOWCASE_PASSES: PassItem[] = [
 ];
 
 export function Wallet3DShowcase() {
+  const { userProfile } = useWallet();
   const containerRef = useRef<HTMLDivElement>(null);
   const [rotation, setRotation] = useState({ x: 8, y: -6 });
   const [isHovered, setIsHovered] = useState(false);
   const [selectedPassId, setSelectedPassId] = useState<string>("square-black");
   const [isFannedOut, setIsFannedOut] = useState<boolean>(false);
+
+  const resolvedMemberName =
+    userProfile?.name && userProfile.name !== "Seu Nome"
+      ? userProfile.name.toUpperCase()
+      : "SEU NOME";
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (!containerRef.current) return;
@@ -289,7 +295,7 @@ export function Wallet3DShowcase() {
                           {f.label}
                         </span>
                         <span className="text-[10px] font-semibold text-white tracking-wide block truncate">
-                          {f.value}
+                          {f.label === "MEMBER" ? resolvedMemberName : f.value}
                         </span>
                       </div>
                     ))}

@@ -114,9 +114,9 @@ export function AddCardSheet({ isOpen, onClose, onAddCard }: AddCardSheetProps) 
       brand: brand.trim() || "Crédito",
       type: cardType,
       limit: finalLimit,
-      balance: cardType === "checking" ? finalLimit : undefined,
-      closingDay: cardType === "credit" ? finalClosing : undefined,
-      dueDay: cardType === "credit" ? finalDue : undefined,
+      balance: cardType === "checking" ? finalLimit : 0,
+      closingDay: cardType === "credit" ? finalClosing : 10,
+      dueDay: cardType === "credit" ? finalDue : 17,
       colorScheme: {
         gradient: selectedPreset.gradient,
         border: selectedPreset.border,
@@ -134,14 +134,15 @@ export function AddCardSheet({ isOpen, onClose, onAddCard }: AddCardSheetProps) 
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      {/* Backdrop */}
+      {/* Backdrop Limpo */}
       <div
-        className="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity animate-in fade-in"
+        className="fixed inset-0 bg-black/45 animate-apple-backdrop"
         onClick={onClose}
       />
 
-      {/* Modal / Bottom Sheet */}
-      <div className="relative w-full max-w-lg bg-[#F2F2F7] rounded-t-[2.5rem] sm:rounded-[2.5rem] shadow-[0_25px_60px_rgba(0,0,0,0.25)] border border-white/60 overflow-hidden z-10 flex flex-col max-h-[90vh] animate-in slide-in-from-bottom duration-300">
+
+      {/* Modal / Bottom Sheet em 60fps */}
+      <div className="relative w-full max-w-lg bg-[#F2F2F7] rounded-t-[2.5rem] sm:rounded-[2.5rem] shadow-[0_25px_60px_rgba(0,0,0,0.25)] border border-white/60 overflow-hidden z-10 flex flex-col max-h-[90vh] animate-apple-sheet sm:animate-apple-modal">
         
         {/* Handle bar iOS */}
         <div className="w-12 h-1.5 bg-[#D1D1D6] rounded-full mx-auto mt-3.5 mb-1 shrink-0" />

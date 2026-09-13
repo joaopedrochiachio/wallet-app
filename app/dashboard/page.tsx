@@ -1,11 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useWallet } from "@/context/WalletContext";
-import { InteractiveCard } from "@/components/ui/InteractiveCard";
+import { useAuth } from "@/context/AuthContext";
 import { AddTransactionSheet } from "@/components/ui/AddTransactionSheet";
 import { AddCardSheet } from "@/components/ui/AddCardSheet";
 import { ListGroup, ListItem } from "@/components/ui/iOSList";
+import { subscribeToTransactions } from "@/lib/services/transactionsService";
+import { Transaction } from "@/types";
+import {
+  BankCard,
+  GlassCard,
+  CardStack,
+  PassStack,
+  WalletCard,
+  WalletHeader,
+  WalletActions,
+  DEFAULT_3D_BANK_CARDS,
+  DEFAULT_PASSES,
+} from "@/components/wallet";
+import { WalletCardData, CardBrand } from "@/types/wallet";
 import {
   Utensils,
   Tv,
@@ -16,10 +30,16 @@ import {
   Plus,
   CreditCard,
   ShoppingBag,
+  Target,
+  ShieldCheck,
+  Plane,
+  Layers,
+  Sparkle,
 } from "lucide-react";
 import Link from "next/link";
 
 export default function DashboardPage() {
+  const { user } = useAuth();
   const {
     userProfile,
     cards,
@@ -27,20 +47,46 @@ export default function DashboardPage() {
     selectCard,
     updateCardLimit,
     payInvoice,
-    transactions,
     addTransaction,
     addCard,
     accountOptions,
-    monthIncome,
-    monthExpense,
     totalInvoices,
+    mainBalance,
+    goals,
   } = useWallet();
 
+  const [firestoreTransactions, setFirestoreTransactions] = useState<Transaction[]>([]);
+  const [isSyncing, setIsSyncing] = useState(true);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [isCardSheetOpen, setIsCardSheetOpen] = useState(false);
 
+  // Estados da Experiência Visual Apple Wallet & 3D Cards
+  const [walletTab, setWalletTab] = useState<"all" | "cards" | "passes">("all");
+  const [is3DStackView, setIs3DStackView] = useState<boolean>(true);
+  const [passesList] = useState(DEFAULT_PASSES);
+
+  // Escuta em tempo real do Cloud Firestore (isolado pelo usuário autenticado)
+  useEffect(() => {
+    const unsubscribe = subscribeToTransactions((items) => {
+      setFirestoreTransactions(items);
+      setIsSyncing(false);
+    }, user?.uid);
+    return () => unsubscribe();
+  }, [user]);
+
   const formatCurrency = (val: number) =>
     val.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  // Saldo real da Conta Corrente (saldo principal)
+  const effectiveCheckingBalance = mainBalance;
+
+  const monthIncome = firestoreTransactions
+    .filter((t) => t.type === "in")
+    .reduce((acc, t) => acc + t.amount, 0);
+
+  const monthExpense = firestoreTransactions
+    .filter((t) => t.type === "out")
+    .reduce((acc, t) => acc + t.amount, 0);
 
   const getTransactionIcon = (category: string) => {
     if (category.includes("Alimentação")) return <Utensils strokeWidth={1.5} size={16} />;
@@ -50,64 +96,172 @@ export default function DashboardPage() {
     return <ShoppingBag strokeWidth={1.5} size={16} />;
   };
 
-  const recentTransactions = transactions.slice(0, 5);
+  const recentTransactions = firestoreTransactions.slice(0, 5);
+
+  // Mapeamento dos cartões reais do usuário para o formato WalletCardData
+  const userWalletCards: WalletCardData[] = cards.map((c, index) => {
+    const isGlass = c.name.toLowerCase().includes("ultra") || index === 0;
+    return {
+      id: c.id,
+      title: c.name,
+      subtitle: c.type === "checking" ? "Conta Corrente" : `Fecha dia ${c.closingDay} • Vence dia ${c.dueDay}`,
+      variant: isGlass ? "glass" : "bank",
+      brand: (c.brand.toLowerCase().includes("visa")
+        ? "visa"
+        : c.brand.toLowerCase().includes("apple")
+        ? "apple"
+        : "mastercard") as CardBrand,
+      type: c.type,
+      balance: c.type === "checking" ? effectiveCheckingBalance : c.balance,
+      limit: c.limit,
+      spent: c.spent,
+      cardNumber: `•••• •••• •••• ${c.id.slice(-4) || "8842"}`,
+      holderName: userProfile.name,
+      expirationDate: "09/31",
+      background: c.colorScheme.gradient,
+      accentColor: c.colorScheme.accent,
+      isGlass,
+      status: "active",
+      closingDay: c.closingDay,
+      dueDay: c.dueDay,
+    };
+  });
+
+  // Garante ao menos 3 cartões para a perspectiva e profundidade 3D
+  const displayStackCards =
+    userWalletCards.length >= 3
+      ? userWalletCards
+      : [
+          ...userWalletCards,
+          ...DEFAULT_3D_BANK_CARDS.slice(userWalletCards.length),
+        ];
+
+  // Cartão selecionado / em destaque
+  const activeWalletCard: WalletCardData =
+    userWalletCards.find((c) => c.id === activeCard.id) ||
+    userWalletCards[0] ||
+    DEFAULT_3D_BANK_CARDS[0];
 
   return (
-    <div className="min-h-full bg-[#F2F2F7] p-6 md:p-10 text-[#1D1D1F] font-sans space-y-8 animate-in fade-in duration-500 relative">
-      {/* Header Estilo iOS com Botão Adicionar (Quick Action) */}
-      <header className="flex justify-between items-end max-w-4xl mx-auto pt-2 md:pt-0">
-        <div>
-          <span className="text-xs font-semibold tracking-wider uppercase text-[#86868B]">
-            Setembro 2026
-          </span>
-          <h1 className="text-3xl font-semibold tracking-tight text-[#1D1D1F] mt-0.5">
-            Carteira
-          </h1>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setIsSheetOpen(true)}
-            className="w-10 h-10 rounded-full bg-[#1D1D1F] text-white flex items-center justify-center shadow-sm hover:bg-black active:scale-95 transition-all cursor-pointer"
-            title="Novo Lançamento"
-          >
-            <Plus strokeWidth={2} size={18} />
-          </button>
-
-          <Link
-            href="/profile"
-            className="flex items-center gap-2.5 p-1 rounded-full hover:bg-white/80 transition-all group cursor-pointer"
-            title="Acessar Perfil & Configurações"
-          >
-            <div className="hidden sm:flex flex-col items-end text-xs">
-              <span className="font-semibold text-[#1D1D1F] group-hover:text-black transition-colors">
-                {userProfile.name}
-              </span>
-              <span className="text-[#86868B] text-[11px]">{userProfile.role}</span>
-            </div>
-            <div className="w-10 h-10 bg-[#E5E5EA] text-[#1D1D1F] font-semibold text-xs rounded-full flex items-center justify-center border border-black/5 shadow-xs group-hover:border-black/20 group-hover:scale-105 transition-all">
-              {userProfile.avatarInitials}
-            </div>
-          </Link>
-        </div>
-      </header>
+    <div className="min-h-full bg-[#F2F2F7] p-4 sm:p-6 md:p-10 text-[#1D1D1F] font-sans space-y-8 animate-in fade-in duration-500 relative">
+      {/* 1. HEADER INTEGRADO DA WALLET */}
+      <WalletHeader
+        activeTab={walletTab}
+        onTabChange={setWalletTab}
+        onOpenNewTransaction={() => setIsSheetOpen(true)}
+        cardsCount={userWalletCards.length}
+        passesCount={passesList.length}
+      />
 
       <div className="max-w-4xl mx-auto space-y-8">
-        {/* Cartão 3D Interativo com Seletor de Cartões e Ajuste de Limite */}
-        <section>
-          <InteractiveCard
-            card={activeCard}
-            allCards={cards}
-            onSelectCard={selectCard}
-            onUpdateLimit={updateCardLimit}
-            onAddClick={() => setIsSheetOpen(true)}
-            onPayInvoice={() => payInvoice(activeCard.id)}
-            onOpenAddCard={() => setIsCardSheetOpen(true)}
-          />
-        </section>
+        {/* 2. AÇÕES RÁPIDAS APPLE PAY / W PAY */}
+        <WalletActions
+          onPayWithWPay={() => setIsSheetOpen(true)}
+          onAddNewCard={() => setIsCardSheetOpen(true)}
+          onPayInvoice={
+            totalInvoices > 0 ? () => payInvoice(activeCard.id) : undefined
+          }
+          hasOpenInvoice={totalInvoices > 0}
+        />
 
-        {/* Resumo Dinâmico Conectado ao WalletContext */}
-        <section className="bg-white rounded-[20px] shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-black/[0.04] p-5">
+        {/* 3. SEÇÃO PRINCIPAL DE CARTÕES 3D & GLASS */}
+        {(walletTab === "all" || walletTab === "cards") && (
+          <section className="space-y-4">
+            <div className="flex items-center justify-between px-1">
+              <div className="flex items-center gap-2">
+                <CreditCard size={16} className="text-[#1D1D1F]" />
+                <h2 className="text-xs uppercase tracking-wider font-semibold text-[#86868B]">
+                  {is3DStackView ? "Pilha 3D de Cartões" : "Cartão Principal"}
+                </h2>
+              </div>
+
+              {/* Alternador 3D Stack vs Destaque */}
+              <div className="flex items-center gap-1 bg-[#E5E5EA]/80 p-1 rounded-full text-[11px] font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setIs3DStackView(true)}
+                  className={`px-3 py-1 rounded-full transition-all cursor-pointer ${
+                    is3DStackView
+                      ? "bg-white text-[#1D1D1F] shadow-xs"
+                      : "text-[#86868B] hover:text-[#1D1D1F]"
+                  }`}
+                >
+                  Pilha 3D
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIs3DStackView(false)}
+                  className={`px-3 py-1 rounded-full transition-all cursor-pointer ${
+                    !is3DStackView
+                      ? "bg-white text-[#1D1D1F] shadow-xs"
+                      : "text-[#86868B] hover:text-[#1D1D1F]"
+                  }`}
+                >
+                  Grade
+                </button>
+              </div>
+            </div>
+
+            {is3DStackView ? (
+              /* MODO 3D STACK: Cartões sobrepostos com profundidade e hover fan-out */
+              <div className="bg-white/60 backdrop-blur-sm rounded-[32px] p-6 border border-black/[0.04] shadow-[0_2px_12px_rgba(0,0,0,0.03)]">
+                <CardStack
+                  cards={displayStackCards}
+                  onSelectCard={(id) => selectCard(id)}
+                />
+                <p className="text-center text-[11px] text-[#86868B] font-medium mt-2">
+                  No desktop, passe o mouse para abrir o leque 3D. Em dispositivos de toque, toque para alternar o cartão.
+                </p>
+              </div>
+            ) : (
+              /* MODO GRADE: Cartão em Destaque + Cartões Secundários */
+              <div className="space-y-4">
+                {/* Cartão Ativo / Principal */}
+                <div className="flex justify-center">
+                  <WalletCard
+                    card={activeWalletCard}
+                    onClick={() => selectCard(activeWalletCard.id)}
+                  />
+                </div>
+
+                {/* Cartões Secundários */}
+                {displayStackCards.length > 1 && (
+                  <div className="pt-2 space-y-2">
+                    <span className="text-[11px] font-semibold text-[#86868B] uppercase tracking-wider px-1">
+                      Cartões Secundários
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {displayStackCards
+                        .filter((c) => c.id !== activeWalletCard.id)
+                        .slice(0, 2)
+                        .map((secCard) => (
+                          <div
+                            key={secCard.id}
+                            onClick={() => selectCard(secCard.id)}
+                            className="cursor-pointer group flex justify-center"
+                          >
+                            <WalletCard card={secCard} />
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* 4. SEÇÃO PASSES & BILHETES (APPLE WALLET PASS KIT) */}
+        {(walletTab === "all" || walletTab === "passes") && (
+          <section className="space-y-3 pt-2">
+            <div className="bg-white/60 backdrop-blur-sm rounded-[32px] p-6 border border-black/[0.04] shadow-[0_2px_12px_rgba(0,0,0,0.03)]">
+              <PassStack passes={passesList} />
+            </div>
+          </section>
+        )}
+
+        {/* 5. RESUMO DINÂMICO CONECTADO AO CLOUD FIRESTORE */}
+        <section className="bg-white rounded-[24px] shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-black/[0.04] p-5 sm:p-6">
           <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-200/60 gap-4 sm:gap-0">
             <div className="sm:px-4 first:pl-0 flex flex-col justify-between space-y-1">
               <span className="text-[11px] font-semibold tracking-wider uppercase text-[#86868B]">
@@ -141,7 +295,7 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        {/* Lançamentos Recentes em Tempo Real */}
+        {/* 6. LANÇAMENTOS RECENTES EM TEMPO REAL */}
         <section className="space-y-2">
           <div className="flex justify-between items-center px-1">
             <h2 className="text-xs uppercase tracking-wider font-semibold text-[#86868B]">
@@ -156,94 +310,127 @@ export default function DashboardPage() {
           </div>
 
           <ListGroup>
-            {recentTransactions.map((tx, idx) => (
-              <ListItem
-                key={tx.id}
-                title={tx.title}
-                subtitle={`${tx.category} • ${tx.date}`}
-                amount={`${tx.type === "receita" ? "+" : "-"} R$ ${formatCurrency(tx.amount)}`}
-                isIncome={tx.type === "receita"}
-                badge={tx.account}
-                icon={getTransactionIcon(tx.category)}
-                isLast={idx === recentTransactions.length - 1}
-              />
-            ))}
+            {isSyncing ? (
+              <div className="py-8 text-center text-xs text-[#86868B]">
+                Sincronizando lançamentos com Cloud Firestore...
+              </div>
+            ) : recentTransactions.length === 0 ? (
+              <div className="py-8 text-center text-xs text-[#86868B]">
+                Nenhum lançamento registrado no Cloud Firestore.
+              </div>
+            ) : (
+              recentTransactions.map((tx, idx) => (
+                <ListItem
+                  key={tx.id || idx}
+                  title={tx.description}
+                  subtitle={`${tx.category} • ${typeof tx.date === "string" ? tx.date : new Date(tx.date).toLocaleDateString("pt-BR")}`}
+                  amount={`${tx.type === "in" ? "+" : "-"} R$ ${formatCurrency(tx.amount)}`}
+                  isIncome={tx.type === "in"}
+                  badge={tx.paymentMethod}
+                  icon={getTransactionIcon(tx.category)}
+                  isLast={idx === recentTransactions.length - 1}
+                />
+              ))
+            )}
           </ListGroup>
         </section>
 
-        {/* Metas em Andamento */}
+        {/* 7. METAS EM ANDAMENTO CONECTADAS AO WALLETCONTEXT */}
         <section className="space-y-2">
           <div className="flex justify-between items-center px-1">
             <h2 className="text-xs uppercase tracking-wider font-semibold text-[#86868B]">
-              Metas
+              Metas em Andamento
             </h2>
             <Link
               href="/goals"
-              className="text-xs font-medium text-[#86868B] hover:text-[#1D1D1F] flex items-center gap-0.5 transition-colors"
+              className="text-xs font-semibold text-[#1D1D1F] hover:underline flex items-center gap-0.5 transition-colors"
             >
-              Nova meta <ChevronRight strokeWidth={1.5} size={14} />
+              Ver todas <ChevronRight strokeWidth={1.5} size={14} />
             </Link>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-white rounded-[20px] shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-black/[0.04] p-5 space-y-4">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-[#F2F2F7] text-[#1D1D1F] flex items-center justify-center shrink-0">
-                    <Laptop strokeWidth={1.5} size={16} />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-semibold text-[#1D1D1F]">
-                      MacBook Pro M3
-                    </h3>
-                    <p className="text-xs text-[#86868B]">Equipamento</p>
-                  </div>
-                </div>
-                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-[#F2F2F7] text-[#86868B]">
-                  80%
-                </span>
+          {goals.length === 0 ? (
+            <div className="bg-white rounded-[20px] shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-black/[0.04] p-6 text-center space-y-3">
+              <div className="w-10 h-10 rounded-xl bg-[#F2F2F7] text-[#1D1D1F] flex items-center justify-center mx-auto">
+                <Target size={20} strokeWidth={1.5} />
               </div>
-
-              <div className="space-y-1.5">
-                <div className="w-full h-2 bg-[#F2F2F7] rounded-full overflow-hidden">
-                  <div className="h-full bg-[#1D1D1F] rounded-full w-[80%]" />
-                </div>
-                <div className="flex justify-between items-center text-xs text-[#86868B]">
-                  <span>R$ 11.200,00</span>
-                  <span>Meta: R$ 14.000,00</span>
-                </div>
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold text-[#1D1D1F]">
+                  Nenhuma meta cadastrada ainda
+                </h3>
+                <p className="text-xs text-[#86868B] max-w-sm mx-auto">
+                  Crie objetivos patrimoniais como Reserva de Emergência ou Viagens para acompanhar o progresso aqui.
+                </p>
               </div>
+              <Link
+                href="/goals"
+                className="inline-flex items-center gap-1.5 text-xs font-semibold px-4 py-2 rounded-xl bg-[#1D1D1F] text-white hover:bg-black transition-colors cursor-pointer shadow-xs"
+              >
+                <Plus size={14} />
+                <span>Criar Primeira Meta</span>
+              </Link>
             </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {goals.slice(0, 4).map((goal) => {
+                const percentage = Math.min(
+                  100,
+                  goal.target > 0 ? Math.round((goal.current / goal.target) * 100) : 0
+                );
 
-            <div className="bg-white rounded-[20px] shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-black/[0.04] p-5 space-y-4">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-[#F2F2F7] text-[#1D1D1F] flex items-center justify-center shrink-0">
-                    <Sparkles strokeWidth={1.5} size={16} />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-semibold text-[#1D1D1F]">
-                      Tênis Nike SB
-                    </h3>
-                    <p className="text-xs text-[#86868B]">Lifestyle</p>
-                  </div>
-                </div>
-                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-[#F2F2F7] text-[#86868B]">
-                  72%
-                </span>
-              </div>
+                const getGoalIcon = (cat: string) => {
+                  const lower = cat.toLowerCase();
+                  if (lower.includes("segurança") || lower.includes("reserva"))
+                    return <ShieldCheck strokeWidth={1.5} size={16} />;
+                  if (lower.includes("viagem") || lower.includes("lazer") || lower.includes("turismo"))
+                    return <Plane strokeWidth={1.5} size={16} />;
+                  if (lower.includes("trabalho") || lower.includes("computador") || lower.includes("equipamento"))
+                    return <Laptop strokeWidth={1.5} size={16} />;
+                  return <Sparkles strokeWidth={1.5} size={16} />;
+                };
 
-              <div className="space-y-1.5">
-                <div className="w-full h-2 bg-[#F2F2F7] rounded-full overflow-hidden">
-                  <div className="h-full bg-[#1D1D1F] rounded-full w-[72%]" />
-                </div>
-                <div className="flex justify-between items-center text-xs text-[#86868B]">
-                  <span>R$ 650,00</span>
-                  <span>Meta: R$ 900,00</span>
-                </div>
-              </div>
+                return (
+                  <Link
+                    key={goal.id}
+                    href="/goals"
+                    className="bg-white rounded-[20px] shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-black/[0.04] p-5 space-y-4 hover:border-black/15 transition-all block group"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-[#F2F2F7] text-[#1D1D1F] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                          {getGoalIcon(goal.category)}
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-semibold text-[#1D1D1F] group-hover:text-black transition-colors">
+                            {goal.title}
+                          </h3>
+                          <p className="text-xs text-[#86868B]">{goal.category}</p>
+                        </div>
+                      </div>
+                      <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-[#F2F2F7] text-[#86868B]">
+                        {percentage}%
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <div className="w-full h-2 bg-[#F2F2F7] rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-[#1D1D1F] rounded-full transition-all duration-500"
+                          style={{ width: `${percentage}%` }}
+                        />
+                      </div>
+                      <div className="flex justify-between items-center text-xs text-[#86868B]">
+                        <span className="font-semibold text-[#1D1D1F]">
+                          R$ {formatCurrency(goal.current)}
+                        </span>
+                        <span>Meta: R$ {formatCurrency(goal.target)}</span>
+                      </div>
+                    </div>
+                  </Link>
+                );
+              })}
             </div>
-          </div>
+          )}
         </section>
       </div>
 
