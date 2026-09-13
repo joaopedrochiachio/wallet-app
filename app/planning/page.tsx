@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { WPayLogo, WPayButton } from "@/components/ui/WPayLogo";
 import { AppleConfirmModal } from "@/components/ui/AppleConfirmModal";
+import { MonthlyMovementOverview } from "@/components/planning/MonthlyMovementOverview";
 import {
   get5thBusinessDay,
   getEffectiveDueDay,
@@ -89,11 +90,6 @@ export default function PlanningPage() {
     return occurredAt?.getFullYear() === targetYear && occurredAt.getMonth() === targetMonth;
   });
 
-  const transactionUsesCredit = (cardId?: string | null, account?: string) =>
-    cards.some((card) => card.type === "credit" && (
-      card.id === cardId || card.id === account || card.name === account
-    ));
-
   // Separar recebidos futuros vs pagamentos futuros
   const plannedIncomes = recurringItems.filter((r) => r.type === "income");
   const plannedDebitExpenses = recurringItems.filter(
@@ -117,6 +113,22 @@ export default function PlanningPage() {
           0,
           Math.round((projection.projectedFreeBalance / projection.projectedIncome) * 100)
         )
+      : 0;
+
+  const creditCommitments =
+    projection.cardInstallments + projection.recurringCreditTotal;
+  const debitCommitments = projection.recurringDebitTotal;
+  const realizedShare =
+    projection.totalCommitted > 0
+      ? (projection.actualOutflowTotal / projection.totalCommitted) * 100
+      : 0;
+  const creditShare =
+    projection.totalCommitted > 0
+      ? (creditCommitments / projection.totalCommitted) * 100
+      : 0;
+  const debitShare =
+    projection.totalCommitted > 0
+      ? (debitCommitments / projection.totalCommitted) * 100
       : 0;
 
   const handleOpenModal = (type: "income" | "expense") => {
@@ -294,61 +306,114 @@ export default function PlanningPage() {
           </div>
         </div>
 
-        {/* Livro-caixa realizado: a mesma fonte exibida no Dashboard e em Transações. */}
-        <section className="space-y-3">
-          <div className="flex items-center justify-between px-1">
+        {/* Panorama que conecta realizado, débito futuro e faturas em uma leitura única. */}
+        <section
+          className="overflow-hidden rounded-[24px] border border-black/[0.05] bg-[#1D1D1F] text-white shadow-[0_8px_24px_rgba(0,0,0,0.08)]"
+          data-testid="monthly-macro-summary"
+        >
+          <div className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[1.05fr_1fr] lg:items-center">
             <div>
-              <h2 className="text-xs uppercase tracking-wider font-semibold text-[#1D1D1F]">
-                Movimentações realizadas no mês
-              </h2>
-              <p className="text-[11px] text-[#86868B] mt-0.5">
-                Entradas e saídas sincronizadas com o livro-caixa do Firestore
-              </p>
-            </div>
-            <span className="text-xs font-semibold text-[#86868B]">
-              {selectedTransactions.length} lançamento(s)
-            </span>
-          </div>
-
-          <div className="bg-white rounded-[20px] border border-black/[0.04] shadow-[0_2px_8px_rgba(0,0,0,0.04)] overflow-hidden">
-            {selectedTransactions.length === 0 ? (
-              <div className="p-7 text-center text-xs text-[#86868B]">
-                Nenhuma movimentação realizada nesta competência.
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/55">
+                  Visão macro de {activeMonthObj.short}
+                </span>
               </div>
-            ) : (
-              selectedTransactions.map((transaction, index) => {
-                const onCredit = transactionUsesCredit(transaction.cardId, transaction.account);
-                return (
-                  <div
-                    key={transaction.id}
-                    className={`flex items-center justify-between gap-4 p-4 ${
-                      index !== selectedTransactions.length - 1 ? "border-b border-gray-100" : ""
-                    }`}
-                  >
-                    <div className="min-w-0">
-                      <h3 className="text-sm font-semibold text-[#1D1D1F] truncate">
-                        {transaction.title}
-                      </h3>
-                      <p className="text-xs text-[#86868B] truncate">
-                        {transaction.account} • {transaction.category} • {transaction.date}
-                      </p>
-                      {onCredit && transaction.type === "despesa" && (
-                        <span className="inline-block mt-1 text-[10px] font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full">
-                          Projetado no vencimento da fatura
-                        </span>
-                      )}
-                    </div>
-                    <span className={`text-sm font-semibold whitespace-nowrap ${
-                      transaction.type === "receita" ? "text-emerald-600" : "text-[#1D1D1F]"
-                    }`}>
-                      {transaction.type === "receita" ? "+" : "−"} R$ {formatCurrency(transaction.amount)}
-                    </span>
-                  </div>
-                );
-              })
-            )}
+              <h2 className="mt-3 text-xl font-semibold tracking-tight">
+                Seu mês inteiro, em uma leitura.
+              </h2>
+              <p className="mt-2 max-w-md text-xs leading-relaxed text-white/65">
+                Dos{" "}
+                <strong className="text-white">
+                  R$ {formatCurrency(projection.totalCommitted)}
+                </strong>{" "}
+                comprometidos, R$ {formatCurrency(projection.actualOutflowTotal)} já saíram
+                do saldo, R$ {formatCurrency(debitCommitments)} ainda sairão no Pix ou
+                débito e R$ {formatCurrency(creditCommitments)} estão concentrados em
+                faturas.
+              </p>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                <span className="rounded-full bg-white/10 px-3 py-1.5 text-[10px] font-semibold text-white/80">
+                  {Math.round(realizedShare)}% já realizado
+                </span>
+                <span
+                  className={`rounded-full px-3 py-1.5 text-[10px] font-semibold ${
+                    projection.projectedFreeBalance >= 0
+                      ? "bg-emerald-400/15 text-emerald-300"
+                      : "bg-rose-400/15 text-rose-300"
+                  }`}
+                >
+                  R$ {formatCurrency(Math.abs(projection.projectedFreeBalance))}{" "}
+                  {projection.projectedFreeBalance >= 0 ? "livres" : "de déficit"}
+                </span>
+              </div>
+            </div>
+
+            <div className="rounded-[18px] border border-white/10 bg-white/[0.06] p-4">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-white/55">
+                  Composição dos compromissos
+                </span>
+                <span className="text-[10px] text-white/45">
+                  R$ {formatCurrency(projection.totalCommitted)} no mês
+                </span>
+              </div>
+
+              <div
+                className="mt-3 flex h-3 overflow-hidden rounded-full bg-white/10"
+                aria-label="Distribuição dos compromissos do mês"
+              >
+                {projection.totalCommitted > 0 ? (
+                  <>
+                    <div
+                      className="h-full bg-white"
+                      style={{ width: `${realizedShare}%` }}
+                      title={`Já saiu do saldo: ${Math.round(realizedShare)}%`}
+                    />
+                    <div
+                      className="h-full bg-emerald-400"
+                      style={{ width: `${debitShare}%` }}
+                      title={`Pix e débito pendentes: ${Math.round(debitShare)}%`}
+                    />
+                    <div
+                      className="h-full bg-indigo-400"
+                      style={{ width: `${creditShare}%` }}
+                      title={`Faturas: ${Math.round(creditShare)}%`}
+                    />
+                  </>
+                ) : (
+                  <div className="h-full w-full bg-white/10" />
+                )}
+              </div>
+
+              <div className="mt-4 grid grid-cols-3 gap-2">
+                <MacroMetric
+                  dotClass="bg-white"
+                  label="Já saiu"
+                  value={projection.actualOutflowTotal}
+                />
+                <MacroMetric
+                  dotClass="bg-emerald-400"
+                  label="Pix pendente"
+                  value={debitCommitments}
+                />
+                <MacroMetric
+                  dotClass="bg-indigo-400"
+                  label="Em faturas"
+                  value={creditCommitments}
+                />
+              </div>
+            </div>
           </div>
         </section>
+
+        {/* Livro-caixa realizado: a mesma fonte exibida no Dashboard e em Transações. */}
+        <MonthlyMovementOverview
+          transactions={selectedTransactions}
+          cards={cards}
+          monthLabel={activeMonthObj.name}
+        />
 
         {/* SEÇÃO 1: RECEBIMENTOS FUTUROS PLANEJADOS */}
         <section className="space-y-3">
@@ -1201,6 +1266,34 @@ export default function PlanningPage() {
         variant="danger"
         iconType="trash"
       />
+    </div>
+  );
+}
+
+function MacroMetric({
+  dotClass,
+  label,
+  value,
+}: {
+  dotClass: string;
+  label: string;
+  value: number;
+}) {
+  return (
+    <div className="min-w-0">
+      <div className="flex items-center gap-1.5">
+        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClass}`} />
+        <span className="truncate text-[9px] font-semibold uppercase tracking-wider text-white/45">
+          {label}
+        </span>
+      </div>
+      <strong className="mt-1 block truncate text-[11px] font-semibold text-white sm:text-xs">
+        {"R$ "}
+        {value.toLocaleString("pt-BR", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}
+      </strong>
     </div>
   );
 }

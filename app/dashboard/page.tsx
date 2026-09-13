@@ -175,14 +175,14 @@ export default function DashboardPage() {
           </div>
 
           {is3DStackView ? (
-            /* MODO PILHA 3D FLUIDA: Cartões sobrepostos organizados com perspectiva, hover suave e clique para trazer à frente */
+            /* MODO PILHA 3D: interação por toque, clique, arraste e teclado */
             <div className="bg-white/70 backdrop-blur-md rounded-[32px] p-6 sm:p-8 border border-black/[0.04] shadow-[0_2px_12px_rgba(0,0,0,0.03)]">
               <CardStack
                 cards={displayStackCards}
                 onSelectCard={(id) => selectCard(id)}
               />
               <p className="text-center text-[11px] text-[#86868B] font-medium mt-4">
-                Passe o mouse para abrir o leque 3D. Clique em qualquer cartão para trazê-lo para a frente.
+                Toque na pilha para abrir. Depois, arraste os cartões para reorganizar ou toque em um para usá-lo.
               </p>
             </div>
           ) : (
