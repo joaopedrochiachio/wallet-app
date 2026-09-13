@@ -12,12 +12,10 @@ import {
   BankCard,
   GlassCard,
   CardStack,
-  PassStack,
   WalletCard,
   WalletHeader,
   WalletActions,
   DEFAULT_3D_BANK_CARDS,
-  DEFAULT_PASSES,
 } from "@/components/wallet";
 import { WalletCardData, CardBrand } from "@/types/wallet";
 import {
@@ -33,8 +31,6 @@ import {
   Target,
   ShieldCheck,
   Plane,
-  Layers,
-  Sparkle,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -60,10 +56,8 @@ export default function DashboardPage() {
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [isCardSheetOpen, setIsCardSheetOpen] = useState(false);
 
-  // Estados da Experiência Visual Apple Wallet & 3D Cards
-  const [walletTab, setWalletTab] = useState<"all" | "cards" | "passes">("all");
+  // Modo de visualização: Pilha 3D fluida vs Grade organizada
   const [is3DStackView, setIs3DStackView] = useState<boolean>(true);
-  const [passesList] = useState(DEFAULT_PASSES);
 
   // Escuta em tempo real do Cloud Firestore (isolado pelo usuário autenticado)
   useEffect(() => {
@@ -118,8 +112,8 @@ export default function DashboardPage() {
       cardNumber: `•••• •••• •••• ${c.id.slice(-4) || "8842"}`,
       holderName: userProfile.name,
       expirationDate: "09/31",
-      background: c.colorScheme.gradient,
-      accentColor: c.colorScheme.accent,
+      background: c.colorScheme?.gradient,
+      accentColor: c.colorScheme?.accent,
       isGlass,
       status: "active",
       closingDay: c.closingDay,
@@ -127,7 +121,7 @@ export default function DashboardPage() {
     };
   });
 
-  // Garante ao menos 3 cartões para a perspectiva e profundidade 3D
+  // Garante ao menos 3 cartões para profundidade e fluidez visual
   const displayStackCards =
     userWalletCards.length >= 3
       ? userWalletCards
@@ -144,17 +138,14 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-full bg-[#F2F2F7] p-4 sm:p-6 md:p-10 text-[#1D1D1F] font-sans space-y-8 animate-in fade-in duration-500 relative">
-      {/* 1. HEADER INTEGRADO DA WALLET */}
+      {/* 1. HEADER INTEGRADO DA CARTEIRA */}
       <WalletHeader
-        activeTab={walletTab}
-        onTabChange={setWalletTab}
         onOpenNewTransaction={() => setIsSheetOpen(true)}
         cardsCount={userWalletCards.length}
-        passesCount={passesList.length}
       />
 
       <div className="max-w-4xl mx-auto space-y-8">
-        {/* 2. AÇÕES RÁPIDAS APPLE PAY / W PAY */}
+        {/* 2. AÇÕES RÁPIDAS W PAY */}
         <WalletActions
           onPayWithWPay={() => setIsSheetOpen(true)}
           onAddNewCard={() => setIsCardSheetOpen(true)}
@@ -164,103 +155,92 @@ export default function DashboardPage() {
           hasOpenInvoice={totalInvoices > 0}
         />
 
-        {/* 3. SEÇÃO PRINCIPAL DE CARTÕES 3D & GLASS */}
-        {(walletTab === "all" || walletTab === "cards") && (
-          <section className="space-y-4">
-            <div className="flex items-center justify-between px-1">
-              <div className="flex items-center gap-2">
-                <CreditCard size={16} className="text-[#1D1D1F]" />
-                <h2 className="text-xs uppercase tracking-wider font-semibold text-[#86868B]">
-                  {is3DStackView ? "Pilha 3D de Cartões" : "Cartão Principal"}
-                </h2>
-              </div>
-
-              {/* Alternador 3D Stack vs Destaque */}
-              <div className="flex items-center gap-1 bg-[#E5E5EA]/80 p-1 rounded-full text-[11px] font-semibold">
-                <button
-                  type="button"
-                  onClick={() => setIs3DStackView(true)}
-                  className={`px-3 py-1 rounded-full transition-all cursor-pointer ${
-                    is3DStackView
-                      ? "bg-white text-[#1D1D1F] shadow-xs"
-                      : "text-[#86868B] hover:text-[#1D1D1F]"
-                  }`}
-                >
-                  Pilha 3D
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIs3DStackView(false)}
-                  className={`px-3 py-1 rounded-full transition-all cursor-pointer ${
-                    !is3DStackView
-                      ? "bg-white text-[#1D1D1F] shadow-xs"
-                      : "text-[#86868B] hover:text-[#1D1D1F]"
-                  }`}
-                >
-                  Grade
-                </button>
-              </div>
+        {/* 3. SEÇÃO PRINCIPAL: PILHA 3D DE CARTÕES E GRADE */}
+        <section className="space-y-4">
+          <div className="flex items-center justify-between px-1">
+            <div className="flex items-center gap-2">
+              <CreditCard size={16} className="text-[#1D1D1F]" />
+              <h2 className="text-xs uppercase tracking-wider font-semibold text-[#86868B]">
+                {is3DStackView ? "Pilha 3D de Cartões" : "Cartão Principal & Cartões"}
+              </h2>
             </div>
 
-            {is3DStackView ? (
-              /* MODO 3D STACK: Cartões sobrepostos com profundidade e hover fan-out */
-              <div className="bg-white/60 backdrop-blur-sm rounded-[32px] p-6 border border-black/[0.04] shadow-[0_2px_12px_rgba(0,0,0,0.03)]">
-                <CardStack
-                  cards={displayStackCards}
-                  onSelectCard={(id) => selectCard(id)}
+            {/* Alternador Pilha 3D vs Grade */}
+            <div className="flex items-center gap-1 bg-[#E5E5EA]/80 p-1 rounded-full text-[11px] font-semibold border border-black/5">
+              <button
+                type="button"
+                onClick={() => setIs3DStackView(true)}
+                className={`px-3.5 py-1 rounded-full transition-all cursor-pointer ${
+                  is3DStackView
+                    ? "bg-white text-[#1D1D1F] shadow-xs"
+                    : "text-[#86868B] hover:text-[#1D1D1F]"
+                }`}
+              >
+                Pilha 3D
+              </button>
+              <button
+                type="button"
+                onClick={() => setIs3DStackView(false)}
+                className={`px-3.5 py-1 rounded-full transition-all cursor-pointer ${
+                  !is3DStackView
+                    ? "bg-white text-[#1D1D1F] shadow-xs"
+                    : "text-[#86868B] hover:text-[#1D1D1F]"
+                }`}
+              >
+                Grade
+              </button>
+            </div>
+          </div>
+
+          {is3DStackView ? (
+            /* MODO PILHA 3D FLUIDA: Cartões sobrepostos organizados com perspectiva, hover suave e clique para trazer à frente */
+            <div className="bg-white/70 backdrop-blur-md rounded-[32px] p-6 sm:p-8 border border-black/[0.04] shadow-[0_2px_12px_rgba(0,0,0,0.03)]">
+              <CardStack
+                cards={displayStackCards}
+                onSelectCard={(id) => selectCard(id)}
+              />
+              <p className="text-center text-[11px] text-[#86868B] font-medium mt-4">
+                Passe o mouse para abrir o leque 3D. Clique em qualquer cartão para trazê-lo para a frente.
+              </p>
+            </div>
+          ) : (
+            /* MODO GRADE: Cartão Principal em Destaque + Cartões Secundários */
+            <div className="space-y-6">
+              {/* Cartão Ativo / Principal */}
+              <div className="flex justify-center">
+                <WalletCard
+                  card={activeWalletCard}
+                  onClick={() => selectCard(activeWalletCard.id)}
                 />
-                <p className="text-center text-[11px] text-[#86868B] font-medium mt-2">
-                  No desktop, passe o mouse para abrir o leque 3D. Em dispositivos de toque, toque para alternar o cartão.
-                </p>
               </div>
-            ) : (
-              /* MODO GRADE: Cartão em Destaque + Cartões Secundários */
-              <div className="space-y-4">
-                {/* Cartão Ativo / Principal */}
-                <div className="flex justify-center">
-                  <WalletCard
-                    card={activeWalletCard}
-                    onClick={() => selectCard(activeWalletCard.id)}
-                  />
-                </div>
 
-                {/* Cartões Secundários */}
-                {displayStackCards.length > 1 && (
-                  <div className="pt-2 space-y-2">
-                    <span className="text-[11px] font-semibold text-[#86868B] uppercase tracking-wider px-1">
-                      Cartões Secundários
-                    </span>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {displayStackCards
-                        .filter((c) => c.id !== activeWalletCard.id)
-                        .slice(0, 2)
-                        .map((secCard) => (
-                          <div
-                            key={secCard.id}
-                            onClick={() => selectCard(secCard.id)}
-                            className="cursor-pointer group flex justify-center"
-                          >
-                            <WalletCard card={secCard} />
-                          </div>
-                        ))}
-                    </div>
+              {/* Cartões Secundários */}
+              {displayStackCards.length > 1 && (
+                <div className="pt-2 space-y-3">
+                  <span className="text-[11px] font-semibold text-[#86868B] uppercase tracking-wider px-1">
+                    Cartões Secundários
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {displayStackCards
+                      .filter((c) => c.id !== activeWalletCard.id)
+                      .slice(0, 2)
+                      .map((secCard) => (
+                        <div
+                          key={secCard.id}
+                          onClick={() => selectCard(secCard.id)}
+                          className="cursor-pointer flex justify-center hover:scale-[1.02] transition-transform"
+                        >
+                          <WalletCard card={secCard} />
+                        </div>
+                      ))}
                   </div>
-                )}
-              </div>
-            )}
-          </section>
-        )}
-
-        {/* 4. SEÇÃO PASSES & BILHETES (APPLE WALLET PASS KIT) */}
-        {(walletTab === "all" || walletTab === "passes") && (
-          <section className="space-y-3 pt-2">
-            <div className="bg-white/60 backdrop-blur-sm rounded-[32px] p-6 border border-black/[0.04] shadow-[0_2px_12px_rgba(0,0,0,0.03)]">
-              <PassStack passes={passesList} />
+                </div>
+              )}
             </div>
-          </section>
-        )}
+          )}
+        </section>
 
-        {/* 5. RESUMO DINÂMICO CONECTADO AO CLOUD FIRESTORE */}
+        {/* 4. RESUMO CONSOLIDADO CONECTADO AO CLOUD FIRESTORE */}
         <section className="bg-white rounded-[24px] shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-black/[0.04] p-5 sm:p-6">
           <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-200/60 gap-4 sm:gap-0">
             <div className="sm:px-4 first:pl-0 flex flex-col justify-between space-y-1">
@@ -295,7 +275,7 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        {/* 6. LANÇAMENTOS RECENTES EM TEMPO REAL */}
+        {/* 5. LANÇAMENTOS RECENTES EM TEMPO REAL */}
         <section className="space-y-2">
           <div className="flex justify-between items-center px-1">
             <h2 className="text-xs uppercase tracking-wider font-semibold text-[#86868B]">
@@ -335,7 +315,7 @@ export default function DashboardPage() {
           </ListGroup>
         </section>
 
-        {/* 7. METAS EM ANDAMENTO CONECTADAS AO WALLETCONTEXT */}
+        {/* 6. METAS EM ANDAMENTO CONECTADAS AO WALLETCONTEXT */}
         <section className="space-y-2">
           <div className="flex justify-between items-center px-1">
             <h2 className="text-xs uppercase tracking-wider font-semibold text-[#86868B]">

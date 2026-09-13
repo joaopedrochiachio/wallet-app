@@ -12,97 +12,116 @@ interface CardStackProps {
 }
 
 export function CardStack({ cards, onSelectCard, className = "" }: CardStackProps) {
-  const [selectedIndex, setSelectedIndex] = useState<number>(0);
-  const [isHovered, setIsHovered] = useState<boolean>(false);
-  const [hoveredCardIndex, setHoveredCardIndex] = useState<number | null>(null);
+  // Ordered card IDs: index 0 is always the active front card
+  const [cardOrder, setCardOrder] = useState<string[]>(() => cards.map((c) => c.id));
+  const [hoveredCardId, setHoveredCardId] = useState<string | null>(null);
+  const [isStackHovered, setIsStackHovered] = useState<boolean>(false);
+
+  // Keep cardOrder in sync if external cards list changes
+  React.useEffect(() => {
+    setCardOrder((prev) => {
+      const cardIds = cards.map((c) => c.id);
+      const filtered = prev.filter((id) => cardIds.includes(id));
+      const newIds = cardIds.filter((id) => !filtered.includes(id));
+      return [...filtered, ...newIds];
+    });
+  }, [cards]);
 
   if (!cards || cards.length === 0) return null;
 
-  const handleCardClick = (index: number, cardId: string) => {
-    setSelectedIndex(index);
+  // Build ordered list of cards
+  const orderedCards = cardOrder
+    .map((id) => cards.find((c) => c.id === id))
+    .filter(Boolean) as WalletCardData[];
+
+  const handleSelectCard = (selectedId: string) => {
+    // Bring clicked card to the front (index 0)
+    setCardOrder((prev) => {
+      const rest = prev.filter((id) => id !== selectedId);
+      return [selectedId, ...rest];
+    });
+
     if (onSelectCard) {
-      onSelectCard(cardId);
+      onSelectCard(selectedId);
     }
   };
 
+  const stackCards = orderedCards.slice(0, 3);
+
   return (
     <div
-      className={`relative w-full max-w-[420px] mx-auto py-4 font-sans select-none ${className}`}
+      className={`relative w-full max-w-[420px] mx-auto py-2 font-sans select-none ${className}`}
       style={{ perspective: "1200px" }}
-      onMouseEnter={() => setIsHovered(true)}
+      onMouseEnter={() => setIsStackHovered(true)}
       onMouseLeave={() => {
-        setIsHovered(false);
-        setHoveredCardIndex(null);
+        setIsStackHovered(false);
+        setHoveredCardId(null);
       }}
     >
       {/* 3D Stack Container */}
       <div
-        className="relative w-full flex justify-center"
+        className="relative w-full flex justify-center transition-all duration-400"
         style={{
-          height: "260px",
+          height: isStackHovered ? "360px" : "320px",
           transformStyle: "preserve-3d",
         }}
       >
-        {cards.slice(0, 3).map((card, index) => {
-          // Calculate relative position from selected
-          const isSelected = index === selectedIndex;
-          const isCardHovered = hoveredCardIndex === index;
+        {stackCards.map((card, index) => {
+          const isFront = index === 0;
+          const isHovered = hoveredCardId === card.id;
 
-          // Fan-out calculations
+          // Apple Wallet Natural Top-Peek Stacking:
+          // Back cards sit higher (translateY is smaller), so their top brand header is visible above the cards in front.
+          // Front card sits lowest (translateY is largest) with highest z-index.
           let translateY = 0;
           let translateZ = 0;
           let scale = 1;
-          let rotateX = 0;
-          let rotateZ = 0;
-          let zIndex = 10;
+          let rotateX = isStackHovered ? 4 : 6;
+          let zIndex = 30 - index * 10;
           let opacity = 1;
 
           if (index === 0) {
-            // Front Card
-            translateY = isHovered ? -16 : 0;
-            translateZ = isSelected ? 40 : 0;
-            rotateX = isHovered ? 4 : 0;
+            // Front Card: fully visible at the bottom of the stack
+            translateY = isStackHovered ? 140 : 100;
+            translateZ = isHovered ? 30 : 0;
             scale = 1;
-            zIndex = isSelected ? 30 : 20;
+            zIndex = 30;
           } else if (index === 1) {
-            // Middle Card
-            translateY = isHovered ? 52 : 28;
-            translateZ = isSelected ? 40 : -25;
-            rotateX = isHovered ? 6 : 2;
-            scale = isHovered ? 0.98 : 0.95;
-            zIndex = isSelected ? 30 : 15;
-            opacity = 0.95;
+            // Middle Card: peeking out from above Card 0
+            translateY = isStackHovered ? 70 : 50;
+            translateZ = isHovered ? 35 : -20;
+            scale = isStackHovered ? 0.98 : 0.96;
+            zIndex = isHovered ? 35 : 20;
+            opacity = 0.98;
           } else if (index === 2) {
-            // Back Card
-            translateY = isHovered ? 120 : 54;
-            translateZ = isSelected ? 40 : -50;
-            rotateX = isHovered ? 8 : 4;
-            scale = isHovered ? 0.96 : 0.91;
-            zIndex = isSelected ? 30 : 10;
-            opacity = 0.9;
+            // Back Card: peeking out from the very top of the stack
+            translateY = isStackHovered ? 0 : 0;
+            translateZ = isHovered ? 35 : -40;
+            scale = isStackHovered ? 0.96 : 0.92;
+            zIndex = isHovered ? 35 : 10;
+            opacity = 0.95;
           }
 
-          // If this specific card is hovered by cursor in desktop
-          if (isCardHovered) {
+          // Elevation when specifically hovered
+          if (isHovered && !isFront) {
             translateY -= 12;
-            translateZ += 30;
             scale += 0.02;
-            rotateX = 0;
           }
 
           return (
             <div
               key={card.id}
-              onClick={() => handleCardClick(index, card.id)}
-              onMouseEnter={() => setHoveredCardIndex(index)}
-              onMouseLeave={() => setHoveredCardIndex(null)}
-              className="absolute top-0 w-full max-w-[390px] px-2 transition-all duration-300 ease-out cursor-pointer"
+              onClick={() => handleSelectCard(card.id)}
+              onMouseEnter={() => setHoveredCardId(card.id)}
+              onMouseLeave={() => setHoveredCardId(null)}
+              className="absolute top-0 w-full max-w-[390px] px-2 cursor-pointer transition-all duration-400 ease-out"
               style={{
-                transform: `translate3d(0, ${translateY}px, ${translateZ}px) rotateX(${rotateX}deg) rotateZ(${rotateZ}deg) scale(${scale})`,
-                zIndex: isCardHovered ? 40 : zIndex,
+                transform: `translate3d(0, ${translateY}px, ${translateZ}px) rotateX(${rotateX}deg) scale(${scale})`,
+                zIndex,
                 opacity,
                 transformStyle: "preserve-3d",
               }}
+              title={isFront ? card.title : `Toque para selecionar ${card.title}`}
             >
               {card.isGlass || card.variant === "glass" ? (
                 <GlassCard card={card} interactive={false} />
@@ -115,17 +134,18 @@ export function CardStack({ cards, onSelectCard, className = "" }: CardStackProp
       </div>
 
       {/* Selector Pills / Indicators */}
-      <div className="flex items-center justify-center gap-2 mt-8">
-        {cards.slice(0, 3).map((card, i) => (
+      <div className="flex items-center justify-center gap-2 mt-2">
+        {stackCards.map((card, i) => (
           <button
             key={card.id}
-            onClick={() => handleCardClick(i, card.id)}
+            onClick={() => handleSelectCard(card.id)}
             className={`transition-all duration-300 cursor-pointer ${
-              selectedIndex === i
+              i === 0
                 ? "w-8 h-2 bg-[#1D1D1F] rounded-full"
                 : "w-2 h-2 bg-gray-300 hover:bg-gray-400 rounded-full"
             }`}
             aria-label={`Selecionar ${card.title}`}
+            title={card.title}
           />
         ))}
       </div>
