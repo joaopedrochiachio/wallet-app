@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { addTransaction as addTransactionFirestore } from "@/lib/services/transactionsService";
 import { useAuth } from "@/context/AuthContext";
+import { useWallet } from "@/context/WalletContext";
 import { WPayLogo, WPayButton } from "@/components/ui/WPayLogo";
 import { get5thBusinessDay, MONTH_NAMES_PT } from "@/lib/utils/dateUtils";
 import { RecurrenceType } from "@/types";
@@ -30,7 +31,9 @@ export interface AddTransactionSheetProps {
     type: "despesa" | "receita";
     category: string;
     account: string;
+    cardId?: string | null;
     date: string;
+    occurredAt?: Date | string | null;
     isRecurring?: boolean;
     recurrenceType?: RecurrenceType;
     recurrenceDay?: number;
@@ -68,6 +71,7 @@ export function AddTransactionSheet({
   onAdd,
 }: AddTransactionSheetProps) {
   const { user } = useAuth();
+  const { cards } = useWallet();
   const [type, setType] = useState<"despesa" | "receita">("despesa");
   const [amountInput, setAmountInput] = useState("");
   const [title, setTitle] = useState("");
@@ -158,6 +162,14 @@ export function AddTransactionSheet({
           ? current5thBusinessDay
           : recurrenceDay;
 
+      // Resolver cardId para referência estável por ID
+      const resolvedCardId = (() => {
+        if (account === "Débito/Pix") {
+          return cards.find((c) => c.type === "checking")?.id || null;
+        }
+        return cards.find((c) => c.id === account || c.name.toLowerCase() === account.toLowerCase())?.id || null;
+      })();
+
       // 1. Salvar no Cloud Firestore isolado pelo user.uid
       await addTransactionFirestore(
         {
@@ -166,8 +178,10 @@ export function AddTransactionSheet({
           category,
           description: txDescription,
           paymentMethod: account,
+          cardId: resolvedCardId,
           date: formattedDate,
-        },
+          occurredAt: now,
+        } as any,
         user?.uid
       );
 
@@ -178,7 +192,9 @@ export function AddTransactionSheet({
         type,
         category,
         account,
+        cardId: resolvedCardId,
         date: formattedDate,
+        occurredAt: now,
         isRecurring,
         recurrenceType: isRecurring ? recurrenceType : undefined,
         recurrenceDay: isRecurring ? effectiveDueDay : undefined,

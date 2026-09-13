@@ -3,10 +3,13 @@ import { Transaction } from "@/types";
 import {
   collection,
   addDoc,
+  doc,
+  deleteDoc,
   onSnapshot,
   query,
   orderBy,
   serverTimestamp,
+  Timestamp,
 } from "firebase/firestore";
 
 const TRANSACTIONS_COLLECTION = "transactions";
@@ -36,12 +39,25 @@ export async function addTransaction(
     category: data.category,
     description: data.description,
     paymentMethod: data.paymentMethod,
+    cardId: (data as any).cardId || null,
     date: typeof data.date === "string" ? data.date : data.date.toISOString(),
+    occurredAt: (data as any).occurredAt || Timestamp.now(),
     createdAt: serverTimestamp(),
     userId: userId || data.userId || null,
   });
 
   return docRef.id;
+}
+
+/**
+ * Exclui uma transação do Firestore
+ */
+export async function deleteTransactionFromFirestore(
+  userId: string,
+  txId: string
+): Promise<void> {
+  const txDocRef = doc(db, "users", userId, TRANSACTIONS_COLLECTION, txId);
+  await deleteDoc(txDocRef);
 }
 
 /**
@@ -68,6 +84,8 @@ export function subscribeToTransactions(
           date: d.date || new Date().toLocaleDateString("pt-BR"),
           description: d.description || "Lançamento",
           paymentMethod: d.paymentMethod || "Débito/Pix",
+          cardId: d.cardId || null,
+          occurredAt: d.occurredAt?.toDate ? d.occurredAt.toDate() : d.occurredAt || null,
           createdAt: d.createdAt?.toDate ? d.createdAt.toDate() : d.createdAt,
           userId: d.userId,
         };

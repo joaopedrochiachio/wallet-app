@@ -45,6 +45,8 @@ export interface Transaction {
   date: string | Date;
   description: string;
   paymentMethod: string;
+  cardId?: string | null;
+  occurredAt?: string | number | Date | null;
   createdAt?: string | number | Date;
   userId?: string;
 }
@@ -74,6 +76,23 @@ export interface RecurringItem {
   startMonthIndex?: number; // Mês inicial (0 = Setembro, 1 = Outubro...)
   startYear?: number; // Ano de início (ex: 2026)
   active: boolean;
+}
+
+export interface NewCardInput {
+  name: string;
+  brand: string;
+  type: "checking" | "credit";
+  balance?: number;
+  limit: number;
+  closingDay?: number;
+  dueDay?: number;
+  colorScheme: {
+    gradient: string;
+    border: string;
+    accent: string;
+    badgeText: string;
+    chipGradient: string;
+  };
 }
 
 

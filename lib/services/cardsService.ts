@@ -7,7 +7,10 @@ import {
   deleteDoc,
   updateDoc,
   onSnapshot,
+  writeBatch,
 } from "firebase/firestore";
+
+export { writeBatch, doc, db };
 
 function sanitizeData<T>(data: T): T {
   return JSON.parse(JSON.stringify(data));
@@ -46,6 +49,18 @@ export async function updateCardLimitInFirestore(
 ): Promise<void> {
   const cardDocRef = doc(db, "users", userId, "cards", cardId);
   await updateDoc(cardDocRef, { limit: newLimit });
+}
+
+/**
+ * Atualiza campos específicos de um cartão no Firestore (ex: balance)
+ */
+export async function updateCardFieldsInFirestore(
+  userId: string,
+  cardId: string,
+  fields: Partial<CardItem>
+): Promise<void> {
+  const cardDocRef = doc(db, "users", userId, "cards", cardId);
+  await updateDoc(cardDocRef, fields as Record<string, unknown>);
 }
 
 /**

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useMemo } from "react";
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { subscribeToUserProfile, saveUserProfile } from "@/lib/services/userService";
 import {
@@ -8,10 +8,15 @@ import {
   saveCardToFirestore,
   deleteCardFromFirestore,
   updateCardLimitInFirestore,
+  updateCardFieldsInFirestore,
+  writeBatch,
+  doc,
+  db,
 } from "@/lib/services/cardsService";
 import {
   subscribeToTransactions,
   addTransaction as addTransactionFirestore,
+  deleteTransactionFromFirestore,
 } from "@/lib/services/transactionsService";
 import {
   subscribeToGoals,
@@ -24,27 +29,29 @@ import {
   deleteRecurringFromFirestore,
 } from "@/lib/services/recurringService";
 import { get5thBusinessDay } from "@/lib/utils/dateUtils";
-import { GoalItem, RecurringItem, RecurrenceType } from "@/types";
+import {
+  GoalItem,
+  RecurringItem,
+  RecurrenceType,
+  UserProfile,
+  CardItem,
+  NewCardInput,
+  FinancialPersonaId,
+  RiskToleranceId,
+  AIToneId,
+} from "@/types";
 
-export interface CardItem {
-  id: string;
-  name: string;
-  brand: string;
-  type: "checking" | "credit";
-  balance?: number; // Saldo da conta corrente
-  invoiceAmount?: number; // Fatura atual do cartão de crédito
-  limit: number; // Limite total
-  spent: number; // Gastos acumulados no mês
-  closingDay?: number; // Dia de fechamento da fatura
-  dueDay?: number; // Dia de vencimento
-  colorScheme: {
-    gradient: string;
-    border: string;
-    accent: string;
-    badgeText: string;
-    chipGradient: string;
-  };
-}
+export type {
+  GoalItem,
+  RecurringItem,
+  RecurrenceType,
+  UserProfile,
+  CardItem,
+  NewCardInput,
+  FinancialPersonaId,
+  RiskToleranceId,
+  AIToneId,
+};
 
 export interface TransactionItem {
   id: string;
@@ -53,15 +60,14 @@ export interface TransactionItem {
   type: "despesa" | "receita";
   category: string;
   account: string; // ex: "Débito/Pix", "Nubank", "Santander"
+  cardId?: string | null; // Referência estável por ID do cartão
   date: string;
+  occurredAt?: string | number | Date | null;
   isRecurring?: boolean;
   recurrenceType?: RecurrenceType;
   recurrenceDay?: number;
   installmentsCount?: number;
 }
-
-export type { RecurringItem, RecurrenceType };
-
 
 export interface MonthProjection {
   monthName: string;
@@ -76,41 +82,6 @@ export interface MonthProjection {
   projectedFreeBalance: number;
 }
 
-export type FinancialPersonaId = "optimizer" | "guardian" | "scaler" | "minimalist";
-export type RiskToleranceId = "low" | "moderate" | "high";
-export type AIToneId = "analytical" | "direct" | "collaborative";
-
-export interface UserProfile {
-  name: string;
-  email: string;
-  role: string;
-  avatarInitials: string;
-  monthlyIncomeBase: number;
-  currency: string;
-  persona: FinancialPersonaId;
-  riskTolerance: RiskToleranceId;
-  aiTone: AIToneId;
-  maxCommitmentAlertPercent: number;
-  primaryFocus: string;
-}
-
-export interface NewCardInput {
-  name: string;
-  brand: string;
-  type: "checking" | "credit";
-  balance?: number;
-  limit: number;
-  closingDay?: number;
-  dueDay?: number;
-  colorScheme: {
-    gradient: string;
-    border: string;
-    accent: string;
-    badgeText: string;
-    chipGradient: string;
-  };
-}
-
 interface WalletContextType {
   userProfile: UserProfile;
   cards: CardItem[];
@@ -119,6 +90,7 @@ interface WalletContextType {
   transactions: TransactionItem[];
   recurringItems: RecurringItem[];
   goals: GoalItem[];
+  isDataLoaded: boolean;
   mainBalance: number;
   totalInvoices: number;
   monthIncome: number;
@@ -141,29 +113,6 @@ interface WalletContextType {
   deleteGoal: (goalId: string) => void;
 }
 
-const INITIAL_CARDS: CardItem[] = [
-  {
-    id: "default-pass",
-    name: "Conta Principal",
-    brand: "Débito / Pix",
-    type: "checking",
-    balance: 0.0,
-    limit: 0.0,
-    spent: 0.0,
-    colorScheme: {
-      gradient: "from-[#1C1C1E] via-[#141416] to-[#0A0A0C]",
-      border: "border-white/15",
-      accent: "text-white",
-      badgeText: "Conta Corrente",
-      chipGradient: "from-amber-200 to-amber-500",
-    },
-  },
-];
-
-const INITIAL_TRANSACTIONS: TransactionItem[] = [];
-
-const INITIAL_RECURRING: RecurringItem[] = [];
-
 const INITIAL_USER_PROFILE: UserProfile = {
   name: "Seu Nome",
   email: "",
@@ -183,82 +132,91 @@ const WalletContext = createContext<WalletContextType | undefined>(undefined);
 export function WalletProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [userProfile, setUserProfile] = useState<UserProfile>(INITIAL_USER_PROFILE);
-  const [cards, setCards] = useState<CardItem[]>(INITIAL_CARDS);
-  const [activeCardId, setActiveCardId] = useState<string>("default-pass");
-  const [transactions, setTransactions] = useState<TransactionItem[]>(INITIAL_TRANSACTIONS);
-  const [recurringItems, setRecurringItems] = useState<RecurringItem[]>(INITIAL_RECURRING);
+  const [cards, setCards] = useState<CardItem[]>([]);
+  const [activeCardId, setActiveCardId] = useState<string>("");
+  const [transactions, setTransactions] = useState<TransactionItem[]>([]);
+  const [recurringItems, setRecurringItems] = useState<RecurringItem[]>([]);
   const [goals, setGoals] = useState<GoalItem[]>([]);
 
-  // Carregar do localStorage se disponível no cliente (para cache offline/fallback)
-  useEffect(() => {
-    try {
-      const storedProfile = localStorage.getItem("wallet_user_profile");
-      const storedCards = localStorage.getItem("wallet_cards");
-      const storedTx = localStorage.getItem("wallet_transactions");
-      const storedActive = localStorage.getItem("wallet_active_card");
-      const storedRecurring = localStorage.getItem("wallet_recurring");
-      const storedGoals = localStorage.getItem("wallet_goals");
-      if (storedProfile) setUserProfile(JSON.parse(storedProfile));
-      if (storedCards) setCards(JSON.parse(storedCards));
-      if (storedTx) setTransactions(JSON.parse(storedTx));
-      if (storedActive) setActiveCardId(storedActive);
-      if (storedRecurring) setRecurringItems(JSON.parse(storedRecurring));
-      if (storedGoals) setGoals(JSON.parse(storedGoals));
-    } catch {
-      // Ignore storage errors on SSR/private mode
-    }
-  }, []);
+  // Rastreamento de carregamento dos listeners do Firestore
+  const [profileLoaded, setProfileLoaded] = useState(false);
+  const [cardsLoaded, setCardsLoaded] = useState(false);
+  const [transactionsLoaded, setTransactionsLoaded] = useState(false);
+  const [recurringLoaded, setRecurringLoaded] = useState(false);
+  const [goalsLoaded, setGoalsLoaded] = useState(false);
+
+  const isDataLoaded = profileLoaded && cardsLoaded && transactionsLoaded && recurringLoaded && goalsLoaded;
 
   // Sincronização em tempo real do Perfil via Firestore
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setProfileLoaded(false);
+      return;
+    }
     const unsub = subscribeToUserProfile(user.uid, (remoteProfile) => {
       if (remoteProfile) {
         setUserProfile(remoteProfile);
       }
+      setProfileLoaded(true);
     });
     return () => unsub();
   }, [user]);
 
   // Sincronização em tempo real das Metas via Firestore
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setGoalsLoaded(false);
+      return;
+    }
     const unsub = subscribeToGoals(user.uid, (remoteGoals) => {
-      if (remoteGoals) {
-        setGoals(remoteGoals);
-      }
+      setGoals(remoteGoals);
+      setGoalsLoaded(true);
     });
     return () => unsub();
   }, [user]);
 
   // Sincronização em tempo real dos Itens Recorrentes via Firestore
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setRecurringLoaded(false);
+      return;
+    }
     const unsub = subscribeToRecurring(user.uid, (remoteRecurring) => {
-      if (remoteRecurring && remoteRecurring.length > 0) {
-        setRecurringItems(remoteRecurring);
-      }
+      // Snapshot vazio é um estado válido — sempre atualizar
+      setRecurringItems(remoteRecurring);
+      setRecurringLoaded(true);
     });
     return () => unsub();
   }, [user]);
 
   // Sincronização em tempo real dos Cartões via Firestore
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setCardsLoaded(false);
+      return;
+    }
     const unsub = subscribeToCards(user.uid, (remoteCards) => {
-      if (remoteCards && remoteCards.length > 0) {
-        setCards(remoteCards);
-        if (!remoteCards.some((c) => c.id === activeCardId)) {
-          setActiveCardId(remoteCards[0].id);
-        }
+      // Snapshot vazio é um estado válido — sempre atualizar
+      setCards(remoteCards);
+      if (remoteCards.length > 0) {
+        setActiveCardId((prevActiveId) => {
+          if (!remoteCards.some((c) => c.id === prevActiveId)) {
+            return remoteCards[0].id;
+          }
+          return prevActiveId;
+        });
       }
+      setCardsLoaded(true);
     });
     return () => unsub();
-  }, [user, activeCardId]);
+  }, [user]);
 
   // Sincronização em tempo real das Transações via Firestore
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setTransactionsLoaded(false);
+      return;
+    }
     const unsub = subscribeToTransactions((remoteTx) => {
       const mapped: TransactionItem[] = remoteTx.map((t) => ({
         id: t.id || `tx-${Date.now()}`,
@@ -267,26 +225,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         type: t.type === "in" ? "receita" : "despesa",
         category: t.category,
         account: t.paymentMethod,
+        cardId: t.cardId || null,
         date: typeof t.date === "string" ? t.date : new Date(t.date).toLocaleDateString("pt-BR"),
+        occurredAt: t.occurredAt || null,
       }));
       setTransactions(mapped);
+      setTransactionsLoaded(true);
     }, user.uid);
     return () => unsub();
   }, [user]);
-
-  // Persistir alterações em localStorage para cache
-  useEffect(() => {
-    try {
-      localStorage.setItem("wallet_user_profile", JSON.stringify(userProfile));
-      localStorage.setItem("wallet_cards", JSON.stringify(cards));
-      localStorage.setItem("wallet_transactions", JSON.stringify(transactions));
-      localStorage.setItem("wallet_active_card", activeCardId);
-      localStorage.setItem("wallet_recurring", JSON.stringify(recurringItems));
-      localStorage.setItem("wallet_goals", JSON.stringify(goals));
-    } catch {
-      // Ignore storage errors
-    }
-  }, [userProfile, cards, transactions, activeCardId, recurringItems, goals]);
 
   const updateUserProfile = (updated: Partial<UserProfile>) => {
     setUserProfile((prev) => {
@@ -307,7 +254,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   };
 
   const activeCard = useMemo(
-    () => cards.find((c) => c.id === activeCardId) || cards[0],
+    () => cards.find((c) => c.id === activeCardId) || cards[0] || {
+      id: "", name: "Carregando...", brand: "", type: "checking" as const, balance: 0, limit: 0, spent: 0,
+      colorScheme: { gradient: "", border: "", accent: "", badgeText: "", chipGradient: "" },
+    },
     [cards, activeCardId]
   );
 
@@ -316,12 +266,68 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     [cards]
   );
 
+  // MODELO DERIVADO: invoiceAmount calculado a partir das transações por cardId/nome
+  const cardInvoices = useMemo(() => {
+    const invoiceMap: Record<string, number> = {};
+    for (const tx of transactions) {
+      // Resolver qual card esta transação pertence
+      const matchedCard = cards.find((c) =>
+        c.type === "credit" && (
+          c.id === tx.cardId ||
+          c.id === tx.account ||
+          c.name.toLowerCase() === tx.account.toLowerCase()
+        )
+      );
+      if (matchedCard) {
+        if (!invoiceMap[matchedCard.id]) invoiceMap[matchedCard.id] = 0;
+        if (tx.type === "despesa") {
+          invoiceMap[matchedCard.id] += tx.amount;
+        } else {
+          invoiceMap[matchedCard.id] -= tx.amount;
+        }
+      }
+    }
+    // Garantir que não fique negativo
+    for (const key of Object.keys(invoiceMap)) {
+      invoiceMap[key] = Math.max(0, invoiceMap[key]);
+    }
+    return invoiceMap;
+  }, [transactions, cards]);
+
+  // MODELO DERIVADO: spent calculado a partir das transações por cardId/nome
+  const cardSpent = useMemo(() => {
+    const spentMap: Record<string, number> = {};
+    for (const tx of transactions) {
+      if (tx.type !== "despesa") continue;
+      const matchedCard = cards.find((c) =>
+        c.id === tx.cardId ||
+        c.id === tx.account ||
+        c.name.toLowerCase() === tx.account.toLowerCase()
+      );
+      if (matchedCard) {
+        if (!spentMap[matchedCard.id]) spentMap[matchedCard.id] = 0;
+        spentMap[matchedCard.id] += tx.amount;
+      }
+    }
+    return spentMap;
+  }, [transactions, cards]);
+
+  // Cards enriquecidos com invoiceAmount e spent derivados
+  const enrichedCards = useMemo(() =>
+    cards.map((c) => ({
+      ...c,
+      invoiceAmount: c.type === "credit" ? (cardInvoices[c.id] || 0) : c.invoiceAmount,
+      spent: cardSpent[c.id] || 0,
+    })),
+    [cards, cardInvoices, cardSpent]
+  );
+
   const totalInvoices = useMemo(
     () =>
-      cards
+      enrichedCards
         .filter((c) => c.type === "credit")
         .reduce((acc, c) => acc + (c.invoiceAmount || 0), 0),
-    [cards]
+    [enrichedCards]
   );
 
   const monthIncome = useMemo(
@@ -391,7 +397,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setCards((prev) => {
       const remaining = prev.filter((c) => c.id !== cardId);
       if (activeCardId === cardId) {
-        setActiveCardId(remaining[0]?.id || "titanium");
+        setActiveCardId(remaining[0]?.id || "");
       }
       return remaining;
     });
@@ -403,14 +409,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   };
 
   // Regra de negócio (agent.md Seção 5.3):
+  // Modelo derivado: invoiceAmount/spent são calculados via useMemo.
+  // Apenas balance de checking precisa ser persistido no Firestore.
   const addTransaction = (tx: Omit<TransactionItem, "id">) => {
-    const newTx: TransactionItem = {
-      ...tx,
-      id: `tx-${Date.now()}`,
-    };
-
-    setTransactions((prev) => [newTx, ...prev]);
-
     // Se marcou como recorrente, adiciona automaticamente à lista de recorrências
     if (tx.isRecurring) {
       const recType: RecurrenceType = tx.recurrenceType || "fixed_day";
@@ -437,96 +438,128 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       addRecurringItem(newRec);
     }
 
-    setCards((prevCards) =>
-      prevCards.map((card) => {
-        const matchesCreditCard =
-          card.type === "credit" &&
-          (card.id === tx.account ||
-           card.name.toLowerCase() === tx.account.toLowerCase());
+    // Resolver cardId para referência estável
+    const resolvedCardId = resolveCardId(tx.account);
 
-        if (matchesCreditCard) {
-          if (tx.type === "despesa") {
-            const newInvoice = (card.invoiceAmount || 0) + tx.amount;
-            const newSpent = card.spent + tx.amount;
-            return {
-              ...card,
-              invoiceAmount: newInvoice,
-              spent: newSpent,
-            };
-          } else {
-            const newInvoice = Math.max(0, (card.invoiceAmount || 0) - tx.amount);
-            return {
-              ...card,
-              invoiceAmount: newInvoice,
-            };
-          }
-        }
+    // Persistir mutação de balance no Firestore para contas correntes (checking)
+    if (user) {
+      const matchedChecking = cards.find((c) =>
+        c.type === "checking" &&
+        (tx.account === "Débito/Pix" ||
+         c.id === tx.account ||
+         c.name.toLowerCase() === tx.account.toLowerCase())
+      );
 
-        const matchesCheckingCard =
-          card.type === "checking" &&
-          (tx.account === "Débito/Pix" ||
-           card.id === tx.account ||
-           card.name.toLowerCase() === tx.account.toLowerCase());
-
-        if (matchesCheckingCard) {
-          if (tx.type === "despesa") {
-            return {
-              ...card,
-              balance: (card.balance || 0) - tx.amount,
-              spent: card.spent + tx.amount,
-            };
-          } else {
-            return {
-              ...card,
-              balance: (card.balance || 0) + tx.amount,
-            };
-          }
-        }
-
-        return card;
-      })
-    );
+      if (matchedChecking) {
+        const balanceDelta = tx.type === "despesa" ? -tx.amount : tx.amount;
+        const newBalance = (matchedChecking.balance || 0) + balanceDelta;
+        // Atualização otimista local + persistência no Firestore
+        setCards((prev) => prev.map((c) =>
+          c.id === matchedChecking.id ? { ...c, balance: newBalance } : c
+        ));
+        updateCardFieldsInFirestore(user.uid, matchedChecking.id, { balance: newBalance }).catch((e) =>
+          console.error("Erro ao atualizar balance no Firestore:", e)
+        );
+      }
+    }
+    // Nota: Para cartões de crédito, invoiceAmount/spent são derivados automaticamente
+    // das transações via useMemo — não é necessário mutar o card.
   };
 
-  const payInvoice = (cardId: string) => {
-    const targetCard = cards.find((c) => c.id === cardId);
+  /**
+   * Resolve o cardId a partir do nome/account da transação.
+   * Usado para adicionar referência estável (cardId) às novas transações.
+   */
+  const resolveCardId = useCallback((account: string): string | null => {
+    if (account === "Débito/Pix") {
+      const checking = cards.find((c) => c.type === "checking");
+      return checking?.id || null;
+    }
+    const matched = cards.find((c) =>
+      c.id === account || c.name.toLowerCase() === account.toLowerCase()
+    );
+    return matched?.id || null;
+  }, [cards]);
+
+  const payInvoice = async (cardId: string) => {
+    const targetCard = enrichedCards.find((c) => c.id === cardId);
     if (!targetCard || targetCard.type !== "credit" || !targetCard.invoiceAmount) return;
+    if (!user) return;
 
     const invoiceValue = targetCard.invoiceAmount;
+    const checkingCard = cards.find((c) => c.type === "checking");
+    if (!checkingCard) return;
 
-    setCards((prev) =>
-      prev.map((c) => {
-        if (c.type === "checking") {
-          return {
-            ...c,
-            balance: (c.balance || 0) - invoiceValue,
-          };
-        }
-        if (c.id === cardId) {
-          return {
-            ...c,
-            invoiceAmount: 0,
-          };
-        }
-        return c;
-      })
-    );
+    const newCheckingBalance = (checkingCard.balance || 0) - invoiceValue;
 
-    const paymentTx: TransactionItem = {
-      id: `tx-pay-${Date.now()}`,
-      title: `Pagamento Fatura ${targetCard.name}`,
-      amount: invoiceValue,
-      type: "despesa",
-      category: "Cartão de Crédito",
-      account: "Débito/Pix",
-      date: "Hoje, agora",
-    };
+    try {
+      // Operação atômica: atualizar balance da checking + criar transação de pagamento
+      const batch = writeBatch(db);
 
-    setTransactions((prev) => [paymentTx, ...prev]);
+      // 1. Atualizar balance da conta corrente
+      const checkingDocRef = doc(db, "users", user.uid, "cards", checkingCard.id);
+      batch.update(checkingDocRef, { balance: newCheckingBalance });
+
+      await batch.commit();
+
+      // 2. Criar transação de pagamento no Firestore (fora do batch pois usa addDoc)
+      await addTransactionFirestore(
+        {
+          amount: invoiceValue,
+          type: "out",
+          category: "Pagamento de Fatura",
+          description: `Pagamento Fatura ${targetCard.name}`,
+          paymentMethod: "Débito/Pix",
+          date: new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }) +
+                ", " + new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
+        },
+        user.uid
+      );
+
+      // Atualização otimista local (listeners do Firestore atualizarão com dados reais)
+      setCards((prev) =>
+        prev.map((c) => {
+          if (c.id === checkingCard.id) {
+            return { ...c, balance: newCheckingBalance };
+          }
+          return c;
+        })
+      );
+    } catch (e) {
+      console.error("Erro ao pagar fatura no Firestore:", e);
+    }
   };
 
-  const deleteTransaction = (id: string) => {
-    setTransactions((prev) => prev.filter((t) => t.id !== id));
+  const deleteTransaction = async (id: string) => {
+    if (!user) return;
+
+    // Encontrar a transação antes de deletar para ajustar balance se necessário
+    const txToDelete = transactions.find((t) => t.id === id);
+
+    try {
+      // Deletar do Firestore — o listener onSnapshot atualizará o state automaticamente
+      await deleteTransactionFromFirestore(user.uid, id);
+
+      // Se era uma transação de checking, ajustar o balance no Firestore
+      if (txToDelete) {
+        const matchedChecking = cards.find((c) =>
+          c.type === "checking" &&
+          (txToDelete.account === "Débito/Pix" ||
+           c.id === txToDelete.account ||
+           c.id === txToDelete.cardId ||
+           c.name.toLowerCase() === txToDelete.account.toLowerCase())
+        );
+
+        if (matchedChecking) {
+          // Reverter o efeito da transação no balance
+          const balanceAdjust = txToDelete.type === "despesa" ? txToDelete.amount : -txToDelete.amount;
+          const newBalance = (matchedChecking.balance || 0) + balanceAdjust;
+          await updateCardFieldsInFirestore(user.uid, matchedChecking.id, { balance: newBalance });
+        }
+      }
+    } catch (e) {
+      console.error("Erro ao excluir transação do Firestore:", e);
+    }
   };
 
   const addRecurringItem = (item: Omit<RecurringItem, "id">) => {
@@ -649,8 +682,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       .filter((r) => r.type !== "income" && r.account !== "Débito/Pix" && isItemActiveInMonth(r, safeIndex))
       .reduce((acc, r) => acc + r.amount, 0);
 
-    // Fatura em aberto no mês atual
-    const currentInvoicesTotal = cards
+    // Fatura em aberto no mês atual — agora derivada das transações
+    const currentInvoicesTotal = enrichedCards
       .filter((c) => c.type === "credit")
       .reduce((acc, c) => acc + (c.invoiceAmount || 0), 0);
 
@@ -678,12 +711,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     <WalletContext.Provider
       value={{
         userProfile,
-        cards,
+        cards: enrichedCards,
         activeCardId,
         activeCard,
         transactions,
         recurringItems,
         goals,
+        isDataLoaded,
         mainBalance,
         totalInvoices,
         monthIncome,
