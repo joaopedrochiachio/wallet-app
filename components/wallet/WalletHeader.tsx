@@ -2,7 +2,6 @@
 
 import React from "react";
 import { Plus } from "lucide-react";
-import { WPayLogo } from "@/components/ui/WPayLogo";
 
 interface WalletHeaderProps {
   onOpenNewTransaction?: () => void;

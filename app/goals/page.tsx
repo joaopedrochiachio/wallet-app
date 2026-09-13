@@ -10,11 +10,7 @@ import {
   Plus,
   Target,
   Trash2,
-  TrendingUp,
   X,
-  Check,
-  Coins,
-  ArrowUpRight,
 } from "lucide-react";
 import { GoalItem } from "@/types";
 import { AppleConfirmModal } from "@/components/ui/AppleConfirmModal";

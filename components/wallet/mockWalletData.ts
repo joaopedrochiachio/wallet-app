@@ -1,4 +1,4 @@
-import { WalletCardData, BoardingPassData, LoyaltyPassData, TicketPassData, AnyPassData } from "@/types/wallet";
+import { WalletCardData, AnyPassData } from "@/types/wallet";
 
 export const DEFAULT_3D_BANK_CARDS: WalletCardData[] = [
   {

@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { useWallet, FinancialPersonaId, RiskToleranceId, AIToneId } from "@/context/WalletContext";
 import { useAuth } from "@/context/AuthContext";
 import {
-  User,
   Sparkles,
   Shield,
   Zap,
@@ -14,14 +13,8 @@ import {
   ChevronLeft,
   Check,
   CheckCircle2,
-  Sliders,
-  DollarSign,
   Bot,
-  Flame,
   Award,
-  CreditCard,
-  Target,
-  ArrowRight,
   LogOut,
 } from "lucide-react";
 
@@ -100,7 +93,7 @@ const PERSONAS: PersonaConfig[] = [
 export default function ProfilePage() {
   const router = useRouter();
   const { user, signOut } = useAuth();
-  const { userProfile, updateUserProfile, cards, transactions, mainBalance } = useWallet();
+  const { userProfile, updateUserProfile, cards, mainBalance } = useWallet();
 
   const [name, setName] = useState(userProfile.name);
   const [email, setEmail] = useState(userProfile.email);
@@ -112,12 +105,15 @@ export default function ProfilePage() {
 
   // Sincronizar inputs locais quando o perfil for carregado do Firestore
   useEffect(() => {
-    setName(userProfile.name);
-    setEmail(userProfile.email);
-    setRole(userProfile.role);
-    setIncomeInput(userProfile.monthlyIncomeBase.toString());
-    setPrimaryFocus(userProfile.primaryFocus);
-    setMaxCommitment(userProfile.maxCommitmentAlertPercent);
+    const timeout = window.setTimeout(() => {
+      setName(userProfile.name);
+      setEmail(userProfile.email);
+      setRole(userProfile.role);
+      setIncomeInput(userProfile.monthlyIncomeBase.toString());
+      setPrimaryFocus(userProfile.primaryFocus);
+      setMaxCommitment(userProfile.maxCommitmentAlertPercent);
+    }, 0);
+    return () => window.clearTimeout(timeout);
   }, [userProfile]);
 
   const handleSignOut = async () => {

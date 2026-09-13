@@ -11,7 +11,6 @@ import {
   MoreHorizontal,
   Smartphone,
   ShieldCheck,
-  Sparkles,
 } from "lucide-react";
 import { CardItem } from "@/context/WalletContext";
 
@@ -45,8 +44,6 @@ export function InteractiveCard({
   const isCredit = card.type === "credit";
   const displayedMainValue = isCredit ? card.invoiceAmount || 0 : card.balance || 0;
   const labelMainValue = isCredit ? "Fatura em Aberto" : "Saldo Disponível";
-
-  const percentUsed = Math.min(100, Math.round((card.spent / card.limit) * 100));
 
   const handleSaveLimit = () => {
     const num = parseFloat(tempLimit.replace(/\./g, "").replace(",", "."));

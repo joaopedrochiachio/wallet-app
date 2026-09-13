@@ -84,6 +84,66 @@ export const MONTH_NAMES_PT = [
   "Dezembro",
 ];
 
+export interface PlanningMonth {
+  name: string;
+  short: string;
+  monthIndex: number;
+  year: number;
+}
+
+/** Retorna uma janela de meses baseada no calendário atual, inclusive na virada do ano. */
+export function getPlanningMonths(count: number = 4, from: Date = new Date()): PlanningMonth[] {
+  return Array.from({ length: count }, (_, offset) => {
+    const date = new Date(from.getFullYear(), from.getMonth() + offset, 1);
+    const short = MONTH_NAMES_PT[date.getMonth()];
+    return {
+      name: offset === 0 ? `${short} (Atual)` : short,
+      short,
+      monthIndex: date.getMonth(),
+      year: date.getFullYear(),
+    };
+  });
+}
+
+export function getPeriodKey(year: number, monthIndex: number): string {
+  return `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
+}
+
+/** Diferença em meses entre a competência alvo e o início de um planejamento. */
+export function getRecurringMonthOffset(
+  item: { startYear?: number; startMonth?: number; startMonthIndex?: number },
+  targetYear: number,
+  targetMonth: number
+): number {
+  const startYear = item.startYear ?? targetYear;
+  // Compatibilidade com dados antigos: a tela original começava em setembro/2026.
+  const legacyDate = new Date(startYear, 8 + (item.startMonthIndex ?? 0), 1);
+  const startMonth = item.startMonth ?? legacyDate.getMonth();
+  const normalizedStartYear = item.startMonth === undefined ? legacyDate.getFullYear() : startYear;
+  return (targetYear - normalizedStartYear) * 12 + targetMonth - startMonth;
+}
+
+export function isRecurringActiveInMonth(
+  item: {
+    active: boolean;
+    installmentsCount?: number;
+    startYear?: number;
+    startMonth?: number;
+    startMonthIndex?: number;
+    realizedPeriods?: string[];
+  },
+  targetYear: number,
+  targetMonth: number
+): boolean {
+  if (!item.active || item.realizedPeriods?.includes(getPeriodKey(targetYear, targetMonth))) {
+    return false;
+  }
+
+  const monthOffset = getRecurringMonthOffset(item, targetYear, targetMonth);
+  if (monthOffset < 0) return false;
+  return !item.installmentsCount || item.installmentsCount <= 0 || monthOffset < item.installmentsCount;
+}
+
 /**
  * Retorna o dia de vencimento efetivo considerando se o item é fixo ou 5º dia útil
  */

@@ -1,16 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useWallet } from "@/context/WalletContext";
-import { useAuth } from "@/context/AuthContext";
 import { AddTransactionSheet } from "@/components/ui/AddTransactionSheet";
 import { AddCardSheet } from "@/components/ui/AddCardSheet";
 import { ListGroup, ListItem } from "@/components/ui/iOSList";
-import { subscribeToTransactions } from "@/lib/services/transactionsService";
-import { Transaction } from "@/types";
 import {
-  BankCard,
-  GlassCard,
   CardStack,
   WalletCard,
   WalletHeader,
@@ -35,13 +30,11 @@ import {
 import Link from "next/link";
 
 export default function DashboardPage() {
-  const { user } = useAuth();
   const {
     userProfile,
     cards,
     activeCard,
     selectCard,
-    updateCardLimit,
     payInvoice,
     addTransaction,
     addCard,
@@ -49,38 +42,23 @@ export default function DashboardPage() {
     totalInvoices,
     mainBalance,
     goals,
+    transactions,
+    monthIncome,
+    monthExpense,
+    isDataLoaded,
   } = useWallet();
 
-  const [firestoreTransactions, setFirestoreTransactions] = useState<Transaction[]>([]);
-  const [isSyncing, setIsSyncing] = useState(true);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [isCardSheetOpen, setIsCardSheetOpen] = useState(false);
 
   // Modo de visualização: Pilha 3D fluida vs Grade organizada
   const [is3DStackView, setIs3DStackView] = useState<boolean>(true);
 
-  // Escuta em tempo real do Cloud Firestore (isolado pelo usuário autenticado)
-  useEffect(() => {
-    const unsubscribe = subscribeToTransactions((items) => {
-      setFirestoreTransactions(items);
-      setIsSyncing(false);
-    }, user?.uid);
-    return () => unsubscribe();
-  }, [user]);
-
   const formatCurrency = (val: number) =>
     val.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   // Saldo real da Conta Corrente (saldo principal)
   const effectiveCheckingBalance = mainBalance;
-
-  const monthIncome = firestoreTransactions
-    .filter((t) => t.type === "in")
-    .reduce((acc, t) => acc + t.amount, 0);
-
-  const monthExpense = firestoreTransactions
-    .filter((t) => t.type === "out")
-    .reduce((acc, t) => acc + t.amount, 0);
 
   const getTransactionIcon = (category: string) => {
     if (category.includes("Alimentação")) return <Utensils strokeWidth={1.5} size={16} />;
@@ -90,7 +68,9 @@ export default function DashboardPage() {
     return <ShoppingBag strokeWidth={1.5} size={16} />;
   };
 
-  const recentTransactions = firestoreTransactions.slice(0, 5);
+  const recentTransactions = transactions
+    .filter((transaction) => transaction.kind !== "invoice_settlement")
+    .slice(0, 5);
 
   // Mapeamento dos cartões reais do usuário para o formato WalletCardData
   const userWalletCards: WalletCardData[] = cards.map((c, index) => {
@@ -150,9 +130,11 @@ export default function DashboardPage() {
           onPayWithWPay={() => setIsSheetOpen(true)}
           onAddNewCard={() => setIsCardSheetOpen(true)}
           onPayInvoice={
-            totalInvoices > 0 ? () => payInvoice(activeCard.id) : undefined
+            activeCard.type === "credit" && (activeCard.invoiceAmount || 0) > 0
+              ? () => { void payInvoice(activeCard.id); }
+              : undefined
           }
-          hasOpenInvoice={totalInvoices > 0}
+          hasOpenInvoice={activeCard.type === "credit" && (activeCard.invoiceAmount || 0) > 0}
         />
 
         {/* 3. SEÇÃO PRINCIPAL: PILHA 3D DE CARTÕES E GRADE */}
@@ -290,7 +272,7 @@ export default function DashboardPage() {
           </div>
 
           <ListGroup>
-            {isSyncing ? (
+            {!isDataLoaded ? (
               <div className="py-8 text-center text-xs text-[#86868B]">
                 Sincronizando lançamentos com Cloud Firestore...
               </div>
@@ -302,11 +284,11 @@ export default function DashboardPage() {
               recentTransactions.map((tx, idx) => (
                 <ListItem
                   key={tx.id || idx}
-                  title={tx.description}
+                  title={tx.title}
                   subtitle={`${tx.category} • ${typeof tx.date === "string" ? tx.date : new Date(tx.date).toLocaleDateString("pt-BR")}`}
-                  amount={`${tx.type === "in" ? "+" : "-"} R$ ${formatCurrency(tx.amount)}`}
-                  isIncome={tx.type === "in"}
-                  badge={tx.paymentMethod}
+                  amount={`${tx.type === "receita" ? "+" : "-"} R$ ${formatCurrency(tx.amount)}`}
+                  isIncome={tx.type === "receita"}
+                  badge={tx.account}
                   icon={getTransactionIcon(tx.category)}
                   isLast={idx === recentTransactions.length - 1}
                 />

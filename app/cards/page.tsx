@@ -5,10 +5,7 @@ import { useWallet } from "@/context/WalletContext";
 import {
   CreditCard,
   CheckCircle2,
-  Calendar,
-  AlertCircle,
   SlidersHorizontal,
-  ChevronRight,
   ShieldCheck,
   Check,
   X,
@@ -17,6 +14,7 @@ import {
 } from "lucide-react";
 import { AddCardSheet } from "@/components/ui/AddCardSheet";
 import { AppleConfirmModal } from "@/components/ui/AppleConfirmModal";
+import { getPlanningMonths } from "@/lib/utils/dateUtils";
 
 export default function CardsPage() {
   const {
@@ -26,11 +24,12 @@ export default function CardsPage() {
     mainBalance,
     addCard,
     deleteCard,
-    recurringItems,
+    getMonthlyProjection,
   } = useWallet();
   const [editingCardId, setEditingCardId] = useState<string | null>(null);
   const [newLimitInput, setNewLimitInput] = useState("");
   const [paymentSuccessMessage, setPaymentSuccessMessage] = useState<string | null>(null);
+  const [isPayingInvoice, setIsPayingInvoice] = useState(false);
   const [isAddCardOpen, setIsAddCardOpen] = useState(false);
   const [confirmPayModal, setConfirmPayModal] = useState<{
     isOpen: boolean;
@@ -62,7 +61,7 @@ export default function CardsPage() {
     setEditingCardId(null);
   };
 
-  const handleExecutePayInvoice = () => {
+  const handleExecutePayInvoice = async () => {
     if (!confirmPayModal) return;
     const { cardId, cardName, amount } = confirmPayModal;
     if (mainBalance < amount) {
@@ -70,10 +69,17 @@ export default function CardsPage() {
       setConfirmPayModal(null);
       return;
     }
-    payInvoice(cardId);
-    setConfirmPayModal(null);
-    setPaymentSuccessMessage(`Fatura do ${cardName} paga com sucesso!`);
-    setTimeout(() => setPaymentSuccessMessage(null), 4000);
+    setIsPayingInvoice(true);
+    try {
+      await payInvoice(cardId);
+      setConfirmPayModal(null);
+      setPaymentSuccessMessage(`Fatura do ${cardName} paga com sucesso!`);
+      setTimeout(() => setPaymentSuccessMessage(null), 4000);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Não foi possível pagar a fatura.");
+    } finally {
+      setIsPayingInvoice(false);
+    }
   };
 
   return (
@@ -322,13 +328,16 @@ export default function CardsPage() {
 
         {/* Projeção Real de Parcelas e Assinaturas Futuras */}
         {(() => {
-          const creditRecurringTotal = recurringItems
-            .filter((r) => r.active && r.type !== "income" && r.account !== "Débito/Pix")
-            .reduce((acc, r) => acc + r.amount, 0);
-
-          const creditRecurringCount = recurringItems.filter(
-            (r) => r.active && r.type !== "income" && r.account !== "Débito/Pix"
-          ).length;
+          const futureProjections = getPlanningMonths(3).slice(1).map((month, index) => {
+            const projection = getMonthlyProjection(index + 1);
+            return {
+              ...month,
+              openInvoice: projection.cardInstallments,
+              plannedCharges: projection.recurringCreditTotal,
+              total: projection.cardInstallments + projection.recurringCreditTotal,
+            };
+          });
+          const hasFutureCharges = futureProjections.some((month) => month.total > 0);
 
           return (
             <section className="bg-white rounded-[20px] p-6 border border-black/[0.04] shadow-[0_2px_8px_rgba(0,0,0,0.04)] space-y-4">
@@ -342,31 +351,22 @@ export default function CardsPage() {
                 </span>
               </div>
 
-              {creditRecurringTotal > 0 ? (
+              {hasFutureCharges ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                  <div className="p-4 rounded-xl bg-[#F2F2F7]/60 space-y-1">
-                    <span className="text-[11px] uppercase font-semibold text-[#86868B] tracking-wider">
-                      Outubro 2026
-                    </span>
-                    <div className="text-lg font-semibold text-[#1D1D1F]">
-                      R$ {formatCurrency(creditRecurringTotal)}
+                  {futureProjections.map((month) => (
+                    <div key={`${month.year}-${month.monthIndex}`} className="p-4 rounded-xl bg-[#F2F2F7]/60 space-y-1">
+                      <span className="text-[11px] uppercase font-semibold text-[#86868B] tracking-wider">
+                        {month.short} {month.year}
+                      </span>
+                      <div className="text-lg font-semibold text-[#1D1D1F]">
+                        R$ {formatCurrency(month.total)}
+                      </div>
+                      <p className="text-xs text-[#86868B]">
+                        R$ {formatCurrency(month.openInvoice)} em aberto + R${" "}
+                        {formatCurrency(month.plannedCharges)} planejados
+                      </p>
                     </div>
-                    <p className="text-xs text-[#86868B]">
-                      {creditRecurringCount} {creditRecurringCount === 1 ? "cobrança programada" : "cobranças programadas"}
-                    </p>
-                  </div>
-
-                  <div className="p-4 rounded-xl bg-[#F2F2F7]/60 space-y-1">
-                    <span className="text-[11px] uppercase font-semibold text-[#86868B] tracking-wider">
-                      Novembro 2026
-                    </span>
-                    <div className="text-lg font-semibold text-[#1D1D1F]">
-                      R$ {formatCurrency(creditRecurringTotal)}
-                    </div>
-                    <p className="text-xs text-[#86868B]">
-                      {creditRecurringCount} {creditRecurringCount === 1 ? "cobrança programada" : "cobranças programadas"}
-                    </p>
-                  </div>
+                  ))}
                 </div>
               ) : (
                 <div className="p-5 rounded-xl bg-[#F2F2F7]/40 text-center space-y-1.5 border border-dashed border-gray-200">
@@ -395,6 +395,7 @@ export default function CardsPage() {
         isOpen={!!confirmPayModal?.isOpen}
         onClose={() => setConfirmPayModal(null)}
         onConfirm={handleExecutePayInvoice}
+        isLoading={isPayingInvoice}
         title="Confirmar Pagamento de Fatura"
         description={`Deseja debitar R$ ${formatCurrency(confirmPayModal?.amount || 0)} do seu saldo disponível (R$ ${formatCurrency(mainBalance)}) para quitar a fatura do cartão ${confirmPayModal?.cardName}?`}
         confirmLabel="Pagar com W Pay"

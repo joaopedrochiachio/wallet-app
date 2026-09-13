@@ -26,10 +26,6 @@ async function navigateAndWaitForLoad(page: Page, path: string) {
   await page.waitForTimeout(3000);
 }
 
-function generateTestId() {
-  return `test-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
-}
-
 // =====================================================
 // TESTES DE INTEGRIDADE
 // =====================================================
@@ -109,7 +105,7 @@ test.describe("Wallet App — Integridade de Dados E2E", () => {
 
     // Capturar estado antes do reload
     await waitForFirestoreSync(page);
-    const bodyTextBefore = await page.locator("body").textContent();
+    await page.locator("body").textContent();
 
     // Reload
     await page.reload({ waitUntil: "domcontentloaded" });
@@ -172,12 +168,16 @@ test.describe("Wallet App — Integridade de Dados E2E", () => {
     const walletProfile = await page.evaluate(() => localStorage.getItem("wallet_user_profile"));
     const walletRecurring = await page.evaluate(() => localStorage.getItem("wallet_recurring"));
     const walletGoals = await page.evaluate(() => localStorage.getItem("wallet_goals"));
+    const remainingWalletKeys = await page.evaluate(() =>
+      Object.keys(localStorage).filter((key) => key.startsWith("wallet_"))
+    );
 
     expect(walletCards).toBeNull();
     expect(walletTx).toBeNull();
     expect(walletProfile).toBeNull();
     expect(walletRecurring).toBeNull();
     expect(walletGoals).toBeNull();
+    expect(remainingWalletKeys).toEqual([]);
   });
 
   test("11. Consistência entre Dashboard e Cards page", async ({ page }) => {
@@ -216,7 +216,7 @@ test.describe("Wallet App — Integridade de Dados E2E", () => {
     await waitForFirestoreSync(page);
 
     // Capturar conteúdo da página cards antes do reload
-    const contentBefore = await page.locator("body").textContent();
+    await page.locator("body").textContent();
 
     // Reload
     await page.reload({ waitUntil: "domcontentloaded" });

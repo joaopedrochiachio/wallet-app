@@ -30,9 +30,10 @@ export default function LoginPage() {
       } else {
         router.push("/onboarding");
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Erro no login Google:", err);
-      if (err.code !== "auth/popup-closed-by-user") {
+      const code = typeof err === "object" && err && "code" in err ? String(err.code) : "";
+      if (code !== "auth/popup-closed-by-user") {
         setError("Não foi possível autenticar com o Google. Tente novamente.");
       }
     } finally {
@@ -71,9 +72,9 @@ export default function LoginPage() {
         await signUp(trimmedEmail, password);
         router.push("/onboarding");
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Erro na autenticação:", err);
-      const code = err?.code;
+      const code = typeof err === "object" && err && "code" in err ? String(err.code) : "";
       if (code === "auth/invalid-credential" || code === "auth/wrong-password" || code === "auth/user-not-found") {
         setError("E-mail ou senha incorretos.");
       } else if (code === "auth/email-already-in-use") {
@@ -83,7 +84,7 @@ export default function LoginPage() {
       } else if (code === "auth/invalid-email") {
         setError("Formato de e-mail inválido.");
       } else {
-        setError(err.message || "Ocorreu um erro ao processar. Tente novamente.");
+        setError(err instanceof Error ? err.message : "Ocorreu um erro ao processar. Tente novamente.");
       }
     } finally {
       setLoading(false);

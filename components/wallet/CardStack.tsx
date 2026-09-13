@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import { useState } from "react";
 import { WalletCardData } from "@/types/wallet";
 import { BankCard } from "./BankCard";
 import { GlassCard } from "./GlassCard";
@@ -17,20 +17,15 @@ export function CardStack({ cards, onSelectCard, className = "" }: CardStackProp
   const [hoveredCardId, setHoveredCardId] = useState<string | null>(null);
   const [isStackHovered, setIsStackHovered] = useState<boolean>(false);
 
-  // Keep cardOrder in sync if external cards list changes
-  React.useEffect(() => {
-    setCardOrder((prev) => {
-      const cardIds = cards.map((c) => c.id);
-      const filtered = prev.filter((id) => cardIds.includes(id));
-      const newIds = cardIds.filter((id) => !filtered.includes(id));
-      return [...filtered, ...newIds];
-    });
-  }, [cards]);
-
   if (!cards || cards.length === 0) return null;
 
   // Build ordered list of cards
-  const orderedCards = cardOrder
+  const currentCardIds = cards.map((card) => card.id);
+  const effectiveOrder = [
+    ...cardOrder.filter((id) => currentCardIds.includes(id)),
+    ...currentCardIds.filter((id) => !cardOrder.includes(id)),
+  ];
+  const orderedCards = effectiveOrder
     .map((id) => cards.find((c) => c.id === id))
     .filter(Boolean) as WalletCardData[];
 
@@ -76,7 +71,7 @@ export function CardStack({ cards, onSelectCard, className = "" }: CardStackProp
           let translateY = 0;
           let translateZ = 0;
           let scale = 1;
-          let rotateX = isStackHovered ? 4 : 6;
+          const rotateX = isStackHovered ? 4 : 6;
           let zIndex = 30 - index * 10;
           let opacity = 1;
 

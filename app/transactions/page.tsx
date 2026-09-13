@@ -1,12 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useWallet } from "@/context/WalletContext";
-import { useAuth } from "@/context/AuthContext";
+import { useState } from "react";
+import { TransactionItem, useWallet } from "@/context/WalletContext";
 import { ListGroup, ListItem } from "@/components/ui/iOSList";
 import { AddTransactionSheet } from "@/components/ui/AddTransactionSheet";
-import { subscribeToTransactions } from "@/lib/services/transactionsService";
-import { Transaction } from "@/types";
+import { getPeriodKey, MONTH_NAMES_PT } from "@/lib/utils/dateUtils";
 import {
   Briefcase,
   Utensils,
@@ -20,23 +18,19 @@ import {
 import { AppleConfirmModal } from "@/components/ui/AppleConfirmModal";
 
 export default function TransactionsPage() {
-  const { user } = useAuth();
-  const { accountOptions, addTransaction, deleteTransaction } = useWallet();
-  const [firestoreTransactions, setFirestoreTransactions] = useState<Transaction[]>([]);
-  const [isSyncing, setIsSyncing] = useState(true);
-  const [selectedMonth, setSelectedMonth] = useState("Setembro");
+  const { accountOptions, addTransaction, deleteTransaction, transactions, isDataLoaded } = useWallet();
+  const now = new Date();
+  const monthOptions = [-1, 0, 1].map((offset) => {
+    const date = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+    return {
+      label: MONTH_NAMES_PT[date.getMonth()],
+      periodKey: getPeriodKey(date.getFullYear(), date.getMonth()),
+    };
+  });
+  const [selectedMonth, setSelectedMonth] = useState(getPeriodKey(now.getFullYear(), now.getMonth()));
   const [selectedFilter, setSelectedFilter] = useState("Todas");
   const [isSheetOpen, setIsSheetOpen] = useState(false);
-  const [txToDelete, setTxToDelete] = useState<Transaction | null>(null);
-
-  // Escuta em tempo real do Cloud Firestore (isolado pelo usuário autenticado)
-  useEffect(() => {
-    const unsubscribe = subscribeToTransactions((items) => {
-      setFirestoreTransactions(items);
-      setIsSyncing(false);
-    }, user?.uid);
-    return () => unsubscribe();
-  }, [user]);
+  const [txToDelete, setTxToDelete] = useState<TransactionItem | null>(null);
 
   const formatCurrency = (val: number) =>
     val.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -49,9 +43,15 @@ export default function TransactionsPage() {
     return <ShoppingBag strokeWidth={1.5} size={16} />;
   };
 
-  const filteredTransactions = firestoreTransactions.filter((t) => {
-    if (selectedFilter === "Todas") return true;
-    return t.paymentMethod === selectedFilter;
+  const filteredTransactions = transactions.filter((transaction) => {
+    if (transaction.kind === "invoice_settlement") return false;
+    const rawDate = transaction.occurredAt || transaction.createdAt;
+    const occurredAt = rawDate ? new Date(rawDate) : null;
+    const belongsToMonth = occurredAt && !Number.isNaN(occurredAt.getTime())
+      ? getPeriodKey(occurredAt.getFullYear(), occurredAt.getMonth()) === selectedMonth
+      : selectedMonth === getPeriodKey(now.getFullYear(), now.getMonth());
+    const belongsToAccount = selectedFilter === "Todas" || transaction.account === selectedFilter;
+    return belongsToMonth && belongsToAccount;
   });
 
   return (
@@ -69,17 +69,17 @@ export default function TransactionsPage() {
 
         {/* Mês Segmented Control */}
         <div className="bg-[#E5E5EA]/70 p-1 rounded-full flex items-center gap-1 self-start sm:self-auto border border-black/5">
-          {["Agosto", "Setembro", "Outubro"].map((m) => (
+          {monthOptions.map((month) => (
             <button
-              key={m}
-              onClick={() => setSelectedMonth(m)}
+              key={month.periodKey}
+              onClick={() => setSelectedMonth(month.periodKey)}
               className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all ${
-                selectedMonth === m
+                selectedMonth === month.periodKey
                   ? "bg-white text-[#1D1D1F] shadow-xs"
                   : "text-[#86868B] hover:text-[#1D1D1F]"
               }`}
             >
-              {m}
+              {month.label}
             </button>
           ))}
         </div>
@@ -110,7 +110,7 @@ export default function TransactionsPage() {
         {/* Resumo de Transações Filtradas e Botão de Ação */}
         <div className="flex justify-between items-center px-1 text-xs text-[#86868B]">
           <span>
-            Exibindo <strong className="text-[#1D1D1F]">{filteredTransactions.length}</strong> lançamentos em {selectedMonth}
+            Exibindo <strong className="text-[#1D1D1F]">{filteredTransactions.length}</strong> lançamentos em {monthOptions.find((month) => month.periodKey === selectedMonth)?.label}
           </span>
           <button
             onClick={() => setIsSheetOpen(true)}
@@ -122,7 +122,7 @@ export default function TransactionsPage() {
 
         {/* Lista de Transações (Componente iOSList com Cloud Firestore) */}
         <ListGroup>
-          {isSyncing ? (
+          {!isDataLoaded ? (
             <div className="py-12 text-center text-xs text-[#86868B]">
               Sincronizando lançamentos com Cloud Firestore...
             </div>
@@ -134,12 +134,12 @@ export default function TransactionsPage() {
             filteredTransactions.map((item, index) => (
               <ListItem
                 key={item.id || index}
-                title={item.description}
+                title={item.title}
                 subtitle={`${item.category} • ${typeof item.date === "string" ? item.date : new Date(item.date).toLocaleDateString("pt-BR")}`}
-                amount={`${item.type === "in" ? "+" : "-"} R$ ${formatCurrency(item.amount)}`}
-                isIncome={item.type === "in"}
+                amount={`${item.type === "receita" ? "+" : "-"} R$ ${formatCurrency(item.amount)}`}
+                isIncome={item.type === "receita"}
                 icon={getTransactionIcon(item.category)}
-                badge={item.paymentMethod}
+                badge={item.account}
                 isLast={index === filteredTransactions.length - 1}
                 rightElement={
                   <button
@@ -172,14 +172,18 @@ export default function TransactionsPage() {
       <AppleConfirmModal
         isOpen={!!txToDelete}
         onClose={() => setTxToDelete(null)}
-        onConfirm={() => {
+        onConfirm={async () => {
           if (txToDelete?.id) {
-            deleteTransaction(txToDelete.id);
-            setTxToDelete(null);
+            try {
+              await deleteTransaction(txToDelete.id);
+              setTxToDelete(null);
+            } catch (error) {
+              alert(error instanceof Error ? error.message : "Não foi possível excluir o lançamento.");
+            }
           }
         }}
         title="Excluir Lançamento"
-        description={`Tem certeza que deseja remover "${txToDelete?.description}" no valor de R$ ${txToDelete ? formatCurrency(txToDelete.amount) : ""}? Esta ação recalculará o saldo disponível.`}
+        description={`Tem certeza que deseja remover "${txToDelete?.title}" no valor de R$ ${txToDelete ? formatCurrency(txToDelete.amount) : ""}? Esta ação recalculará o saldo disponível.`}
         confirmLabel="Excluir"
         cancelLabel="Cancelar"
         variant="danger"

@@ -1,21 +1,13 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
-  X,
-  Plus,
   Check,
   Repeat,
-  Loader2,
-  ChevronRight,
-  Wallet,
   CreditCard,
   Building2,
-  Calendar,
   Sparkles,
 } from "lucide-react";
-import { addTransaction as addTransactionFirestore } from "@/lib/services/transactionsService";
-import { useAuth } from "@/context/AuthContext";
 import { useWallet } from "@/context/WalletContext";
 import { WPayLogo, WPayButton } from "@/components/ui/WPayLogo";
 import { get5thBusinessDay, MONTH_NAMES_PT } from "@/lib/utils/dateUtils";
@@ -37,7 +29,7 @@ export interface AddTransactionSheetProps {
     isRecurring?: boolean;
     recurrenceType?: RecurrenceType;
     recurrenceDay?: number;
-  }) => void;
+  }) => void | Promise<void>;
 }
 
 const EXPENSE_CATEGORIES = [
@@ -70,13 +62,11 @@ export function AddTransactionSheet({
   accounts = DEFAULT_ACCOUNTS,
   onAdd,
 }: AddTransactionSheetProps) {
-  const { user } = useAuth();
   const { cards } = useWallet();
   const [type, setType] = useState<"despesa" | "receita">("despesa");
   const [amountInput, setAmountInput] = useState("");
   const [title, setTitle] = useState("");
 
-  const [categoriesList, setCategoriesList] = useState<string[]>(EXPENSE_CATEGORIES);
   const [category, setCategory] = useState(EXPENSE_CATEGORIES[0]);
   const [account, setAccount] = useState(accounts[0] || "Débito/Pix");
   const [isRecurring, setIsRecurring] = useState(false);
@@ -87,57 +77,34 @@ export function AddTransactionSheet({
 
   const [loading, setLoading] = useState(false);
 
-  // Categorias inline
-  const [isAddingCategory, setIsAddingCategory] = useState(false);
-  const [newCategoryInput, setNewCategoryInput] = useState("");
-
   const now = new Date();
   const currentMonthIndex = now.getMonth();
   const currentYear = now.getFullYear();
   const current5thBusinessDay = get5thBusinessDay(currentYear, currentMonthIndex);
   const currentMonthName = MONTH_NAMES_PT[currentMonthIndex];
 
-  // Atualiza as categorias e contas sugeridas ao alternar entre Despesa e Receita
-  useEffect(() => {
-    if (type === "despesa") {
-      setCategoriesList(EXPENSE_CATEGORIES);
-      setCategory(EXPENSE_CATEGORIES[0]);
-    } else {
-      setCategoriesList(INCOME_CATEGORIES);
-      setCategory(INCOME_CATEGORIES[0]);
-      // Para receitas, sugerir prioritariamente conta corrente (Débito/Pix)
-      const checkingAcc =
-        accounts.find((a) => a === "Débito/Pix" || a.toLowerCase().includes("conta")) ||
-        accounts[0] ||
-        "Débito/Pix";
-      setAccount(checkingAcc);
-      // Por padrão em recebimento, sugerir o 5º dia útil
+  const categoriesList = type === "despesa" ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
+  const checkingAccounts = cards.filter((card) => card.type === "checking").map((card) => card.name);
+  const availableAccounts = type === "receita" && checkingAccounts.length > 0
+    ? checkingAccounts
+    : accounts;
+  const effectiveAccount = availableAccounts.includes(account)
+    ? account
+    : availableAccounts[0] || "Débito/Pix";
+
+  const handleTypeChange = (nextType: "despesa" | "receita") => {
+    setType(nextType);
+    setCategory(nextType === "despesa" ? EXPENSE_CATEGORIES[0] : INCOME_CATEGORIES[0]);
+    if (nextType === "receita") {
+      setAccount(checkingAccounts[0] || accounts[0] || "Débito/Pix");
       setRecurrenceType("business_day_5");
     }
-  }, [type, accounts]);
+  };
 
   if (!isOpen) return null;
 
-  const handleQuickAdd = (value: number) => {
-    const current = parseFloat(amountInput.replace(/\./g, "").replace(",", ".")) || 0;
-    const nextVal = (current + value).toFixed(2).replace(".", ",");
-    setAmountInput(nextVal);
-  };
-
   const handleClearAmount = () => {
     setAmountInput("");
-  };
-
-  const handleSaveNewCategory = () => {
-    const trimmed = newCategoryInput.trim();
-    if (trimmed) {
-      if (!categoriesList.includes(trimmed)) {
-        setCategoriesList((prev) => [...prev, trimmed]);
-      }
-      setCategory(trimmed);
-    }
-    setNewCategoryInput("");
-    setIsAddingCategory(false);
   };
 
   const parsedAmount = parseFloat(amountInput.replace(/\./g, "").replace(",", ".")) || 0;
@@ -151,7 +118,6 @@ export function AddTransactionSheet({
     try {
       const txDescription =
         title.trim() || (type === "despesa" ? "Novo Gasto" : "Nova Receita");
-      const mappedType = type === "receita" ? "in" : "out";
       const formattedDate = `${now.toLocaleDateString("pt-BR", {
         day: "2-digit",
         month: "short",
@@ -162,37 +128,14 @@ export function AddTransactionSheet({
           ? current5thBusinessDay
           : recurrenceDay;
 
-      // Resolver cardId para referência estável por ID
-      const resolvedCardId = (() => {
-        if (account === "Débito/Pix") {
-          return cards.find((c) => c.type === "checking")?.id || null;
-        }
-        return cards.find((c) => c.id === account || c.name.toLowerCase() === account.toLowerCase())?.id || null;
-      })();
-
-      // 1. Salvar no Cloud Firestore isolado pelo user.uid
-      await addTransactionFirestore(
-        {
-          amount: parsedAmount,
-          type: mappedType,
-          category,
-          description: txDescription,
-          paymentMethod: account,
-          cardId: resolvedCardId,
-          date: formattedDate,
-          occurredAt: now,
-        } as any,
-        user?.uid
-      );
-
-      // 2. Notificar callback de atualização local/contexto
-      onAdd?.({
+      if (!onAdd) throw new Error("Fluxo de lançamento indisponível.");
+      await onAdd({
         title: txDescription,
         amount: parsedAmount,
         type,
         category,
-        account,
-        cardId: resolvedCardId,
+        account: effectiveAccount,
+        cardId: cards.find((card) => card.name === effectiveAccount)?.id || null,
         date: formattedDate,
         occurredAt: now,
         isRecurring,
@@ -205,9 +148,9 @@ export function AddTransactionSheet({
       setTitle("");
       setIsRecurring(false);
       onClose();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Erro ao salvar transação:", err);
-      alert(err?.message || "Erro ao gravar a transação. Verifique suas conexões.");
+      alert(err instanceof Error ? err.message : "Erro ao gravar a transação. Verifique sua conexão.");
     } finally {
       setLoading(false);
     }
@@ -255,7 +198,7 @@ export function AddTransactionSheet({
               <div className="flex-1 flex gap-2">
                 <button
                   type="button"
-                  onClick={() => setType("despesa")}
+                  onClick={() => handleTypeChange("despesa")}
                   className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                     type === "despesa"
                       ? "bg-[#1D1D1F] text-white shadow-2xs"
@@ -266,7 +209,7 @@ export function AddTransactionSheet({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setType("receita")}
+                  onClick={() => handleTypeChange("receita")}
                   className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                     type === "receita"
                       ? "bg-emerald-600 text-white shadow-2xs"
@@ -312,8 +255,8 @@ export function AddTransactionSheet({
                 {type === "receita" ? "DESTINO" : "CONTA / CARTÃO"}
               </span>
               <div className="flex-1 flex flex-wrap gap-2">
-                {accounts.map((acc) => {
-                  const isSelected = account === acc;
+                {availableAccounts.map((acc) => {
+                  const isSelected = effectiveAccount === acc;
                   return (
                     <button
                       key={acc}

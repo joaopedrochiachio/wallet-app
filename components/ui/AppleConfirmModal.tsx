@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { AlertCircle, Trash2, CheckCircle2, CreditCard } from "lucide-react";
+import { AlertCircle, Trash2, CreditCard } from "lucide-react";
 
 export interface AppleConfirmModalProps {
   isOpen: boolean;

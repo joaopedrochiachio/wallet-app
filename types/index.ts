@@ -23,6 +23,8 @@ export interface CardItem {
   brand: string;
   type: "checking" | "credit";
   balance?: number;
+  /** Saldo existente antes do primeiro lançamento. O saldo atual é derivado do livro-caixa. */
+  openingBalance?: number;
   invoiceAmount?: number;
   limit: number;
   spent: number;
@@ -46,6 +48,11 @@ export interface Transaction {
   description: string;
   paymentMethod: string;
   cardId?: string | null;
+  kind?: "regular" | "invoice_payment" | "invoice_settlement";
+  relatedCardId?: string | null;
+  groupId?: string | null;
+  recurringItemId?: string | null;
+  periodKey?: string | null;
   occurredAt?: string | number | Date | null;
   createdAt?: string | number | Date;
   userId?: string;
@@ -69,12 +76,15 @@ export interface RecurringItem {
   amount: number;
   type?: "expense" | "income"; // default "expense"
   account: string;
+  cardId?: string | null;
   category: string;
   dueDay: number;
   recurrenceType?: RecurrenceType;
   installmentsCount?: number; // Total de meses/parcelas (ex: 3, 4, 5). Se ausente ou 0 = contínuo/fixo
   startMonthIndex?: number; // Mês inicial (0 = Setembro, 1 = Outubro...)
+  startMonth?: number; // Mês calendário inicial (0 = Janeiro, 11 = Dezembro)
   startYear?: number; // Ano de início (ex: 2026)
+  realizedPeriods?: string[]; // Competências já realizadas, no formato YYYY-MM
   active: boolean;
 }
 
@@ -94,5 +104,4 @@ export interface NewCardInput {
     chipGradient: string;
   };
 }
-
 

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { X, Wifi, CreditCard, Sparkles, Check } from "lucide-react";
+import { X, Wifi, Sparkles, Check } from "lucide-react";
 import { NewCardInput } from "@/context/WalletContext";
 
 export interface AddCardSheetProps {

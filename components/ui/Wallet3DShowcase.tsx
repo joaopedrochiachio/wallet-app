@@ -6,10 +6,7 @@ import {
   Wifi,
   Layers,
   ArrowUpRight,
-  ShieldCheck,
-  Sparkles,
   QrCode,
-  CreditCard,
 } from "lucide-react";
 import Link from "next/link";
 

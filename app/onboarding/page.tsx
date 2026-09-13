@@ -5,17 +5,14 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { saveUserProfile } from "@/lib/services/userService";
 import { saveCardToFirestore } from "@/lib/services/cardsService";
-import { FinancialPersonaId, RiskToleranceId, AIToneId, CardItem } from "@/types";
+import { FinancialPersonaId, CardItem } from "@/types";
 import {
-  Sparkles,
   ShieldCheck,
   TrendingUp,
-  CreditCard,
   ArrowRight,
   CheckCircle2,
   Sliders,
   Compass,
-  Wallet,
   Loader2,
 } from "lucide-react";
 
@@ -137,6 +134,7 @@ export default function OnboardingPage() {
         brand: cardType === "checking" ? "Débito / Pix" : "Mastercard Platinum",
         type: cardType,
         balance: cardType === "checking" ? cleanAmount : 0,
+        openingBalance: cardType === "checking" ? cleanAmount : 0,
         limit: cardType === "credit" ? cleanAmount : 5000,
         spent: 0,
         invoiceAmount: 0,
@@ -155,9 +153,9 @@ export default function OnboardingPage() {
 
       // 3. Redirecionar ao Dashboard
       router.push("/dashboard");
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Erro ao finalizar onboarding:", err);
-      alert(err?.message || "Ocorreu um erro ao salvar suas informações. Tente novamente.");
+      alert(err instanceof Error ? err.message : "Ocorreu um erro ao salvar suas informações. Tente novamente.");
     } finally {
       setSubmitting(false);
     }

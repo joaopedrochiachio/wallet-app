@@ -11,15 +11,18 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   Sparkles,
-  Calendar,
 } from "lucide-react";
 import { WPayLogo, WPayButton } from "@/components/ui/WPayLogo";
 import { AppleConfirmModal } from "@/components/ui/AppleConfirmModal";
 import {
   get5thBusinessDay,
   getEffectiveDueDay,
-  MONTH_NAMES_PT,
+  getPlanningMonths,
+  getPeriodKey,
+  getRecurringMonthOffset,
+  isRecurringActiveInMonth,
 } from "@/lib/utils/dateUtils";
+import { getLedgerEntryDate } from "@/lib/utils/ledger";
 import { RecurrenceType, RecurringItem } from "@/types";
 
 export default function PlanningPage() {
@@ -30,9 +33,11 @@ export default function PlanningPage() {
     deleteRecurringItem,
     getMonthlyProjection,
     accountOptions,
+    cards,
+    transactions,
   } = useWallet();
 
-  const [selectedMonthIndex, setSelectedMonthIndex] = useState(0); // 0=Set, 1=Out, 2=Nov, 3=Dez
+  const [selectedMonthIndex, setSelectedMonthIndex] = useState(0);
   const [isAddingModalOpen, setIsAddingModalOpen] = useState(false);
   const [modalType, setModalType] = useState<"income" | "expense">("income");
   const [itemToDelete, setItemToDelete] = useState<RecurringItem | null>(null);
@@ -57,12 +62,7 @@ export default function PlanningPage() {
   const [customInstallmentInput, setCustomInstallmentInput] = useState("4");
 
 
-  const planningMonths = [
-    { name: "Setembro (Atual)", short: "Setembro", monthIndex: 8, year: 2026 },
-    { name: "Outubro", short: "Outubro", monthIndex: 9, year: 2026 },
-    { name: "Novembro", short: "Novembro", monthIndex: 10, year: 2026 },
-    { name: "Dezembro", short: "Dezembro", monthIndex: 11, year: 2026 },
-  ];
+  const planningMonths = getPlanningMonths();
 
   const activeMonthObj = planningMonths[selectedMonthIndex] || planningMonths[0];
   const targetYear = activeMonthObj.year;
@@ -74,25 +74,41 @@ export default function PlanningPage() {
   const formatCurrency = (val: number) =>
     val.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+  const isCheckingAccount = (item: RecurringItem) =>
+    item.account === "Débito/Pix" || cards.some((card) =>
+      card.type === "checking" &&
+      (card.id === item.cardId || card.id === item.account || card.name === item.account)
+    );
+
+  const isActiveInSelectedMonth = (item: RecurringItem) =>
+    isRecurringActiveInMonth(item, targetYear, targetMonth);
+
+  const selectedTransactions = transactions.filter((transaction) => {
+    if (transaction.kind === "invoice_settlement") return false;
+    const occurredAt = getLedgerEntryDate(transaction);
+    return occurredAt?.getFullYear() === targetYear && occurredAt.getMonth() === targetMonth;
+  });
+
+  const transactionUsesCredit = (cardId?: string | null, account?: string) =>
+    cards.some((card) => card.type === "credit" && (
+      card.id === cardId || card.id === account || card.name === account
+    ));
+
   // Separar recebidos futuros vs pagamentos futuros
   const plannedIncomes = recurringItems.filter((r) => r.type === "income");
   const plannedDebitExpenses = recurringItems.filter(
-    (r) => r.type !== "income" && r.account === "Débito/Pix"
+    (r) => r.type !== "income" && isCheckingAccount(r)
   );
   const plannedCreditExpenses = recurringItems.filter(
-    (r) => r.type !== "income" && r.account !== "Débito/Pix"
+    (r) => r.type !== "income" && !isCheckingAccount(r)
   );
 
   const totalIncomesActive = plannedIncomes
-    .filter((r) => r.active)
+    .filter(isActiveInSelectedMonth)
     .reduce((acc, r) => acc + r.amount, 0);
 
   const totalDebitExpensesActive = plannedDebitExpenses
-    .filter((r) => r.active)
-    .reduce((acc, r) => acc + r.amount, 0);
-
-  const totalCreditExpensesActive = plannedCreditExpenses
-    .filter((r) => r.active)
+    .filter(isActiveInSelectedMonth)
     .reduce((acc, r) => acc + r.amount, 0);
 
   const freePercentage =
@@ -108,9 +124,7 @@ export default function PlanningPage() {
     setNewCategory(type === "income" ? "Salário / Extra" : "Moradia & Contas");
     // Para recebimentos, sugere prioritariamente Débito/Pix (Conta Corrente)
     const checkingAcc =
-      accountOptions.find(
-        (a) => a === "Débito/Pix" || a.toLowerCase().includes("conta")
-      ) ||
+      cards.find((card) => card.type === "checking")?.name ||
       accountOptions[0] ||
       "Débito/Pix";
     setNewAccount(type === "income" ? checkingAcc : accountOptions[0] || "Débito/Pix");
@@ -122,7 +136,7 @@ export default function PlanningPage() {
     setIsAddingModalOpen(true);
   };
 
-  const handleCreatePlannedItem = (e: React.FormEvent) => {
+  const handleCreatePlannedItem = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanAmount = parseFloat(newAmount.replace(/\./g, "").replace(",", "."));
     if (isNaN(cleanAmount) || cleanAmount <= 0 || !newTitle.trim()) return;
@@ -136,23 +150,35 @@ export default function PlanningPage() {
       computedDay = parseInt(fixedDayValue) || 10;
     }
 
-    addRecurringItem({
-      title: newTitle.trim(),
-      amount: cleanAmount,
-      type: modalType,
-      account: newAccount,
-      category: newCategory,
-      dueDay: computedDay,
-      recurrenceType: recurrenceSelection,
-      installmentsCount: durationMode === "installments" ? installmentsCount : undefined,
-      startMonthIndex: selectedMonthIndex,
-      startYear: targetYear,
-      active: true,
-    });
+    try {
+      await addRecurringItem({
+        title: newTitle.trim(),
+        amount: cleanAmount,
+        type: modalType,
+        account: newAccount,
+        cardId: cards.find((card) => card.name === newAccount)?.id || null,
+        category: newCategory,
+        dueDay: computedDay,
+        recurrenceType: recurrenceSelection,
+        installmentsCount: durationMode === "installments" ? installmentsCount : undefined,
+        startMonth: targetMonth,
+        startYear: targetYear,
+        active: true,
+      });
+      setNewTitle("");
+      setNewAmount("");
+      setIsAddingModalOpen(false);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Não foi possível salvar o planejamento.");
+    }
+  };
 
-    setNewTitle("");
-    setNewAmount("");
-    setIsAddingModalOpen(false);
+  const handleToggleRecurring = async (id: string) => {
+    try {
+      await toggleRecurringItem(id);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Não foi possível alterar o planejamento.");
+    }
   };
 
   return (
@@ -210,7 +236,7 @@ export default function PlanningPage() {
           <div className="bg-white rounded-[20px] p-5 border border-black/[0.04] shadow-[0_2px_8px_rgba(0,0,0,0.04)] space-y-1 relative overflow-hidden">
             <div className="flex items-center justify-between">
               <span className="text-[11px] uppercase tracking-wider font-semibold text-emerald-700">
-                Renda & Recebidos
+                Entradas do Mês
               </span>
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             </div>
@@ -218,22 +244,22 @@ export default function PlanningPage() {
               R$ {formatCurrency(projection.projectedIncome)}
             </div>
             <p className="text-xs text-[#86868B]">
-              {projection.projectedIncome > 0
-                ? `${plannedIncomes.filter((r) => r.active).length} recebimento(s) planejado(s)`
-                : `Nenhum recebimento agendado (Perfil: R$ ${formatCurrency(projection.baseIncome)})`}
+              R$ {formatCurrency(projection.actualIncomeTotal)} realizados + R${" "}
+              {formatCurrency(projection.plannedIncomesTotal)} pendentes
             </p>
           </div>
 
           {/* 2. Total Comprometido */}
           <div className="bg-white rounded-[20px] p-5 border border-black/[0.04] shadow-[0_2px_8px_rgba(0,0,0,0.04)] space-y-1">
             <span className="text-[11px] uppercase tracking-wider font-semibold text-[#86868B]">
-              Total Comprometido
+              Saídas + Compromissos
             </span>
             <div className="text-2xl font-semibold text-rose-600 tracking-tight">
               − R$ {formatCurrency(projection.totalCommitted)}
             </div>
             <p className="text-xs text-[#86868B]">
-              Contas Débito + Assinaturas e Faturas
+              R$ {formatCurrency(projection.actualOutflowTotal)} pagos + R${" "}
+              {formatCurrency(projection.pendingCommitted)} pendentes
             </p>
           </div>
 
@@ -260,9 +286,69 @@ export default function PlanningPage() {
             >
               R$ {formatCurrency(projection.projectedFreeBalance)}
             </div>
-            <p className="text-xs text-[#86868B]">Disponível para aportes e metas</p>
+            <p className="text-xs text-[#86868B]">
+              {selectedMonthIndex === 0
+                ? "Saldo atual menos compromissos ainda pendentes"
+                : "Fluxo mensal previsto para aportes e metas"}
+            </p>
           </div>
         </div>
+
+        {/* Livro-caixa realizado: a mesma fonte exibida no Dashboard e em Transações. */}
+        <section className="space-y-3">
+          <div className="flex items-center justify-between px-1">
+            <div>
+              <h2 className="text-xs uppercase tracking-wider font-semibold text-[#1D1D1F]">
+                Movimentações realizadas no mês
+              </h2>
+              <p className="text-[11px] text-[#86868B] mt-0.5">
+                Entradas e saídas sincronizadas com o livro-caixa do Firestore
+              </p>
+            </div>
+            <span className="text-xs font-semibold text-[#86868B]">
+              {selectedTransactions.length} lançamento(s)
+            </span>
+          </div>
+
+          <div className="bg-white rounded-[20px] border border-black/[0.04] shadow-[0_2px_8px_rgba(0,0,0,0.04)] overflow-hidden">
+            {selectedTransactions.length === 0 ? (
+              <div className="p-7 text-center text-xs text-[#86868B]">
+                Nenhuma movimentação realizada nesta competência.
+              </div>
+            ) : (
+              selectedTransactions.map((transaction, index) => {
+                const onCredit = transactionUsesCredit(transaction.cardId, transaction.account);
+                return (
+                  <div
+                    key={transaction.id}
+                    className={`flex items-center justify-between gap-4 p-4 ${
+                      index !== selectedTransactions.length - 1 ? "border-b border-gray-100" : ""
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-semibold text-[#1D1D1F] truncate">
+                        {transaction.title}
+                      </h3>
+                      <p className="text-xs text-[#86868B] truncate">
+                        {transaction.account} • {transaction.category} • {transaction.date}
+                      </p>
+                      {onCredit && transaction.type === "despesa" && (
+                        <span className="inline-block mt-1 text-[10px] font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full">
+                          Projetado no vencimento da fatura
+                        </span>
+                      )}
+                    </div>
+                    <span className={`text-sm font-semibold whitespace-nowrap ${
+                      transaction.type === "receita" ? "text-emerald-600" : "text-[#1D1D1F]"
+                    }`}>
+                      {transaction.type === "receita" ? "+" : "−"} R$ {formatCurrency(transaction.amount)}
+                    </span>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </section>
 
         {/* SEÇÃO 1: RECEBIMENTOS FUTUROS PLANEJADOS */}
         <section className="space-y-3">
@@ -310,11 +396,11 @@ export default function PlanningPage() {
             ) : (
               plannedIncomes.map((item, idx) => {
                 const effectiveDay = getEffectiveDueDay(item, targetYear, targetMonth);
-                const startIdx = item.startMonthIndex ?? 0;
-                const monthOffset = selectedMonthIndex - startIdx;
+                const monthOffset = getRecurringMonthOffset(item, targetYear, targetMonth);
                 const hasInstallments = Boolean(item.installmentsCount && item.installmentsCount > 0);
                 const isFinishedInThisMonth = hasInstallments && monthOffset >= (item.installmentsCount || 0);
                 const currentInstallmentNum = monthOffset >= 0 ? monthOffset + 1 : 1;
+                const isRealized = item.realizedPeriods?.includes(getPeriodKey(targetYear, targetMonth));
 
                 return (
                   <div
@@ -325,7 +411,7 @@ export default function PlanningPage() {
                   >
                     <div className="flex items-center gap-3">
                       <button
-                        onClick={() => toggleRecurringItem(item.id)}
+                        onClick={() => { void handleToggleRecurring(item.id); }}
                         className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors cursor-pointer ${
                           item.active
                             ? "bg-emerald-600 border-emerald-600 text-white"
@@ -351,6 +437,11 @@ export default function PlanningPage() {
                           ) : (
                             <span className="text-xs text-[#86868B]">
                               Previsão dia {effectiveDay}
+                            </span>
+                          )}
+                          {isRealized && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+                              Recebido neste mês
                             </span>
                           )}
                           {hasInstallments && (
@@ -445,11 +536,11 @@ export default function PlanningPage() {
             ) : (
               plannedDebitExpenses.map((item, idx) => {
                 const effectiveDay = getEffectiveDueDay(item, targetYear, targetMonth);
-                const startIdx = item.startMonthIndex ?? 0;
-                const monthOffset = selectedMonthIndex - startIdx;
+                const monthOffset = getRecurringMonthOffset(item, targetYear, targetMonth);
                 const hasInstallments = Boolean(item.installmentsCount && item.installmentsCount > 0);
                 const isFinishedInThisMonth = hasInstallments && monthOffset >= (item.installmentsCount || 0);
                 const currentInstallmentNum = monthOffset >= 0 ? monthOffset + 1 : 1;
+                const isRealized = item.realizedPeriods?.includes(getPeriodKey(targetYear, targetMonth));
 
                 return (
                   <div
@@ -460,7 +551,7 @@ export default function PlanningPage() {
                   >
                     <div className="flex items-center gap-3">
                       <button
-                        onClick={() => toggleRecurringItem(item.id)}
+                        onClick={() => { void handleToggleRecurring(item.id); }}
                         className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors cursor-pointer ${
                           item.active
                             ? "bg-[#1D1D1F] border-[#1D1D1F] text-white"
@@ -485,6 +576,11 @@ export default function PlanningPage() {
                           ) : (
                             <span className="text-xs text-[#86868B]">
                               Débito dia {effectiveDay}
+                            </span>
+                          )}
+                          {isRealized && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+                              Pago neste mês
                             </span>
                           )}
                           {hasInstallments && (
@@ -544,9 +640,26 @@ export default function PlanningPage() {
               </h2>
             </div>
             <span className="text-xs font-semibold text-[#86868B]">
-              Total: R$ {formatCurrency(totalCreditExpensesActive)}
+              Faturas no mês: R${" "}
+              {formatCurrency(projection.cardInstallments + projection.recurringCreditTotal)}
             </span>
           </div>
+
+          {projection.cardInstallments > 0 && (
+            <div className="bg-indigo-50 border border-indigo-100 rounded-[16px] p-4 flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold text-indigo-900">
+                  Fatura aberta com vencimento em {activeMonthObj.short}
+                </p>
+                <p className="text-[11px] text-indigo-700 mt-0.5">
+                  Compras agrupadas pelo fechamento e vencimento configurados nos cartões
+                </p>
+              </div>
+              <span className="text-sm font-semibold text-indigo-900 whitespace-nowrap">
+                R$ {formatCurrency(projection.cardInstallments)}
+              </span>
+            </div>
+          )}
 
           <div className="bg-white rounded-[20px] border border-black/[0.04] shadow-[0_2px_8px_rgba(0,0,0,0.04)] overflow-hidden">
             {plannedCreditExpenses.length === 0 ? (
@@ -561,11 +674,11 @@ export default function PlanningPage() {
             ) : (
               plannedCreditExpenses.map((item, idx) => {
                 const effectiveDay = getEffectiveDueDay(item, targetYear, targetMonth);
-                const startIdx = item.startMonthIndex ?? 0;
-                const monthOffset = selectedMonthIndex - startIdx;
+                const monthOffset = getRecurringMonthOffset(item, targetYear, targetMonth);
                 const hasInstallments = Boolean(item.installmentsCount && item.installmentsCount > 0);
                 const isFinishedInThisMonth = hasInstallments && monthOffset >= (item.installmentsCount || 0);
                 const currentInstallmentNum = monthOffset >= 0 ? monthOffset + 1 : 1;
+                const isRealized = item.realizedPeriods?.includes(getPeriodKey(targetYear, targetMonth));
 
                 return (
                   <div
@@ -576,7 +689,7 @@ export default function PlanningPage() {
                   >
                     <div className="flex items-center gap-3">
                       <button
-                        onClick={() => toggleRecurringItem(item.id)}
+                        onClick={() => { void handleToggleRecurring(item.id); }}
                         className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors cursor-pointer ${
                           item.active
                             ? "bg-[#1D1D1F] border-[#1D1D1F] text-white"
@@ -601,6 +714,11 @@ export default function PlanningPage() {
                           ) : (
                             <span className="text-xs text-[#86868B]">
                               Cobrado dia {effectiveDay}
+                            </span>
+                          )}
+                          {isRealized && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+                              Lançado na fatura
                             </span>
                           )}
                           {hasInstallments && (
@@ -696,9 +814,7 @@ export default function PlanningPage() {
                         setModalType("income");
                         setNewCategory("Salário / Extra");
                         const checkingAcc =
-                          accountOptions.find(
-                            (a) => a === "Débito/Pix" || a.toLowerCase().includes("conta")
-                          ) || "Débito/Pix";
+                          cards.find((card) => card.type === "checking")?.name || "Débito/Pix";
                         setNewAccount(checkingAcc);
                       }}
                       className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1 cursor-pointer ${
@@ -1068,10 +1184,14 @@ export default function PlanningPage() {
       <AppleConfirmModal
         isOpen={!!itemToDelete}
         onClose={() => setItemToDelete(null)}
-        onConfirm={() => {
+        onConfirm={async () => {
           if (itemToDelete) {
-            deleteRecurringItem(itemToDelete.id);
-            setItemToDelete(null);
+            try {
+              await deleteRecurringItem(itemToDelete.id);
+              setItemToDelete(null);
+            } catch (error) {
+              alert(error instanceof Error ? error.message : "Não foi possível excluir o planejamento.");
+            }
           }
         }}
         title="Excluir Planejamento"

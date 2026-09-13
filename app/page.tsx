@@ -4,16 +4,11 @@ import React from "react";
 import Link from "next/link";
 import { Wallet3DShowcase } from "@/components/ui/Wallet3DShowcase";
 import {
-  Sparkles,
   ShieldCheck,
-  CreditCard,
   TrendingUp,
   ArrowRight,
-  Layers,
   ChevronRight,
-  Zap,
   CheckCircle2,
-  Lock,
   Compass,
   UserPlus,
   Sliders,

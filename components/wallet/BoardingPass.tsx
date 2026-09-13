@@ -3,7 +3,6 @@
 import React from "react";
 import { BoardingPassData } from "@/types/wallet";
 import { Plane } from "lucide-react";
-import { WalletPass } from "./WalletPass";
 
 interface BoardingPassProps {
   data: BoardingPassData;
