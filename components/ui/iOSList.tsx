@@ -26,9 +26,9 @@ export function ListItem({
   badgeTone = "neutral",
 }: ListItemProps) {
   const badgeToneClass = {
-    neutral: "bg-[#F2F2F7] text-[#86868B]",
-    account: "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/10",
-    credit: "bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-600/10",
+    neutral: "bg-black/[0.03] text-[#86868B]",
+    account: "bg-emerald-50/70 text-emerald-700/90",
+    credit: "bg-indigo-50/70 text-indigo-700/90",
   }[badgeTone];
 
   return (
@@ -38,26 +38,26 @@ export function ListItem({
         onClick ? "cursor-pointer select-none" : ""
       }`}
     >
-      <div className="flex items-center justify-between px-4 py-3.5 hover:bg-[#F2F2F7]/50 active:bg-[#E5E5EA]/50 transition-colors">
+      <div className="flex items-center justify-between px-4 py-3.5 hover:bg-black/[0.015] active:bg-black/[0.03] transition-colors">
         <div className="flex items-center gap-3.5 min-w-0 flex-1">
           {icon && (
-            <div className="w-9 h-9 rounded-xl bg-[#F2F2F7] text-[#1D1D1F] flex items-center justify-center shrink-0">
+            <div className="w-9 h-9 rounded-full bg-black/[0.03] text-[#1D1D1F]/85 flex items-center justify-center shrink-0">
               {icon}
             </div>
           )}
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-semibold text-[#1D1D1F] truncate">
+              <h3 className="text-[15px] font-medium text-[#1D1D1F] tracking-tight truncate">
                 {title}
               </h3>
               {badge && (
-                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${badgeToneClass}`}>
+                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-md ${badgeToneClass}`}>
                   {badge}
                 </span>
               )}
             </div>
             {subtitle && (
-              <p className="text-xs text-[#86868B] truncate mt-0.5">
+              <p className="text-xs text-[#86868B] truncate mt-0.5 font-normal">
                 {subtitle}
               </p>
             )}
@@ -67,8 +67,8 @@ export function ListItem({
         <div className="flex items-center gap-3 shrink-0 ml-3">
           {amount && (
             <div
-              className={`text-sm font-semibold tracking-tight ${
-                isIncome ? "text-green-600" : "text-[#1D1D1F]"
+              className={`text-[15px] font-semibold tracking-tight tabular-nums ${
+                isIncome ? "text-emerald-600" : "text-[#1D1D1F]"
               }`}
             >
               {amount}
@@ -80,8 +80,8 @@ export function ListItem({
 
       {!isLast && (
         <div
-          className={`border-b border-gray-100 ${
-            icon ? "ml-16" : "ml-4"
+          className={`border-b border-black/[0.03] ${
+            icon ? "ml-16.5" : "ml-4"
           }`}
         />
       )}
@@ -109,7 +109,7 @@ export function ListGroup({
           {title}
         </h2>
       )}
-      <div className="bg-white rounded-[20px] shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-black/[0.04] overflow-hidden">
+      <div className="bg-white rounded-[22px] shadow-[0_2px_12px_rgba(0,0,0,0.03)] border border-black/[0.04] overflow-hidden">
         {children}
       </div>
       {footer && (

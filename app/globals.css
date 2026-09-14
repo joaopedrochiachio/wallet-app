@@ -3,6 +3,10 @@
 @layer base {
   :root {
     --font-apple: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    --sat: env(safe-area-inset-top, 0px);
+    --sar: env(safe-area-inset-right, 0px);
+    --sab: env(safe-area-inset-bottom, 0px);
+    --sal: env(safe-area-inset-left, 0px);
   }
 
   body {
@@ -12,6 +16,7 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     letter-spacing: -0.015em;
+    -webkit-tap-highlight-color: transparent;
   }
 
   /* Rótulos e Headings com tracking refinado Apple */
@@ -27,6 +32,44 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+
+  /* Impede zoom automático indesejado no iOS Safari ao focar inputs menores que 16px */
+  @media screen and (max-width: 768px) {
+    input, select, textarea {
+      font-size: 16px !important;
+    }
+  }
+}
+
+/* Safe Area Insets Utilities para iPhone e dispositivos modernos */
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.pl-safe {
+  padding-left: env(safe-area-inset-left, 0px);
+}
+.pr-safe {
+  padding-right: env(safe-area-inset-right, 0px);
+}
+.mt-safe {
+  margin-top: env(safe-area-inset-top, 0px);
+}
+.mb-safe {
+  margin-bottom: env(safe-area-inset-bottom, 0px);
+}
+.top-safe {
+  top: env(safe-area-inset-top, 0px);
+}
+.bottom-safe {
+  bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Rolagem suave nativa com momentum para touch */
+.touch-scroll {
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Animações Nativas Apple Limpas (100% nítidas, sem borrão e instantâneas) */

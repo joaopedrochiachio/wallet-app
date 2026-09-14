@@ -17,11 +17,11 @@ export function CardBrandLogo({ brand = "mastercard", className = "" }: CardBran
     return (
       <div className={`flex items-center gap-1.5 select-none ${className}`}>
         <Image
-          src="/logo2.png"
+          src="/brand/wallet-symbol.png"
           alt="Wallet"
-          width={20}
-          height={20}
-          className="rounded-[4px] object-contain shrink-0"
+          width={22}
+          height={16}
+          className="object-contain shrink-0"
         />
         <span className="text-xs font-semibold tracking-tight font-sans">Wallet</span>
       </div>

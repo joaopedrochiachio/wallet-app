@@ -9,7 +9,7 @@ export interface UserProfile {
   avatarInitials: string;
   monthlyIncomeBase: number;
   currency: string;
-  persona: FinancialPersonaId;
+  persona?: FinancialPersonaId;
   riskTolerance: RiskToleranceId;
   aiTone: AIToneId;
   maxCommitmentAlertPercent: number;

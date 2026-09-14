@@ -41,10 +41,10 @@ export function AppleConfirmModal({
     alert: <AlertCircle size={22} className="text-amber-600" />,
     wallet: (
       <Image
-        src="/logo2.png"
+        src="/brand/wallet-icon.png"
         alt="Wallet"
-        width={26}
-        height={26}
+        width={28}
+        height={28}
         className="rounded-[6px] object-contain"
       />
     ),

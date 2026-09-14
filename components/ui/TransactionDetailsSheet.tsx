@@ -169,7 +169,7 @@ export function TransactionDetailsSheet({
         />
 
         {/* Sheet / Modal Estilo macOS/iOS */}
-        <div className="relative z-10 max-h-[90vh] w-full max-w-[480px] overflow-y-auto rounded-t-[28px] sm:rounded-[28px] bg-white shadow-[0_20px_60px_rgba(0,0,0,0.15)] animate-apple-sheet sm:animate-apple-modal border border-black/[0.04]">
+        <div className="relative z-10 max-h-[90dvh] sm:max-h-[85vh] w-full max-w-[480px] overflow-y-auto rounded-t-[28px] sm:rounded-[28px] bg-white shadow-[0_20px_60px_rgba(0,0,0,0.15)] animate-apple-sheet sm:animate-apple-modal border border-black/[0.04] pb-safe touch-scroll">
           {/* Pílula no Mobile */}
           <div className="mx-auto mt-2.5 h-1 w-10 rounded-full bg-[#D1D1D6] sm:hidden" />
 
@@ -380,12 +380,12 @@ export function TransactionDetailsSheet({
 
             {/* 6. Rodapé do Modal (Equilibrado e Refinado) */}
             {canEdit && !isEditing && (
-              <div className="flex items-center justify-between pt-2 border-t border-black/[0.04]">
+              <div className="flex items-center justify-between pt-3 pb-safe border-t border-black/[0.04]">
                 {onDelete ? (
                   <button
                     type="button"
                     onClick={() => onDelete(transaction)}
-                    className="text-xs font-medium text-rose-600 hover:text-rose-700 flex items-center gap-1.5 transition-colors cursor-pointer"
+                    className="text-xs font-medium text-rose-600 hover:text-rose-700 flex items-center gap-1.5 transition-colors cursor-pointer py-1.5 px-1"
                   >
                     <Trash2 size={13} strokeWidth={1.75} />
                     <span>Excluir</span>
@@ -405,12 +405,12 @@ export function TransactionDetailsSheet({
             )}
 
             {canEdit && isEditing && (
-              <div className="flex items-center justify-between pt-2 border-t border-black/[0.04]">
+              <div className="flex items-center justify-between pt-3 pb-safe border-t border-black/[0.04]">
                 {onDelete ? (
                   <button
                     type="button"
                     onClick={() => onDelete(transaction)}
-                    className="text-xs font-medium text-rose-600 hover:text-rose-700 flex items-center gap-1.5 transition-colors cursor-pointer"
+                    className="text-xs font-medium text-rose-600 hover:text-rose-700 flex items-center gap-1.5 transition-colors cursor-pointer py-1.5 px-1"
                   >
                     <Trash2 size={13} strokeWidth={1.75} />
                     <span>Excluir</span>

@@ -83,7 +83,7 @@ export default function CardsPage() {
   };
 
   return (
-    <div className="min-h-full bg-[#F2F2F7] p-6 md:p-10 text-[#1D1D1F] font-sans space-y-6 animate-in fade-in duration-500">
+    <div className="min-h-full bg-[#F2F2F7] p-4 sm:p-6 md:p-10 text-[#1D1D1F] font-sans space-y-6 animate-in fade-in duration-500">
       {/* Header */}
       <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 max-w-4xl mx-auto pt-2 md:pt-0">
         <div>
@@ -209,10 +209,10 @@ export default function CardsPage() {
                               cardName: card.name,
                             })
                           }
-                          className="w-7 h-7 rounded-full bg-[#F2F2F7] text-[#86868B] hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors cursor-pointer"
+                          className="w-8.5 h-8.5 rounded-full bg-[#F2F2F7] text-[#86868B] hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors cursor-pointer"
                           title="Excluir Cartão"
                         >
-                          <Trash2 size={13} strokeWidth={1.5} />
+                          <Trash2 size={14} strokeWidth={1.5} />
                         </button>
                       </div>
                     </div>

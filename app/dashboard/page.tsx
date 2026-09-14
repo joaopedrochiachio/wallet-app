@@ -110,17 +110,12 @@ export default function DashboardPage() {
       {/* 1. HEADER INTEGRADO DA CARTEIRA */}
       <WalletHeader
         onOpenNewTransaction={() => setIsSheetOpen(true)}
+        onAddNewCard={() => setIsCardSheetOpen(true)}
         cardsCount={userWalletCards.length}
       />
 
       <div className="max-w-4xl mx-auto space-y-8">
-        {/* 2. AÇÕES RÁPIDAS W PAY */}
-        <WalletActions
-          onPayWithWPay={() => setIsSheetOpen(true)}
-          onAddNewCard={() => setIsCardSheetOpen(true)}
-        />
-
-        {/* 3. PILHA 3D DE CARTÕES E GRADE */}
+        {/* 2. PILHA 3D DE CARTÕES E GRADE */}
         <section className="space-y-4">
           <div className="flex items-center justify-between px-1">
             <div className="flex items-center gap-2">
@@ -243,24 +238,24 @@ export default function DashboardPage() {
 
           <div className="overflow-hidden rounded-[24px] border border-black/[0.04] bg-white/90 shadow-[0_2px_10px_rgba(0,0,0,0.035)] backdrop-blur-xl">
             <div className="grid grid-cols-2 sm:grid-cols-3">
-              <div className="border-b border-r border-black/[0.05] p-5 sm:border-b-0">
+              <div className="border-b border-r border-black/[0.05] p-3.5 sm:p-5 min-w-0 sm:border-b-0">
                 <span className="text-[10px] font-medium text-[#86868B]">Entrou</span>
-                <strong className="mt-1 block text-sm font-semibold text-emerald-600 sm:text-base">
+                <strong className="mt-1 block text-sm font-semibold text-emerald-600 sm:text-base truncate">
                   + R$ {formatCurrency(monthIncome)}
                 </strong>
               </div>
 
-              <div className="border-b border-black/[0.05] p-5 sm:border-b-0 sm:border-r">
+              <div className="border-b border-black/[0.05] p-3.5 sm:p-5 min-w-0 sm:border-b-0 sm:border-r">
                 <span className="text-[10px] font-medium text-[#86868B]">Saiu</span>
-                <strong className="mt-1 block text-sm font-semibold text-[#1D1D1F] sm:text-base">
+                <strong className="mt-1 block text-sm font-semibold text-[#1D1D1F] sm:text-base truncate">
                   − R$ {formatCurrency(monthExpense)}
                 </strong>
               </div>
 
-              <div className="col-span-2 bg-[#FAFAFC] p-5 sm:col-span-1">
+              <div className="col-span-2 bg-[#FAFAFC] p-3.5 sm:p-5 min-w-0 sm:col-span-1">
                 <span className="text-[10px] font-medium text-[#86868B]">Tenho na conta</span>
                 <strong
-                  className={`mt-1 block text-xl font-semibold tracking-tight ${
+                  className={`mt-1 block text-lg sm:text-xl font-semibold tracking-tight truncate ${
                     balanceIsPositive ? "text-[#1D1D1F]" : "text-rose-600"
                   }`}
                 >
@@ -271,17 +266,18 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        {/* 5. LANÇAMENTOS RECENTES EM TEMPO REAL */}
-        <section className="space-y-2">
+        {/* 4. LANÇAMENTOS RECENTES EM TEMPO REAL */}
+        <section className="space-y-3">
           <div className="flex justify-between items-center px-1">
             <h2 className="text-xs uppercase tracking-wider font-semibold text-[#86868B]">
               Lançamentos Recentes
             </h2>
             <Link
               href="/transactions"
-              className="text-xs font-medium text-[#86868B] hover:text-[#1D1D1F] flex items-center gap-0.5 transition-colors"
+              className="text-xs font-medium text-[#86868B] hover:text-[#1D1D1F] flex items-center gap-0.5 transition-colors group"
             >
-              Ver tudo <ChevronRight strokeWidth={1.5} size={14} />
+              <span>Ver tudo</span>
+              <ChevronRight strokeWidth={1.5} size={13} className="text-[#86868B] group-hover:translate-x-0.5 transition-transform" />
             </Link>
           </div>
 
@@ -292,24 +288,27 @@ export default function DashboardPage() {
               </div>
             ) : recentTransactions.length === 0 ? (
               <div className="py-8 text-center text-xs text-[#86868B]">
-                Nenhum lançamento registrado no Cloud Firestore.
+                Nenhum lançamento registrado recentemente.
               </div>
             ) : (
-              recentTransactions.map((tx, idx) => (
-                <ListItem
-                  key={tx.id || idx}
-                  title={tx.title}
-                  subtitle={`${tx.category} • ${typeof tx.date === "string" ? tx.date : new Date(tx.date).toLocaleDateString("pt-BR")}`}
-                  amount={`${tx.type === "receita" ? "+" : "-"} R$ ${formatCurrency(tx.amount)}`}
-                  isIncome={tx.type === "receita"}
-                  badge={formatAccountLabel(tx.account)}
-                  badgeTone={cards.some((card) =>
-                    card.type === "credit" && matchesLedgerCard(card, tx.account, tx.cardId)
-                  ) ? "credit" : "account"}
-                  icon={getTransactionIcon(tx.category)}
-                  isLast={idx === recentTransactions.length - 1}
-                />
-              ))
+              recentTransactions.map((tx, idx) => {
+                const accountLabel = formatAccountLabel(tx.account);
+                const dateLabel = typeof tx.date === "string"
+                  ? tx.date
+                  : new Date(tx.date).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }).replace(".", "");
+
+                return (
+                  <ListItem
+                    key={tx.id || idx}
+                    title={tx.title}
+                    subtitle={`${tx.category} · ${accountLabel} · ${dateLabel}`}
+                    amount={`${tx.type === "receita" ? "+ " : "− "}R$ ${formatCurrency(tx.amount)}`}
+                    isIncome={tx.type === "receita"}
+                    icon={getTransactionIcon(tx.category)}
+                    isLast={idx === recentTransactions.length - 1}
+                  />
+                );
+              })
             )}
           </ListGroup>
         </section>

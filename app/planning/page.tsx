@@ -18,6 +18,7 @@ import {
   get5thBusinessDay,
   getEffectiveDueDay,
   getPlanningMonths,
+  getPlanningMonthsWindow,
   getPeriodKey,
   getRecurringMonthOffset,
   isRecurringActiveInMonth,
@@ -37,7 +38,11 @@ export default function PlanningPage() {
     transactions,
   } = useWallet();
 
-  const [selectedMonthIndex, setSelectedMonthIndex] = useState(0);
+  const planningMonths = getPlanningMonthsWindow(1, 2);
+  const currentMonthIdx = planningMonths.findIndex((m) => m.isCurrent);
+  const [selectedMonthIndex, setSelectedMonthIndex] = useState(
+    currentMonthIdx >= 0 ? currentMonthIdx : 1
+  );
   const [isAddingModalOpen, setIsAddingModalOpen] = useState(false);
   const [isAddingMenuOpen, setIsAddingMenuOpen] = useState(false);
   const [modalType, setModalType] = useState<"income" | "expense">("income");
@@ -62,13 +67,12 @@ export default function PlanningPage() {
   const [isCustomInstallment, setIsCustomInstallment] = useState(false);
   const [customInstallmentInput, setCustomInstallmentInput] = useState("4");
 
-  const planningMonths = getPlanningMonths();
-  const activeMonthObj = planningMonths[selectedMonthIndex] || planningMonths[0];
+  const activeMonthObj = planningMonths[selectedMonthIndex] || planningMonths[currentMonthIdx >= 0 ? currentMonthIdx : 0];
   const targetYear = activeMonthObj.year;
   const targetMonth = activeMonthObj.monthIndex;
   const currentMonth5thBusinessDay = get5thBusinessDay(targetYear, targetMonth);
 
-  const projection = getMonthlyProjection(selectedMonthIndex);
+  const projection = getMonthlyProjection(selectedMonthIndex, planningMonths);
 
   const formatCurrency = (val: number) =>
     val.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -235,7 +239,7 @@ export default function PlanningPage() {
   };
 
   return (
-    <div className="min-h-full bg-[#F2F2F7] p-6 md:p-10 text-[#1D1D1F] font-sans space-y-7 animate-in fade-in duration-500 relative">
+    <div className="min-h-full bg-[#F2F2F7] p-4 sm:p-6 md:p-10 text-[#1D1D1F] font-sans space-y-7 animate-in fade-in duration-500 relative">
       {/* 1. CABEÇALHO */}
       <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 max-w-4xl mx-auto pt-2 md:pt-0">
         <div>
@@ -251,9 +255,11 @@ export default function PlanningPage() {
           {/* Indicador de Saldo em Conta / Saldo Vindo do Mês Anterior */}
           <div className="flex items-center gap-2 bg-white px-3.5 py-2 rounded-full border border-black/[0.04] shadow-2xs">
             <span className="text-xs text-[#86868B]">
-              {selectedMonthIndex === 0
+              {activeMonthObj.isCurrent
                 ? "Saldo em conta:"
-                : `Saldo de ${planningMonths[selectedMonthIndex - 1]?.short}:`}
+                : activeMonthObj.isPast
+                  ? `Realizado em ${activeMonthObj.short}:`
+                  : `Saldo de ${planningMonths[selectedMonthIndex - 1]?.short}:`}
             </span>
             <span className="text-xs font-semibold text-[#1D1D1F]">
               R$ {formatCurrency(projection.openingBalance)}
@@ -340,7 +346,7 @@ export default function PlanningPage() {
 
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Navegação entre Meses (Controle Segmentado Suave Estilo iOS) */}
-        <div className="bg-[#E5E5EA]/60 p-1 rounded-full flex items-center gap-1 overflow-x-auto border border-black/5 scrollbar-none">
+        <div className="bg-[#E5E5EA]/60 p-1 rounded-full flex items-center gap-1 overflow-x-auto border border-black/5 scrollbar-none touch-pan-x">
           {planningMonths.map((m, idx) => (
             <button
               key={m.name}
@@ -401,9 +407,11 @@ export default function PlanningPage() {
                 R$ {formatCurrency(projection.projectedFreeBalance)}
               </div>
               <p className="text-xs text-[#86868B] pt-0.5">
-                {selectedMonthIndex === 0
+                {activeMonthObj.isCurrent
                   ? `Considera R$ ${formatCurrency(projection.openingBalance)} em conta · ${freePercentage}% livre`
-                  : `Inclui R$ ${formatCurrency(projection.openingBalance)} de ${planningMonths[selectedMonthIndex - 1]?.name}`}
+                  : activeMonthObj.isPast
+                    ? `Resultado consolidado de ${activeMonthObj.name}`
+                    : `Inclui R$ ${formatCurrency(projection.openingBalance)} de ${planningMonths[selectedMonthIndex - 1]?.name}`}
               </p>
             </div>
           </div>
@@ -424,7 +432,7 @@ export default function PlanningPage() {
           </div>
 
           {/* Três métricas limpas */}
-          <div className="grid grid-cols-3 gap-4 pt-1">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 pt-1">
             <div>
               <span className="text-xs text-[#86868B] flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#8E8E93]" />
@@ -536,6 +544,7 @@ export default function PlanningPage() {
                   const hasInstallments = Boolean(item.installmentsCount && item.installmentsCount > 1);
                   const isFinishedInThisMonth = hasInstallments && monthOffset >= (item.installmentsCount || 0);
                   const currentInstallmentNum = monthOffset >= 0 ? monthOffset + 1 : 1;
+                  const isRealizedInThisMonth = Boolean(item.realizedPeriods?.includes(getPeriodKey(targetYear, targetMonth)));
                   const dateDescription = item.recurrenceType === "business_day_5"
                     ? `5º dia útil (dia ${effectiveDay})`
                     : `Previsão dia ${effectiveDay}`;
@@ -546,26 +555,42 @@ export default function PlanningPage() {
                       className="flex items-center justify-between gap-4 p-4 hover:bg-[#F9F9FB] transition-colors"
                     >
                       <div className="flex items-center gap-3.5 min-w-0">
-                        <button
-                          type="button"
-                          onClick={() => { void handleToggleRecurring(item.id); }}
-                          className={`w-4.5 h-4.5 rounded-full border flex items-center justify-center transition-colors shrink-0 cursor-pointer ${
-                            item.active
-                              ? "bg-emerald-600 border-emerald-600 text-white"
-                              : "border-gray-300 bg-white"
-                          }`}
-                          title={item.active ? "Desativar" : "Ativar"}
-                        >
-                          {item.active && <Check size={11} strokeWidth={3} />}
-                        </button>
-                        <div className="min-w-0">
-                          <h4
-                            className={`text-sm font-medium truncate ${
-                              item.active ? "text-[#1D1D1F]" : "text-gray-400 line-through"
-                            }`}
+                        {isRealizedInThisMonth ? (
+                          <div
+                            className="w-4.5 h-4.5 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-2xs"
+                            title="Efetivado nesta competência"
                           >
-                            {item.title}
-                          </h4>
+                            <Check size={11} strokeWidth={3} />
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => { void handleToggleRecurring(item.id); }}
+                            className={`w-4.5 h-4.5 rounded-full border flex items-center justify-center transition-colors shrink-0 cursor-pointer ${
+                              item.active
+                                ? "bg-emerald-600 border-emerald-600 text-white"
+                                : "border-gray-300 bg-white"
+                            }`}
+                            title={item.active ? "Desativar" : "Ativar"}
+                          >
+                            {item.active && <Check size={11} strokeWidth={3} />}
+                          </button>
+                        )}
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <h4
+                              className={`text-sm font-medium truncate ${
+                                item.active ? "text-[#1D1D1F]" : "text-gray-400 line-through"
+                              }`}
+                            >
+                              {item.title}
+                            </h4>
+                            {isRealizedInThisMonth && (
+                              <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
+                                Efetivado
+                              </span>
+                            )}
+                          </div>
                           <p className="text-xs text-[#86868B] truncate mt-0.5">
                             {dateDescription} · {formatAccountLabel(item.account)} · {item.category}
                             {hasInstallments && ` · Parcela ${currentInstallmentNum} de ${item.installmentsCount}`}
@@ -578,7 +603,7 @@ export default function PlanningPage() {
                           className={`text-sm font-semibold tracking-tight ${
                             isFinishedInThisMonth
                               ? "text-gray-400 line-through text-xs"
-                              : item.active
+                              : isRealizedInThisMonth || item.active
                               ? "text-emerald-600"
                               : "text-gray-400"
                           }`}
@@ -643,6 +668,7 @@ export default function PlanningPage() {
                   const hasInstallments = Boolean(item.installmentsCount && item.installmentsCount > 1);
                   const isFinishedInThisMonth = hasInstallments && monthOffset >= (item.installmentsCount || 0);
                   const currentInstallmentNum = monthOffset >= 0 ? monthOffset + 1 : 1;
+                  const isRealizedInThisMonth = Boolean(item.realizedPeriods?.includes(getPeriodKey(targetYear, targetMonth)));
                   const dateDescription = item.recurrenceType === "business_day_5"
                     ? `5º dia útil (dia ${effectiveDay})`
                     : `Dia ${effectiveDay}`;
@@ -653,26 +679,42 @@ export default function PlanningPage() {
                       className="flex items-center justify-between gap-4 p-4 hover:bg-[#F9F9FB] transition-colors"
                     >
                       <div className="flex items-center gap-3.5 min-w-0">
-                        <button
-                          type="button"
-                          onClick={() => { void handleToggleRecurring(item.id); }}
-                          className={`w-4.5 h-4.5 rounded-full border flex items-center justify-center transition-colors shrink-0 cursor-pointer ${
-                            item.active
-                              ? "bg-[#1D1D1F] border-[#1D1D1F] text-white"
-                              : "border-gray-300 bg-white"
-                          }`}
-                          title={item.active ? "Desativar" : "Ativar"}
-                        >
-                          {item.active && <Check size={11} strokeWidth={3} />}
-                        </button>
-                        <div className="min-w-0">
-                          <h4
-                            className={`text-sm font-medium truncate ${
-                              item.active ? "text-[#1D1D1F]" : "text-gray-400 line-through"
-                            }`}
+                        {isRealizedInThisMonth ? (
+                          <div
+                            className="w-4.5 h-4.5 rounded-full bg-[#1D1D1F] text-white flex items-center justify-center shrink-0 shadow-2xs"
+                            title="Efetivado nesta competência"
                           >
-                            {item.title}
-                          </h4>
+                            <Check size={11} strokeWidth={3} />
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => { void handleToggleRecurring(item.id); }}
+                            className={`w-4.5 h-4.5 rounded-full border flex items-center justify-center transition-colors shrink-0 cursor-pointer ${
+                              item.active
+                                ? "bg-[#1D1D1F] border-[#1D1D1F] text-white"
+                                : "border-gray-300 bg-white"
+                            }`}
+                            title={item.active ? "Desativar" : "Ativar"}
+                          >
+                            {item.active && <Check size={11} strokeWidth={3} />}
+                          </button>
+                        )}
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <h4
+                              className={`text-sm font-medium truncate ${
+                                item.active ? "text-[#1D1D1F]" : "text-gray-400 line-through"
+                              }`}
+                            >
+                              {item.title}
+                            </h4>
+                            {isRealizedInThisMonth && (
+                              <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-gray-100 text-[#1D1D1F] border border-black/5 shrink-0">
+                                Efetivado
+                              </span>
+                            )}
+                          </div>
                           <p className="text-xs text-[#86868B] truncate mt-0.5">
                             {dateDescription} · {formatAccountLabel(item.account)}
                             {hasInstallments && ` · Parcela ${currentInstallmentNum} de ${item.installmentsCount}`}
@@ -685,7 +727,7 @@ export default function PlanningPage() {
                           className={`text-sm font-semibold tracking-tight ${
                             isFinishedInThisMonth
                               ? "text-gray-400 line-through text-xs"
-                              : item.active
+                              : isRealizedInThisMonth || item.active
                               ? "text-[#1D1D1F]"
                               : "text-gray-400"
                           }`}
@@ -756,6 +798,7 @@ export default function PlanningPage() {
                     const hasInstallments = Boolean(item.installmentsCount && item.installmentsCount > 1);
                     const isFinishedInThisMonth = hasInstallments && monthOffset >= (item.installmentsCount || 0);
                     const currentInstallmentNum = monthOffset >= 0 ? monthOffset + 1 : 1;
+                    const isRealizedInThisMonth = Boolean(item.realizedPeriods?.includes(getPeriodKey(targetYear, targetMonth)));
 
                     return (
                       <div
@@ -763,26 +806,42 @@ export default function PlanningPage() {
                         className="flex items-center justify-between gap-4 p-4 hover:bg-[#F9F9FB] transition-colors"
                       >
                         <div className="flex items-center gap-3.5 min-w-0">
-                          <button
-                            type="button"
-                            onClick={() => { void handleToggleRecurring(item.id); }}
-                            className={`w-4.5 h-4.5 rounded-full border flex items-center justify-center transition-colors shrink-0 cursor-pointer ${
-                              item.active
-                                ? "bg-[#1D1D1F] border-[#1D1D1F] text-white"
-                                : "border-gray-300 bg-white"
-                            }`}
-                            title={item.active ? "Desativar" : "Ativar"}
-                          >
-                            {item.active && <Check size={11} strokeWidth={3} />}
-                          </button>
-                          <div className="min-w-0">
-                            <h4
-                              className={`text-sm font-medium truncate ${
-                                item.active ? "text-[#1D1D1F]" : "text-gray-400 line-through"
-                              }`}
+                          {isRealizedInThisMonth ? (
+                            <div
+                              className="w-4.5 h-4.5 rounded-full bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-2xs"
+                              title="Lançado na fatura"
                             >
-                              {item.title}
-                            </h4>
+                              <Check size={11} strokeWidth={3} />
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => { void handleToggleRecurring(item.id); }}
+                              className={`w-4.5 h-4.5 rounded-full border flex items-center justify-center transition-colors shrink-0 cursor-pointer ${
+                                item.active
+                                  ? "bg-[#1D1D1F] border-[#1D1D1F] text-white"
+                                  : "border-gray-300 bg-white"
+                              }`}
+                              title={item.active ? "Desativar" : "Ativar"}
+                            >
+                              {item.active && <Check size={11} strokeWidth={3} />}
+                            </button>
+                          )}
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <h4
+                                className={`text-sm font-medium truncate ${
+                                  item.active ? "text-[#1D1D1F]" : "text-gray-400 line-through"
+                                }`}
+                              >
+                                {item.title}
+                              </h4>
+                              {isRealizedInThisMonth && (
+                                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 shrink-0">
+                                  Na fatura
+                                </span>
+                              )}
+                            </div>
                             <p className="text-xs text-[#86868B] truncate mt-0.5">
                               Cobrado dia {effectiveDay} · {formatAccountLabel(item.account)}
                               {hasInstallments && ` · Parcela ${currentInstallmentNum} de ${item.installmentsCount}`}
@@ -795,7 +854,7 @@ export default function PlanningPage() {
                             className={`text-sm font-semibold tracking-tight ${
                               isFinishedInThisMonth
                                 ? "text-gray-400 line-through text-xs"
-                                : item.active
+                                : isRealizedInThisMonth || item.active
                                 ? "text-[#1D1D1F]"
                                 : "text-gray-400"
                             }`}
@@ -852,7 +911,7 @@ export default function PlanningPage() {
             className="fixed inset-0 bg-black/45 animate-apple-backdrop"
           />
 
-          <div className="relative w-full max-w-lg bg-white rounded-t-[32px] sm:rounded-[32px] shadow-[0_-8px_40px_rgba(0,0,0,0.18)] z-50 animate-apple-sheet sm:animate-apple-modal max-h-[92vh] overflow-y-auto font-sans">
+          <div className="relative w-full max-w-lg bg-white rounded-t-[32px] sm:rounded-[32px] shadow-[0_-8px_40px_rgba(0,0,0,0.18)] z-50 animate-apple-sheet sm:animate-apple-modal max-h-[90dvh] sm:max-h-[85vh] overflow-y-auto font-sans pb-safe touch-scroll">
             {/* Pílula Apple */}
             <div className="w-10 h-1 bg-gray-300 rounded-full mx-auto mt-3 mb-1 sm:hidden" />
 
@@ -1219,7 +1278,7 @@ export default function PlanningPage() {
               </div>
 
               {/* BOTÃO CONFIRMAR APPLE PAY */}
-              <div className="p-6">
+              <div className="p-5 sm:p-6 pb-safe">
                 <WPayButton
                   type="submit"
                   label="Confirmar Planejamento"

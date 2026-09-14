@@ -89,6 +89,8 @@ export interface PlanningMonth {
   short: string;
   monthIndex: number;
   year: number;
+  isCurrent?: boolean;
+  isPast?: boolean;
 }
 
 /** Retorna uma janela de meses baseada no calendário atual, inclusive na virada do ano. */
@@ -101,8 +103,45 @@ export function getPlanningMonths(count: number = 4, from: Date = new Date()): P
       short,
       monthIndex: date.getMonth(),
       year: date.getFullYear(),
+      isCurrent: offset === 0,
+      isPast: offset < 0,
     };
   });
+}
+
+/**
+ * Retorna uma janela de meses com suporte a meses passados (para histórico e consulta),
+ * mês atual e meses futuros, tratando automaticamente virada de mês e de ano.
+ * Exemplo com pastMonthsCount=1 e futureMonthsCount=2:
+ * Em setembro: Agosto | Setembro (Atual) | Outubro | Novembro
+ * Ao virar para outubro: Setembro | Outubro (Atual) | Novembro | Dezembro
+ */
+export function getPlanningMonthsWindow(
+  pastMonthsCount: number = 1,
+  futureMonthsCount: number = 2,
+  from: Date = new Date()
+): PlanningMonth[] {
+  const months: PlanningMonth[] = [];
+  const startOffset = -Math.max(0, pastMonthsCount);
+  const endOffset = Math.max(0, futureMonthsCount);
+
+  for (let offset = startOffset; offset <= endOffset; offset++) {
+    const date = new Date(from.getFullYear(), from.getMonth() + offset, 1);
+    const short = MONTH_NAMES_PT[date.getMonth()];
+    const isCurrent = offset === 0;
+    const isPast = offset < 0;
+
+    months.push({
+      name: isCurrent ? `${short} (Atual)` : short,
+      short,
+      monthIndex: date.getMonth(),
+      year: date.getFullYear(),
+      isCurrent,
+      isPast,
+    });
+  }
+
+  return months;
 }
 
 export function getPeriodKey(year: number, monthIndex: number): string {

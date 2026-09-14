@@ -193,11 +193,11 @@ function TransactionRow({
           <button
             type="button"
             onClick={() => setMenuOpen((prev) => !prev)}
-            className="w-7 h-7 rounded-full text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#E5E5EA]/70 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 cursor-pointer"
+            className="w-8 h-8 rounded-full text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#E5E5EA]/70 transition-all flex items-center justify-center opacity-70 sm:opacity-0 group-hover:opacity-100 focus:opacity-100 cursor-pointer"
             title="Ações do lançamento"
             aria-label={`Opções para ${item.title}`}
           >
-            <MoreHorizontal size={15} strokeWidth={1.75} />
+            <MoreHorizontal size={16} strokeWidth={1.75} />
           </button>
 
           {menuOpen && (
@@ -325,7 +325,7 @@ export default function TransactionsPage() {
     monthOptions.find((m) => m.periodKey === selectedMonth)?.label || "Mês";
 
   return (
-    <div className="min-h-full bg-[#F2F2F7] p-6 md:p-10 text-[#1D1D1F] font-sans space-y-6 animate-in fade-in duration-500">
+    <div className="min-h-full bg-[#F2F2F7] p-4 sm:p-6 md:p-10 text-[#1D1D1F] font-sans space-y-6 animate-in fade-in duration-500">
       {/* 1. CABEÇALHO (Eyebrow, Título Dominante e Controles macOS) */}
       <header className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-4 max-w-4xl mx-auto pt-2 md:pt-0">
         <div>
@@ -373,7 +373,7 @@ export default function TransactionsPage() {
         {/* 2. BARRA DE FILTROS POR CONTA/CARTÃO (Chips Discretos e Contador Silencioso) */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-1">
           {/* Filtros por Conta/Cartão (Sem preto sólido pesado) */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none touch-pan-x">
             <span className="text-xs text-[#86868B] font-medium mr-1 shrink-0 flex items-center gap-1">
               <Filter strokeWidth={1.75} size={12} />
               <span>Conta:</span>

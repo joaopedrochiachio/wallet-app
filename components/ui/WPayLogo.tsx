@@ -44,10 +44,10 @@ export function WPayLogo({ size = "md", variant = "dark", className = "" }: WPay
         }`}
       >
         <Image
-          src="/logo2.png"
+          src="/brand/wallet-symbol.png"
           alt="Wallet Pay Logo"
           width={currentDim.size}
-          height={currentDim.size}
+          height={Math.round(currentDim.size * 0.74)}
           className="w-full h-full object-contain"
         />
       </span>

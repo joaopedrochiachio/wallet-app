@@ -97,7 +97,7 @@ export default function GoalsPage() {
   };
 
   return (
-    <div className="min-h-full bg-[#F2F2F7] p-6 md:p-10 text-[#1D1D1F] font-sans space-y-6 animate-in fade-in duration-500">
+    <div className="min-h-full bg-[#F2F2F7] p-4 sm:p-6 md:p-10 text-[#1D1D1F] font-sans space-y-6 animate-in fade-in duration-500">
       {/* Header */}
       <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 max-w-4xl mx-auto pt-2 md:pt-0">
         <div>
@@ -321,7 +321,7 @@ export default function GoalsPage() {
             className="fixed inset-0 bg-black/45 animate-apple-backdrop"
           />
 
-          <div className="relative w-full max-w-md bg-white rounded-[28px] p-6 space-y-5 shadow-2xl z-50 animate-apple-modal font-sans">
+          <div className="relative w-full max-w-md bg-white rounded-[28px] p-6 space-y-5 shadow-2xl z-50 animate-apple-modal font-sans max-h-[90dvh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-[10px] font-semibold uppercase tracking-widest text-[#86868B]">
@@ -428,7 +428,7 @@ export default function GoalsPage() {
             className="fixed inset-0 bg-black/45 animate-apple-backdrop"
           />
 
-          <div className="relative w-full max-w-sm bg-white rounded-[28px] p-6 space-y-4 shadow-2xl z-50 animate-apple-modal font-sans">
+          <div className="relative w-full max-w-sm bg-white rounded-[28px] p-6 space-y-4 shadow-2xl z-50 animate-apple-modal font-sans max-h-[90dvh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-semibold text-[#1D1D1F]">
                 Aportar na Meta

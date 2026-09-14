@@ -188,12 +188,12 @@ export function AddTransactionSheet({
       />
 
       {/* Sheet Modal Estilo Apple Pay / iOS */}
-      <div className="relative z-10 max-h-[92vh] w-full max-w-[480px] overflow-y-auto rounded-t-[28px] sm:rounded-[28px] bg-white shadow-[0_20px_60px_rgba(0,0,0,0.15)] animate-apple-sheet sm:animate-apple-modal border border-black/[0.04]">
+      <div className="relative z-10 max-h-[90dvh] sm:max-h-[85vh] w-full max-w-[480px] overflow-y-auto rounded-t-[28px] sm:rounded-[28px] bg-white shadow-[0_20px_60px_rgba(0,0,0,0.15)] animate-apple-sheet sm:animate-apple-modal border border-black/[0.04] pb-safe touch-scroll">
         {/* Pílula no Mobile */}
         <div className="mx-auto mt-2.5 h-1 w-10 rounded-full bg-[#D1D1D6] sm:hidden" />
 
         {/* 1. CABEÇALHO DO MODAL */}
-        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-black/[0.04]">
+        <div className="flex items-center justify-between px-5 sm:px-6 pt-4 sm:pt-5 pb-3.5 sm:pb-4 border-b border-black/[0.04]">
           <div className="flex items-center gap-2.5">
             <WPayLogo size="md" />
             <span
@@ -209,13 +209,13 @@ export function AddTransactionSheet({
           <button
             type="button"
             onClick={onClose}
-            className="text-xs font-semibold text-[#86868B] hover:text-[#1D1D1F] transition-colors cursor-pointer select-none"
+            className="text-xs font-semibold text-[#86868B] hover:text-[#1D1D1F] transition-colors cursor-pointer select-none py-1 px-2"
           >
             Cancelar
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+        <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-4 sm:space-y-5">
           {/* 2. SELEÇÃO DA OPERAÇÃO (Segmented Control Nativo) */}
           <div className="p-1 rounded-full bg-[#E5E5EA]/60 border border-black/[0.04] grid grid-cols-2 gap-0.5">
             <button
@@ -257,7 +257,7 @@ export function AddTransactionSheet({
                 placeholder="0,00"
                 value={amountInput}
                 onChange={(e) => setAmountInput(e.target.value)}
-                className="w-full max-w-[260px] text-center text-4xl sm:text-5xl font-semibold tracking-tight text-[#1D1D1F] placeholder:text-[#D1D1D6] outline-none bg-transparent"
+                className="w-full max-w-[260px] text-center text-3xl sm:text-5xl font-semibold tracking-tight text-[#1D1D1F] placeholder:text-[#D1D1D6] outline-none bg-transparent"
                 autoFocus
               />
             </div>

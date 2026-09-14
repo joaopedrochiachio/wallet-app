@@ -141,7 +141,7 @@ export function AddCardSheet({ isOpen, onClose, onAddCard }: AddCardSheetProps) 
 
 
       {/* Modal / Bottom Sheet em 60fps */}
-      <div className="relative w-full max-w-lg bg-[#F2F2F7] rounded-t-[2.5rem] sm:rounded-[2.5rem] shadow-[0_25px_60px_rgba(0,0,0,0.25)] border border-white/60 overflow-hidden z-10 flex flex-col max-h-[90vh] animate-apple-sheet sm:animate-apple-modal">
+      <div className="relative w-full max-w-lg bg-[#F2F2F7] rounded-t-[2.5rem] sm:rounded-[2.5rem] shadow-[0_25px_60px_rgba(0,0,0,0.25)] border border-white/60 overflow-hidden z-10 flex flex-col max-h-[90dvh] sm:max-h-[85vh] animate-apple-sheet sm:animate-apple-modal pb-safe">
         
         {/* Handle bar iOS */}
         <div className="w-12 h-1.5 bg-[#D1D1D6] rounded-full mx-auto mt-3.5 mb-1 shrink-0" />
@@ -333,7 +333,7 @@ export function AddCardSheet({ isOpen, onClose, onAddCard }: AddCardSheetProps) 
                   {selectedPreset.name}
                 </span>
               </div>
-              <div className="grid grid-cols-7 gap-2">
+              <div className="grid grid-cols-4 sm:grid-cols-7 gap-2 sm:gap-2.5">
                 {COLOR_PRESETS.map((preset) => {
                   const isSelected = selectedPreset.id === preset.id;
                   return (
@@ -356,7 +356,7 @@ export function AddCardSheet({ isOpen, onClose, onAddCard }: AddCardSheetProps) 
             </div>
 
             {/* Botão Salvar */}
-            <div className="pt-3 pb-2">
+            <div className="pt-3 pb-safe">
               <button
                 type="submit"
                 className="w-full bg-[#1D1D1F] text-white py-3.5 rounded-2xl font-semibold text-sm hover:bg-black active:scale-[0.99] transition-all shadow-[0_4px_12px_rgba(0,0,0,0.12)] flex items-center justify-center gap-2 cursor-pointer"
