@@ -16,6 +16,7 @@ import {
   ShoppingBag,
   Tv,
   Trash2,
+  Pencil,
 } from "lucide-react";
 import { AppleConfirmModal } from "@/components/ui/AppleConfirmModal";
 
@@ -42,6 +43,12 @@ export default function TransactionsPage() {
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [txToDelete, setTxToDelete] = useState<TransactionItem | null>(null);
   const [selectedTransaction, setSelectedTransaction] = useState<TransactionItem | null>(null);
+  const [openTransactionInEditMode, setOpenTransactionInEditMode] = useState(false);
+
+  const openTransactionDetails = (transaction: TransactionItem, editMode = false) => {
+    setOpenTransactionInEditMode(editMode);
+    setSelectedTransaction(transaction);
+  };
 
   const formatCurrency = (val: number) =>
     val.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -155,19 +162,34 @@ export default function TransactionsPage() {
                   card.type === "credit" && matchesLedgerCard(card, item.account, item.cardId)
                 ) ? "credit" : "account"}
                 isLast={index === filteredTransactions.length - 1}
-                onClick={() => setSelectedTransaction(item)}
+                onClick={() => openTransactionDetails(item)}
                 rightElement={
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setTxToDelete(item);
-                    }}
-                    className="p-1.5 text-gray-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer ml-1"
-                    title="Excluir Lançamento"
-                  >
-                    <Trash2 size={13} strokeWidth={1.5} />
-                  </button>
+                  <div className="flex items-center gap-0.5">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openTransactionDetails(item, true);
+                      }}
+                      className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                      title="Editar lançamento"
+                      aria-label={`Editar ${item.title}`}
+                    >
+                      <Pencil size={13} strokeWidth={1.7} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setTxToDelete(item);
+                      }}
+                      className="p-1.5 text-gray-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                      title="Excluir lançamento"
+                      aria-label={`Excluir ${item.title}`}
+                    >
+                      <Trash2 size={13} strokeWidth={1.5} />
+                    </button>
+                  </div>
                 }
               />
             ))
@@ -189,7 +211,11 @@ export default function TransactionsPage() {
           transaction={selectedTransaction}
           accounts={accountOptions}
           cards={cards}
-          onClose={() => setSelectedTransaction(null)}
+          initialEditing={openTransactionInEditMode}
+          onClose={() => {
+            setSelectedTransaction(null);
+            setOpenTransactionInEditMode(false);
+          }}
           onSave={updateTransaction}
         />
       )}

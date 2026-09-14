@@ -1,16 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { Building2, CreditCard, Save, X } from "lucide-react";
+import { Building2, CreditCard, Pencil, Save, X } from "lucide-react";
 import type { CardItem, TransactionItem } from "@/context/WalletContext";
 import type { TransactionUpdateInput } from "@/lib/services/transactionsService";
 import { formatAccountLabel, matchesLedgerCard } from "@/lib/utils/ledger";
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "./AddTransactionSheet";
+import { AppleConfirmModal } from "./AppleConfirmModal";
 
 interface TransactionDetailsSheetProps {
   transaction: TransactionItem;
   accounts: string[];
   cards: CardItem[];
+  initialEditing?: boolean;
   onClose: () => void;
   onSave: (id: string, updates: TransactionUpdateInput) => Promise<void>;
 }
@@ -29,6 +31,7 @@ export function TransactionDetailsSheet({
   transaction,
   accounts,
   cards,
+  initialEditing = false,
   onClose,
   onSave,
 }: TransactionDetailsSheetProps) {
@@ -45,8 +48,12 @@ export function TransactionDetailsSheet({
   const [dateInput, setDateInput] = useState(toDateInput(transaction));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(initialEditing);
+  const [isSaveConfirmOpen, setIsSaveConfirmOpen] = useState(false);
+  const [pendingUpdates, setPendingUpdates] = useState<TransactionUpdateInput | null>(null);
 
   const canEdit = transaction.kind === "regular" || !transaction.kind;
+  const fieldsAreEditable = canEdit && isEditing;
   const categories = type === "receita" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
   const checkingAccounts = cards
     .filter((card) => card.type === "checking")
@@ -68,9 +75,25 @@ export function TransactionDetailsSheet({
     }
   };
 
-  const handleSubmit = async (event: React.FormEvent) => {
+  const resetForm = () => {
+    setTitle(transaction.title);
+    setAmountInput(transaction.amount.toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }));
+    setType(transaction.type);
+    setCategory(transaction.category);
+    setAccount(transaction.account);
+    setDateInput(toDateInput(transaction));
+    setError(null);
+    setPendingUpdates(null);
+    setIsSaveConfirmOpen(false);
+    setIsEditing(false);
+  };
+
+  const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
-    if (!canEdit) return;
+    if (!fieldsAreEditable) return;
 
     const amount = parseFloat(amountInput.replace(/\./g, "").replace(",", "."));
     if (!title.trim() || !Number.isFinite(amount) || amount <= 0 || !dateInput) {
@@ -81,29 +104,40 @@ export function TransactionDetailsSheet({
     const occurredAt = new Date(`${dateInput}T12:00:00`);
     const selectedCard = cards.find((card) => card.name === account || card.id === account);
 
+    setPendingUpdates({
+      title: title.trim(),
+      amount,
+      type,
+      category,
+      account,
+      cardId: selectedCard?.id || null,
+      date: occurredAt.toLocaleDateString("pt-BR"),
+      occurredAt,
+    });
+    setError(null);
+    setIsSaveConfirmOpen(true);
+  };
+
+  const handleConfirmSave = async () => {
+    if (!pendingUpdates) return;
+
     setSaving(true);
     setError(null);
     try {
-      await onSave(transaction.id, {
-        title: title.trim(),
-        amount,
-        type,
-        category,
-        account,
-        cardId: selectedCard?.id || null,
-        date: occurredAt.toLocaleDateString("pt-BR"),
-        occurredAt,
-      });
+      await onSave(transaction.id, pendingUpdates);
+      setIsSaveConfirmOpen(false);
       onClose();
     } catch (saveError: unknown) {
       setError(saveError instanceof Error ? saveError.message : "Não foi possível salvar as alterações.");
+      setIsSaveConfirmOpen(false);
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4">
+    <>
+      <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4">
       <button
         type="button"
         className="fixed inset-0 bg-black/45 animate-apple-backdrop"
@@ -145,7 +179,7 @@ export function TransactionDetailsSheet({
           <div className="grid grid-cols-2 gap-1 rounded-xl bg-[#E5E5EA]/80 p-1">
             <button
               type="button"
-              disabled={!canEdit}
+              disabled={!fieldsAreEditable}
               onClick={() => handleTypeChange("despesa")}
               className={`rounded-lg py-2 text-xs font-semibold transition-all ${
                 type === "despesa" ? "bg-white text-[#1D1D1F] shadow-xs" : "text-[#86868B]"
@@ -155,7 +189,7 @@ export function TransactionDetailsSheet({
             </button>
             <button
               type="button"
-              disabled={!canEdit}
+              disabled={!fieldsAreEditable}
               onClick={() => handleTypeChange("receita")}
               className={`rounded-lg py-2 text-xs font-semibold transition-all ${
                 type === "receita" ? "bg-white text-emerald-700 shadow-xs" : "text-[#86868B]"
@@ -170,7 +204,7 @@ export function TransactionDetailsSheet({
             <input
               value={title}
               onChange={(event) => setTitle(event.target.value)}
-              disabled={!canEdit}
+              disabled={!fieldsAreEditable}
               className="w-full rounded-xl border border-black/[0.06] bg-white px-4 py-3 text-sm font-medium text-[#1D1D1F] outline-none focus:ring-4 focus:ring-blue-500/10 disabled:text-[#86868B]"
             />
           </label>
@@ -183,7 +217,7 @@ export function TransactionDetailsSheet({
                 <input
                   value={amountInput}
                   onChange={(event) => setAmountInput(event.target.value)}
-                  disabled={!canEdit}
+                  disabled={!fieldsAreEditable}
                   inputMode="decimal"
                   className="min-w-0 flex-1 bg-transparent px-2 py-3 text-sm font-semibold text-[#1D1D1F] outline-none disabled:text-[#86868B]"
                 />
@@ -196,7 +230,7 @@ export function TransactionDetailsSheet({
                 type="date"
                 value={dateInput}
                 onChange={(event) => setDateInput(event.target.value)}
-                disabled={!canEdit}
+                disabled={!fieldsAreEditable}
                 className="w-full rounded-xl border border-black/[0.06] bg-white px-3 py-3 text-sm font-medium text-[#1D1D1F] outline-none disabled:text-[#86868B]"
               />
             </label>
@@ -212,7 +246,7 @@ export function TransactionDetailsSheet({
                   <button
                     key={option}
                     type="button"
-                    disabled={!canEdit}
+                    disabled={!fieldsAreEditable}
                     onClick={() => setAccount(option)}
                     className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-all ${
                       account === option
@@ -235,7 +269,7 @@ export function TransactionDetailsSheet({
             <select
               value={category}
               onChange={(event) => setCategory(event.target.value)}
-              disabled={!canEdit}
+              disabled={!fieldsAreEditable}
               className="w-full rounded-xl border border-black/[0.06] bg-white px-4 py-3 text-sm text-[#1D1D1F] outline-none disabled:text-[#86868B]"
             >
               {!categories.includes(category) && <option value={category}>{category}</option>}
@@ -249,18 +283,55 @@ export function TransactionDetailsSheet({
             </div>
           )}
 
-          {canEdit && (
+          {canEdit && !isEditing && (
             <button
-              type="submit"
-              disabled={saving}
-              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#1D1D1F] py-3.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-black disabled:opacity-60"
+              type="button"
+              onClick={() => setIsEditing(true)}
+              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#1D1D1F] py-3.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-black active:scale-[0.99]"
             >
-              <Save size={15} />
-              {saving ? "Salvando..." : "Salvar alterações"}
+              <Pencil size={15} />
+              Editar transação
             </button>
+          )}
+
+          {canEdit && isEditing && (
+            <div className="grid grid-cols-[auto_1fr] gap-2.5">
+              <button
+                type="button"
+                onClick={resetForm}
+                disabled={saving}
+                className="rounded-2xl bg-[#E5E5EA] px-5 py-3.5 text-sm font-semibold text-[#1D1D1F] transition-all hover:bg-[#D1D1D6] disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#1D1D1F] py-3.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-black disabled:opacity-60"
+              >
+                <Save size={15} />
+                {saving ? "Salvando..." : "Salvar alterações"}
+              </button>
+            </div>
           )}
         </form>
       </div>
-    </div>
+      </div>
+
+      <AppleConfirmModal
+        isOpen={isSaveConfirmOpen}
+        onClose={() => {
+          if (!saving) setIsSaveConfirmOpen(false);
+        }}
+        onConfirm={handleConfirmSave}
+        title="Salvar alterações?"
+        description={`Confirma as alterações em "${title.trim()}"? O saldo e a fatura podem ser recalculados.`}
+        confirmLabel="Confirmar e salvar"
+        cancelLabel="Revisar"
+        variant="primary"
+        iconType="alert"
+        isLoading={saving}
+      />
+    </>
   );
 }

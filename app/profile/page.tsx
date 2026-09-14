@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useWallet, FinancialPersonaId, RiskToleranceId, AIToneId } from "@/context/WalletContext";
 import { useAuth } from "@/context/AuthContext";
+import { AppleConfirmModal } from "@/components/ui/AppleConfirmModal";
 import {
   Sparkles,
   Shield,
@@ -102,6 +103,8 @@ export default function ProfilePage() {
   const [primaryFocus, setPrimaryFocus] = useState(userProfile.primaryFocus);
   const [maxCommitment, setMaxCommitment] = useState(userProfile.maxCommitmentAlertPercent);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isSignOutConfirmOpen, setIsSignOutConfirmOpen] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   // Sincronizar inputs locais quando o perfil for carregado do Firestore
   useEffect(() => {
@@ -117,9 +120,16 @@ export default function ProfilePage() {
   }, [userProfile]);
 
   const handleSignOut = async () => {
-    if (window.confirm("Deseja realmente encerrar sua sessão?")) {
+    setIsSigningOut(true);
+    try {
       await signOut();
+      setIsSignOutConfirmOpen(false);
       router.replace("/");
+    } catch (error) {
+      console.error("Erro ao encerrar sessão:", error);
+      showToast("Não foi possível encerrar a sessão. Tente novamente.");
+    } finally {
+      setIsSigningOut(false);
     }
   };
 
@@ -556,7 +566,7 @@ export default function ProfilePage() {
 
           <button
             type="button"
-            onClick={handleSignOut}
+            onClick={() => setIsSignOutConfirmOpen(true)}
             className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100/80 active:scale-95 transition-all cursor-pointer"
           >
             <LogOut size={14} strokeWidth={2} />
@@ -564,6 +574,19 @@ export default function ProfilePage() {
           </button>
         </div>
       </section>
+
+      <AppleConfirmModal
+        isOpen={isSignOutConfirmOpen}
+        onClose={() => setIsSignOutConfirmOpen(false)}
+        onConfirm={handleSignOut}
+        title="Sair da conta?"
+        description="Tem certeza que deseja encerrar sua sessão neste dispositivo?"
+        confirmLabel="Sair"
+        cancelLabel="Continuar conectado"
+        variant="danger"
+        iconType="alert"
+        isLoading={isSigningOut}
+      />
 
     </div>
   );

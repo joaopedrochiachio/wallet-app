@@ -35,7 +35,6 @@ export default function DashboardPage() {
     cards,
     activeCard,
     selectCard,
-    payInvoice,
     addTransaction,
     addCard,
     accountOptions,
@@ -105,7 +104,6 @@ export default function DashboardPage() {
   const activeWalletCard: WalletCardData | undefined =
     userWalletCards.find((c) => c.id === activeCard.id) ||
     userWalletCards[0];
-  const activeCreditCard = cards.find((card) => card.id === activeWalletCard?.id);
 
   return (
     <div className="min-h-full bg-[#F2F2F7] p-4 sm:p-6 md:p-10 text-[#1D1D1F] font-sans space-y-8 animate-in fade-in duration-500 relative">
@@ -120,12 +118,6 @@ export default function DashboardPage() {
         <WalletActions
           onPayWithWPay={() => setIsSheetOpen(true)}
           onAddNewCard={() => setIsCardSheetOpen(true)}
-          onPayInvoice={
-            activeCreditCard && (activeCreditCard.invoiceAmount || 0) > 0
-              ? () => { void payInvoice(activeCreditCard.id); }
-              : undefined
-          }
-          hasOpenInvoice={Boolean(activeCreditCard && (activeCreditCard.invoiceAmount || 0) > 0)}
         />
 
         {/* 3. PILHA 3D DE CARTÕES E GRADE */}
