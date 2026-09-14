@@ -10,6 +10,7 @@ export interface ListItemProps {
   onClick?: () => void;
   rightElement?: React.ReactNode;
   badge?: string;
+  badgeTone?: "neutral" | "account" | "credit";
 }
 
 export function ListItem({
@@ -22,7 +23,14 @@ export function ListItem({
   onClick,
   rightElement,
   badge,
+  badgeTone = "neutral",
 }: ListItemProps) {
+  const badgeToneClass = {
+    neutral: "bg-[#F2F2F7] text-[#86868B]",
+    account: "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/10",
+    credit: "bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-600/10",
+  }[badgeTone];
+
   return (
     <div
       onClick={onClick}
@@ -43,7 +51,7 @@ export function ListItem({
                 {title}
               </h3>
               {badge && (
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-[#F2F2F7] text-[#86868B]">
+                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${badgeToneClass}`}>
                   {badge}
                 </span>
               )}

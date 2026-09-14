@@ -10,7 +10,6 @@ import {
   WalletCard,
   WalletHeader,
   WalletActions,
-  DEFAULT_3D_BANK_CARDS,
 } from "@/components/wallet";
 import { WalletCardData, CardBrand } from "@/types/wallet";
 import {
@@ -28,6 +27,7 @@ import {
   Plane,
 } from "lucide-react";
 import Link from "next/link";
+import { formatAccountLabel, matchesLedgerCard } from "@/lib/utils/ledger";
 
 export default function DashboardPage() {
   const {
@@ -39,7 +39,6 @@ export default function DashboardPage() {
     addTransaction,
     addCard,
     accountOptions,
-    totalInvoices,
     mainBalance,
     goals,
     transactions,
@@ -57,8 +56,7 @@ export default function DashboardPage() {
   const formatCurrency = (val: number) =>
     val.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  // Saldo real da Conta Corrente (saldo principal)
-  const effectiveCheckingBalance = mainBalance;
+  const balanceIsPositive = mainBalance >= 0;
 
   const getTransactionIcon = (category: string) => {
     if (category.includes("Alimentação")) return <Utensils strokeWidth={1.5} size={16} />;
@@ -72,49 +70,42 @@ export default function DashboardPage() {
     .filter((transaction) => transaction.kind !== "invoice_settlement")
     .slice(0, 5);
 
-  // Mapeamento dos cartões reais do usuário para o formato WalletCardData
-  const userWalletCards: WalletCardData[] = cards.map((c, index) => {
-    const isGlass = c.name.toLowerCase().includes("ultra") || index === 0;
-    return {
-      id: c.id,
-      title: c.name,
-      subtitle: c.type === "checking" ? "Conta Corrente" : `Fecha dia ${c.closingDay} • Vence dia ${c.dueDay}`,
-      variant: isGlass ? "glass" : "bank",
-      brand: (c.brand.toLowerCase().includes("visa")
-        ? "visa"
-        : c.brand.toLowerCase().includes("apple")
-        ? "apple"
-        : "mastercard") as CardBrand,
-      type: c.type,
-      balance: c.type === "checking" ? effectiveCheckingBalance : c.balance,
-      limit: c.limit,
-      spent: c.spent,
-      cardNumber: `•••• •••• •••• ${c.id.slice(-4) || "8842"}`,
-      holderName: userProfile.name,
-      expirationDate: "09/31",
-      background: c.colorScheme?.gradient,
-      accentColor: c.colorScheme?.accent,
-      isGlass,
-      status: "active",
-      closingDay: c.closingDay,
-      dueDay: c.dueDay,
-    };
-  });
-
-  // Garante ao menos 3 cartões para profundidade e fluidez visual
-  const displayStackCards =
-    userWalletCards.length >= 3
-      ? userWalletCards
-      : [
-          ...userWalletCards,
-          ...DEFAULT_3D_BANK_CARDS.slice(userWalletCards.length),
-        ];
+  // A conta principal controla o saldo; somente crédito aparece como cartão.
+  const userWalletCards: WalletCardData[] = cards
+    .filter((card) => card.type === "credit")
+    .map((c, index) => {
+      const isGlass = c.name.toLowerCase().includes("ultra") || index === 0;
+      return {
+        id: c.id,
+        title: c.name,
+        subtitle: `Fecha dia ${c.closingDay} • Vence dia ${c.dueDay}`,
+        variant: isGlass ? "glass" : "bank",
+        brand: (c.brand.toLowerCase().includes("visa")
+          ? "visa"
+          : c.brand.toLowerCase().includes("apple")
+            ? "apple"
+            : "mastercard") as CardBrand,
+        type: c.type,
+        balance: c.balance,
+        limit: c.limit,
+        spent: c.spent,
+        cardNumber: `•••• •••• •••• ${c.id.slice(-4) || "8842"}`,
+        holderName: userProfile.name,
+        expirationDate: "09/31",
+        background: c.colorScheme?.gradient,
+        accentColor: c.colorScheme?.accent,
+        isGlass,
+        status: "active",
+        closingDay: c.closingDay,
+        dueDay: c.dueDay,
+      };
+    });
 
   // Cartão selecionado / em destaque
-  const activeWalletCard: WalletCardData =
+  const activeWalletCard: WalletCardData | undefined =
     userWalletCards.find((c) => c.id === activeCard.id) ||
-    userWalletCards[0] ||
-    DEFAULT_3D_BANK_CARDS[0];
+    userWalletCards[0];
+  const activeCreditCard = cards.find((card) => card.id === activeWalletCard?.id);
 
   return (
     <div className="min-h-full bg-[#F2F2F7] p-4 sm:p-6 md:p-10 text-[#1D1D1F] font-sans space-y-8 animate-in fade-in duration-500 relative">
@@ -130,14 +121,14 @@ export default function DashboardPage() {
           onPayWithWPay={() => setIsSheetOpen(true)}
           onAddNewCard={() => setIsCardSheetOpen(true)}
           onPayInvoice={
-            activeCard.type === "credit" && (activeCard.invoiceAmount || 0) > 0
-              ? () => { void payInvoice(activeCard.id); }
+            activeCreditCard && (activeCreditCard.invoiceAmount || 0) > 0
+              ? () => { void payInvoice(activeCreditCard.id); }
               : undefined
           }
-          hasOpenInvoice={activeCard.type === "credit" && (activeCard.invoiceAmount || 0) > 0}
+          hasOpenInvoice={Boolean(activeCreditCard && (activeCreditCard.invoiceAmount || 0) > 0)}
         />
 
-        {/* 3. SEÇÃO PRINCIPAL: PILHA 3D DE CARTÕES E GRADE */}
+        {/* 3. PILHA 3D DE CARTÕES E GRADE */}
         <section className="space-y-4">
           <div className="flex items-center justify-between px-1">
             <div className="flex items-center gap-2">
@@ -174,11 +165,33 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {is3DStackView ? (
+          {!isDataLoaded ? (
+            <div className="bg-white/70 rounded-[32px] p-10 text-center text-xs text-[#86868B] border border-black/[0.04]">
+              Sincronizando cartões com Cloud Firestore...
+            </div>
+          ) : userWalletCards.length === 0 ? (
+            <div className="bg-white rounded-[32px] p-8 text-center space-y-3 border border-black/[0.04] shadow-[0_2px_12px_rgba(0,0,0,0.03)]">
+              <div className="w-10 h-10 rounded-xl bg-[#F2F2F7] text-[#1D1D1F] flex items-center justify-center mx-auto">
+                <CreditCard size={20} strokeWidth={1.5} />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold text-[#1D1D1F]">Nenhum cartão cadastrado</h3>
+                <p className="text-xs text-[#86868B]">Adicione seu primeiro cartão para começar.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCardSheetOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-[#1D1D1F] px-4 py-2 text-xs font-semibold text-white hover:bg-black"
+              >
+                <Plus size={14} />
+                Adicionar primeiro cartão
+              </button>
+            </div>
+          ) : is3DStackView ? (
             /* MODO PILHA 3D: interação por toque, clique, arraste e teclado */
             <div className="bg-white/70 backdrop-blur-md rounded-[32px] p-6 sm:p-8 border border-black/[0.04] shadow-[0_2px_12px_rgba(0,0,0,0.03)]">
               <CardStack
-                cards={displayStackCards}
+                cards={userWalletCards}
                 onSelectCard={(id) => selectCard(id)}
               />
               <p className="text-center text-[11px] text-[#86868B] font-medium mt-4">
@@ -189,21 +202,23 @@ export default function DashboardPage() {
             /* MODO GRADE: Cartão Principal em Destaque + Cartões Secundários */
             <div className="space-y-6">
               {/* Cartão Ativo / Principal */}
-              <div className="flex justify-center">
-                <WalletCard
-                  card={activeWalletCard}
-                  onClick={() => selectCard(activeWalletCard.id)}
-                />
-              </div>
+              {activeWalletCard && (
+                <div className="flex justify-center">
+                  <WalletCard
+                    card={activeWalletCard}
+                    onClick={() => selectCard(activeWalletCard.id)}
+                  />
+                </div>
+              )}
 
               {/* Cartões Secundários */}
-              {displayStackCards.length > 1 && (
+              {userWalletCards.length > 1 && activeWalletCard && (
                 <div className="pt-2 space-y-3">
                   <span className="text-[11px] font-semibold text-[#86868B] uppercase tracking-wider px-1">
                     Cartões Secundários
                   </span>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {displayStackCards
+                    {userWalletCards
                       .filter((c) => c.id !== activeWalletCard.id)
                       .slice(0, 2)
                       .map((secCard) => (
@@ -222,37 +237,44 @@ export default function DashboardPage() {
           )}
         </section>
 
-        {/* 4. RESUMO CONSOLIDADO CONECTADO AO CLOUD FIRESTORE */}
-        <section className="bg-white rounded-[24px] shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-black/[0.04] p-5 sm:p-6">
-          <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-200/60 gap-4 sm:gap-0">
-            <div className="sm:px-4 first:pl-0 flex flex-col justify-between space-y-1">
-              <span className="text-[11px] font-semibold tracking-wider uppercase text-[#86868B]">
-                Entradas
-              </span>
-              <div className="text-xl font-semibold text-green-600 tracking-tight">
-                + R$ {formatCurrency(monthIncome)}
-              </div>
-              <span className="text-[11px] text-[#86868B]">Mês atual</span>
+        {/* 4. CONSOLIDADO FINANCEIRO */}
+        <section className="space-y-2" data-testid="dashboard-consolidated">
+          <div className="flex items-end justify-between px-1">
+            <div>
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-[#86868B]">
+                Consolidado do mês
+              </h2>
+              <p className="mt-0.5 text-[11px] text-[#A1A1A6]">Somente valores realizados</p>
             </div>
+            <span className="text-[11px] text-[#86868B]">Conta principal</span>
+          </div>
 
-            <div className="sm:px-6 pt-4 sm:pt-0 flex flex-col justify-between space-y-1">
-              <span className="text-[11px] font-semibold tracking-wider uppercase text-[#86868B]">
-                Saídas Totais
-              </span>
-              <div className="text-xl font-semibold text-[#1D1D1F] tracking-tight">
-                - R$ {formatCurrency(monthExpense)}
+          <div className="overflow-hidden rounded-[24px] border border-black/[0.04] bg-white/90 shadow-[0_2px_10px_rgba(0,0,0,0.035)] backdrop-blur-xl">
+            <div className="grid grid-cols-2 sm:grid-cols-3">
+              <div className="border-b border-r border-black/[0.05] p-5 sm:border-b-0">
+                <span className="text-[10px] font-medium text-[#86868B]">Entrou</span>
+                <strong className="mt-1 block text-sm font-semibold text-emerald-600 sm:text-base">
+                  + R$ {formatCurrency(monthIncome)}
+                </strong>
               </div>
-              <span className="text-[11px] text-[#86868B]">Fluxo consolidado</span>
-            </div>
 
-            <div className="sm:px-6 pt-4 sm:pt-0 flex flex-col justify-between space-y-1">
-              <span className="text-[11px] font-semibold tracking-wider uppercase text-[#86868B]">
-                Faturas Abertas
-              </span>
-              <div className="text-xl font-semibold text-[#1D1D1F] tracking-tight">
-                R$ {formatCurrency(totalInvoices)}
+              <div className="border-b border-black/[0.05] p-5 sm:border-b-0 sm:border-r">
+                <span className="text-[10px] font-medium text-[#86868B]">Saiu</span>
+                <strong className="mt-1 block text-sm font-semibold text-[#1D1D1F] sm:text-base">
+                  − R$ {formatCurrency(monthExpense)}
+                </strong>
               </div>
-              <span className="text-[11px] text-[#86868B]">Consolidado em aberto</span>
+
+              <div className="col-span-2 bg-[#FAFAFC] p-5 sm:col-span-1">
+                <span className="text-[10px] font-medium text-[#86868B]">Tenho na conta</span>
+                <strong
+                  className={`mt-1 block text-xl font-semibold tracking-tight ${
+                    balanceIsPositive ? "text-[#1D1D1F]" : "text-rose-600"
+                  }`}
+                >
+                  {balanceIsPositive ? "" : "−"}R$ {formatCurrency(Math.abs(mainBalance))}
+                </strong>
+              </div>
             </div>
           </div>
         </section>
@@ -288,7 +310,10 @@ export default function DashboardPage() {
                   subtitle={`${tx.category} • ${typeof tx.date === "string" ? tx.date : new Date(tx.date).toLocaleDateString("pt-BR")}`}
                   amount={`${tx.type === "receita" ? "+" : "-"} R$ ${formatCurrency(tx.amount)}`}
                   isIncome={tx.type === "receita"}
-                  badge={tx.account}
+                  badge={formatAccountLabel(tx.account)}
+                  badgeTone={cards.some((card) =>
+                    card.type === "credit" && matchesLedgerCard(card, tx.account, tx.cardId)
+                  ) ? "credit" : "account"}
                   icon={getTransactionIcon(tx.category)}
                   isLast={idx === recentTransactions.length - 1}
                 />

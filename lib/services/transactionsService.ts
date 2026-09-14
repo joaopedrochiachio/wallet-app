@@ -14,6 +14,7 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  updateDoc,
   where,
   writeBatch,
 } from "firebase/firestore";
@@ -232,6 +233,35 @@ export async function deleteTransactionById(userId: string, txId: string): Promi
   await deleteDoc(doc(db, "users", userId, TRANSACTIONS_COLLECTION, txId));
 }
 
+export interface TransactionUpdateInput {
+  title: string;
+  amount: number;
+  type: "despesa" | "receita";
+  category: string;
+  account: string;
+  cardId?: string | null;
+  date: string;
+  occurredAt: Date;
+}
+
+/** Atualiza somente os campos editáveis de um lançamento existente. */
+export async function updateTransactionInFirestore(
+  userId: string,
+  transactionId: string,
+  input: TransactionUpdateInput
+): Promise<void> {
+  await updateDoc(doc(db, "users", userId, TRANSACTIONS_COLLECTION, transactionId), {
+    amount: Number(input.amount),
+    type: input.type === "receita" ? "in" : "out",
+    category: input.category,
+    description: input.title,
+    paymentMethod: input.account,
+    cardId: input.cardId ?? null,
+    date: input.date,
+    occurredAt: input.occurredAt,
+  });
+}
+
 export function subscribeToTransactions(
   callback: (transactions: Transaction[]) => void,
   userId?: string,
@@ -246,29 +276,31 @@ export function subscribeToTransactions(
     transactionsQuery,
     (snapshot) => {
       callback(
-        snapshot.docs.map((snapshotDoc) => {
-          const data = snapshotDoc.data();
-          return {
-            id: snapshotDoc.id,
-            amount: Number(data.amount) || 0,
-            type: data.type as "in" | "out",
-            category: data.category || "Outros",
-            date: data.date || new Date().toLocaleDateString("pt-BR"),
-            description: data.description || "Lançamento",
-            paymentMethod: data.paymentMethod || "Débito/Pix",
-            cardId: data.cardId || null,
-            kind: data.kind || "regular",
-            relatedCardId: data.relatedCardId || null,
-            groupId: data.groupId || null,
-            recurringItemId: data.recurringItemId || null,
-            periodKey: data.periodKey || null,
-            occurredAt: data.occurredAt?.toDate
-              ? data.occurredAt.toDate()
-              : data.occurredAt || null,
-            createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : data.createdAt,
-            userId: data.userId,
-          };
-        })
+        snapshot.docs
+          .filter((snapshotDoc) => !snapshotDoc.id.startsWith("planned-"))
+          .map((snapshotDoc) => {
+            const data = snapshotDoc.data();
+            return {
+              id: snapshotDoc.id,
+              amount: Number(data.amount) || 0,
+              type: data.type as "in" | "out",
+              category: data.category || "Outros",
+              date: data.date || new Date().toLocaleDateString("pt-BR"),
+              description: data.description || "Lançamento",
+              paymentMethod: data.paymentMethod || "Débito/Pix",
+              cardId: data.cardId || null,
+              kind: data.kind || "regular",
+              relatedCardId: data.relatedCardId || null,
+              groupId: data.groupId || null,
+              recurringItemId: data.recurringItemId || null,
+              periodKey: data.periodKey || null,
+              occurredAt: data.occurredAt?.toDate
+                ? data.occurredAt.toDate()
+                : data.occurredAt || null,
+              createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : data.createdAt,
+              userId: data.userId,
+            };
+          })
       );
     },
     (error) => {

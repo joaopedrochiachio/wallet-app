@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import type { CardItem, TransactionItem } from "@/context/WalletContext";
+import { formatAccountLabel } from "@/lib/utils/ledger";
 
 type PaymentFilter = "all" | "balance" | "credit";
 type DirectionFilter = "all" | TransactionItem["type"];
@@ -328,7 +329,7 @@ export function MonthlyMovementOverview({
                         {transaction.title}
                       </h3>
                       <p className="truncate text-xs text-[#86868B]">
-                        {transaction.account} • {transaction.category} • {transaction.date}
+                        {formatAccountLabel(transaction.account)} • {transaction.category} • {transaction.date}
                       </p>
                       <span
                         className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[9px] font-semibold ${
@@ -341,7 +342,7 @@ export function MonthlyMovementOverview({
                           ? "Crédito • entra na fatura"
                           : isIncome
                             ? "Entrada no saldo"
-                            : "Pix / débito • impacto imediato"}
+                            : "Saiu da conta • impacto imediato"}
                       </span>
                     </div>
                   </div>

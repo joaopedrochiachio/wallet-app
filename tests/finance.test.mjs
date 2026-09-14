@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   calculateCheckingBalance,
   calculateInvoiceSchedule,
+  calculateMonthlyAccountFlow,
   getInvoiceDueDate,
 } from "../lib/utils/ledger.ts";
 import { getPeriodKey, isRecurringActiveInMonth } from "../lib/utils/dateUtils.ts";
@@ -47,6 +48,44 @@ test("salário recebido menos contas PIX define o saldo real", () => {
   assert.equal(result, 3000);
 });
 
+test("consolidado atual usa apenas o que entrou e saiu da conta", () => {
+  const secondaryAccount = {
+    ...checking,
+    id: "secondary-checking",
+    name: "Conta secundária",
+  };
+  const result = calculateMonthlyAccountFlow(
+    [checking, secondaryAccount, credit],
+    [
+      { amount: 2800, type: "receita", account: checking.name, cardId: checking.id, occurredAt: new Date(2026, 8, 5) },
+      { amount: 600, type: "despesa", account: checking.name, cardId: checking.id, occurredAt: new Date(2026, 8, 6) },
+      { amount: 1005, type: "despesa", account: credit.name, cardId: credit.id, occurredAt: new Date(2026, 8, 7) },
+      { amount: 999, type: "receita", account: secondaryAccount.name, cardId: secondaryAccount.id, occurredAt: new Date(2026, 8, 8) },
+      { amount: 900, type: "receita", account: checking.name, cardId: checking.id, occurredAt: new Date(2026, 9, 5) },
+    ],
+    new Date(2026, 8, 13),
+  );
+
+  assert.deepEqual(result, { income: 2800, outflow: 600 });
+});
+
+test("previsão antiga não altera o saldo nem o consolidado realizado", () => {
+  const plannedEntry = {
+    id: "planned-rent-2026-09",
+    amount: 1200,
+    type: "despesa",
+    account: checking.name,
+    cardId: checking.id,
+    occurredAt: new Date(2026, 8, 10),
+  };
+
+  assert.equal(calculateCheckingBalance(checking, [plannedEntry]), 0);
+  assert.deepEqual(
+    calculateMonthlyAccountFlow([checking], [plannedEntry], new Date(2026, 8, 13)),
+    { income: 0, outflow: 0 },
+  );
+});
+
 test("compra depois do fechamento de setembro vence em outubro", () => {
   const dueDate = getInvoiceDueDate(credit, new Date(2026, 8, 13, 12));
   assert.equal(getPeriodKey(dueDate.getFullYear(), dueDate.getMonth()), "2026-10");
@@ -71,4 +110,31 @@ test("ocorrência realizada deixa de ser pendência no planejamento", () => {
   };
   assert.equal(isRecurringActiveInMonth(salary, 2026, 8), false);
   assert.equal(isRecurringActiveInMonth(salary, 2026, 9), true);
+});
+
+test("compra fixa parcelada termina depois da quantidade de meses definida", () => {
+  const purchase = {
+    active: true,
+    startYear: 2026,
+    startMonth: 8,
+    installmentsCount: 3,
+  };
+
+  assert.equal(isRecurringActiveInMonth(purchase, 2026, 8), true);
+  assert.equal(isRecurringActiveInMonth(purchase, 2026, 9), true);
+  assert.equal(isRecurringActiveInMonth(purchase, 2026, 10), true);
+  assert.equal(isRecurringActiveInMonth(purchase, 2026, 11), false);
+});
+
+test("pagamento futuro único existe somente no mês planejado", () => {
+  const oneTimePayment = {
+    active: true,
+    startYear: 2026,
+    startMonth: 10,
+    installmentsCount: 1,
+  };
+
+  assert.equal(isRecurringActiveInMonth(oneTimePayment, 2026, 9), false);
+  assert.equal(isRecurringActiveInMonth(oneTimePayment, 2026, 10), true);
+  assert.equal(isRecurringActiveInMonth(oneTimePayment, 2026, 11), false);
 });

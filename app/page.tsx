@@ -237,7 +237,7 @@ export default function PresentationPage() {
 
             <div className="space-y-1.5">
               <h3 className="text-lg font-semibold text-[#1D1D1F] tracking-tight">
-                Separação Física de Faturas e Débito
+                Separação Clara entre Saldo e Faturas
               </h3>
               <p className="text-xs text-[#86868B] leading-relaxed">
                 Compras parceladas ou no crédito não descontam o seu saldo no ato. Elas são provisionadas em compartimentos virtuais separados, eliminando falsas impressões de saldo zerado e evitando o endividamento por desorganização.

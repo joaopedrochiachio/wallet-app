@@ -23,7 +23,7 @@ import {
   getRecurringMonthOffset,
   isRecurringActiveInMonth,
 } from "@/lib/utils/dateUtils";
-import { getLedgerEntryDate } from "@/lib/utils/ledger";
+import { formatAccountLabel, getLedgerEntryDate } from "@/lib/utils/ledger";
 import { RecurrenceType, RecurringItem } from "@/types";
 
 export default function PlanningPage() {
@@ -56,8 +56,8 @@ export default function PlanningPage() {
   const [isCustomDayActive, setIsCustomDayActive] = useState(false);
   const [customDayInput, setCustomDayInput] = useState("10");
 
-  // Parcelamento / Duração (ex: 3, 4, 5 meses ou contínuo)
-  const [durationMode, setDurationMode] = useState<"continuous" | "installments">("continuous");
+  // Duração: uma vez, por um número de meses ou contínuo.
+  const [durationMode, setDurationMode] = useState<"one-time" | "continuous" | "installments">("continuous");
   const [installmentsCount, setInstallmentsCount] = useState<number>(3);
   const [isCustomInstallment, setIsCustomInstallment] = useState(false);
   const [customInstallmentInput, setCustomInstallmentInput] = useState("4");
@@ -98,6 +98,17 @@ export default function PlanningPage() {
   const plannedCreditExpenses = recurringItems.filter(
     (r) => r.type !== "income" && !isCheckingAccount(r)
   );
+  const isScheduledForSelectedMonth = (item: RecurringItem) => {
+    const monthOffset = getRecurringMonthOffset(item, targetYear, targetMonth);
+    return monthOffset >= 0 && (
+      !item.installmentsCount ||
+      item.installmentsCount <= 0 ||
+      monthOffset < item.installmentsCount
+    );
+  };
+  const visiblePlannedIncomes = plannedIncomes.filter(isScheduledForSelectedMonth);
+  const visiblePlannedDebitExpenses = plannedDebitExpenses.filter(isScheduledForSelectedMonth);
+  const visiblePlannedCreditExpenses = plannedCreditExpenses.filter(isScheduledForSelectedMonth);
 
   const totalIncomesActive = plannedIncomes
     .filter(isActiveInSelectedMonth)
@@ -142,7 +153,7 @@ export default function PlanningPage() {
     setNewAccount(type === "income" ? checkingAcc : accountOptions[0] || "Débito/Pix");
     setRecurrenceSelection(type === "income" ? "business_day_5" : "fixed_day");
     setIsCustomDayActive(false);
-    setDurationMode("continuous");
+    setDurationMode(type === "expense" ? "one-time" : "continuous");
     setInstallmentsCount(3);
     setIsCustomInstallment(false);
     setIsAddingModalOpen(true);
@@ -172,7 +183,12 @@ export default function PlanningPage() {
         category: newCategory,
         dueDay: computedDay,
         recurrenceType: recurrenceSelection,
-        installmentsCount: durationMode === "installments" ? installmentsCount : undefined,
+        installmentsCount:
+          durationMode === "one-time"
+            ? 1
+            : durationMode === "installments"
+              ? installmentsCount
+              : undefined,
         startMonth: targetMonth,
         startYear: targetYear,
         active: true,
@@ -306,7 +322,7 @@ export default function PlanningPage() {
           </div>
         </div>
 
-        {/* Panorama que conecta realizado, débito futuro e faturas em uma leitura única. */}
+        {/* Panorama que conecta realizado, contas futuras e faturas em uma leitura única. */}
         <section
           className="overflow-hidden rounded-[24px] border border-black/[0.05] bg-[#1D1D1F] text-white shadow-[0_8px_24px_rgba(0,0,0,0.08)]"
           data-testid="monthly-macro-summary"
@@ -328,8 +344,8 @@ export default function PlanningPage() {
                   R$ {formatCurrency(projection.totalCommitted)}
                 </strong>{" "}
                 comprometidos, R$ {formatCurrency(projection.actualOutflowTotal)} já saíram
-                do saldo, R$ {formatCurrency(debitCommitments)} ainda sairão no Pix ou
-                débito e R$ {formatCurrency(creditCommitments)} estão concentrados em
+                do saldo, R$ {formatCurrency(debitCommitments)} ainda sairão da conta e
+                R$ {formatCurrency(creditCommitments)} estão concentrados em
                 faturas.
               </p>
 
@@ -374,7 +390,7 @@ export default function PlanningPage() {
                     <div
                       className="h-full bg-emerald-400"
                       style={{ width: `${debitShare}%` }}
-                      title={`Pix e débito pendentes: ${Math.round(debitShare)}%`}
+                      title={`Contas pendentes: ${Math.round(debitShare)}%`}
                     />
                     <div
                       className="h-full bg-indigo-400"
@@ -395,7 +411,7 @@ export default function PlanningPage() {
                 />
                 <MacroMetric
                   dotClass="bg-emerald-400"
-                  label="Pix pendente"
+                  label="Na conta"
                   value={debitCommitments}
                 />
                 <MacroMetric
@@ -441,7 +457,7 @@ export default function PlanningPage() {
           </div>
 
           <div className="bg-white rounded-[20px] border border-black/[0.04] shadow-[0_2px_8px_rgba(0,0,0,0.04)] overflow-hidden">
-            {plannedIncomes.length === 0 ? (
+            {visiblePlannedIncomes.length === 0 ? (
               <div className="p-8 text-center space-y-2">
                 <p className="text-xs font-medium text-[#1D1D1F]">
                   Nenhum recebimento futuro planejado ainda.
@@ -459,10 +475,11 @@ export default function PlanningPage() {
                 </button>
               </div>
             ) : (
-              plannedIncomes.map((item, idx) => {
+              visiblePlannedIncomes.map((item, idx) => {
                 const effectiveDay = getEffectiveDueDay(item, targetYear, targetMonth);
                 const monthOffset = getRecurringMonthOffset(item, targetYear, targetMonth);
-                const hasInstallments = Boolean(item.installmentsCount && item.installmentsCount > 0);
+                const isOneTime = item.installmentsCount === 1;
+                const hasInstallments = Boolean(item.installmentsCount && item.installmentsCount > 1);
                 const isFinishedInThisMonth = hasInstallments && monthOffset >= (item.installmentsCount || 0);
                 const currentInstallmentNum = monthOffset >= 0 ? monthOffset + 1 : 1;
                 const isRealized = item.realizedPeriods?.includes(getPeriodKey(targetYear, targetMonth));
@@ -471,7 +488,7 @@ export default function PlanningPage() {
                   <div
                     key={item.id}
                     className={`flex items-center justify-between p-4 hover:bg-[#F2F2F7]/50 transition-colors ${
-                      idx !== plannedIncomes.length - 1 ? "border-b border-gray-100" : ""
+                      idx !== visiblePlannedIncomes.length - 1 ? "border-b border-gray-100" : ""
                     } ${isFinishedInThisMonth ? "opacity-60 bg-gray-50/50" : ""}`}
                   >
                     <div className="flex items-center gap-3">
@@ -509,6 +526,11 @@ export default function PlanningPage() {
                               Recebido neste mês
                             </span>
                           )}
+                          {isOneTime && (
+                            <span className="inline-flex items-center rounded-full border border-amber-200/60 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                              Recebimento único
+                            </span>
+                          )}
                           {hasInstallments && (
                             <span
                               className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${
@@ -522,7 +544,7 @@ export default function PlanningPage() {
                                 : `Parcela ${currentInstallmentNum} de ${item.installmentsCount}`}
                             </span>
                           )}
-                          <span className="text-xs text-[#86868B]">• Destino: {item.account}</span>
+                          <span className="text-xs text-[#86868B]">• Destino: {formatAccountLabel(item.account)}</span>
                           <span className="text-xs text-[#86868B]">• {item.category}</span>
                         </div>
                       </div>
@@ -563,7 +585,7 @@ export default function PlanningPage() {
             <div className="flex items-center gap-2">
               <Building2 size={16} className="text-[#1D1D1F]" />
               <h2 className="text-xs uppercase tracking-wider font-semibold text-[#86868B]">
-                Pagamentos no Débito (Saem direto do saldo)
+                Contas planejadas (Saem do saldo)
               </h2>
             </div>
             <div className="flex items-center gap-3">
@@ -581,10 +603,10 @@ export default function PlanningPage() {
           </div>
 
           <div className="bg-white rounded-[20px] border border-black/[0.04] shadow-[0_2px_8px_rgba(0,0,0,0.04)] overflow-hidden">
-            {plannedDebitExpenses.length === 0 ? (
+            {visiblePlannedDebitExpenses.length === 0 ? (
               <div className="p-8 text-center space-y-2">
                 <p className="text-xs font-medium text-[#1D1D1F]">
-                  Nenhuma despesa fixa de débito cadastrada.
+                  Nenhuma conta planejada cadastrada.
                 </p>
                 <p className="text-xs text-[#86868B]">
                   Cadastre contas fixas como Aluguel, Luz, Internet ou Condomínio.
@@ -599,10 +621,11 @@ export default function PlanningPage() {
                 </button>
               </div>
             ) : (
-              plannedDebitExpenses.map((item, idx) => {
+              visiblePlannedDebitExpenses.map((item, idx) => {
                 const effectiveDay = getEffectiveDueDay(item, targetYear, targetMonth);
                 const monthOffset = getRecurringMonthOffset(item, targetYear, targetMonth);
-                const hasInstallments = Boolean(item.installmentsCount && item.installmentsCount > 0);
+                const isOneTime = item.installmentsCount === 1;
+                const hasInstallments = Boolean(item.installmentsCount && item.installmentsCount > 1);
                 const isFinishedInThisMonth = hasInstallments && monthOffset >= (item.installmentsCount || 0);
                 const currentInstallmentNum = monthOffset >= 0 ? monthOffset + 1 : 1;
                 const isRealized = item.realizedPeriods?.includes(getPeriodKey(targetYear, targetMonth));
@@ -611,7 +634,7 @@ export default function PlanningPage() {
                   <div
                     key={item.id}
                     className={`flex items-center justify-between p-4 hover:bg-[#F2F2F7]/50 transition-colors ${
-                      idx !== plannedDebitExpenses.length - 1 ? "border-b border-gray-100" : ""
+                      idx !== visiblePlannedDebitExpenses.length - 1 ? "border-b border-gray-100" : ""
                     } ${isFinishedInThisMonth ? "opacity-60 bg-gray-50/50" : ""}`}
                   >
                     <div className="flex items-center gap-3">
@@ -640,12 +663,17 @@ export default function PlanningPage() {
                             </span>
                           ) : (
                             <span className="text-xs text-[#86868B]">
-                              Débito dia {effectiveDay}
+                              Conta • dia {effectiveDay}
                             </span>
                           )}
                           {isRealized && (
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60">
                               Pago neste mês
+                            </span>
+                          )}
+                          {isOneTime && (
+                            <span className="inline-flex items-center rounded-full border border-amber-200/60 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                              Pagamento único
                             </span>
                           )}
                           {hasInstallments && (
@@ -661,7 +689,7 @@ export default function PlanningPage() {
                                 : `Parcela ${currentInstallmentNum} de ${item.installmentsCount}`}
                             </span>
                           )}
-                          <span className="text-xs text-[#86868B]">• {item.account}</span>
+                          <span className="text-xs text-[#86868B]">• {formatAccountLabel(item.account)}</span>
                         </div>
                       </div>
                     </div>
@@ -727,7 +755,7 @@ export default function PlanningPage() {
           )}
 
           <div className="bg-white rounded-[20px] border border-black/[0.04] shadow-[0_2px_8px_rgba(0,0,0,0.04)] overflow-hidden">
-            {plannedCreditExpenses.length === 0 ? (
+            {visiblePlannedCreditExpenses.length === 0 ? (
               <div className="p-8 text-center space-y-2">
                 <p className="text-xs font-medium text-[#1D1D1F]">
                   Nenhuma assinatura cadastrada no cartão.
@@ -737,10 +765,11 @@ export default function PlanningPage() {
                 </p>
               </div>
             ) : (
-              plannedCreditExpenses.map((item, idx) => {
+              visiblePlannedCreditExpenses.map((item, idx) => {
                 const effectiveDay = getEffectiveDueDay(item, targetYear, targetMonth);
                 const monthOffset = getRecurringMonthOffset(item, targetYear, targetMonth);
-                const hasInstallments = Boolean(item.installmentsCount && item.installmentsCount > 0);
+                const isOneTime = item.installmentsCount === 1;
+                const hasInstallments = Boolean(item.installmentsCount && item.installmentsCount > 1);
                 const isFinishedInThisMonth = hasInstallments && monthOffset >= (item.installmentsCount || 0);
                 const currentInstallmentNum = monthOffset >= 0 ? monthOffset + 1 : 1;
                 const isRealized = item.realizedPeriods?.includes(getPeriodKey(targetYear, targetMonth));
@@ -749,7 +778,7 @@ export default function PlanningPage() {
                   <div
                     key={item.id}
                     className={`flex items-center justify-between p-4 hover:bg-[#F2F2F7]/50 transition-colors ${
-                      idx !== plannedCreditExpenses.length - 1 ? "border-b border-gray-100" : ""
+                      idx !== visiblePlannedCreditExpenses.length - 1 ? "border-b border-gray-100" : ""
                     } ${isFinishedInThisMonth ? "opacity-60 bg-gray-50/50" : ""}`}
                   >
                     <div className="flex items-center gap-3">
@@ -786,6 +815,11 @@ export default function PlanningPage() {
                               Lançado na fatura
                             </span>
                           )}
+                          {isOneTime && (
+                            <span className="inline-flex items-center rounded-full border border-amber-200/60 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                              Pagamento único
+                            </span>
+                          )}
                           {hasInstallments && (
                             <span
                               className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${
@@ -799,7 +833,7 @@ export default function PlanningPage() {
                                 : `Parcela ${currentInstallmentNum} de ${item.installmentsCount}`}
                             </span>
                           )}
-                          <span className="text-xs text-[#86868B]">• Cartão {item.account}</span>
+                          <span className="text-xs text-[#86868B]">• Cartão {formatAccountLabel(item.account)}</span>
                         </div>
                       </div>
                     </div>
@@ -1057,7 +1091,16 @@ export default function PlanningPage() {
                   <div className="bg-emerald-50/80 border border-emerald-200/60 rounded-xl p-2.5 flex items-start gap-2">
                     <Sparkles size={14} className="text-emerald-700 shrink-0 mt-0.5" />
                     <p className="text-[11px] text-emerald-800 font-medium leading-relaxed">
-                      {recurrenceSelection === "business_day_5" ? (
+                      {durationMode === "one-time" ? (
+                        <>
+                          Agendado apenas para o <strong>Dia {recurrenceSelection === "business_day_5"
+                            ? currentMonth5thBusinessDay
+                            : isCustomDayActive
+                              ? customDayInput
+                              : fixedDayValue}</strong> de <strong>{activeMonthObj.short}</strong>.
+                          {" "}Não se repetirá nos meses seguintes.
+                        </>
+                      ) : recurrenceSelection === "business_day_5" ? (
                         <>
                           Configurado para o <strong>5º dia útil</strong>. Em{" "}
                           <strong>{activeMonthObj.short}</strong>, cai no{" "}
@@ -1079,37 +1122,50 @@ export default function PlanningPage() {
                 <div className="px-6 py-4 space-y-3 bg-white">
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-semibold text-[#86868B] uppercase tracking-wider">
-                      DURAÇÃO / PARCELAMENTO
+                      DURAÇÃO
                     </span>
                     <span className="text-xs font-semibold text-[#1D1D1F]">
-                      {durationMode === "continuous"
-                        ? "Recorrente contínuo"
-                        : `${installmentsCount} parcelas`}
+                      {durationMode === "one-time"
+                        ? "Uma única vez"
+                        : durationMode === "continuous"
+                          ? "Recorrente contínuo"
+                          : `${installmentsCount} parcelas`}
                     </span>
                   </div>
 
-                  <div className="flex gap-2 bg-[#F2F2F7] p-1 rounded-xl">
+                  <div className="grid grid-cols-3 gap-1 bg-[#F2F2F7] p-1 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setDurationMode("one-time")}
+                      className={`py-1.5 px-2 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
+                        durationMode === "one-time"
+                          ? "bg-white text-[#1D1D1F] shadow-2xs"
+                          : "text-[#86868B] hover:text-[#1D1D1F]"
+                      }`}
+                    >
+                      Uma vez
+                    </button>
                     <button
                       type="button"
                       onClick={() => setDurationMode("continuous")}
-                      className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                      className={`py-1.5 px-2 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
                         durationMode === "continuous"
                           ? "bg-white text-[#1D1D1F] shadow-2xs"
                           : "text-[#86868B] hover:text-[#1D1D1F]"
                       }`}
                     >
-                      Contínuo (Fixo todo mês)
+                      Contínuo
                     </button>
                     <button
                       type="button"
                       onClick={() => setDurationMode("installments")}
-                      className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                      className={`py-1.5 px-2 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
                         durationMode === "installments"
                           ? "bg-[#1D1D1F] text-white shadow-2xs"
                           : "text-[#86868B] hover:text-[#1D1D1F]"
                       }`}
                     >
-                      Parcelado (X meses)
+                      Parcelado
                     </button>
                   </div>
 
@@ -1183,6 +1239,8 @@ export default function PlanningPage() {
                   <div className="flex-1 flex flex-wrap gap-2">
                     {accountOptions.map((acc) => {
                       const isSelected = newAccount === acc;
+                      const isCheckingAccount = acc === "Débito/Pix" ||
+                        cards.some((card) => card.type === "checking" && card.name === acc);
                       return (
                         <button
                           key={acc}
@@ -1196,8 +1254,8 @@ export default function PlanningPage() {
                               : "bg-[#F2F2F7] text-[#1D1D1F] border-transparent hover:bg-gray-200"
                           }`}
                         >
-                          {acc === "Débito/Pix" ? <Building2 size={13} /> : <CreditCard size={13} />}
-                          <span>{acc}</span>
+                          {isCheckingAccount ? <Building2 size={13} /> : <CreditCard size={13} />}
+                          <span>{formatAccountLabel(acc)}</span>
                         </button>
                       );
                     })}

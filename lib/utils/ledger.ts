@@ -1,6 +1,7 @@
 import type { CardItem } from "@/types";
 
 export interface LedgerEntry {
+  id?: string;
   amount: number;
   type: "despesa" | "receita";
   account: string;
@@ -9,8 +10,25 @@ export interface LedgerEntry {
   createdAt?: string | number | Date | null;
 }
 
+export interface AccountFlow {
+  income: number;
+  outflow: number;
+}
+
 function normalizeText(value: string): string {
   return value.trim().toLocaleLowerCase("pt-BR");
+}
+
+/** Compatibilidade: previsões antigas chegaram a ser gravadas como lançamentos reais. */
+function isActualEntry(entry: LedgerEntry): boolean {
+  return !entry.id?.startsWith("planned-");
+}
+
+export function formatAccountLabel(value: string): string {
+  const withoutDebitSuffix = value.replace(/\s*\(débito(?:\s*\/\s*pix)?\)\s*$/iu, "").trim();
+  return normalizeText(withoutDebitSuffix) === normalizeText("Débito/Pix")
+    ? "Conta principal"
+    : withoutDebitSuffix;
 }
 
 export function matchesLedgerCard(
@@ -27,7 +45,7 @@ export function matchesLedgerCard(
 /** Saldo da conta = saldo inicial + entradas - saídas do livro-caixa. */
 export function calculateCheckingBalance(card: CardItem, entries: LedgerEntry[]): number {
   const accountEntries = entries.filter((entry) =>
-    matchesLedgerCard(card, entry.account, entry.cardId)
+    isActualEntry(entry) && matchesLedgerCard(card, entry.account, entry.cardId)
   );
   const openingBalance = card.openingBalance ??
     (accountEntries.length === 0 ? card.balance ?? 0 : 0);
@@ -41,7 +59,7 @@ export function calculateCheckingBalance(card: CardItem, entries: LedgerEntry[])
 /** Fatura = compras - estornos - baixas, nunca menor que zero. */
 export function calculateCreditInvoice(card: CardItem, entries: LedgerEntry[]): number {
   const invoice = entries
-    .filter((entry) => matchesLedgerCard(card, entry.account, entry.cardId))
+    .filter((entry) => isActualEntry(entry) && matchesLedgerCard(card, entry.account, entry.cardId))
     .reduce(
       (total, entry) => total + (entry.type === "despesa" ? entry.amount : -entry.amount),
       0
@@ -57,6 +75,38 @@ export function getLedgerEntryDate(entry: LedgerEntry): Date | null {
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
   return null;
+}
+
+/**
+ * Fluxo efetivamente realizado nas contas durante um mês.
+ * Compras no crédito e itens apenas planejados não fazem parte deste total.
+ */
+export function calculateMonthlyAccountFlow(
+  cards: CardItem[],
+  entries: LedgerEntry[],
+  targetDate: Date = new Date()
+): AccountFlow {
+  const primaryAccount = cards.find((card) => card.type === "checking");
+  if (!primaryAccount) return { income: 0, outflow: 0 };
+
+  const accountEntries = entries.filter((entry) => {
+    const occurredAt = getLedgerEntryDate(entry);
+    const isTargetMonth = occurredAt &&
+      occurredAt.getMonth() === targetDate.getMonth() &&
+      occurredAt.getFullYear() === targetDate.getFullYear();
+
+    return isActualEntry(entry) && Boolean(isTargetMonth) &&
+      matchesLedgerCard(primaryAccount, entry.account, entry.cardId);
+  });
+
+  return accountEntries.reduce<AccountFlow>(
+    (flow, entry) => {
+      if (entry.type === "receita") flow.income += entry.amount;
+      else flow.outflow += entry.amount;
+      return flow;
+    },
+    { income: 0, outflow: 0 }
+  );
 }
 
 /** Calcula em qual mês uma compra entra na fatura, pelo fechamento e vencimento. */
@@ -83,7 +133,7 @@ export function calculateInvoiceSchedule(
   let credits = 0;
 
   for (const entry of entries.filter((item) =>
-    matchesLedgerCard(card, item.account, item.cardId)
+    isActualEntry(item) && matchesLedgerCard(card, item.account, item.cardId)
   )) {
     if (entry.type === "receita") {
       credits += entry.amount;

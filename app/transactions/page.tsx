@@ -4,7 +4,9 @@ import { useState } from "react";
 import { TransactionItem, useWallet } from "@/context/WalletContext";
 import { ListGroup, ListItem } from "@/components/ui/iOSList";
 import { AddTransactionSheet } from "@/components/ui/AddTransactionSheet";
+import { TransactionDetailsSheet } from "@/components/ui/TransactionDetailsSheet";
 import { getPeriodKey, MONTH_NAMES_PT } from "@/lib/utils/dateUtils";
+import { formatAccountLabel, matchesLedgerCard } from "@/lib/utils/ledger";
 import {
   Briefcase,
   Utensils,
@@ -18,7 +20,15 @@ import {
 import { AppleConfirmModal } from "@/components/ui/AppleConfirmModal";
 
 export default function TransactionsPage() {
-  const { accountOptions, addTransaction, deleteTransaction, transactions, isDataLoaded } = useWallet();
+  const {
+    accountOptions,
+    addTransaction,
+    updateTransaction,
+    deleteTransaction,
+    transactions,
+    cards,
+    isDataLoaded,
+  } = useWallet();
   const now = new Date();
   const monthOptions = [-1, 0, 1].map((offset) => {
     const date = new Date(now.getFullYear(), now.getMonth() + offset, 1);
@@ -31,6 +41,7 @@ export default function TransactionsPage() {
   const [selectedFilter, setSelectedFilter] = useState("Todas");
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [txToDelete, setTxToDelete] = useState<TransactionItem | null>(null);
+  const [selectedTransaction, setSelectedTransaction] = useState<TransactionItem | null>(null);
 
   const formatCurrency = (val: number) =>
     val.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -102,7 +113,7 @@ export default function TransactionsPage() {
                   : "bg-white text-[#86868B] hover:text-[#1D1D1F] border border-black/[0.04]"
               }`}
             >
-              {filter}
+              {filter === "Todas" ? filter : formatAccountLabel(filter)}
             </button>
           ))}
         </div>
@@ -139,8 +150,12 @@ export default function TransactionsPage() {
                 amount={`${item.type === "receita" ? "+" : "-"} R$ ${formatCurrency(item.amount)}`}
                 isIncome={item.type === "receita"}
                 icon={getTransactionIcon(item.category)}
-                badge={item.account}
+                badge={formatAccountLabel(item.account)}
+                badgeTone={cards.some((card) =>
+                  card.type === "credit" && matchesLedgerCard(card, item.account, item.cardId)
+                ) ? "credit" : "account"}
                 isLast={index === filteredTransactions.length - 1}
+                onClick={() => setSelectedTransaction(item)}
                 rightElement={
                   <button
                     type="button"
@@ -167,6 +182,17 @@ export default function TransactionsPage() {
         accounts={accountOptions}
         onAdd={addTransaction}
       />
+
+      {selectedTransaction && (
+        <TransactionDetailsSheet
+          key={selectedTransaction.id}
+          transaction={selectedTransaction}
+          accounts={accountOptions}
+          cards={cards}
+          onClose={() => setSelectedTransaction(null)}
+          onSave={updateTransaction}
+        />
+      )}
 
       {/* Modal de Confirmação para Excluir Lançamento */}
       <AppleConfirmModal

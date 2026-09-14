@@ -89,7 +89,6 @@ const BRAND_SUGGESTIONS = [
 export function AddCardSheet({ isOpen, onClose, onAddCard }: AddCardSheetProps) {
   const [name, setName] = useState("");
   const [brand, setBrand] = useState(BRAND_SUGGESTIONS[0]);
-  const [cardType, setCardType] = useState<"credit" | "checking">("credit");
   const [limitInput, setLimitInput] = useState("");
   const [closingDay, setClosingDay] = useState("10");
   const [dueDay, setDueDay] = useState("17");
@@ -112,11 +111,11 @@ export function AddCardSheet({ isOpen, onClose, onAddCard }: AddCardSheetProps) 
     onAddCard({
       name: finalName,
       brand: brand.trim() || "Crédito",
-      type: cardType,
+      type: "credit",
       limit: finalLimit,
-      balance: cardType === "checking" ? finalLimit : 0,
-      closingDay: cardType === "credit" ? finalClosing : 10,
-      dueDay: cardType === "credit" ? finalDue : 17,
+      balance: 0,
+      closingDay: finalClosing,
+      dueDay: finalDue,
       colorScheme: {
         gradient: selectedPreset.gradient,
         border: selectedPreset.border,
@@ -151,7 +150,7 @@ export function AddCardSheet({ isOpen, onClose, onAddCard }: AddCardSheetProps) 
         <div className="flex items-center justify-between px-6 py-3 border-b border-black/[0.04]">
           <div>
             <h2 className="text-lg font-semibold text-[#1D1D1F] tracking-tight">
-              Novo Cartão
+              Novo Cartão de Crédito
             </h2>
             <p className="text-xs text-[#86868B]">
               Personalize a aparência, limite e vencimento
@@ -193,7 +192,7 @@ export function AddCardSheet({ isOpen, onClose, onAddCard }: AddCardSheetProps) 
                   <div className="flex items-center gap-2">
                     <Wifi size={18} strokeWidth={1.5} className="opacity-80 rotate-90" />
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 backdrop-blur-md border border-white/10 font-semibold">
-                      {cardType === "credit" ? "Crédito" : "Débito"}
+                      Crédito
                     </span>
                   </div>
                 </div>
@@ -214,7 +213,7 @@ export function AddCardSheet({ isOpen, onClose, onAddCard }: AddCardSheetProps) 
 
                   <div className="text-right">
                     <span className="text-[10px] uppercase text-white/60 block">
-                      {cardType === "credit" ? "Limite" : "Saldo"}
+                      Limite
                     </span>
                     <span className="text-base font-semibold text-white tracking-tight">
                       R$ {formatCurrency(parsedLimit > 0 ? parsedLimit : 5000)}
@@ -227,37 +226,6 @@ export function AddCardSheet({ isOpen, onClose, onAddCard }: AddCardSheetProps) 
 
           <form onSubmit={handleSubmit} className="space-y-4">
             
-            {/* Tipo de Cartão (Segmented Control) */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-[#86868B]">
-                Tipo de Conta
-              </label>
-              <div className="bg-[#E5E5EA]/80 p-1 rounded-xl flex items-center gap-1 border border-black/5">
-                <button
-                  type="button"
-                  onClick={() => setCardType("credit")}
-                  className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-all ${
-                    cardType === "credit"
-                      ? "bg-white text-[#1D1D1F] shadow-xs"
-                      : "text-[#86868B] hover:text-[#1D1D1F]"
-                  }`}
-                >
-                  Cartão de Crédito
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCardType("checking")}
-                  className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-all ${
-                    cardType === "checking"
-                      ? "bg-white text-[#1D1D1F] shadow-xs"
-                      : "text-[#86868B] hover:text-[#1D1D1F]"
-                  }`}
-                >
-                  Conta / Débito
-                </button>
-              </div>
-            </div>
-
             {/* Nome do Cartão */}
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-[#86868B]">
@@ -306,7 +274,7 @@ export function AddCardSheet({ isOpen, onClose, onAddCard }: AddCardSheetProps) 
             {/* Limite Total */}
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-[#86868B]">
-                {cardType === "credit" ? "Limite Total do Cartão (R$)" : "Saldo Inicial (R$)"}
+                Limite Total do Cartão (R$)
               </label>
               <div className="relative">
                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xs font-semibold text-[#86868B]">
@@ -323,9 +291,8 @@ export function AddCardSheet({ isOpen, onClose, onAddCard }: AddCardSheetProps) 
               </div>
             </div>
 
-            {/* Fechamento e Vencimento (Apenas para Crédito) */}
-            {cardType === "credit" && (
-              <div className="grid grid-cols-2 gap-3">
+            {/* Fechamento e Vencimento */}
+            <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-[#86868B]">
                     Dia do Fechamento
@@ -354,8 +321,7 @@ export function AddCardSheet({ isOpen, onClose, onAddCard }: AddCardSheetProps) 
                     className="w-full bg-white rounded-xl px-4 py-2.5 text-sm text-[#1D1D1F] border border-black/[0.06] focus:outline-none focus:ring-2 focus:ring-[#1D1D1F]/20"
                   />
                 </div>
-              </div>
-            )}
+            </div>
 
             {/* Paleta Metálica Apple HIG */}
             <div className="space-y-2 pt-1">

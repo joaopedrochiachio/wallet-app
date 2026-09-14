@@ -33,7 +33,6 @@ export default function OnboardingPage() {
 
   // Etapa 3: Primeiro Cartão/Conta
   const [cardName, setCardName] = useState("Minha Conta Principal");
-  const [cardType, setCardType] = useState<"checking" | "credit">("checking");
   const [initialAmount, setInitialAmount] = useState("2.500,00");
 
   useEffect(() => {
@@ -130,12 +129,12 @@ export default function OnboardingPage() {
       // 2. Criar Primeiro Cartão no Firestore
       const firstCard: CardItem = {
         id: `card-${Date.now()}`,
-        name: cardName.trim() || (cardType === "checking" ? "Conta Principal" : "Cartão de Crédito"),
-        brand: cardType === "checking" ? "Débito / Pix" : "Mastercard Platinum",
-        type: cardType,
-        balance: cardType === "checking" ? cleanAmount : 0,
-        openingBalance: cardType === "checking" ? cleanAmount : 0,
-        limit: cardType === "credit" ? cleanAmount : 5000,
+        name: cardName.trim() || "Conta Principal",
+        brand: "Conta",
+        type: "checking",
+        balance: cleanAmount,
+        openingBalance: cleanAmount,
+        limit: 0,
         spent: 0,
         invoiceAmount: 0,
         closingDay: 10,
@@ -144,7 +143,7 @@ export default function OnboardingPage() {
           gradient: "from-[#1D1D1F] via-[#121214] to-[#0A0A0C]",
           border: "border-white/10",
           accent: "text-gray-300",
-          badgeText: cardType === "checking" ? "Conta Corrente" : "Crédito Platinum",
+          badgeText: "Conta Principal",
           chipGradient: "from-amber-200 to-yellow-500",
         },
       };
@@ -352,37 +351,11 @@ export default function OnboardingPage() {
                 Passo 3 de 3
               </span>
               <h2 className="text-2xl font-semibold tracking-tight text-[#1D1D1F]">
-                Adicione seu primeiro pass
+                Configure sua conta principal
               </h2>
               <p className="text-xs text-[#86868B] max-w-md mx-auto">
-                Você pode cadastrar sua conta corrente principal ou um cartão de crédito.
+                Informe onde fica seu saldo. Cartões de crédito podem ser adicionados depois.
               </p>
-            </div>
-
-            {/* Segmented Control Tipo do Pass */}
-            <div className="bg-[#E5E5EA]/70 p-1 rounded-full flex gap-1 border border-black/5">
-              <button
-                type="button"
-                onClick={() => setCardType("checking")}
-                className={`flex-1 py-2 rounded-full text-xs font-semibold transition-all ${
-                  cardType === "checking"
-                    ? "bg-white text-[#1D1D1F] shadow-xs"
-                    : "text-[#86868B] hover:text-[#1D1D1F]"
-                }`}
-              >
-                Conta Corrente (Débito/Pix)
-              </button>
-              <button
-                type="button"
-                onClick={() => setCardType("credit")}
-                className={`flex-1 py-2 rounded-full text-xs font-semibold transition-all ${
-                  cardType === "credit"
-                    ? "bg-white text-[#1D1D1F] shadow-xs"
-                    : "text-[#86868B] hover:text-[#1D1D1F]"
-                }`}
-              >
-                Cartão de Crédito
-              </button>
             </div>
 
             <div className="space-y-4">
@@ -394,14 +367,14 @@ export default function OnboardingPage() {
                   type="text"
                   value={cardName}
                   onChange={(e) => setCardName(e.target.value)}
-                  placeholder={cardType === "checking" ? "Ex: Conta Nubank, Itaú..." : "Ex: Nubank Ultravioleta..."}
+                  placeholder="Ex: Nubank, Itaú, conta principal..."
                   className="w-full bg-[#F2F2F7] rounded-xl px-4 py-3.5 text-sm text-[#1D1D1F] placeholder:text-[#86868B] focus:outline-none border border-transparent focus:border-black/10 transition-all"
                 />
               </div>
 
               <div className="space-y-1.5 pt-2">
                 <label className="text-[11px] font-semibold text-[#86868B] uppercase tracking-wider px-1 block text-center">
-                  {cardType === "checking" ? "Saldo Inicial Disponível" : "Limite de Crédito Total"}
+                  Quanto você tem na conta hoje?
                 </label>
                 <div className="flex justify-center items-baseline gap-1.5">
                   <span className="text-xl font-medium text-gray-400">R$</span>

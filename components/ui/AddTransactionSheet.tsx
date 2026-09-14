@@ -11,6 +11,7 @@ import {
 import { useWallet } from "@/context/WalletContext";
 import { WPayLogo, WPayButton } from "@/components/ui/WPayLogo";
 import { get5thBusinessDay, MONTH_NAMES_PT } from "@/lib/utils/dateUtils";
+import { formatAccountLabel } from "@/lib/utils/ledger";
 import { RecurrenceType } from "@/types";
 
 export interface AddTransactionSheetProps {
@@ -29,10 +30,11 @@ export interface AddTransactionSheetProps {
     isRecurring?: boolean;
     recurrenceType?: RecurrenceType;
     recurrenceDay?: number;
+    installmentsCount?: number;
   }) => void | Promise<void>;
 }
 
-const EXPENSE_CATEGORIES = [
+export const EXPENSE_CATEGORIES = [
   "Alimentação & Delivery",
   "Supermercado",
   "Transporte & Combustível",
@@ -44,7 +46,7 @@ const EXPENSE_CATEGORIES = [
   "Outros",
 ];
 
-const INCOME_CATEGORIES = [
+export const INCOME_CATEGORIES = [
   "Salário / Pró-labore",
   "Freelance & Projetos",
   "Rendimentos & Dividendos",
@@ -74,6 +76,8 @@ export function AddTransactionSheet({
   const [recurrenceDay, setRecurrenceDay] = useState(10);
   const [isCustomDayOpen, setIsCustomDayOpen] = useState(false);
   const [customDayInput, setCustomDayInput] = useState("10");
+  const [durationMode, setDurationMode] = useState<"continuous" | "limited">("continuous");
+  const [installmentsInput, setInstallmentsInput] = useState("3");
 
   const [loading, setLoading] = useState(false);
 
@@ -108,6 +112,10 @@ export function AddTransactionSheet({
   };
 
   const parsedAmount = parseFloat(amountInput.replace(/\./g, "").replace(",", ".")) || 0;
+  const installmentsCount = Math.min(
+    60,
+    Math.max(2, parseInt(installmentsInput, 10) || 2),
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -141,12 +149,16 @@ export function AddTransactionSheet({
         isRecurring,
         recurrenceType: isRecurring ? recurrenceType : undefined,
         recurrenceDay: isRecurring ? effectiveDueDay : undefined,
+        installmentsCount:
+          isRecurring && durationMode === "limited" ? installmentsCount : undefined,
       });
 
       // Reset e fechar
       setAmountInput("");
       setTitle("");
       setIsRecurring(false);
+      setDurationMode("continuous");
+      setInstallmentsInput("3");
       onClose();
     } catch (err: unknown) {
       console.error("Erro ao salvar transação:", err);
@@ -257,6 +269,8 @@ export function AddTransactionSheet({
               <div className="flex-1 flex flex-wrap gap-2">
                 {availableAccounts.map((acc) => {
                   const isSelected = effectiveAccount === acc;
+                  const isCheckingAccount = acc === "Débito/Pix" ||
+                    cards.some((card) => card.type === "checking" && card.name === acc);
                   return (
                     <button
                       key={acc}
@@ -268,8 +282,8 @@ export function AddTransactionSheet({
                           : "bg-[#F2F2F7] text-[#1D1D1F] border-transparent hover:bg-gray-200"
                       }`}
                     >
-                      {acc === "Débito/Pix" ? <Building2 size={13} /> : <CreditCard size={13} />}
-                      <span>{acc}</span>
+                      {isCheckingAccount ? <Building2 size={13} /> : <CreditCard size={13} />}
+                      <span>{formatAccountLabel(acc)}</span>
                     </button>
                   );
                 })}
@@ -481,6 +495,83 @@ export function AddTransactionSheet({
                       )}
                     </p>
                   </div>
+
+                  <div className="space-y-2.5 border-t border-gray-200/60 pt-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-[#86868B]">
+                        Duração
+                      </span>
+                      <span className="text-[11px] font-medium text-[#1D1D1F]">
+                        {durationMode === "continuous"
+                          ? "Sem prazo para terminar"
+                          : `${installmentsCount} parcelas mensais`}
+                      </span>
+                    </div>
+
+                    <div className="flex gap-1 rounded-xl bg-[#EDEDF2] p-1">
+                      <button
+                        type="button"
+                        onClick={() => setDurationMode("continuous")}
+                        className={`flex-1 rounded-lg px-3 py-2 text-[11px] font-semibold transition-all ${
+                          durationMode === "continuous"
+                            ? "bg-white text-[#1D1D1F] shadow-xs"
+                            : "text-[#86868B] hover:text-[#1D1D1F]"
+                        }`}
+                      >
+                        Contínua
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDurationMode("limited")}
+                        className={`flex-1 rounded-lg px-3 py-2 text-[11px] font-semibold transition-all ${
+                          durationMode === "limited"
+                            ? "bg-white text-[#1D1D1F] shadow-xs"
+                            : "text-[#86868B] hover:text-[#1D1D1F]"
+                        }`}
+                      >
+                        Por X meses
+                      </button>
+                    </div>
+
+                    {durationMode === "limited" && (
+                      <div className="space-y-2 animate-in fade-in duration-150">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {[2, 3, 6, 12].map((count) => (
+                            <button
+                              key={count}
+                              type="button"
+                              onClick={() => setInstallmentsInput(String(count))}
+                              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
+                                installmentsCount === count && installmentsInput === String(count)
+                                  ? "bg-[#1D1D1F] text-white"
+                                  : "bg-[#F2F2F7] text-[#86868B] hover:text-[#1D1D1F]"
+                              }`}
+                            >
+                              {count}x
+                            </button>
+                          ))}
+                          <label className="ml-auto flex items-center gap-2 text-[11px] text-[#86868B]">
+                            Outro
+                            <input
+                              type="number"
+                              min="2"
+                              max="60"
+                              inputMode="numeric"
+                              value={installmentsInput}
+                              onChange={(event) => setInstallmentsInput(event.target.value)}
+                              onBlur={() => setInstallmentsInput(String(installmentsCount))}
+                              className="w-16 rounded-lg border border-black/10 bg-white px-2 py-1.5 text-center text-xs font-semibold text-[#1D1D1F] outline-none focus:border-[#1D1D1F]"
+                              aria-label="Número de parcelas ou meses"
+                            />
+                          </label>
+                        </div>
+                        <p className="text-[11px] leading-relaxed text-[#86868B]">
+                          Este lançamento será repetido por <strong>{installmentsCount} meses</strong> e
+                          depois será encerrado automaticamente.
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -498,7 +589,7 @@ export function AddTransactionSheet({
               <span className="uppercase tracking-wider font-semibold">
                 {type === "receita" ? "CRÉDITO EM CONTA" : "MÉTODO DE COBRANÇA"}
               </span>
-              <span className="font-medium text-[#1D1D1F]">{account}</span>
+              <span className="font-medium text-[#1D1D1F]">{formatAccountLabel(account)}</span>
             </div>
             <div className="flex justify-between items-center text-sm font-semibold pt-1 text-[#1D1D1F]">
               <span className="uppercase tracking-wider text-xs">

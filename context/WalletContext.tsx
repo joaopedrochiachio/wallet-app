@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from "react";
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { subscribeToUserProfile, saveUserProfile } from "@/lib/services/userService";
 import {
@@ -14,9 +14,9 @@ import {
   subscribeToTransactions,
   addTransaction as addTransactionFirestore,
   deleteTransactionFromFirestore,
-  linkTransactionToRecurring,
-  materializeRecurringTransaction,
   payCreditCardInvoice,
+  updateTransactionInFirestore,
+  TransactionUpdateInput,
 } from "@/lib/services/transactionsService";
 import {
   subscribeToGoals,
@@ -39,6 +39,7 @@ import {
   calculateCheckingBalance,
   calculateCreditInvoice,
   calculateInvoiceSchedule,
+  calculateMonthlyAccountFlow,
   getInvoiceDueDate,
   getLedgerEntryDate,
   matchesLedgerCard,
@@ -125,6 +126,7 @@ interface WalletContextType {
   deleteCard: (cardId: string) => void;
   updateUserProfile: (profile: Partial<UserProfile>) => void;
   addTransaction: (tx: Omit<TransactionItem, "id">) => Promise<void>;
+  updateTransaction: (id: string, updates: TransactionUpdateInput) => Promise<void>;
   payInvoice: (cardId: string) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
   addRecurringItem: (item: Omit<RecurringItem, "id">) => Promise<void>;
@@ -175,7 +177,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [transactionsLoadedFor, setTransactionsLoadedFor] = useState<string | null>(null);
   const [recurringLoadedFor, setRecurringLoadedFor] = useState<string | null>(null);
   const [goalsLoadedFor, setGoalsLoadedFor] = useState<string | null>(null);
-  const materializingPeriods = useRef(new Set<string>());
 
   const isDataLoaded = Boolean(user && [
     profileLoadedFor,
@@ -370,27 +371,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     [enrichedCards]
   );
 
-  const currentMonthTransactions = useMemo(() => {
-    const now = new Date();
-    return transactions.filter((tx) => {
-      const date = getLedgerEntryDate(tx);
-      return date?.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
-    });
-  }, [transactions]);
-
-  const monthIncome = useMemo(
-    () => currentMonthTransactions
-      .filter((tx) => tx.type === "receita" && tx.kind === "regular")
-      .reduce((total, tx) => total + tx.amount, 0),
-    [currentMonthTransactions]
+  const currentMonthAccountFlow = useMemo(
+    () => calculateMonthlyAccountFlow(cards, transactions),
+    [cards, transactions]
   );
 
-  const monthExpense = useMemo(
-    () => currentMonthTransactions
-      .filter((tx) => tx.type === "despesa" && tx.kind === "regular")
-      .reduce((total, tx) => total + tx.amount, 0),
-    [currentMonthTransactions]
-  );
+  const monthIncome = currentMonthAccountFlow.income;
+  const monthExpense = currentMonthAccountFlow.outflow;
 
   const selectCard = (cardId: string) => {
     setActiveCardId(cardId);
@@ -464,51 +451,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     );
     return matched?.id || null;
   }, [cards]);
-
-  // Uma previsão cujo vencimento chegou vira lançamento real no Firestore.
-  // O ID determinístico garante idempotência inclusive entre duas abas abertas.
-  useEffect(() => {
-    if (!user || recurringLoadedFor !== user.uid || transactionsLoadedFor !== user.uid) return;
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth();
-    const periodKey = getPeriodKey(year, month);
-
-    recurringItems
-      .filter((item) => isRecurringActiveInMonth(item, year, month))
-      .forEach((item) => {
-        const dueDay = getEffectiveDueDay(item, year, month);
-        if (dueDay > now.getDate()) return;
-        const materializationKey = `${item.id}:${periodKey}`;
-        if (materializingPeriods.current.has(materializationKey)) return;
-        materializingPeriods.current.add(materializationKey);
-        const occurredAt = new Date(year, month, dueDay, 12);
-        const itemCardId = item.cardId || resolveCardId(item.account);
-        const expectedType = item.type === "income" ? "receita" : "despesa";
-        const existingTransaction = transactions.find((transaction) => {
-          const transactionOccurredAt = getLedgerEntryDate(transaction);
-          return !transaction.recurringItemId &&
-            transaction.kind === "regular" &&
-            transaction.type === expectedType &&
-            Math.abs(transaction.amount - item.amount) < 0.005 &&
-            (
-              transaction.title.trim().toLocaleLowerCase("pt-BR") === item.title.trim().toLocaleLowerCase("pt-BR") ||
-              transaction.category.trim().toLocaleLowerCase("pt-BR") === item.category.trim().toLocaleLowerCase("pt-BR")
-            ) &&
-            (transaction.cardId || resolveCardId(transaction.account)) === itemCardId &&
-            transactionOccurredAt?.getFullYear() === year &&
-            transactionOccurredAt.getMonth() === month;
-        });
-        const persistence = existingTransaction
-          ? linkTransactionToRecurring(user.uid, existingTransaction.id, item.id, periodKey)
-          : materializeRecurringTransaction(user.uid, item, itemCardId, occurredAt, periodKey);
-        persistence.catch((error) => {
-          console.error("Erro ao realizar lançamento planejado:", error);
-        }).finally(() => {
-          materializingPeriods.current.delete(materializationKey);
-        });
-      });
-  }, [recurringItems, recurringLoadedFor, resolveCardId, transactions, transactionsLoadedFor, user]);
 
   const addTransaction = async (tx: Omit<TransactionItem, "id">) => {
     if (!user) throw new Error("Entre na sua conta para salvar o lançamento.");
@@ -612,6 +554,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  const updateTransaction = async (id: string, updates: TransactionUpdateInput) => {
+    if (!user) throw new Error("Entre na sua conta para editar o lançamento.");
+    if (!transactions.some((transaction) => transaction.id === id)) {
+      throw new Error("Lançamento não encontrado.");
+    }
+    await updateTransactionInFirestore(user.uid, id, updates);
+  };
+
   const addRecurringItem = async (item: Omit<RecurringItem, "id">) => {
     if (!user) throw new Error("Entre na sua conta para salvar o planejamento.");
     const newItem: RecurringItem = {
@@ -704,7 +654,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       return occurredAt && getPeriodKey(occurredAt.getFullYear(), occurredAt.getMonth()) === targetPeriodKey;
     });
     const actualIncomeTotal = transactionsInTargetMonth
-      .filter((transaction) => transaction.type === "receita" && transaction.kind === "regular")
+      .filter((transaction) => transaction.type === "receita" && cards.some((card) =>
+        card.type === "checking" && matchesLedgerCard(card, transaction.account, transaction.cardId)
+      ))
       .reduce((total, transaction) => total + transaction.amount, 0);
     const actualOutflowTotal = transactionsInTargetMonth
       .filter((transaction) => transaction.type === "despesa" && cards.some((card) =>
@@ -798,6 +750,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         deleteCard,
         updateUserProfile,
         addTransaction,
+        updateTransaction,
         payInvoice,
         deleteTransaction,
         addRecurringItem,
