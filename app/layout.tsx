@@ -16,6 +16,8 @@ import { WalletProvider } from "@/context/WalletContext";
 import { AuthProvider } from "@/context/AuthContext";
 import { AuthRouteGuard } from "@/components/auth/AuthRouteGuard";
 
+import Image from "next/image";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -27,6 +29,12 @@ export default function RootLayout({
   if (isStandalonePage) {
     return (
       <html lang="pt-BR" className="scroll-smooth">
+        <head>
+          <title>Wallet Intelligence</title>
+          <meta name="description" content="Wallet Intelligence — Gestão Financeira Pessoal com Padrão Apple Wallet" />
+          <link rel="icon" href="/logo2.png" type="image/png" />
+          <link rel="apple-touch-icon" href="/logo2.png" />
+        </head>
         <body className="min-h-screen bg-[#F2F2F7]">
           <AuthProvider>
             <AuthRouteGuard>
@@ -40,6 +48,12 @@ export default function RootLayout({
 
   return (
     <html lang="pt-BR">
+      <head>
+        <title>Wallet Intelligence</title>
+        <meta name="description" content="Wallet Intelligence — Gestão Financeira Pessoal com Padrão Apple Wallet" />
+        <link rel="icon" href="/logo2.png" type="image/png" />
+        <link rel="apple-touch-icon" href="/logo2.png" />
+      </head>
       <body className="flex h-screen overflow-hidden bg-[#F2F2F7]">
         <AuthProvider>
           <AuthRouteGuard>
@@ -48,12 +62,17 @@ export default function RootLayout({
             <aside className="hidden md:flex flex-col w-64 h-full bg-white/80 backdrop-blur-xl border-r border-gray-200/60 p-6 z-50">
               <Link
                 href="/dashboard"
-                className="text-xl font-semibold tracking-tight text-[#1D1D1F] mb-8 flex items-center gap-2 hover:opacity-80 transition-opacity"
+                className="text-xl font-semibold tracking-tight text-[#1D1D1F] mb-8 flex items-center gap-2.5 hover:opacity-80 transition-opacity"
                 title="Ir para o Dashboard"
               >
-              <div className="w-8 h-8 rounded-xl bg-[#1D1D1F] text-white flex items-center justify-center font-bold text-sm shadow-xs">
-                W
-              </div>
+              <Image
+                src="/logo2.png"
+                alt="Wallet Intelligence Logo"
+                width={36}
+                height={36}
+                className="rounded-xl object-contain shadow-xs shrink-0"
+                priority
+              />
               <div className="flex flex-col">
                 <span className="leading-none">Wallet</span>
                 <span className="text-[10px] text-[#86868B] font-mono tracking-wider uppercase mt-0.5">

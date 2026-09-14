@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { useAuth } from "@/context/AuthContext";
 import { saveUserProfile } from "@/lib/services/userService";
 import { saveCardToFirestore } from "@/lib/services/cardsService";
@@ -164,10 +165,15 @@ export default function OnboardingPage() {
     <div className="min-h-screen bg-[#F2F2F7] flex flex-col justify-between items-center px-4 py-8 md:py-12 font-sans selection:bg-[#1D1D1F] selection:text-white">
       {/* Top Header com Indicador de Passos */}
       <div className="w-full max-w-xl flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-[#1D1D1F] text-white flex items-center justify-center font-bold text-xs shadow-xs">
-            W
-          </div>
+        <div className="flex items-center gap-2.5">
+          <Image
+            src="/logo2.png"
+            alt="Wallet Logo"
+            width={34}
+            height={34}
+            className="rounded-xl object-contain shadow-xs shrink-0"
+            priority
+          />
           <span className="font-semibold text-sm text-[#1D1D1F]">Configuração Inicial</span>
         </div>
 

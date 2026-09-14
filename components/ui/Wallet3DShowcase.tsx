@@ -9,6 +9,7 @@ import {
   QrCode,
 } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
 
 interface PassItem {
   id: string;
@@ -326,8 +327,14 @@ export function Wallet3DShowcase() {
 
             <div className="flex items-center justify-between text-white/60 pt-4">
               <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-lg bg-white/10 text-white flex items-center justify-center font-bold text-[11px]">
-                  W
+                <div className="w-6 h-6 rounded-md overflow-hidden shrink-0 shadow-2xs">
+                  <Image
+                    src="/logo2.png"
+                    alt="Wallet Logo"
+                    width={24}
+                    height={24}
+                    className="w-full h-full object-contain"
+                  />
                 </div>
                 <span className="text-xs font-semibold text-white/90 tracking-tight">
                   Wallet Intelligence

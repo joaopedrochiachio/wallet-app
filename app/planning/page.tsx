@@ -10,7 +10,6 @@ import {
   CreditCard,
   ArrowDownLeft,
   ArrowUpRight,
-  Sparkles,
 } from "lucide-react";
 import { WPayLogo, WPayButton } from "@/components/ui/WPayLogo";
 import { AppleConfirmModal } from "@/components/ui/AppleConfirmModal";
@@ -40,6 +39,7 @@ export default function PlanningPage() {
 
   const [selectedMonthIndex, setSelectedMonthIndex] = useState(0);
   const [isAddingModalOpen, setIsAddingModalOpen] = useState(false);
+  const [isAddingMenuOpen, setIsAddingMenuOpen] = useState(false);
   const [modalType, setModalType] = useState<"income" | "expense">("income");
   const [itemToDelete, setItemToDelete] = useState<RecurringItem | null>(null);
 
@@ -62,9 +62,7 @@ export default function PlanningPage() {
   const [isCustomInstallment, setIsCustomInstallment] = useState(false);
   const [customInstallmentInput, setCustomInstallmentInput] = useState("4");
 
-
   const planningMonths = getPlanningMonths();
-
   const activeMonthObj = planningMonths[selectedMonthIndex] || planningMonths[0];
   const targetYear = activeMonthObj.year;
   const targetMonth = activeMonthObj.monthIndex;
@@ -98,6 +96,7 @@ export default function PlanningPage() {
   const plannedCreditExpenses = recurringItems.filter(
     (r) => r.type !== "income" && !isCheckingAccount(r)
   );
+
   const isScheduledForSelectedMonth = (item: RecurringItem) => {
     const monthOffset = getRecurringMonthOffset(item, targetYear, targetMonth);
     return monthOffset >= 0 && (
@@ -106,6 +105,7 @@ export default function PlanningPage() {
       monthOffset < item.installmentsCount
     );
   };
+
   const visiblePlannedIncomes = plannedIncomes.filter(isScheduledForSelectedMonth);
   const visiblePlannedDebitExpenses = plannedDebitExpenses.filter(isScheduledForSelectedMonth);
   const visiblePlannedCreditExpenses = plannedCreditExpenses.filter(isScheduledForSelectedMonth);
@@ -118,17 +118,19 @@ export default function PlanningPage() {
     .filter(isActiveInSelectedMonth)
     .reduce((acc, r) => acc + r.amount, 0);
 
+  const totalAvailable = projection.openingBalance + projection.projectedIncome;
   const freePercentage =
-    projection.projectedIncome > 0
+    totalAvailable > 0
       ? Math.max(
           0,
-          Math.round((projection.projectedFreeBalance / projection.projectedIncome) * 100)
+          Math.round((projection.projectedFreeBalance / totalAvailable) * 100)
         )
       : 0;
 
   const creditCommitments =
     projection.cardInstallments + projection.recurringCreditTotal;
   const debitCommitments = projection.recurringDebitTotal;
+
   const realizedShare =
     projection.totalCommitted > 0
       ? (projection.actualOutflowTotal / projection.totalCommitted) * 100
@@ -142,20 +144,43 @@ export default function PlanningPage() {
       ? (debitCommitments / projection.totalCommitted) * 100
       : 0;
 
-  const handleOpenModal = (type: "income" | "expense") => {
-    setModalType(type);
-    setNewCategory(type === "income" ? "Salário / Extra" : "Moradia & Contas");
-    // Para recebimentos, sugere prioritariamente Débito/Pix (Conta Corrente)
+  // Informações de cartões de crédito
+  const creditCards = cards.filter((c) => c.type === "credit");
+  const primaryCreditCard = creditCards[0];
+  const creditCardNameText =
+    creditCards.length > 0
+      ? creditCards.length === 1
+        ? creditCards[0].name
+        : creditCards.map((c) => c.name).join(", ")
+      : "Nubank";
+  const creditCardDueDayText = primaryCreditCard?.dueDay
+    ? `dia ${primaryCreditCard.dueDay}`
+    : "dia 15";
+
+  const handleOpenModal = (mode: "income" | "expense" | "expense-debit" | "expense-credit") => {
+    const isIncome = mode === "income";
+    const isCredit = mode === "expense-credit";
+
+    setModalType(isIncome ? "income" : "expense");
+    setNewCategory(isIncome ? "Salário / Extra" : isCredit ? "Assinaturas & Lazer" : "Moradia & Contas");
+
     const checkingAcc =
       cards.find((card) => card.type === "checking")?.name ||
-      accountOptions[0] ||
+      accountOptions.find((acc) => acc.includes("Débito") || acc.includes("Pix")) ||
       "Débito/Pix";
-    setNewAccount(type === "income" ? checkingAcc : accountOptions[0] || "Débito/Pix");
-    setRecurrenceSelection(type === "income" ? "business_day_5" : "fixed_day");
+
+    const creditAcc =
+      cards.find((card) => card.type === "credit")?.name ||
+      accountOptions.find((acc) => !acc.includes("Débito") && !acc.includes("Pix")) ||
+      "Cartão de Crédito";
+
+    setNewAccount(isIncome ? checkingAcc : isCredit ? creditAcc : checkingAcc);
+    setRecurrenceSelection(isIncome ? "business_day_5" : "fixed_day");
     setIsCustomDayActive(false);
-    setDurationMode(type === "expense" ? "one-time" : "continuous");
+    setDurationMode(isIncome ? "continuous" : isCredit ? "continuous" : "one-time");
     setInstallmentsCount(3);
     setIsCustomInstallment(false);
+    setIsAddingMenuOpen(false);
     setIsAddingModalOpen(true);
   };
 
@@ -210,44 +235,118 @@ export default function PlanningPage() {
   };
 
   return (
-    <div className="min-h-full bg-[#F2F2F7] p-6 md:p-10 text-[#1D1D1F] font-sans space-y-6 animate-in fade-in duration-500 relative">
-      {/* Header */}
+    <div className="min-h-full bg-[#F2F2F7] p-6 md:p-10 text-[#1D1D1F] font-sans space-y-7 animate-in fade-in duration-500 relative">
+      {/* 1. CABEÇALHO */}
       <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 max-w-4xl mx-auto pt-2 md:pt-0">
         <div>
           <span className="text-xs font-semibold tracking-wider uppercase text-[#86868B]">
-            Visão Futura & Previsibilidade
+            Visão futura & previsibilidade
           </span>
           <h1 className="text-3xl font-semibold tracking-tight text-[#1D1D1F] mt-0.5">
             Planejamento Mensal
           </h1>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
-          <button
-            onClick={() => handleOpenModal("income")}
-            className="bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white text-xs font-semibold px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
-          >
-            <Plus strokeWidth={2} size={15} />
-            <span>+ Recebido Futuro</span>
-          </button>
-          <button
-            onClick={() => handleOpenModal("expense")}
-            className="bg-[#1D1D1F] hover:bg-black active:scale-[0.98] text-white text-xs font-semibold px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
-          >
-            <Plus strokeWidth={2} size={15} />
-            <span>+ Pagamento Futuro</span>
-          </button>
+        <div className="flex items-center gap-2.5 flex-wrap self-start sm:self-auto">
+          {/* Indicador de Saldo em Conta / Saldo Vindo do Mês Anterior */}
+          <div className="flex items-center gap-2 bg-white px-3.5 py-2 rounded-full border border-black/[0.04] shadow-2xs">
+            <span className="text-xs text-[#86868B]">
+              {selectedMonthIndex === 0
+                ? "Saldo em conta:"
+                : `Saldo de ${planningMonths[selectedMonthIndex - 1]?.short}:`}
+            </span>
+            <span className="text-xs font-semibold text-[#1D1D1F]">
+              R$ {formatCurrency(projection.openingBalance)}
+            </span>
+          </div>
+
+          {/* Ação Principal: + Adicionar com Menu Contextual Elegante */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsAddingMenuOpen((prev) => !prev)}
+              className="bg-[#1D1D1F] hover:bg-black active:scale-[0.98] text-white text-xs font-semibold px-4 py-2 rounded-full transition-all flex items-center gap-1.5 shadow-xs cursor-pointer select-none"
+            >
+              <Plus strokeWidth={2} size={15} />
+              <span>Adicionar</span>
+            </button>
+
+          {isAddingMenuOpen && (
+            <>
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setIsAddingMenuOpen(false)}
+              />
+              <div className="absolute right-0 mt-2 w-60 bg-white/95 backdrop-blur-xl border border-black/[0.08] rounded-2xl shadow-[0_12px_32px_rgba(0,0,0,0.12)] p-1.5 z-50 animate-in fade-in zoom-in-95 duration-150 font-sans">
+                <button
+                  type="button"
+                  onClick={() => handleOpenModal("income")}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[#F2F2F7] transition-colors text-left group cursor-pointer"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
+                    <ArrowDownLeft size={16} strokeWidth={2} />
+                  </div>
+                  <div>
+                    <span className="block text-xs font-semibold text-[#1D1D1F]">
+                      Recebimento futuro
+                    </span>
+                    <span className="block text-[10px] text-[#86868B]">
+                      Entrada prevista no saldo
+                    </span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleOpenModal("expense-debit")}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[#F2F2F7] transition-colors text-left group cursor-pointer"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-[#F2F2F7] text-[#1D1D1F] flex items-center justify-center shrink-0">
+                    <Building2 size={16} strokeWidth={1.75} />
+                  </div>
+                  <div>
+                    <span className="block text-xs font-semibold text-[#1D1D1F]">
+                      Conta planejada
+                    </span>
+                    <span className="block text-[10px] text-[#86868B]">
+                      Desconto direto da conta
+                    </span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleOpenModal("expense-credit")}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[#F2F2F7] transition-colors text-left group cursor-pointer"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center shrink-0">
+                    <CreditCard size={16} strokeWidth={1.75} />
+                  </div>
+                  <div>
+                    <span className="block text-xs font-semibold text-[#1D1D1F]">
+                      Compra no cartão
+                    </span>
+                    <span className="block text-[10px] text-[#86868B]">
+                      Entra na fatura futura
+                    </span>
+                  </div>
+                </button>
+              </div>
+            </>
+          )}
+          </div>
         </div>
       </header>
 
       <div className="max-w-4xl mx-auto space-y-6">
-        {/* Seletor de Mês (Segmented Control iOS) */}
-        <div className="bg-[#E5E5EA]/70 p-1 rounded-full flex items-center gap-1 overflow-x-auto border border-black/5 scrollbar-none">
+        {/* Navegação entre Meses (Controle Segmentado Suave Estilo iOS) */}
+        <div className="bg-[#E5E5EA]/60 p-1 rounded-full flex items-center gap-1 overflow-x-auto border border-black/5 scrollbar-none">
           {planningMonths.map((m, idx) => (
             <button
               key={m.name}
+              type="button"
               onClick={() => setSelectedMonthIndex(idx)}
-              className={`flex-1 min-w-[120px] py-2 px-3 rounded-full text-xs font-semibold transition-all select-none text-center cursor-pointer ${
+              className={`flex-1 min-w-[100px] py-1.5 px-3 rounded-full text-xs font-semibold transition-all select-none text-center cursor-pointer ${
                 selectedMonthIndex === idx
                   ? "bg-white text-[#1D1D1F] shadow-xs"
                   : "text-[#86868B] hover:text-[#1D1D1F]"
@@ -258,614 +357,491 @@ export default function PlanningPage() {
           ))}
         </div>
 
-        {/* 3 Cartões Chave (Visão Clara e Direta) */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {/* 1. Renda Prevista (Recebimentos Futuros Planejados) */}
-          <div className="bg-white rounded-[20px] p-5 border border-black/[0.04] shadow-[0_2px_8px_rgba(0,0,0,0.04)] space-y-1 relative overflow-hidden">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] uppercase tracking-wider font-semibold text-emerald-700">
-                Entradas do Mês
+        {/* 2. RESUMO FINANCEIRO PRINCIPAL (Superfície Única Apple com 3 Métricas Essenciais) */}
+        <div className="bg-white rounded-[24px] p-6 sm:p-7 border border-black/[0.04] shadow-[0_1px_6px_rgba(0,0,0,0.02)]">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 sm:gap-8 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
+            {/* 1. Entradas previstas */}
+            <div className="space-y-1">
+              <span className="text-xs font-medium text-[#86868B] tracking-tight">
+                Entradas previstas
               </span>
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <div className="text-2xl sm:text-3xl font-semibold tracking-tight text-[#1D1D1F]">
+                R$ {formatCurrency(projection.projectedIncome)}
+              </div>
+              <p className="text-xs text-[#86868B] pt-0.5">
+                R$ {formatCurrency(projection.actualIncomeTotal)} recebidos · R${" "}
+                {formatCurrency(projection.plannedIncomesTotal)} pendentes
+              </p>
             </div>
-            <div className="text-2xl font-semibold text-[#1D1D1F] tracking-tight">
-              R$ {formatCurrency(projection.projectedIncome)}
-            </div>
-            <p className="text-xs text-[#86868B]">
-              R$ {formatCurrency(projection.actualIncomeTotal)} realizados + R${" "}
-              {formatCurrency(projection.plannedIncomesTotal)} pendentes
-            </p>
-          </div>
 
-          {/* 2. Total Comprometido */}
-          <div className="bg-white rounded-[20px] p-5 border border-black/[0.04] shadow-[0_2px_8px_rgba(0,0,0,0.04)] space-y-1">
-            <span className="text-[11px] uppercase tracking-wider font-semibold text-[#86868B]">
-              Saídas + Compromissos
-            </span>
-            <div className="text-2xl font-semibold text-rose-600 tracking-tight">
-              − R$ {formatCurrency(projection.totalCommitted)}
-            </div>
-            <p className="text-xs text-[#86868B]">
-              R$ {formatCurrency(projection.actualOutflowTotal)} pagos + R${" "}
-              {formatCurrency(projection.pendingCommitted)} pendentes
-            </p>
-          </div>
-
-          {/* 3. Saldo Livre Projetado */}
-          <div className="bg-white rounded-[20px] p-5 border border-black/[0.04] shadow-[0_2px_8px_rgba(0,0,0,0.04)] space-y-1">
-            <div className="flex justify-between items-center">
-              <span className="text-[11px] uppercase tracking-wider font-semibold text-[#86868B]">
-                Saldo Livre Projetado
+            {/* 2. Compromissos */}
+            <div className="pt-5 sm:pt-0 sm:pl-8 space-y-1">
+              <span className="text-xs font-medium text-[#86868B] tracking-tight">
+                Compromissos
               </span>
-              <span
-                className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                  projection.projectedFreeBalance >= 0
-                    ? "bg-emerald-50 text-emerald-700"
-                    : "bg-rose-50 text-rose-700"
+              <div className="text-2xl sm:text-3xl font-semibold tracking-tight text-[#1D1D1F]">
+                R$ {formatCurrency(projection.totalCommitted)}
+              </div>
+              <p className="text-xs text-[#86868B] pt-0.5">
+                R$ {formatCurrency(projection.actualOutflowTotal)} pagos · R${" "}
+                {formatCurrency(projection.pendingCommitted)} pendentes
+              </p>
+            </div>
+
+            {/* 3. Saldo livre projetado (Destaque Principal) */}
+            <div className="pt-5 sm:pt-0 sm:pl-8 space-y-1">
+              <span className="text-xs font-semibold text-[#1D1D1F] tracking-tight">
+                Saldo livre projetado
+              </span>
+              <div
+                className={`text-2xl sm:text-3xl font-bold tracking-tight ${
+                  projection.projectedFreeBalance >= 0 ? "text-emerald-600" : "text-rose-600"
                 }`}
               >
-                {freePercentage}% livre
-              </span>
+                R$ {formatCurrency(projection.projectedFreeBalance)}
+              </div>
+              <p className="text-xs text-[#86868B] pt-0.5">
+                {selectedMonthIndex === 0
+                  ? `Considera R$ ${formatCurrency(projection.openingBalance)} em conta · ${freePercentage}% livre`
+                  : `Inclui R$ ${formatCurrency(projection.openingBalance)} de ${planningMonths[selectedMonthIndex - 1]?.name}`}
+              </p>
             </div>
-            <div
-              className={`text-2xl font-semibold tracking-tight ${
-                projection.projectedFreeBalance >= 0 ? "text-emerald-600" : "text-rose-600"
-              }`}
-            >
-              R$ {formatCurrency(projection.projectedFreeBalance)}
-            </div>
-            <p className="text-xs text-[#86868B]">
-              {selectedMonthIndex === 0
-                ? "Saldo atual menos compromissos ainda pendentes"
-                : "Fluxo mensal previsto para aportes e metas"}
-            </p>
           </div>
         </div>
 
-        {/* Panorama que conecta realizado, contas futuras e faturas em uma leitura única. */}
+        {/* 3. COMPOSIÇÃO DOS COMPROMISSOS (Área Simples e Silenciosa) */}
         <section
-          className="overflow-hidden rounded-[24px] border border-black/[0.05] bg-[#1D1D1F] text-white shadow-[0_8px_24px_rgba(0,0,0,0.08)]"
           data-testid="monthly-macro-summary"
+          className="bg-white rounded-[22px] p-5 sm:p-6 border border-black/[0.04] shadow-[0_1px_4px_rgba(0,0,0,0.02)] space-y-4"
         >
-          <div className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[1.05fr_1fr] lg:items-center">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/55">
-                  Visão macro de {activeMonthObj.short}
-                </span>
-              </div>
-              <h2 className="mt-3 text-xl font-semibold tracking-tight">
-                Seu mês inteiro, em uma leitura.
-              </h2>
-              <p className="mt-2 max-w-md text-xs leading-relaxed text-white/65">
-                Dos{" "}
-                <strong className="text-white">
-                  R$ {formatCurrency(projection.totalCommitted)}
-                </strong>{" "}
-                comprometidos, R$ {formatCurrency(projection.actualOutflowTotal)} já saíram
-                do saldo, R$ {formatCurrency(debitCommitments)} ainda sairão da conta e
-                R$ {formatCurrency(creditCommitments)} estão concentrados em
-                faturas.
-              </p>
+          <div className="flex items-center justify-between">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-[#86868B]">
+              Composição dos compromissos
+            </h2>
+            <span className="text-xs text-[#86868B]">
+              Total: R$ {formatCurrency(projection.totalCommitted)}
+            </span>
+          </div>
 
-              <div className="mt-4 flex flex-wrap gap-2">
-                <span className="rounded-full bg-white/10 px-3 py-1.5 text-[10px] font-semibold text-white/80">
-                  {Math.round(realizedShare)}% já realizado
-                </span>
-                <span
-                  className={`rounded-full px-3 py-1.5 text-[10px] font-semibold ${
-                    projection.projectedFreeBalance >= 0
-                      ? "bg-emerald-400/15 text-emerald-300"
-                      : "bg-rose-400/15 text-rose-300"
-                  }`}
-                >
-                  R$ {formatCurrency(Math.abs(projection.projectedFreeBalance))}{" "}
-                  {projection.projectedFreeBalance >= 0 ? "livres" : "de déficit"}
-                </span>
+          {/* Três métricas limpas */}
+          <div className="grid grid-cols-3 gap-4 pt-1">
+            <div>
+              <span className="text-xs text-[#86868B] flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#8E8E93]" />
+                Saiu
+              </span>
+              <div className="text-base sm:text-lg font-semibold text-[#1D1D1F] mt-0.5">
+                R$ {formatCurrency(projection.actualOutflowTotal)}
               </div>
             </div>
 
-            <div className="rounded-[18px] border border-white/10 bg-white/[0.06] p-4">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-white/55">
-                  Composição dos compromissos
+            <div>
+              <span className="text-xs text-[#86868B] flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#1D1D1F]" />
+                Sai da conta
+              </span>
+              <div className="text-base sm:text-lg font-semibold text-[#1D1D1F] mt-0.5">
+                R$ {formatCurrency(debitCommitments)}
+              </div>
+            </div>
+
+            <div>
+              <span className="text-xs text-[#86868B] flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#6366F1]" />
+                Cartão / faturas
+              </span>
+              <div className="text-base sm:text-lg font-semibold text-[#1D1D1F] mt-0.5">
+                R$ {formatCurrency(creditCommitments)}
+              </div>
+            </div>
+          </div>
+
+          {/* Barra Horizontal de Composição */}
+          <div
+            className="h-2 rounded-full bg-[#F2F2F7] overflow-hidden flex gap-0.5"
+            aria-label="Distribuição dos compromissos"
+          >
+            {projection.totalCommitted > 0 ? (
+              <>
+                <div
+                  className="h-full bg-[#8E8E93] transition-all duration-500"
+                  style={{ width: `${realizedShare}%` }}
+                  title={`Saiu: R$ ${formatCurrency(projection.actualOutflowTotal)}`}
+                />
+                <div
+                  className="h-full bg-[#1D1D1F] transition-all duration-500"
+                  style={{ width: `${debitShare}%` }}
+                  title={`Sai da conta: R$ ${formatCurrency(debitCommitments)}`}
+                />
+                <div
+                  className="h-full bg-[#6366F1] transition-all duration-500"
+                  style={{ width: `${creditShare}%` }}
+                  title={`Faturas: R$ ${formatCurrency(creditCommitments)}`}
+                />
+              </>
+            ) : (
+              <div className="h-full w-full bg-gray-200/50" />
+            )}
+          </div>
+
+          {/* Pequeno Insight Complementar */}
+          <p className="text-xs text-[#86868B] leading-relaxed pt-0.5">
+            R$ {formatCurrency(debitCommitments)} ainda sairão da sua conta e R${" "}
+            {formatCurrency(creditCommitments)} estão concentrados nas faturas.
+          </p>
+        </section>
+
+        {/* 4. PLANEJAMENTO DO MÊS */}
+        <section className="space-y-6 pt-2">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-[#86868B]">
+              Planejamento
+            </h2>
+          </div>
+
+          {/* 4.1 Recebimentos Previstos */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between px-1">
+              <h3 className="text-base font-semibold text-[#1D1D1F] tracking-tight">
+                Recebimentos previstos
+              </h3>
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-semibold text-emerald-600">
+                  + R$ {formatCurrency(totalIncomesActive)}
                 </span>
-                <span className="text-[10px] text-white/45">
-                  R$ {formatCurrency(projection.totalCommitted)} no mês
+                <button
+                  type="button"
+                  onClick={() => handleOpenModal("income")}
+                  className="text-xs font-semibold text-[#0071E3] hover:text-[#0077ED] cursor-pointer"
+                >
+                  Adicionar
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-[22px] border border-black/[0.04] shadow-[0_1px_4px_rgba(0,0,0,0.02)] overflow-hidden divide-y divide-gray-100">
+              {visiblePlannedIncomes.length === 0 ? (
+                <div className="p-8 text-center space-y-1.5">
+                  <p className="text-sm font-medium text-[#1D1D1F]">
+                    Nenhum recebimento previsto em {activeMonthObj.name}
+                  </p>
+                  <p className="text-xs text-[#86868B]">
+                    Agende salários, comissões ou rendimentos previstos.
+                  </p>
+                </div>
+              ) : (
+                visiblePlannedIncomes.map((item) => {
+                  const effectiveDay = getEffectiveDueDay(item, targetYear, targetMonth);
+                  const monthOffset = getRecurringMonthOffset(item, targetYear, targetMonth);
+                  const hasInstallments = Boolean(item.installmentsCount && item.installmentsCount > 1);
+                  const isFinishedInThisMonth = hasInstallments && monthOffset >= (item.installmentsCount || 0);
+                  const currentInstallmentNum = monthOffset >= 0 ? monthOffset + 1 : 1;
+                  const dateDescription = item.recurrenceType === "business_day_5"
+                    ? `5º dia útil (dia ${effectiveDay})`
+                    : `Previsão dia ${effectiveDay}`;
+
+                  return (
+                    <div
+                      key={item.id}
+                      className="flex items-center justify-between gap-4 p-4 hover:bg-[#F9F9FB] transition-colors"
+                    >
+                      <div className="flex items-center gap-3.5 min-w-0">
+                        <button
+                          type="button"
+                          onClick={() => { void handleToggleRecurring(item.id); }}
+                          className={`w-4.5 h-4.5 rounded-full border flex items-center justify-center transition-colors shrink-0 cursor-pointer ${
+                            item.active
+                              ? "bg-emerald-600 border-emerald-600 text-white"
+                              : "border-gray-300 bg-white"
+                          }`}
+                          title={item.active ? "Desativar" : "Ativar"}
+                        >
+                          {item.active && <Check size={11} strokeWidth={3} />}
+                        </button>
+                        <div className="min-w-0">
+                          <h4
+                            className={`text-sm font-medium truncate ${
+                              item.active ? "text-[#1D1D1F]" : "text-gray-400 line-through"
+                            }`}
+                          >
+                            {item.title}
+                          </h4>
+                          <p className="text-xs text-[#86868B] truncate mt-0.5">
+                            {dateDescription} · {formatAccountLabel(item.account)} · {item.category}
+                            {hasInstallments && ` · Parcela ${currentInstallmentNum} de ${item.installmentsCount}`}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span
+                          className={`text-sm font-semibold tracking-tight ${
+                            isFinishedInThisMonth
+                              ? "text-gray-400 line-through text-xs"
+                              : item.active
+                              ? "text-emerald-600"
+                              : "text-gray-400"
+                          }`}
+                        >
+                          {isFinishedInThisMonth ? "Quitado" : `+ R$ ${formatCurrency(item.amount)}`}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setItemToDelete(item)}
+                          className="text-gray-300 hover:text-rose-500 transition-colors p-1 cursor-pointer"
+                          title="Excluir"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* 4.2 Saídas da Conta (Débito Direto) */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between px-1">
+              <div>
+                <h3 className="text-base font-semibold text-[#1D1D1F] tracking-tight">
+                  Saídas da conta
+                </h3>
+                <p className="text-xs text-[#86868B] mt-0.5">
+                  Valores planejados que serão descontados diretamente do seu saldo.
+                </p>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <span className="text-sm font-semibold text-[#1D1D1F]">
+                  R$ {formatCurrency(totalDebitExpensesActive)}
                 </span>
+                <button
+                  type="button"
+                  onClick={() => handleOpenModal("expense-debit")}
+                  className="text-xs font-semibold text-[#0071E3] hover:text-[#0077ED] cursor-pointer"
+                >
+                  Adicionar
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-[22px] border border-black/[0.04] shadow-[0_1px_4px_rgba(0,0,0,0.02)] overflow-hidden divide-y divide-gray-100">
+              {visiblePlannedDebitExpenses.length === 0 ? (
+                <div className="p-8 text-center space-y-1.5">
+                  <p className="text-sm font-medium text-[#1D1D1F]">
+                    Nenhuma saída da conta planejada em {activeMonthObj.name}
+                  </p>
+                  <p className="text-xs text-[#86868B]">
+                    Cadastre contas fixas como Aluguel, Luz, Internet ou Condomínio.
+                  </p>
+                </div>
+              ) : (
+                visiblePlannedDebitExpenses.map((item) => {
+                  const effectiveDay = getEffectiveDueDay(item, targetYear, targetMonth);
+                  const monthOffset = getRecurringMonthOffset(item, targetYear, targetMonth);
+                  const hasInstallments = Boolean(item.installmentsCount && item.installmentsCount > 1);
+                  const isFinishedInThisMonth = hasInstallments && monthOffset >= (item.installmentsCount || 0);
+                  const currentInstallmentNum = monthOffset >= 0 ? monthOffset + 1 : 1;
+                  const dateDescription = item.recurrenceType === "business_day_5"
+                    ? `5º dia útil (dia ${effectiveDay})`
+                    : `Dia ${effectiveDay}`;
+
+                  return (
+                    <div
+                      key={item.id}
+                      className="flex items-center justify-between gap-4 p-4 hover:bg-[#F9F9FB] transition-colors"
+                    >
+                      <div className="flex items-center gap-3.5 min-w-0">
+                        <button
+                          type="button"
+                          onClick={() => { void handleToggleRecurring(item.id); }}
+                          className={`w-4.5 h-4.5 rounded-full border flex items-center justify-center transition-colors shrink-0 cursor-pointer ${
+                            item.active
+                              ? "bg-[#1D1D1F] border-[#1D1D1F] text-white"
+                              : "border-gray-300 bg-white"
+                          }`}
+                          title={item.active ? "Desativar" : "Ativar"}
+                        >
+                          {item.active && <Check size={11} strokeWidth={3} />}
+                        </button>
+                        <div className="min-w-0">
+                          <h4
+                            className={`text-sm font-medium truncate ${
+                              item.active ? "text-[#1D1D1F]" : "text-gray-400 line-through"
+                            }`}
+                          >
+                            {item.title}
+                          </h4>
+                          <p className="text-xs text-[#86868B] truncate mt-0.5">
+                            {dateDescription} · {formatAccountLabel(item.account)}
+                            {hasInstallments && ` · Parcela ${currentInstallmentNum} de ${item.installmentsCount}`}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span
+                          className={`text-sm font-semibold tracking-tight ${
+                            isFinishedInThisMonth
+                              ? "text-gray-400 line-through text-xs"
+                              : item.active
+                              ? "text-[#1D1D1F]"
+                              : "text-gray-400"
+                          }`}
+                        >
+                          {isFinishedInThisMonth ? "Quitado" : `R$ ${formatCurrency(item.amount)}`}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setItemToDelete(item)}
+                          className="text-gray-300 hover:text-rose-500 transition-colors p-1 cursor-pointer"
+                          title="Excluir"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* 4.3 Cartão de Crédito (Tonalidade Muito Sutil Diferenciada Estilo Apple Wallet) */}
+          <div className="bg-[#F8F8FA] rounded-[22px] p-5 sm:p-6 border border-black/[0.04] space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-[#86868B]">
+                  Cartão de crédito
+                </span>
+                <h3 className="text-lg font-semibold text-[#1D1D1F] tracking-tight mt-0.5">
+                  Fatura de {activeMonthObj.name}
+                </h3>
+                <p className="text-xs text-[#86868B] mt-0.5">
+                  Vencimento {creditCardDueDayText} · Cartão {creditCardNameText}
+                </p>
               </div>
 
-              <div
-                className="mt-3 flex h-3 overflow-hidden rounded-full bg-white/10"
-                aria-label="Distribuição dos compromissos do mês"
-              >
-                {projection.totalCommitted > 0 ? (
-                  <>
-                    <div
-                      className="h-full bg-white"
-                      style={{ width: `${realizedShare}%` }}
-                      title={`Já saiu do saldo: ${Math.round(realizedShare)}%`}
-                    />
-                    <div
-                      className="h-full bg-emerald-400"
-                      style={{ width: `${debitShare}%` }}
-                      title={`Contas pendentes: ${Math.round(debitShare)}%`}
-                    />
-                    <div
-                      className="h-full bg-indigo-400"
-                      style={{ width: `${creditShare}%` }}
-                      title={`Faturas: ${Math.round(creditShare)}%`}
-                    />
-                  </>
-                ) : (
-                  <div className="h-full w-full bg-white/10" />
-                )}
+              <div className="flex sm:flex-col sm:items-end justify-between items-center shrink-0">
+                <span className="text-xl font-semibold text-[#1D1D1F] tracking-tight">
+                  R$ {formatCurrency(creditCommitments)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleOpenModal("expense-credit")}
+                  className="text-xs font-semibold text-[#0071E3] hover:text-[#0077ED] cursor-pointer mt-0.5"
+                >
+                  Adicionar compra
+                </button>
               </div>
+            </div>
 
-              <div className="mt-4 grid grid-cols-3 gap-2">
-                <MacroMetric
-                  dotClass="bg-white"
-                  label="Já saiu"
-                  value={projection.actualOutflowTotal}
-                />
-                <MacroMetric
-                  dotClass="bg-emerald-400"
-                  label="Na conta"
-                  value={debitCommitments}
-                />
-                <MacroMetric
-                  dotClass="bg-indigo-400"
-                  label="Em faturas"
-                  value={creditCommitments}
-                />
-              </div>
+            {/* Lista de Compras do Cartão */}
+            <div className="bg-white rounded-[18px] border border-black/[0.04] overflow-hidden divide-y divide-gray-100">
+              {visiblePlannedCreditExpenses.length === 0 && projection.cardInstallments === 0 ? (
+                <div className="p-7 text-center space-y-1">
+                  <p className="text-xs font-medium text-[#1D1D1F]">
+                    Nenhuma assinatura ou compra cadastrada no cartão para {activeMonthObj.name}.
+                  </p>
+                  <p className="text-[11px] text-[#86868B]">
+                    Assinaturas como iCloud, Netflix ou compras parceladas entrarão na fatura deste mês.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {visiblePlannedCreditExpenses.map((item) => {
+                    const effectiveDay = getEffectiveDueDay(item, targetYear, targetMonth);
+                    const monthOffset = getRecurringMonthOffset(item, targetYear, targetMonth);
+                    const hasInstallments = Boolean(item.installmentsCount && item.installmentsCount > 1);
+                    const isFinishedInThisMonth = hasInstallments && monthOffset >= (item.installmentsCount || 0);
+                    const currentInstallmentNum = monthOffset >= 0 ? monthOffset + 1 : 1;
+
+                    return (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between gap-4 p-4 hover:bg-[#F9F9FB] transition-colors"
+                      >
+                        <div className="flex items-center gap-3.5 min-w-0">
+                          <button
+                            type="button"
+                            onClick={() => { void handleToggleRecurring(item.id); }}
+                            className={`w-4.5 h-4.5 rounded-full border flex items-center justify-center transition-colors shrink-0 cursor-pointer ${
+                              item.active
+                                ? "bg-[#1D1D1F] border-[#1D1D1F] text-white"
+                                : "border-gray-300 bg-white"
+                            }`}
+                            title={item.active ? "Desativar" : "Ativar"}
+                          >
+                            {item.active && <Check size={11} strokeWidth={3} />}
+                          </button>
+                          <div className="min-w-0">
+                            <h4
+                              className={`text-sm font-medium truncate ${
+                                item.active ? "text-[#1D1D1F]" : "text-gray-400 line-through"
+                              }`}
+                            >
+                              {item.title}
+                            </h4>
+                            <p className="text-xs text-[#86868B] truncate mt-0.5">
+                              Cobrado dia {effectiveDay} · {formatAccountLabel(item.account)}
+                              {hasInstallments && ` · Parcela ${currentInstallmentNum} de ${item.installmentsCount}`}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span
+                            className={`text-sm font-semibold tracking-tight ${
+                              isFinishedInThisMonth
+                                ? "text-gray-400 line-through text-xs"
+                                : item.active
+                                ? "text-[#1D1D1F]"
+                                : "text-gray-400"
+                            }`}
+                          >
+                            {isFinishedInThisMonth ? "Quitado" : `R$ ${formatCurrency(item.amount)}`}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setItemToDelete(item)}
+                            className="text-gray-300 hover:text-rose-500 transition-colors p-1 cursor-pointer"
+                            title="Excluir"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {projection.cardInstallments > 0 && (
+                    <div className="flex items-center justify-between gap-4 p-4 bg-gray-50/40">
+                      <div className="min-w-0">
+                        <h4 className="text-sm font-medium text-[#1D1D1F] truncate">
+                          Compras faturadas no cartão
+                        </h4>
+                        <p className="text-xs text-[#86868B] truncate mt-0.5">
+                          Lançamentos e parcelas de compras com vencimento em {activeMonthObj.short}
+                        </p>
+                      </div>
+                      <span className="text-sm font-semibold tracking-tight text-[#1D1D1F] shrink-0">
+                        R$ {formatCurrency(projection.cardInstallments)}
+                      </span>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
         </section>
 
-        {/* Livro-caixa realizado: a mesma fonte exibida no Dashboard e em Transações. */}
+        {/* 5. MOVIMENTAÇÕES REALIZADAS (O que já aconteceu) */}
         <MonthlyMovementOverview
           transactions={selectedTransactions}
           cards={cards}
           monthLabel={activeMonthObj.name}
         />
-
-        {/* SEÇÃO 1: RECEBIMENTOS FUTUROS PLANEJADOS */}
-        <section className="space-y-3">
-          <div className="flex justify-between items-center px-1">
-            <div className="flex items-center gap-2">
-              <div className="w-5 h-5 rounded-md bg-emerald-100 text-emerald-700 flex items-center justify-center">
-                <ArrowDownLeft size={14} strokeWidth={2.5} />
-              </div>
-              <h2 className="text-xs uppercase tracking-wider font-semibold text-[#1D1D1F]">
-                Recebimentos Futuros Planejados (Entram na conta)
-              </h2>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-semibold text-emerald-700">
-                Total: + R$ {formatCurrency(totalIncomesActive)}
-              </span>
-              <button
-                onClick={() => handleOpenModal("income")}
-                className="text-xs text-emerald-700 hover:text-emerald-800 font-semibold flex items-center gap-1 cursor-pointer"
-              >
-                <Plus size={14} />
-                <span>Adicionar</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-[20px] border border-black/[0.04] shadow-[0_2px_8px_rgba(0,0,0,0.04)] overflow-hidden">
-            {visiblePlannedIncomes.length === 0 ? (
-              <div className="p-8 text-center space-y-2">
-                <p className="text-xs font-medium text-[#1D1D1F]">
-                  Nenhum recebimento futuro planejado ainda.
-                </p>
-                <p className="text-xs text-[#86868B] max-w-sm mx-auto">
-                  Você pode agendar salários extras, 13º, comissões, freelas e rendimentos configurados para o 5º dia útil ou dias fixos.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => handleOpenModal("income")}
-                  className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 transition-colors cursor-pointer"
-                >
-                  <Plus size={14} />
-                  <span>Planejar Primeiro Recebimento</span>
-                </button>
-              </div>
-            ) : (
-              visiblePlannedIncomes.map((item, idx) => {
-                const effectiveDay = getEffectiveDueDay(item, targetYear, targetMonth);
-                const monthOffset = getRecurringMonthOffset(item, targetYear, targetMonth);
-                const isOneTime = item.installmentsCount === 1;
-                const hasInstallments = Boolean(item.installmentsCount && item.installmentsCount > 1);
-                const isFinishedInThisMonth = hasInstallments && monthOffset >= (item.installmentsCount || 0);
-                const currentInstallmentNum = monthOffset >= 0 ? monthOffset + 1 : 1;
-                const isRealized = item.realizedPeriods?.includes(getPeriodKey(targetYear, targetMonth));
-
-                return (
-                  <div
-                    key={item.id}
-                    className={`flex items-center justify-between p-4 hover:bg-[#F2F2F7]/50 transition-colors ${
-                      idx !== visiblePlannedIncomes.length - 1 ? "border-b border-gray-100" : ""
-                    } ${isFinishedInThisMonth ? "opacity-60 bg-gray-50/50" : ""}`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => { void handleToggleRecurring(item.id); }}
-                        className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors cursor-pointer ${
-                          item.active
-                            ? "bg-emerald-600 border-emerald-600 text-white"
-                            : "border-gray-300 bg-white"
-                        }`}
-                        title={item.active ? "Desativar" : "Ativar"}
-                      >
-                        {item.active && <Check size={12} strokeWidth={3} />}
-                      </button>
-                      <div>
-                        <h3
-                          className={`text-sm font-semibold transition-all ${
-                            item.active ? "text-[#1D1D1F]" : "text-gray-400 line-through"
-                          }`}
-                        >
-                          {item.title}
-                        </h3>
-                        <div className="flex items-center gap-2 flex-wrap mt-0.5">
-                          {item.recurrenceType === "business_day_5" ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60">
-                              ⚡ 5º Dia Útil (cai dia {effectiveDay} em {activeMonthObj.short})
-                            </span>
-                          ) : (
-                            <span className="text-xs text-[#86868B]">
-                              Previsão dia {effectiveDay}
-                            </span>
-                          )}
-                          {isRealized && (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60">
-                              Recebido neste mês
-                            </span>
-                          )}
-                          {isOneTime && (
-                            <span className="inline-flex items-center rounded-full border border-amber-200/60 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">
-                              Recebimento único
-                            </span>
-                          )}
-                          {hasInstallments && (
-                            <span
-                              className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                                isFinishedInThisMonth
-                                  ? "bg-gray-100 text-gray-500 border-gray-200"
-                                  : "bg-indigo-50 text-indigo-700 border-indigo-200/60"
-                              }`}
-                            >
-                              {isFinishedInThisMonth
-                                ? `Quitado (${item.installmentsCount}x)`
-                                : `Parcela ${currentInstallmentNum} de ${item.installmentsCount}`}
-                            </span>
-                          )}
-                          <span className="text-xs text-[#86868B]">• Destino: {formatAccountLabel(item.account)}</span>
-                          <span className="text-xs text-[#86868B]">• {item.category}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <span
-                        className={`text-sm font-semibold tracking-tight ${
-                          isFinishedInThisMonth
-                            ? "text-gray-400 line-through text-xs"
-                            : item.active
-                            ? "text-emerald-600"
-                            : "text-gray-400"
-                        }`}
-                      >
-                        {isFinishedInThisMonth
-                          ? "Quitado"
-                          : `+ R$ ${formatCurrency(item.amount)}`}
-                      </span>
-                      <button
-                        onClick={() => setItemToDelete(item)}
-                        className="text-gray-300 hover:text-rose-500 transition-colors p-1 cursor-pointer"
-                        title="Excluir"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </section>
-
-        {/* SEÇÃO 2: CONTAS NO DÉBITO / CONTA PRINCIPAL */}
-        <section className="space-y-3">
-          <div className="flex justify-between items-center px-1">
-            <div className="flex items-center gap-2">
-              <Building2 size={16} className="text-[#1D1D1F]" />
-              <h2 className="text-xs uppercase tracking-wider font-semibold text-[#86868B]">
-                Contas planejadas (Saem do saldo)
-              </h2>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-semibold text-[#86868B]">
-                Total: R$ {formatCurrency(totalDebitExpensesActive)}
-              </span>
-              <button
-                onClick={() => handleOpenModal("expense")}
-                className="text-xs text-[#1D1D1F] hover:text-black font-semibold flex items-center gap-1 cursor-pointer"
-              >
-                <Plus size={14} />
-                <span>Adicionar</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-[20px] border border-black/[0.04] shadow-[0_2px_8px_rgba(0,0,0,0.04)] overflow-hidden">
-            {visiblePlannedDebitExpenses.length === 0 ? (
-              <div className="p-8 text-center space-y-2">
-                <p className="text-xs font-medium text-[#1D1D1F]">
-                  Nenhuma conta planejada cadastrada.
-                </p>
-                <p className="text-xs text-[#86868B]">
-                  Cadastre contas fixas como Aluguel, Luz, Internet ou Condomínio.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => handleOpenModal("expense")}
-                  className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-[#F2F2F7] text-[#1D1D1F] hover:bg-gray-200 transition-colors cursor-pointer"
-                >
-                  <Plus size={13} />
-                  <span>Cadastrar Conta Fixa</span>
-                </button>
-              </div>
-            ) : (
-              visiblePlannedDebitExpenses.map((item, idx) => {
-                const effectiveDay = getEffectiveDueDay(item, targetYear, targetMonth);
-                const monthOffset = getRecurringMonthOffset(item, targetYear, targetMonth);
-                const isOneTime = item.installmentsCount === 1;
-                const hasInstallments = Boolean(item.installmentsCount && item.installmentsCount > 1);
-                const isFinishedInThisMonth = hasInstallments && monthOffset >= (item.installmentsCount || 0);
-                const currentInstallmentNum = monthOffset >= 0 ? monthOffset + 1 : 1;
-                const isRealized = item.realizedPeriods?.includes(getPeriodKey(targetYear, targetMonth));
-
-                return (
-                  <div
-                    key={item.id}
-                    className={`flex items-center justify-between p-4 hover:bg-[#F2F2F7]/50 transition-colors ${
-                      idx !== visiblePlannedDebitExpenses.length - 1 ? "border-b border-gray-100" : ""
-                    } ${isFinishedInThisMonth ? "opacity-60 bg-gray-50/50" : ""}`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => { void handleToggleRecurring(item.id); }}
-                        className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors cursor-pointer ${
-                          item.active
-                            ? "bg-[#1D1D1F] border-[#1D1D1F] text-white"
-                            : "border-gray-300 bg-white"
-                        }`}
-                      >
-                        {item.active && <Check size={12} strokeWidth={3} />}
-                      </button>
-                      <div>
-                        <h3
-                          className={`text-sm font-semibold transition-all ${
-                            item.active ? "text-[#1D1D1F]" : "text-gray-400 line-through"
-                          }`}
-                        >
-                          {item.title}
-                        </h3>
-                        <div className="flex items-center gap-2 flex-wrap mt-0.5">
-                          {item.recurrenceType === "business_day_5" ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200/60">
-                              ⚡ 5º Dia Útil (cai dia {effectiveDay} em {activeMonthObj.short})
-                            </span>
-                          ) : (
-                            <span className="text-xs text-[#86868B]">
-                              Conta • dia {effectiveDay}
-                            </span>
-                          )}
-                          {isRealized && (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60">
-                              Pago neste mês
-                            </span>
-                          )}
-                          {isOneTime && (
-                            <span className="inline-flex items-center rounded-full border border-amber-200/60 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">
-                              Pagamento único
-                            </span>
-                          )}
-                          {hasInstallments && (
-                            <span
-                              className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                                isFinishedInThisMonth
-                                  ? "bg-gray-100 text-gray-500 border-gray-200"
-                                  : "bg-indigo-50 text-indigo-700 border-indigo-200/60"
-                              }`}
-                            >
-                              {isFinishedInThisMonth
-                                ? `Quitado (${item.installmentsCount}x)`
-                                : `Parcela ${currentInstallmentNum} de ${item.installmentsCount}`}
-                            </span>
-                          )}
-                          <span className="text-xs text-[#86868B]">• {formatAccountLabel(item.account)}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <span
-                        className={`text-sm font-semibold tracking-tight ${
-                          isFinishedInThisMonth
-                            ? "text-gray-400 line-through text-xs"
-                            : item.active
-                            ? "text-[#1D1D1F]"
-                            : "text-gray-400"
-                        }`}
-                      >
-                        {isFinishedInThisMonth
-                          ? "Quitado"
-                          : `R$ ${formatCurrency(item.amount)}`}
-                      </span>
-                      <button
-                        onClick={() => setItemToDelete(item)}
-                        className="text-gray-300 hover:text-rose-500 transition-colors p-1 cursor-pointer"
-                        title="Excluir"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </section>
-
-        {/* SEÇÃO 3: ASSINATURAS NO CARTÃO DE CRÉDITO */}
-        <section className="space-y-3">
-          <div className="flex justify-between items-center px-1">
-            <div className="flex items-center gap-2">
-              <CreditCard size={16} className="text-[#1D1D1F]" />
-              <h2 className="text-xs uppercase tracking-wider font-semibold text-[#86868B]">
-                No Cartão de Crédito (Entram nas faturas futuras)
-              </h2>
-            </div>
-            <span className="text-xs font-semibold text-[#86868B]">
-              Faturas no mês: R${" "}
-              {formatCurrency(projection.cardInstallments + projection.recurringCreditTotal)}
-            </span>
-          </div>
-
-          {projection.cardInstallments > 0 && (
-            <div className="bg-indigo-50 border border-indigo-100 rounded-[16px] p-4 flex items-center justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold text-indigo-900">
-                  Fatura aberta com vencimento em {activeMonthObj.short}
-                </p>
-                <p className="text-[11px] text-indigo-700 mt-0.5">
-                  Compras agrupadas pelo fechamento e vencimento configurados nos cartões
-                </p>
-              </div>
-              <span className="text-sm font-semibold text-indigo-900 whitespace-nowrap">
-                R$ {formatCurrency(projection.cardInstallments)}
-              </span>
-            </div>
-          )}
-
-          <div className="bg-white rounded-[20px] border border-black/[0.04] shadow-[0_2px_8px_rgba(0,0,0,0.04)] overflow-hidden">
-            {visiblePlannedCreditExpenses.length === 0 ? (
-              <div className="p-8 text-center space-y-2">
-                <p className="text-xs font-medium text-[#1D1D1F]">
-                  Nenhuma assinatura cadastrada no cartão.
-                </p>
-                <p className="text-xs text-[#86868B]">
-                  Cadastre assinaturas como Netflix, Spotify, iCloud ou academia cobradas no cartão.
-                </p>
-              </div>
-            ) : (
-              visiblePlannedCreditExpenses.map((item, idx) => {
-                const effectiveDay = getEffectiveDueDay(item, targetYear, targetMonth);
-                const monthOffset = getRecurringMonthOffset(item, targetYear, targetMonth);
-                const isOneTime = item.installmentsCount === 1;
-                const hasInstallments = Boolean(item.installmentsCount && item.installmentsCount > 1);
-                const isFinishedInThisMonth = hasInstallments && monthOffset >= (item.installmentsCount || 0);
-                const currentInstallmentNum = monthOffset >= 0 ? monthOffset + 1 : 1;
-                const isRealized = item.realizedPeriods?.includes(getPeriodKey(targetYear, targetMonth));
-
-                return (
-                  <div
-                    key={item.id}
-                    className={`flex items-center justify-between p-4 hover:bg-[#F2F2F7]/50 transition-colors ${
-                      idx !== visiblePlannedCreditExpenses.length - 1 ? "border-b border-gray-100" : ""
-                    } ${isFinishedInThisMonth ? "opacity-60 bg-gray-50/50" : ""}`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => { void handleToggleRecurring(item.id); }}
-                        className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors cursor-pointer ${
-                          item.active
-                            ? "bg-[#1D1D1F] border-[#1D1D1F] text-white"
-                            : "border-gray-300 bg-white"
-                        }`}
-                      >
-                        {item.active && <Check size={12} strokeWidth={3} />}
-                      </button>
-                      <div>
-                        <h3
-                          className={`text-sm font-semibold transition-all ${
-                            item.active ? "text-[#1D1D1F]" : "text-gray-400 line-through"
-                          }`}
-                        >
-                          {item.title}
-                        </h3>
-                        <div className="flex items-center gap-2 flex-wrap mt-0.5">
-                          {item.recurrenceType === "business_day_5" ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200/60">
-                              ⚡ 5º Dia Útil (cai dia {effectiveDay} em {activeMonthObj.short})
-                            </span>
-                          ) : (
-                            <span className="text-xs text-[#86868B]">
-                              Cobrado dia {effectiveDay}
-                            </span>
-                          )}
-                          {isRealized && (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60">
-                              Lançado na fatura
-                            </span>
-                          )}
-                          {isOneTime && (
-                            <span className="inline-flex items-center rounded-full border border-amber-200/60 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">
-                              Pagamento único
-                            </span>
-                          )}
-                          {hasInstallments && (
-                            <span
-                              className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                                isFinishedInThisMonth
-                                  ? "bg-gray-100 text-gray-500 border-gray-200"
-                                  : "bg-indigo-50 text-indigo-700 border-indigo-200/60"
-                              }`}
-                            >
-                              {isFinishedInThisMonth
-                                ? `Quitado (${item.installmentsCount}x)`
-                                : `Parcela ${currentInstallmentNum} de ${item.installmentsCount}`}
-                            </span>
-                          )}
-                          <span className="text-xs text-[#86868B]">• Cartão {formatAccountLabel(item.account)}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <span
-                        className={`text-sm font-semibold tracking-tight ${
-                          isFinishedInThisMonth
-                            ? "text-gray-400 line-through text-xs"
-                            : item.active
-                            ? "text-[#1D1D1F]"
-                            : "text-gray-400"
-                        }`}
-                      >
-                        {isFinishedInThisMonth
-                          ? "Quitado"
-                          : `R$ ${formatCurrency(item.amount)}`}
-                      </span>
-                      <button
-                        onClick={() => setItemToDelete(item)}
-                        className="text-gray-300 hover:text-rose-500 transition-colors p-1 cursor-pointer"
-                        title="Excluir"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </section>
       </div>
 
       {/* MODAL PADRÃO APPLE PAY (SMART ANIMATE APPLE PAY INTERACTION) */}
@@ -875,7 +851,6 @@ export default function PlanningPage() {
             onClick={() => setIsAddingModalOpen(false)}
             className="fixed inset-0 bg-black/45 animate-apple-backdrop"
           />
-
 
           <div className="relative w-full max-w-lg bg-white rounded-t-[32px] sm:rounded-[32px] shadow-[0_-8px_40px_rgba(0,0,0,0.18)] z-50 animate-apple-sheet sm:animate-apple-modal max-h-[92vh] overflow-y-auto font-sans">
             {/* Pílula Apple */}
@@ -960,7 +935,6 @@ export default function PlanningPage() {
                     className="flex-1 text-sm font-medium text-[#1D1D1F] placeholder:text-[#86868B] outline-none bg-transparent"
                   />
                 </div>
-
 
                 {/* LINHA: VALOR */}
                 <div className="flex items-center px-6 py-4">
@@ -1052,250 +1026,205 @@ export default function PlanningPage() {
                       <span className="text-[10px] text-[#86868B] block mt-0.5">Fixo todo mês</span>
                     </button>
 
-                    {/* Dia 20 ou Outro */}
+                    {/* Dia 20 */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRecurrenceSelection("fixed_day");
+                        setFixedDayValue("20");
+                        setIsCustomDayActive(false);
+                      }}
+                      className={`p-2.5 rounded-xl text-xs font-semibold transition-all border text-left cursor-pointer ${
+                        recurrenceSelection === "fixed_day" && fixedDayValue === "20" && !isCustomDayActive
+                          ? "bg-white border-[#1D1D1F] shadow-xs text-[#1D1D1F]"
+                          : "bg-[#F2F2F7] border-transparent text-[#86868B] hover:text-[#1D1D1F]"
+                      }`}
+                    >
+                      <span>Todo Dia 20</span>
+                      <span className="text-[10px] text-[#86868B] block mt-0.5">Fixo todo mês</span>
+                    </button>
+                  </div>
+
+                  {/* Dia Personalizado */}
+                  <div className="flex items-center justify-between pt-1">
                     <button
                       type="button"
                       onClick={() => {
                         setRecurrenceSelection("fixed_day");
                         setIsCustomDayActive(true);
                       }}
+                      className={`text-xs font-semibold hover:underline cursor-pointer ${
+                        isCustomDayActive ? "text-[#1D1D1F] font-bold" : "text-[#86868B]"
+                      }`}
+                    >
+                      Outro dia fixo do mês:
+                    </button>
+                    {isCustomDayActive && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-[#86868B]">Dia</span>
+                        <input
+                          type="number"
+                          min="1"
+                          max="31"
+                          value={customDayInput}
+                          onChange={(e) => setCustomDayInput(e.target.value)}
+                          className="w-14 h-7 text-center rounded-lg border border-black/10 bg-white font-semibold text-xs outline-none"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* DURAÇÃO: Uma vez / Parcelado / Contínuo */}
+                <div className="px-6 py-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-[#86868B] uppercase tracking-wider">
+                      DURAÇÃO DO COMPROMISSO
+                    </span>
+                    <span className="text-[11px] text-[#86868B]">
+                      {durationMode === "one-time"
+                        ? "Apenas neste mês"
+                        : durationMode === "installments"
+                          ? `${installmentsCount} parcelas mensais`
+                          : "Recorrente contínuo"}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setDurationMode("one-time")}
                       className={`p-2.5 rounded-xl text-xs font-semibold transition-all border text-left cursor-pointer ${
-                        isCustomDayActive
+                        durationMode === "one-time"
                           ? "bg-white border-[#1D1D1F] shadow-xs text-[#1D1D1F]"
                           : "bg-[#F2F2F7] border-transparent text-[#86868B] hover:text-[#1D1D1F]"
                       }`}
                     >
-                      <span>Outro Dia...</span>
-                      <span className="text-[10px] text-[#86868B] block mt-0.5">
-                        {isCustomDayActive ? `Dia ${customDayInput}` : "Personalizado"}
-                      </span>
+                      <span>Apenas 1 mês</span>
+                      <span className="text-[10px] text-[#86868B] block mt-0.5">Pagamento único</span>
                     </button>
-                  </div>
 
-                  {/* Campo customizado */}
-                  {isCustomDayActive && (
-                    <div className="flex items-center gap-2 pt-1 animate-in fade-in">
-                      <span className="text-xs text-[#86868B]">Dia do mês (1 a 31):</span>
-                      <input
-                        type="number"
-                        min="1"
-                        max="31"
-                        value={customDayInput}
-                        onChange={(e) => setCustomDayInput(e.target.value)}
-                        className="w-16 bg-white border border-gray-300 rounded-lg px-2.5 py-1 text-xs font-bold text-[#1D1D1F] outline-none"
-                      />
-                    </div>
-                  )}
-
-                  {/* Banner de Feedback em Tempo Real */}
-                  <div className="bg-emerald-50/80 border border-emerald-200/60 rounded-xl p-2.5 flex items-start gap-2">
-                    <Sparkles size={14} className="text-emerald-700 shrink-0 mt-0.5" />
-                    <p className="text-[11px] text-emerald-800 font-medium leading-relaxed">
-                      {durationMode === "one-time" ? (
-                        <>
-                          Agendado apenas para o <strong>Dia {recurrenceSelection === "business_day_5"
-                            ? currentMonth5thBusinessDay
-                            : isCustomDayActive
-                              ? customDayInput
-                              : fixedDayValue}</strong> de <strong>{activeMonthObj.short}</strong>.
-                          {" "}Não se repetirá nos meses seguintes.
-                        </>
-                      ) : recurrenceSelection === "business_day_5" ? (
-                        <>
-                          Configurado para o <strong>5º dia útil</strong>. Em{" "}
-                          <strong>{activeMonthObj.short}</strong>, cai no{" "}
-                          <strong>Dia {currentMonth5thBusinessDay}</strong>. O sistema recalcula todo mês
-                          automaticamente pulando fins de semana e feriados!
-                        </>
-                      ) : (
-                        <>
-                          Configurado para o{" "}
-                          <strong>Dia {isCustomDayActive ? customDayInput : fixedDayValue}</strong> de todo
-                          mês.
-                        </>
-                      )}
-                    </p>
-                  </div>
-                </div>
-
-                {/* LINHA: DURAÇÃO / PARCELAMENTO */}
-                <div className="px-6 py-4 space-y-3 bg-white">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-semibold text-[#86868B] uppercase tracking-wider">
-                      DURAÇÃO
-                    </span>
-                    <span className="text-xs font-semibold text-[#1D1D1F]">
-                      {durationMode === "one-time"
-                        ? "Uma única vez"
-                        : durationMode === "continuous"
-                          ? "Recorrente contínuo"
-                          : `${installmentsCount} parcelas`}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-1 bg-[#F2F2F7] p-1 rounded-xl">
                     <button
                       type="button"
-                      onClick={() => setDurationMode("one-time")}
-                      className={`py-1.5 px-2 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
-                        durationMode === "one-time"
-                          ? "bg-white text-[#1D1D1F] shadow-2xs"
-                          : "text-[#86868B] hover:text-[#1D1D1F]"
+                      onClick={() => {
+                        setDurationMode("installments");
+                        if (!isCustomInstallment) {
+                          setInstallmentsCount(3);
+                        }
+                      }}
+                      className={`p-2.5 rounded-xl text-xs font-semibold transition-all border text-left cursor-pointer ${
+                        durationMode === "installments"
+                          ? "bg-white border-[#1D1D1F] shadow-xs text-[#1D1D1F]"
+                          : "bg-[#F2F2F7] border-transparent text-[#86868B] hover:text-[#1D1D1F]"
                       }`}
                     >
-                      Uma vez
+                      <span>Parcelado</span>
+                      <span className="text-[10px] text-[#86868B] block mt-0.5">Duração definida</span>
                     </button>
+
                     <button
                       type="button"
                       onClick={() => setDurationMode("continuous")}
-                      className={`py-1.5 px-2 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
+                      className={`p-2.5 rounded-xl text-xs font-semibold transition-all border text-left cursor-pointer ${
                         durationMode === "continuous"
-                          ? "bg-white text-[#1D1D1F] shadow-2xs"
-                          : "text-[#86868B] hover:text-[#1D1D1F]"
+                          ? "bg-white border-[#1D1D1F] shadow-xs text-[#1D1D1F]"
+                          : "bg-[#F2F2F7] border-transparent text-[#86868B] hover:text-[#1D1D1F]"
                       }`}
                     >
-                      Contínuo
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDurationMode("installments")}
-                      className={`py-1.5 px-2 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
-                        durationMode === "installments"
-                          ? "bg-[#1D1D1F] text-white shadow-2xs"
-                          : "text-[#86868B] hover:text-[#1D1D1F]"
-                      }`}
-                    >
-                      Parcelado
+                      <span>Contínuo</span>
+                      <span className="text-[10px] text-[#86868B] block mt-0.5">Sem prazo final</span>
                     </button>
                   </div>
 
                   {durationMode === "installments" && (
-                    <div className="space-y-2 pt-1 animate-in fade-in duration-150">
-                      <span className="text-[10px] text-[#86868B] block font-semibold uppercase tracking-wider">
-                        QUANTAS VEZES VAI REPETIR?
-                      </span>
-                      <div className="flex flex-wrap gap-1.5">
-                        {[2, 3, 4, 5, 6, 10, 12].map((num) => (
+                    <div className="rounded-xl border border-black/5 bg-[#F9F9FB] p-3 space-y-2">
+                      <div className="flex items-center justify-between text-xs text-[#86868B]">
+                        <span>Número de meses:</span>
+                        <span className="font-semibold text-[#1D1D1F]">
+                          {installmentsCount} parcelas
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {[2, 3, 6, 12].map((count) => (
                           <button
-                            key={num}
+                            key={count}
                             type="button"
                             onClick={() => {
-                              setInstallmentsCount(num);
                               setIsCustomInstallment(false);
+                              setInstallmentsCount(count);
                             }}
-                            className={`py-1.5 px-3 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
-                              installmentsCount === num && !isCustomInstallment
-                                ? "bg-[#1D1D1F] border-[#1D1D1F] text-white shadow-xs"
-                                : "bg-[#F2F2F7] border-transparent text-[#86868B] hover:text-[#1D1D1F]"
+                            className={`h-8 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                              !isCustomInstallment && installmentsCount === count
+                                ? "bg-[#1D1D1F] text-white"
+                                : "bg-white border border-black/5 text-[#1D1D1F] hover:bg-gray-100"
                             }`}
                           >
-                            {num}x
+                            {count}x
                           </button>
                         ))}
-                        <button
-                          type="button"
-                          onClick={() => setIsCustomInstallment(true)}
-                          className={`py-1.5 px-3 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
-                            isCustomInstallment
-                              ? "bg-[#1D1D1F] border-[#1D1D1F] text-white shadow-xs"
-                              : "bg-[#F2F2F7] border-transparent text-[#86868B] hover:text-[#1D1D1F]"
-                          }`}
-                        >
-                          Outro...
-                        </button>
                       </div>
-
-                      {isCustomInstallment && (
-                        <div className="flex items-center gap-2 pt-1">
-                          <span className="text-xs text-[#86868B]">Número de parcelas / meses:</span>
-                          <input
-                            type="number"
-                            min="2"
-                            max="60"
-                            value={customInstallmentInput}
-                            onChange={(e) => {
-                              setCustomInstallmentInput(e.target.value);
-                              const v = parseInt(e.target.value);
-                              if (!isNaN(v) && v >= 1) setInstallmentsCount(v);
-                            }}
-                            className="w-16 bg-white border border-gray-300 rounded-lg px-2.5 py-1 text-xs font-bold text-[#1D1D1F] outline-none"
-                          />
-                        </div>
-                      )}
-
-                      <p className="text-[11px] text-[#86868B]">
-                        Repetirá por <strong>{installmentsCount} meses</strong> consecutivos a partir de{" "}
-                        <strong>{activeMonthObj.short}</strong>.
-                      </p>
                     </div>
                   )}
                 </div>
 
-                {/* LINHA: CONTA DE DESTINO / MÉTODO */}
-                <div className="flex flex-col sm:flex-row sm:items-center px-6 py-3.5 gap-2 sm:gap-0">
+                {/* LINHA: CONTA DE DESTINO / CARTÃO */}
+                <div className="flex items-center px-6 py-3.5">
                   <span className="w-24 text-[11px] font-semibold text-[#86868B] uppercase tracking-wider">
-                    {modalType === "income" ? "DESTINO" : "ONDE COBRA"}
+                    {modalType === "income" ? "DESTINO" : "FORMA"}
                   </span>
-                  <div className="flex-1 flex flex-wrap gap-2">
-                    {accountOptions.map((acc) => {
-                      const isSelected = newAccount === acc;
-                      const isCheckingAccount = acc === "Débito/Pix" ||
-                        cards.some((card) => card.type === "checking" && card.name === acc);
-                      return (
-                        <button
-                          key={acc}
-                          type="button"
-                          onClick={() => setNewAccount(acc)}
-                          className={`py-1.5 px-3 rounded-lg text-xs font-medium border flex items-center gap-1.5 transition-all cursor-pointer ${
-                            isSelected
-                              ? modalType === "income"
-                                ? "bg-emerald-600 text-white border-transparent shadow-2xs"
-                                : "bg-[#1D1D1F] text-white border-transparent shadow-2xs"
-                              : "bg-[#F2F2F7] text-[#1D1D1F] border-transparent hover:bg-gray-200"
-                          }`}
-                        >
-                          {isCheckingAccount ? <Building2 size={13} /> : <CreditCard size={13} />}
-                          <span>{formatAccountLabel(acc)}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <select
+                    value={newAccount}
+                    onChange={(e) => setNewAccount(e.target.value)}
+                    className="flex-1 text-xs font-medium text-[#1D1D1F] bg-transparent outline-none cursor-pointer"
+                  >
+                    {accountOptions.map((acc) => (
+                      <option key={acc} value={acc}>
+                        {formatAccountLabel(acc)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* LINHA: CATEGORIA */}
+                <div className="flex items-center px-6 py-3.5">
+                  <span className="w-24 text-[11px] font-semibold text-[#86868B] uppercase tracking-wider">
+                    CATEGORIA
+                  </span>
+                  <select
+                    value={newCategory}
+                    onChange={(e) => setNewCategory(e.target.value)}
+                    className="flex-1 text-xs font-medium text-[#1D1D1F] bg-transparent outline-none cursor-pointer"
+                  >
+                    {modalType === "income" ? (
+                      <>
+                        <option value="Salário / Extra">Salário / Renda Principal</option>
+                        <option value="13º / Bônus">13º / Bônus / PLR</option>
+                        <option value="Freelance / Extra">Freelance / Extra</option>
+                        <option value="Rendimentos">Rendimentos de Investimento</option>
+                        <option value="Reembolso">Reembolso / Outros</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="Moradia & Contas">Moradia & Contas Fixas</option>
+                        <option value="Assinaturas & Lazer">Assinaturas & Lazer</option>
+                        <option value="Alimentação">Alimentação & Supermercado</option>
+                        <option value="Transporte">Transporte & Mobilidade</option>
+                        <option value="Saúde & Bem-estar">Saúde & Bem-estar</option>
+                        <option value="Educação">Educação</option>
+                        <option value="Outros">Outros Compromissos</option>
+                      </>
+                    )}
+                  </select>
                 </div>
               </div>
 
-              {/* CONFIRMAÇÃO OFICIAL PADRÃO APPLE PAY */}
-              <div className="px-6 py-5 flex flex-col items-center gap-3">
-                {/* Face ID Icon */}
-                <div className="flex flex-col items-center gap-1.5 text-center">
-                  <div className="w-10 h-10 rounded-full border-2 border-[#0071E3] flex items-center justify-center text-[#0071E3] transition-transform active:scale-95">
-                    <svg
-                      width="20"
-                      height="20"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M7 3H5a2 2 0 0 0-2 2v2" />
-                      <path d="M17 3h2a2 2 0 0 1 2 2v2" />
-                      <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
-                      <path d="M3 17v2a2 2 0 0 0 2 2h2" />
-                      <line x1="9" y1="10" x2="9.01" y2="10" />
-                      <line x1="15" y1="10" x2="15.01" y2="10" />
-                      <path d="M9.5 15a3.5 3.5 0 0 0 5 0" />
-                    </svg>
-                  </div>
-                  <span className="text-[11px] text-[#86868B] font-medium tracking-tight">
-                    Confirmar Previsão com W Pay
-                  </span>
-                </div>
-
+              {/* BOTÃO CONFIRMAR APPLE PAY */}
+              <div className="p-6">
                 <WPayButton
                   type="submit"
-                  disabled={!newTitle.trim() || !newAmount}
-                  label={modalType === "income" ? "Salvar Entrada com" : "Salvar Pagamento com"}
+                  label="Confirmar Planejamento"
+                  theme="black"
+                  disabled={!newTitle.trim() || !newAmount.trim()}
                 />
               </div>
             </form>
@@ -1303,55 +1232,28 @@ export default function PlanningPage() {
         </div>
       )}
 
-      {/* Modal de Confirmação para Excluir Planejamento */}
+      {/* CONFIRMAÇÃO DE EXCLUSÃO APPLE HIG */}
       <AppleConfirmModal
-        isOpen={!!itemToDelete}
+        isOpen={Boolean(itemToDelete)}
         onClose={() => setItemToDelete(null)}
         onConfirm={async () => {
           if (itemToDelete) {
             try {
               await deleteRecurringItem(itemToDelete.id);
-              setItemToDelete(null);
             } catch (error) {
               alert(error instanceof Error ? error.message : "Não foi possível excluir o planejamento.");
+            } finally {
+              setItemToDelete(null);
             }
           }
         }}
         title="Excluir Planejamento"
-        description={`Tem certeza que deseja remover "${itemToDelete?.title}"? Este item deixará de ser projetado nos meses futuros.`}
+        description={`Tem certeza que deseja remover "${itemToDelete?.title || ""}" dos seus compromissos futuros?`}
         confirmLabel="Excluir"
-        cancelLabel="Cancelar"
+        cancelLabel="Manter"
         variant="danger"
         iconType="trash"
       />
-    </div>
-  );
-}
-
-function MacroMetric({
-  dotClass,
-  label,
-  value,
-}: {
-  dotClass: string;
-  label: string;
-  value: number;
-}) {
-  return (
-    <div className="min-w-0">
-      <div className="flex items-center gap-1.5">
-        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClass}`} />
-        <span className="truncate text-[9px] font-semibold uppercase tracking-wider text-white/45">
-          {label}
-        </span>
-      </div>
-      <strong className="mt-1 block truncate text-[11px] font-semibold text-white sm:text-xs">
-        {"R$ "}
-        {value.toLocaleString("pt-BR", {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })}
-      </strong>
     </div>
   );
 }

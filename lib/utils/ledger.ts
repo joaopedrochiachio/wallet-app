@@ -153,3 +153,15 @@ export function calculateInvoiceSchedule(
   }
   return result;
 }
+
+/**
+ * Calcula o saldo projetado acumulando o saldo transportado do mês anterior (openingBalance)
+ * com as entradas previstas menos as saídas comprometidas.
+ */
+export function calculateProjectedBalance(
+  openingBalance: number,
+  income: number,
+  committed: number
+): number {
+  return openingBalance + income - committed;
+}

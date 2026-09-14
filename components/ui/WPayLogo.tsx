@@ -2,6 +2,8 @@
 
 import React from "react";
 
+import Image from "next/image";
+
 interface WPayLogoProps {
   size?: "sm" | "md" | "lg" | "xl";
   variant?: "dark" | "light" | "outline";
@@ -9,24 +11,25 @@ interface WPayLogoProps {
 }
 
 /**
- * Logotipo estilizado no padrão oficial Apple Pay (trocando a maçã pelo W de Wallet)
+ * Logotipo estilizado no padrão oficial Apple Pay (trocando a maçã pelo W oficial de Wallet)
  * Respeita a tipografia, proporções e estilo de design Apple Human Interface Guidelines.
  */
 export function WPayLogo({ size = "md", variant = "dark", className = "" }: WPayLogoProps) {
   const sizeClasses = {
-    sm: "text-xs gap-1",
-    md: "text-base gap-1.5",
-    lg: "text-xl gap-2",
-    xl: "text-2xl gap-2.5",
+    sm: "text-xs gap-1.5",
+    md: "text-base gap-2",
+    lg: "text-xl gap-2.5",
+    xl: "text-2xl gap-3",
   };
 
-  const iconSizes = {
-    sm: "w-3.5 h-3.5 text-[9px]",
-    md: "w-4.5 h-4.5 text-[11px]",
-    lg: "w-6 h-6 text-[14px]",
-    xl: "w-7 h-7 text-[16px]",
+  const iconDims: Record<string, { size: number; boxClass: string; rounded: string }> = {
+    sm: { size: 16, boxClass: "w-4 h-4", rounded: "rounded-[4px]" },
+    md: { size: 20, boxClass: "w-5 h-5", rounded: "rounded-[5px]" },
+    lg: { size: 26, boxClass: "w-6.5 h-6.5", rounded: "rounded-[6px]" },
+    xl: { size: 32, boxClass: "w-8 h-8", rounded: "rounded-[8px]" },
   };
 
+  const currentDim = iconDims[size] || iconDims.md;
   const isDark = variant === "dark";
 
   return (
@@ -34,17 +37,19 @@ export function WPayLogo({ size = "md", variant = "dark", className = "" }: WPay
       className={`inline-flex items-center font-sans tracking-tight select-none ${sizeClasses[size]} ${className}`}
       style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", sans-serif' }}
     >
-      {/* Glifo W no formato Apple */}
+      {/* Glifo com a logo oficial Wallet */}
       <span
-        className={`inline-flex items-center justify-center font-black rounded-[4px] leading-none transition-transform ${iconSizes[size]} ${
-          isDark
-            ? "bg-[#1D1D1F] text-white"
-            : variant === "outline"
-            ? "border border-current text-current font-extrabold"
-            : "bg-white text-[#1D1D1F]"
+        className={`relative inline-flex items-center justify-center shrink-0 overflow-hidden leading-none transition-transform shadow-2xs ${currentDim.boxClass} ${currentDim.rounded} ${
+          variant === "outline" ? "border border-current" : ""
         }`}
       >
-        W
+        <Image
+          src="/logo2.png"
+          alt="Wallet Pay Logo"
+          width={currentDim.size}
+          height={currentDim.size}
+          className="w-full h-full object-contain"
+        />
       </span>
       <span className={`font-semibold tracking-[-0.03em] ${isDark ? "text-[#1D1D1F]" : "text-white"}`}>
         Pay

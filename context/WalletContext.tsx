@@ -40,6 +40,7 @@ import {
   calculateCreditInvoice,
   calculateInvoiceSchedule,
   calculateMonthlyAccountFlow,
+  calculateProjectedBalance,
   getInvoiceDueDate,
   getLedgerEntryDate,
   matchesLedgerCard,
@@ -104,6 +105,7 @@ export interface MonthProjection {
   actualOutflowTotal: number;
   pendingCommitted: number;
   projectedFreeBalance: number;
+  openingBalance: number;
 }
 
 interface WalletContextType {
@@ -624,108 +626,129 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   };
 
   // Projeção dinâmica para os meses seguintes (0 = Mês Atual, 1 = Próximo mês, etc.)
+  // O saldo livre projetado ao final de cada mês é transportado para o próximo como saldo em conta.
   const getMonthlyProjection = (monthIndex: number): MonthProjection => {
     const months = getPlanningMonths();
-
     const safeIndex = Math.min(Math.max(0, monthIndex), months.length - 1);
-    const m = months[safeIndex];
 
     // Renda cadastrada no perfil (apenas referência cadastral, não entra automático no fluxo)
     const baseIncome = userProfile.monthlyIncomeBase || 0;
 
-    const activeInTargetMonth = (item: RecurringItem) =>
-      isRecurringActiveInMonth(item, m.year, m.monthIndex);
-    const isCheckingRecurring = (item: RecurringItem) =>
-      cards.some((card) =>
-        card.type === "checking" && matchesLedgerCard(card, item.account, item.cardId)
-      ) || item.account === "Débito/Pix";
+    let runningBalance = mainBalance;
+    let projectionResult: MonthProjection = null!;
 
-    // Recebimentos futuros planejados ativos (ex: salário 1ª parcela dia 5, 2ª parcela dia 20, freelas)
-    const plannedIncomesTotal = recurringItems
-      .filter((r) => r.type === "income" && activeInTargetMonth(r))
-      .reduce((acc, r) => acc + r.amount, 0);
+    for (let idx = 0; idx <= safeIndex; idx++) {
+      const m = months[idx];
+      const targetPeriodKey = getPeriodKey(m.year, m.monthIndex);
 
-    // O valor projetado no fluxo é estritamente o que o usuário cadastrou nos recebimentos
-    const projectedIncome = plannedIncomesTotal;
+      const activeInTargetMonth = (item: RecurringItem) =>
+        isRecurringActiveInMonth(item, m.year, m.monthIndex);
+      const isCheckingRecurring = (item: RecurringItem) =>
+        cards.some((card) =>
+          card.type === "checking" && matchesLedgerCard(card, item.account, item.cardId)
+        ) || item.account === "Débito/Pix";
 
-    const targetPeriodKey = getPeriodKey(m.year, m.monthIndex);
-    const transactionsInTargetMonth = transactions.filter((transaction) => {
-      const occurredAt = getLedgerEntryDate(transaction);
-      return occurredAt && getPeriodKey(occurredAt.getFullYear(), occurredAt.getMonth()) === targetPeriodKey;
-    });
-    const actualIncomeTotal = transactionsInTargetMonth
-      .filter((transaction) => transaction.type === "receita" && cards.some((card) =>
-        card.type === "checking" && matchesLedgerCard(card, transaction.account, transaction.cardId)
-      ))
-      .reduce((total, transaction) => total + transaction.amount, 0);
-    const actualOutflowTotal = transactionsInTargetMonth
-      .filter((transaction) => transaction.type === "despesa" && cards.some((card) =>
-        card.type === "checking" && matchesLedgerCard(card, transaction.account, transaction.cardId)
-      ))
-      .reduce((total, transaction) => total + transaction.amount, 0);
+      // Recebimentos futuros planejados ativos (ex: salário, rendimentos)
+      const plannedIncomesTotal = recurringItems
+        .filter((r) => r.type === "income" && activeInTargetMonth(r))
+        .reduce((acc, r) => acc + r.amount, 0);
 
-    // Contas recorrentes e pagamentos futuros ativos no débito
-    const recurringDebitTotal = recurringItems
-      .filter((r) => r.type !== "income" && isCheckingRecurring(r) && activeInTargetMonth(r))
-      .reduce((acc, r) => acc + r.amount, 0);
+      const projectedIncome = plannedIncomesTotal;
 
-    // Compras planejadas no crédito entram no mês em que a fatura vence,
-    // não no mês da compra. Uma compra após o fechamento migra para a próxima fatura.
-    let recurringCreditTotal = 0;
-    for (const item of recurringItems.filter((candidate) =>
-      candidate.type !== "income" && !isCheckingRecurring(candidate)
-    )) {
-      const creditCard = cards.find((card) =>
-        card.type === "credit" && matchesLedgerCard(card, item.account, item.cardId)
-      );
-      if (!creditCard) continue;
-      for (let sourceOffset = -2; sourceOffset <= 0; sourceOffset += 1) {
-        const source = new Date(m.year, m.monthIndex + sourceOffset, 1);
-        if (!isRecurringActiveInMonth(item, source.getFullYear(), source.getMonth())) continue;
-        const chargeDate = new Date(
-          source.getFullYear(),
-          source.getMonth(),
-          getEffectiveDueDay(item, source.getFullYear(), source.getMonth()),
-          12
+      const transactionsInTargetMonth = transactions.filter((transaction) => {
+        const occurredAt = getLedgerEntryDate(transaction);
+        return occurredAt && getPeriodKey(occurredAt.getFullYear(), occurredAt.getMonth()) === targetPeriodKey;
+      });
+
+      const actualIncomeTotal = transactionsInTargetMonth
+        .filter((transaction) => transaction.type === "receita" && cards.some((card) =>
+          card.type === "checking" && matchesLedgerCard(card, transaction.account, transaction.cardId)
+        ))
+        .reduce((total, transaction) => total + transaction.amount, 0);
+
+      const actualOutflowTotal = transactionsInTargetMonth
+        .filter((transaction) => transaction.type === "despesa" && cards.some((card) =>
+          card.type === "checking" && matchesLedgerCard(card, transaction.account, transaction.cardId)
+        ))
+        .reduce((total, transaction) => total + transaction.amount, 0);
+
+      // Contas recorrentes e pagamentos futuros ativos no débito
+      const recurringDebitTotal = recurringItems
+        .filter((r) => r.type !== "income" && isCheckingRecurring(r) && activeInTargetMonth(r))
+        .reduce((acc, r) => acc + r.amount, 0);
+
+      // Compras planejadas no crédito entram no mês em que a fatura vence
+      let recurringCreditTotal = 0;
+      for (const item of recurringItems.filter((candidate) =>
+        candidate.type !== "income" && !isCheckingRecurring(candidate)
+      )) {
+        const creditCard = cards.find((card) =>
+          card.type === "credit" && matchesLedgerCard(card, item.account, item.cardId)
         );
-        const invoiceDueDate = getInvoiceDueDate(creditCard, chargeDate);
-        if (getPeriodKey(invoiceDueDate.getFullYear(), invoiceDueDate.getMonth()) === targetPeriodKey) {
-          recurringCreditTotal += item.amount;
+        if (!creditCard) continue;
+        for (let sourceOffset = -2; sourceOffset <= 0; sourceOffset += 1) {
+          const source = new Date(m.year, m.monthIndex + sourceOffset, 1);
+          if (!isRecurringActiveInMonth(item, source.getFullYear(), source.getMonth())) continue;
+          const chargeDate = new Date(
+            source.getFullYear(),
+            source.getMonth(),
+            getEffectiveDueDay(item, source.getFullYear(), source.getMonth()),
+            12
+          );
+          const invoiceDueDate = getInvoiceDueDate(creditCard, chargeDate);
+          if (getPeriodKey(invoiceDueDate.getFullYear(), invoiceDueDate.getMonth()) === targetPeriodKey) {
+            recurringCreditTotal += item.amount;
+          }
         }
+      }
+
+      const cardInstallments = cards
+        .filter((card) => card.type === "credit")
+        .reduce((total, card) => {
+          const schedule = calculateInvoiceSchedule(card, transactions);
+          return total + (schedule[targetPeriodKey] || 0);
+        }, 0);
+
+      // Total comprometido = Contas Fixas Débito + Assinaturas Crédito + Faturas Atuais
+      const pendingCommitted = recurringDebitTotal + recurringCreditTotal + cardInstallments;
+      const totalCommitted = actualOutflowTotal + pendingCommitted;
+
+      // Saldo inicial do mês:
+      // No mês 0, parte do saldo real atual da conta (mainBalance).
+      // Nos meses seguintes (idx > 0), parte do saldo final projetado transportado do mês anterior.
+      const openingBalance = idx === 0 ? mainBalance : runningBalance;
+
+      // Saldo livre projetado ao final do mês:
+      // Mês 0: mainBalance já contempla receitas e despesas já debitadas até agora.
+      //        Logo, o saldo projetado ao fim é: mainBalance + plannedIncomesTotal - pendingCommitted.
+      // Meses futuros: parte de openingBalance + receitas totais do mês - total de saídas comprometidas.
+      const projectedFreeBalance = idx === 0
+        ? calculateProjectedBalance(openingBalance, plannedIncomesTotal, pendingCommitted)
+        : calculateProjectedBalance(openingBalance, actualIncomeTotal + plannedIncomesTotal, totalCommitted);
+
+      runningBalance = projectedFreeBalance;
+
+      if (idx === safeIndex) {
+        projectionResult = {
+          monthName: m.short,
+          year: m.year,
+          baseIncome,
+          plannedIncomesTotal,
+          projectedIncome: actualIncomeTotal + projectedIncome,
+          recurringDebitTotal,
+          recurringCreditTotal,
+          cardInstallments,
+          totalCommitted,
+          actualIncomeTotal,
+          actualOutflowTotal,
+          pendingCommitted,
+          projectedFreeBalance,
+          openingBalance,
+        };
       }
     }
 
-    const cardInstallments = cards
-      .filter((card) => card.type === "credit")
-      .reduce((total, card) => {
-        const schedule = calculateInvoiceSchedule(card, transactions);
-        return total + (schedule[targetPeriodKey] || 0);
-      }, 0);
-
-    // Total comprometido = Contas Fixas Débito + Assinaturas Crédito + Faturas Atuais
-    const pendingCommitted = recurringDebitTotal + recurringCreditTotal + cardInstallments;
-    const totalCommitted = actualOutflowTotal + pendingCommitted;
-    // No mês atual partimos do saldo real, que já contém salários recebidos e PIX pagos.
-    // Nos meses futuros mostramos o fluxo mensal planejado, sem transportar um saldo fictício.
-    const projectedFreeBalance = safeIndex === 0
-      ? mainBalance + plannedIncomesTotal - pendingCommitted
-      : actualIncomeTotal + plannedIncomesTotal - totalCommitted;
-
-    return {
-      monthName: m.short,
-      year: m.year,
-      baseIncome,
-      plannedIncomesTotal,
-      projectedIncome: actualIncomeTotal + projectedIncome,
-      recurringDebitTotal,
-      recurringCreditTotal,
-      cardInstallments,
-      totalCommitted,
-      actualIncomeTotal,
-      actualOutflowTotal,
-      pendingCommitted,
-      projectedFreeBalance,
-    };
+    return projectionResult;
   };
 
   return (

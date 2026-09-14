@@ -9,7 +9,7 @@ test("planejamento mantém resumo visível enquanto os filtros mudam", async ({ 
   const movementOverview = page.getByTestId("monthly-movement-overview");
 
   await expect(macroSummary).toBeVisible();
-  await expect(macroSummary).toContainText("Seu mês inteiro");
+  await expect(macroSummary).toContainText("Composição dos compromissos");
   await expect(movementOverview).toBeVisible();
   await expect(movementOverview).toContainText("Resumo do recorte");
 

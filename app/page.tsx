@@ -2,6 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { Wallet3DShowcase } from "@/components/ui/Wallet3DShowcase";
 import {
   ShieldCheck,
@@ -25,10 +26,15 @@ export default function PresentationPage() {
       <header className="sticky top-0 z-50 bg-[#F2F2F7]/85 backdrop-blur-xl border-b border-black/[0.04]">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
           
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-[#1D1D1F] text-white flex items-center justify-center font-bold text-sm shadow-xs">
-              W
-            </div>
+          <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
+            <Image
+              src="/logo2.png"
+              alt="Wallet Logo"
+              width={36}
+              height={36}
+              className="rounded-xl object-contain shadow-xs shrink-0"
+              priority
+            />
             <div className="flex items-center gap-2">
               <span className="font-semibold text-base tracking-tight text-[#1D1D1F]">
                 Wallet
@@ -37,7 +43,7 @@ export default function PresentationPage() {
                 Intelligence
               </span>
             </div>
-          </div>
+          </Link>
 
           <nav className="hidden md:flex items-center gap-8 text-xs font-medium text-[#86868B]">
             <a href="#showcase" className="hover:text-[#1D1D1F] transition-colors">
@@ -73,8 +79,23 @@ export default function PresentationPage() {
       </header>
 
       {/* Hero Section */}
-      <section className="max-w-4xl mx-auto px-6 pt-12 md:pt-16 pb-6 text-center space-y-5">
+      <section className="max-w-4xl mx-auto px-6 pt-10 md:pt-14 pb-6 text-center space-y-5">
         
+        {/* Logo Icon Hero */}
+        <div className="flex justify-center animate-in fade-in zoom-in-95 duration-500">
+          <div className="relative group p-1">
+            <div className="absolute -inset-1 bg-gradient-to-r from-purple-600 to-blue-500 rounded-[28px] blur-md opacity-20 group-hover:opacity-35 transition duration-500" />
+            <Image
+              src="/logo2.png"
+              alt="Wallet App Icon"
+              width={84}
+              height={84}
+              className="relative rounded-[24px] shadow-[0_12px_32px_rgba(0,0,0,0.1)] border border-black/5 hover:scale-105 transition-transform duration-300"
+              priority
+            />
+          </div>
+        </div>
+
         {/* Badge Luminoso */}
         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-black/[0.06] shadow-xs text-xs font-medium text-[#86868B] animate-in fade-in">
           <div className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
@@ -584,7 +605,14 @@ export default function PresentationPage() {
       </section>
 
       {/* Rodapé Minimalista Wallet Intelligence */}
-      <footer className="max-w-5xl mx-auto px-6 pt-10 border-t border-black/[0.06] text-center text-xs text-[#86868B] space-y-2">
+      <footer className="max-w-5xl mx-auto px-6 pt-10 border-t border-black/[0.06] text-center text-xs text-[#86868B] space-y-3 flex flex-col items-center">
+        <Image
+          src="/logo2.png"
+          alt="Wallet Logo"
+          width={36}
+          height={36}
+          className="rounded-xl opacity-90 mx-auto"
+        />
         <p className="font-medium text-[#1D1D1F]">
           Wallet Intelligence • Wallet Pass Kit Architecture
         </p>

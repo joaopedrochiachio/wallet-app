@@ -4,6 +4,7 @@ import {
   calculateCheckingBalance,
   calculateInvoiceSchedule,
   calculateMonthlyAccountFlow,
+  calculateProjectedBalance,
   getInvoiceDueDate,
 } from "../lib/utils/ledger.ts";
 import { getPeriodKey, isRecurringActiveInMonth } from "../lib/utils/dateUtils.ts";
@@ -138,3 +139,23 @@ test("pagamento futuro único existe somente no mês planejado", () => {
   assert.equal(isRecurringActiveInMonth(oneTimePayment, 2026, 10), true);
   assert.equal(isRecurringActiveInMonth(oneTimePayment, 2026, 11), false);
 });
+
+test("saldo do mês anterior é transportado como saldo inicial do próximo mês", () => {
+  // Mês 0 (Setembro): saldo em conta = 2.500, entradas pendentes = 500, compromissos = 1.000
+  const month0Opening = 2500;
+  const month0Projected = calculateProjectedBalance(month0Opening, 500, 1000);
+  assert.equal(month0Projected, 2000);
+
+  // Mês 1 (Outubro): saldo inicial vem do projetado do mês 0 (2.000), salário = 6.000, compromissos = 3.500
+  const month1Opening = month0Projected;
+  assert.equal(month1Opening, 2000);
+  const month1Projected = calculateProjectedBalance(month1Opening, 6000, 3500);
+  assert.equal(month1Projected, 4500);
+
+  // Mês 2 (Novembro): saldo inicial vem do mês 1 (4.500), salário = 6.000, compromissos = 4.000
+  const month2Opening = month1Projected;
+  assert.equal(month2Opening, 4500);
+  const month2Projected = calculateProjectedBalance(month2Opening, 6000, 4000);
+  assert.equal(month2Projected, 6500);
+});
+

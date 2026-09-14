@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Image from "next/image";
 import { LoyaltyPassData } from "@/types/wallet";
 import { Sparkles, Crown } from "lucide-react";
 
@@ -17,6 +18,10 @@ export function LoyaltyPass({
   onClick,
   isExpanded = true,
 }: LoyaltyPassProps) {
+  const isWPay =
+    data.programName?.toLowerCase().includes("w pay") ||
+    data.programName?.toLowerCase().includes("wallet");
+
   return (
     <div
       onClick={onClick}
@@ -38,9 +43,21 @@ export function LoyaltyPass({
       {/* HEADER: Program name & Tier */}
       <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-white/10">
         <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-full bg-purple-500/20 text-purple-300 flex items-center justify-center">
-            <Crown size={14} />
-          </div>
+          {isWPay ? (
+            <div className="w-6 h-6 rounded-md overflow-hidden shrink-0 shadow-2xs">
+              <Image
+                src="/logo2.png"
+                alt="Wallet Logo"
+                width={24}
+                height={24}
+                className="w-full h-full object-contain"
+              />
+            </div>
+          ) : (
+            <div className="w-6 h-6 rounded-full bg-purple-500/20 text-purple-300 flex items-center justify-center">
+              <Crown size={14} />
+            </div>
+          )}
           <div>
             <span className="text-xs font-bold uppercase tracking-wider text-white block leading-none">
               {data.programName}

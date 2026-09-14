@@ -3,6 +3,8 @@
 import React from "react";
 import { CardBrand } from "@/types/wallet";
 
+import Image from "next/image";
+
 interface CardBrandLogoProps {
   brand?: CardBrand | string;
   className?: string;
@@ -10,6 +12,21 @@ interface CardBrandLogoProps {
 
 export function CardBrandLogo({ brand = "mastercard", className = "" }: CardBrandLogoProps) {
   const normalized = (brand || "").toLowerCase();
+
+  if (normalized.includes("wallet") || normalized === "w" || normalized.includes("wpay")) {
+    return (
+      <div className={`flex items-center gap-1.5 select-none ${className}`}>
+        <Image
+          src="/logo2.png"
+          alt="Wallet"
+          width={20}
+          height={20}
+          className="rounded-[4px] object-contain shrink-0"
+        />
+        <span className="text-xs font-semibold tracking-tight font-sans">Wallet</span>
+      </div>
+    );
+  }
 
   if (normalized.includes("apple")) {
     return (

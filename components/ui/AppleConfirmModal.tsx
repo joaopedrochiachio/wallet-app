@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Image from "next/image";
 import { AlertCircle, Trash2, CreditCard } from "lucide-react";
 
 export interface AppleConfirmModalProps {
@@ -12,7 +13,7 @@ export interface AppleConfirmModalProps {
   confirmLabel?: string;
   cancelLabel?: string;
   variant?: "danger" | "primary" | "success";
-  iconType?: "trash" | "payment" | "alert";
+  iconType?: "trash" | "payment" | "alert" | "wallet";
   isLoading?: boolean;
 }
 
@@ -38,6 +39,15 @@ export function AppleConfirmModal({
     trash: <Trash2 size={22} className="text-rose-600" />,
     payment: <CreditCard size={22} className="text-[#1D1D1F]" />,
     alert: <AlertCircle size={22} className="text-amber-600" />,
+    wallet: (
+      <Image
+        src="/logo2.png"
+        alt="Wallet"
+        width={26}
+        height={26}
+        className="rounded-[6px] object-contain"
+      />
+    ),
   };
 
   const confirmColors = {

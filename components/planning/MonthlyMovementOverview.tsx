@@ -5,9 +5,9 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   Building2,
+  ChevronDown,
   CreditCard,
   Search,
-  SlidersHorizontal,
   X,
 } from "lucide-react";
 import type { CardItem, TransactionItem } from "@/context/WalletContext";
@@ -28,6 +28,22 @@ const formatCurrency = (value: number) =>
     maximumFractionDigits: 2,
   });
 
+function formatTransactionDate(dateStr?: string, occurredAt?: unknown): string {
+  if (dateStr) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      const parts = dateStr.split("-");
+      return `${parts[2]}/${parts[1]}`;
+    }
+    return dateStr;
+  }
+  if (occurredAt instanceof Date && !Number.isNaN(occurredAt.getTime())) {
+    return `${String(occurredAt.getDate()).padStart(2, "0")}/${String(
+      occurredAt.getMonth() + 1
+    ).padStart(2, "0")}`;
+  }
+  return "Este mês";
+}
+
 export function MonthlyMovementOverview({
   transactions,
   cards,
@@ -43,7 +59,7 @@ export function MonthlyMovementOverview({
         card.type === "credit" &&
         (card.id === transaction.cardId ||
           card.id === transaction.account ||
-          card.name === transaction.account),
+          card.name === transaction.account)
     );
 
   const normalizedSearch = search.trim().toLocaleLowerCase("pt-BR");
@@ -74,22 +90,26 @@ export function MonthlyMovementOverview({
   const filteredBalanceExpenses = filteredTransactions
     .filter(
       (transaction) =>
-        transaction.type === "despesa" && !isCreditTransaction(transaction),
+        transaction.type === "despesa" && !isCreditTransaction(transaction)
     )
     .reduce((total, transaction) => total + transaction.amount, 0);
   const filteredCreditExpenses = filteredTransactions
     .filter(
       (transaction) =>
-        transaction.type === "despesa" && isCreditTransaction(transaction),
+        transaction.type === "despesa" && isCreditTransaction(transaction)
     )
     .reduce((total, transaction) => total + transaction.amount, 0);
 
-  const balanceCount = transactions.filter(
-    (transaction) => !isCreditTransaction(transaction),
-  ).length;
-  const creditCount = transactions.length - balanceCount;
   const hasActiveFilters =
     paymentFilter !== "all" || directionFilter !== "all" || Boolean(search);
+
+  const hasAnyValue =
+    filteredIncome > 0 ||
+    filteredExpenses > 0 ||
+    filteredBalanceExpenses > 0 ||
+    filteredCreditExpenses > 0;
+
+  const shouldShowRecorte = (transactions.length > 0 || hasActiveFilters) && hasAnyValue;
 
   const resetFilters = () => {
     setPaymentFilter("all");
@@ -100,11 +120,10 @@ export function MonthlyMovementOverview({
   const paymentOptions: Array<{
     id: PaymentFilter;
     label: string;
-    count: number;
   }> = [
-    { id: "all", label: "Tudo", count: transactions.length },
-    { id: "balance", label: "Pix / saldo", count: balanceCount },
-    { id: "credit", label: "Crédito", count: creditCount },
+    { id: "all", label: "Tudo" },
+    { id: "balance", label: "Pix / saldo" },
+    { id: "credit", label: "Crédito" },
   ];
 
   const directionOptions: Array<{
@@ -117,88 +136,99 @@ export function MonthlyMovementOverview({
   ];
 
   return (
-    <section className="space-y-3" data-testid="monthly-movement-overview">
-      <div className="flex flex-col gap-3 px-1 sm:flex-row sm:items-end sm:justify-between">
+    <section className="space-y-3 pt-2" data-testid="monthly-movement-overview">
+      {/* 1. Header Editorial da Seção */}
+      <div className="flex flex-col gap-1 px-1 sm:flex-row sm:items-baseline sm:justify-between">
         <div>
-          <div className="flex items-center gap-2">
-            <SlidersHorizontal size={14} className="text-[#1D1D1F]" />
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-[#1D1D1F]">
+          <div className="flex items-center gap-2.5">
+            <h2 className="text-base font-semibold text-[#1D1D1F] tracking-tight">
               Movimentações realizadas
             </h2>
+            {transactions.length > 0 && (
+              <span
+                className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#E5E5EA]/70 text-[#86868B]"
+                aria-live="polite"
+              >
+                {filteredTransactions.length === transactions.length
+                  ? `${transactions.length} ${transactions.length === 1 ? "lançamento" : "lançamentos"}`
+                  : `${filteredTransactions.length} de ${transactions.length} lançamentos`}
+              </span>
+            )}
           </div>
-          <p className="mt-0.5 text-[11px] text-[#86868B]">
-            Explore os lançamentos de {monthLabel} sem perder o resumo do período
+          <p className="text-xs text-[#86868B] mt-0.5">
+            Lançamentos já efetivados no mês de {monthLabel}
           </p>
         </div>
-        <span className="text-xs font-semibold text-[#86868B]" aria-live="polite">
-          {filteredTransactions.length} de {transactions.length} lançamento(s)
-        </span>
       </div>
 
-      <div className="overflow-hidden rounded-[24px] border border-black/[0.04] bg-white shadow-[0_2px_8px_rgba(0,0,0,0.04)]">
-        <div className="space-y-4 border-b border-black/[0.05] bg-[#FAFAFC] p-4 sm:p-5">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div
-              className="flex max-w-full gap-1 overflow-x-auto rounded-xl bg-[#EDEDF2] p-1"
-              aria-label="Filtrar por meio de pagamento"
-            >
-              {paymentOptions.map((option) => (
+      {/* 2. Container em Superfície Única Apple (Alinhado aos cards superiores) */}
+      <div className="overflow-hidden rounded-[24px] border border-black/[0.04] bg-white shadow-[0_1px_6px_rgba(0,0,0,0.02)]">
+        {/* Barra de Filtros Minimalista iOS */}
+        <div className="flex flex-col gap-3 p-4 sm:p-5 border-b border-black/[0.04] sm:flex-row sm:items-center sm:justify-between">
+          {/* Segmented Control de Pagamento */}
+          <div
+            className="inline-flex max-w-full gap-0.5 rounded-[12px] bg-[#E5E5EA]/55 p-1 border border-black/[0.04] self-start sm:self-auto"
+            aria-label="Filtrar por meio de pagamento"
+          >
+            {paymentOptions.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => setPaymentFilter(option.id)}
+                className={`flex h-7.5 items-center gap-1.5 rounded-[9px] px-3 text-xs transition-all select-none cursor-pointer ${
+                  paymentFilter === option.id
+                    ? "bg-white text-[#1D1D1F] shadow-[0_1px_3px_rgba(0,0,0,0.06)] font-semibold"
+                    : "text-[#86868B] hover:text-[#1D1D1F] font-medium"
+                }`}
+                aria-pressed={paymentFilter === option.id}
+              >
+                {option.id === "balance" && (
+                  <Building2 size={13} strokeWidth={1.75} className="opacity-70" />
+                )}
+                {option.id === "credit" && (
+                  <CreditCard size={13} strokeWidth={1.75} className="opacity-70" />
+                )}
+                <span>{option.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Busca e Filtro de Direção */}
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            {/* Campo de Busca Clean */}
+            <div className="relative min-w-0 sm:w-56">
+              <Search
+                size={13}
+                strokeWidth={2}
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#86868B]"
+              />
+              <input
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Buscar lançamento..."
+                className="h-8.5 w-full rounded-xl border border-black/[0.05] bg-[#F2F2F7]/60 pl-8.5 pr-7 text-xs text-[#1D1D1F] outline-none transition-all placeholder:text-[#86868B] focus:bg-white focus:border-black/15 focus:ring-2 focus:ring-black/5"
+              />
+              {search && (
                 <button
-                  key={option.id}
                   type="button"
-                  onClick={() => setPaymentFilter(option.id)}
-                  className={`flex min-h-9 shrink-0 items-center gap-1.5 rounded-lg px-3 text-[11px] font-semibold transition-all ${
-                    paymentFilter === option.id
-                      ? "bg-white text-[#1D1D1F] shadow-sm"
-                      : "text-[#6E6E73] hover:text-[#1D1D1F]"
-                  }`}
-                  aria-pressed={paymentFilter === option.id}
+                  onClick={() => setSearch("")}
+                  className="absolute right-2 top-1/2 flex h-4.5 w-4.5 -translate-y-1/2 items-center justify-center rounded-full bg-black/10 text-[#86868B] hover:text-[#1D1D1F] transition-colors cursor-pointer"
+                  aria-label="Limpar busca"
                 >
-                  {option.id === "balance" && <Building2 size={13} />}
-                  {option.id === "credit" && <CreditCard size={13} />}
-                  <span>{option.label}</span>
-                  <span
-                    className={`rounded-full px-1.5 py-0.5 text-[9px] ${
-                      paymentFilter === option.id ? "bg-[#F2F2F7]" : "bg-black/[0.05]"
-                    }`}
-                  >
-                    {option.count}
-                  </span>
+                  <X size={10} strokeWidth={2.5} />
                 </button>
-              ))}
+              )}
             </div>
 
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <label className="relative block min-w-0 sm:w-60">
-                <Search
-                  size={14}
-                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#86868B]"
-                />
-                <input
-                  type="search"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Buscar lançamento..."
-                  className="h-10 w-full rounded-xl border border-black/[0.06] bg-white pl-9 pr-9 text-xs text-[#1D1D1F] outline-none transition-shadow placeholder:text-[#A1A1A6] focus:ring-4 focus:ring-blue-500/10"
-                />
-                {search && (
-                  <button
-                    type="button"
-                    onClick={() => setSearch("")}
-                    className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-[#86868B] hover:bg-[#F2F2F7] hover:text-[#1D1D1F]"
-                    aria-label="Limpar busca"
-                  >
-                    <X size={13} />
-                  </button>
-                )}
-              </label>
-
+            {/* Select Estilizado iOS com Chevron */}
+            <div className="relative">
               <select
                 value={directionFilter}
                 onChange={(event) =>
                   setDirectionFilter(event.target.value as DirectionFilter)
                 }
-                className="h-10 rounded-xl border border-black/[0.06] bg-white px-3 text-xs font-medium text-[#1D1D1F] outline-none focus:ring-4 focus:ring-blue-500/10"
+                className="h-8.5 appearance-none rounded-xl border border-black/[0.05] bg-[#F2F2F7]/60 pl-3.5 pr-8 text-xs font-medium text-[#1D1D1F] outline-none transition-all focus:bg-white focus:border-black/15 focus:ring-2 focus:ring-black/5 cursor-pointer"
                 aria-label="Filtrar entradas e saídas"
               >
                 {directionOptions.map((option) => (
@@ -207,152 +237,176 @@ export function MonthlyMovementOverview({
                   </option>
                 ))}
               </select>
+              <ChevronDown
+                size={13}
+                strokeWidth={2}
+                className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[#86868B]"
+              />
             </div>
           </div>
+        </div>
 
-          <div className="rounded-[18px] border border-black/[0.04] bg-white p-4">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-[#86868B]">
-                  Resumo do recorte
-                </span>
-                <p className="mt-1 text-xs leading-relaxed text-[#6E6E73]">
-                  {filteredTransactions.length === 0 ? (
-                    "Nenhum lançamento corresponde aos filtros atuais."
-                  ) : (
-                    <>
-                      Entraram{" "}
-                      <strong className="text-emerald-700">
-                        R$ {formatCurrency(filteredIncome)}
-                      </strong>
-                      , saíram{" "}
-                      <strong className="text-[#1D1D1F]">
-                        R$ {formatCurrency(filteredBalanceExpenses)}
-                      </strong>{" "}
-                      do saldo e{" "}
-                      <strong className="text-indigo-700">
-                        R$ {formatCurrency(filteredCreditExpenses)}
-                      </strong>{" "}
-                      foram concentrados em faturas.
-                    </>
-                  )}
-                </p>
-              </div>
+        {/* 3. Resumo do Recorte Estilo Apple (Integrado e com ritmo vertical dos cards superiores) */}
+        {shouldShowRecorte && (
+          <div className="border-b border-black/[0.04] bg-[#FAFAFC]/80 px-5 sm:px-6 py-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-[#86868B]">
+                Resumo do recorte
+              </span>
               {hasActiveFilters && (
                 <button
                   type="button"
                   onClick={resetFilters}
-                  className="self-start whitespace-nowrap rounded-full bg-[#F2F2F7] px-3 py-1.5 text-[10px] font-semibold text-[#1D1D1F] hover:bg-[#E5E5EA] sm:self-auto"
+                  className="text-xs font-semibold text-[#0071E3] hover:text-[#0077ED] transition-colors cursor-pointer"
                 >
                   Limpar filtros
                 </button>
               )}
             </div>
 
-            <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <SummaryMetric
-                label="Entradas"
-                value={`+ R$ ${formatCurrency(filteredIncome)}`}
-                tone="positive"
-              />
-              <SummaryMetric
-                label="Saídas lançadas"
-                value={`− R$ ${formatCurrency(filteredExpenses)}`}
-                tone="negative"
-              />
-              <SummaryMetric
-                label="Saiu do saldo"
-                value={`R$ ${formatCurrency(filteredBalanceExpenses)}`}
-              />
-              <SummaryMetric
-                label="Foi para faturas"
-                value={`R$ ${formatCurrency(filteredCreditExpenses)}`}
-                tone="credit"
-              />
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6 divide-y sm:divide-y-0 sm:divide-x divide-black/[0.04]">
+              <div className="space-y-0.5">
+                <span className="text-xs text-[#86868B] flex items-center gap-1.5 font-medium">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                  Entradas
+                </span>
+                <div className="text-base sm:text-lg font-semibold tracking-tight text-emerald-600">
+                  + R$ {formatCurrency(filteredIncome)}
+                </div>
+              </div>
+
+              <div className="space-y-0.5 pt-3 sm:pt-0 sm:pl-6">
+                <span className="text-xs text-[#86868B] flex items-center gap-1.5 font-medium">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#1D1D1F] shrink-0" />
+                  Saídas
+                </span>
+                <div className="text-base sm:text-lg font-semibold tracking-tight text-[#1D1D1F]">
+                  − R$ {formatCurrency(filteredExpenses)}
+                </div>
+              </div>
+
+              <div className="space-y-0.5 pt-3 sm:pt-0 sm:pl-6">
+                <span className="text-xs text-[#86868B] flex items-center gap-1.5 font-medium">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#8E8E93] shrink-0" />
+                  Saiu do saldo
+                </span>
+                <div className="text-base sm:text-lg font-semibold tracking-tight text-[#1D1D1F]">
+                  R$ {formatCurrency(filteredBalanceExpenses)}
+                </div>
+              </div>
+
+              <div className="space-y-0.5 pt-3 sm:pt-0 sm:pl-6">
+                <span className="text-xs text-[#86868B] flex items-center gap-1.5 font-medium">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#6366F1] shrink-0" />
+                  Foi para faturas
+                </span>
+                <div className="text-base sm:text-lg font-semibold tracking-tight text-indigo-600">
+                  R$ {formatCurrency(filteredCreditExpenses)}
+                </div>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
-        {filteredTransactions.length === 0 ? (
-          <div className="p-8 text-center">
-            <p className="text-xs font-medium text-[#1D1D1F]">
-              Nenhuma movimentação encontrada.
+        {/* 4. Lista de Movimentações Estilo Apple Wallet */}
+        {transactions.length === 0 ? (
+          /* Estado Vazio Silencioso (Sem lançamentos no mês) */
+          <div className="py-16 px-6 text-center space-y-1.5">
+            <p className="text-sm font-semibold text-[#1D1D1F]">
+              Nenhuma movimentação em {monthLabel}
             </p>
-            <p className="mt-1 text-[11px] text-[#86868B]">
-              Ajuste os filtros ou limpe a busca para visualizar o mês completo.
+            <p className="text-xs text-[#86868B] max-w-sm mx-auto">
+              Os lançamentos realizados neste período aparecerão aqui automaticamente.
+            </p>
+          </div>
+        ) : filteredTransactions.length === 0 ? (
+          /* Estado Vazio de Filtro */
+          <div className="py-14 px-6 text-center space-y-2.5">
+            <p className="text-sm font-semibold text-[#1D1D1F]">
+              Nenhum lançamento encontrado
+            </p>
+            <p className="text-xs text-[#86868B] max-w-sm mx-auto">
+              Nenhum registro coincide com os filtros aplicados para {monthLabel}.
             </p>
             {hasActiveFilters && (
               <button
                 type="button"
                 onClick={resetFilters}
-                className="mt-3 rounded-full bg-[#1D1D1F] px-4 py-2 text-[11px] font-semibold text-white"
+                className="mt-1 inline-flex items-center text-xs font-semibold px-4 py-1.5 rounded-full bg-[#1D1D1F] text-white hover:bg-black transition-colors cursor-pointer"
               >
-                Ver todos os lançamentos
+                Limpar filtros
               </button>
             )}
           </div>
         ) : (
-          <div>
-            {filteredTransactions.map((transaction, index) => {
+          /* Lista com Ritmo Vertical Suave e Divisórias Delicadas */
+          <div className="divide-y divide-black/[0.035]">
+            {filteredTransactions.map((transaction) => {
               const onCredit = isCreditTransaction(transaction);
               const isIncome = transaction.type === "receita";
 
               return (
                 <div
                   key={transaction.id}
-                  className={`flex items-center justify-between gap-3 p-4 transition-colors hover:bg-[#F8F8FA] sm:gap-4 ${
-                    index !== filteredTransactions.length - 1
-                      ? "border-b border-gray-100"
-                      : ""
-                  }`}
+                  className="flex items-center justify-between gap-4 px-5 sm:px-6 py-3.5 sm:py-4 transition-colors hover:bg-black/[0.015]"
                 >
-                  <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex min-w-0 items-center gap-3.5">
+                    {/* Ícone Discreto e Harmonioso */}
                     <div
-                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
                         isIncome
-                          ? "bg-emerald-50 text-emerald-700"
+                          ? "bg-emerald-50 text-emerald-600"
                           : onCredit
-                            ? "bg-indigo-50 text-indigo-700"
-                            : "bg-[#F2F2F7] text-[#1D1D1F]"
+                          ? "bg-indigo-50/70 text-indigo-600"
+                          : "bg-[#F2F2F7] text-[#1D1D1F]/80"
                       }`}
                     >
                       {isIncome ? (
-                        <ArrowDownLeft size={16} />
+                        <ArrowDownLeft size={16} strokeWidth={1.75} />
                       ) : onCredit ? (
-                        <CreditCard size={16} />
+                        <CreditCard size={15} strokeWidth={1.75} />
                       ) : (
-                        <ArrowUpRight size={16} />
+                        <ArrowUpRight size={16} strokeWidth={1.75} />
                       )}
                     </div>
-                    <div className="min-w-0">
-                      <h3 className="truncate text-sm font-semibold text-[#1D1D1F]">
+
+                    {/* Título e Metadados Hierarquizados */}
+                    <div className="min-w-0 space-y-0.5">
+                      <h3 className="truncate text-sm font-medium text-[#1D1D1F] tracking-tight">
                         {transaction.title}
                       </h3>
-                      <p className="truncate text-xs text-[#86868B]">
-                        {formatAccountLabel(transaction.account)} • {transaction.category} • {transaction.date}
-                      </p>
-                      <span
-                        className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[9px] font-semibold ${
-                          onCredit
-                            ? "bg-indigo-50 text-indigo-700"
-                            : "bg-[#F2F2F7] text-[#6E6E73]"
-                        }`}
-                      >
-                        {onCredit
-                          ? "Crédito • entra na fatura"
-                          : isIncome
-                            ? "Entrada no saldo"
-                            : "Saiu da conta • impacto imediato"}
-                      </span>
+                      <div className="flex items-center gap-1.5 text-xs text-[#86868B] truncate">
+                        <span>
+                          {formatTransactionDate(
+                            transaction.date,
+                            transaction.occurredAt
+                          )}
+                        </span>
+                        <span className="text-black/20">·</span>
+                        <span>{formatAccountLabel(transaction.account)}</span>
+                        {transaction.category && (
+                          <>
+                            <span className="text-black/20">·</span>
+                            <span className="truncate">{transaction.category}</span>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
-                  <span
-                    className={`whitespace-nowrap text-sm font-semibold ${
-                      isIncome ? "text-emerald-600" : "text-[#1D1D1F]"
-                    }`}
-                  >
-                    {isIncome ? "+" : "−"} R$ {formatCurrency(transaction.amount)}
-                  </span>
+
+                  {/* Valor Alinhado à Direita com Sinalização Elegante */}
+                  <div className="text-right shrink-0">
+                    <span
+                      className={`text-sm sm:text-base font-semibold tracking-tight block ${
+                        isIncome ? "text-emerald-600" : "text-[#1D1D1F]"
+                      }`}
+                    >
+                      {isIncome ? "+ " : "− "}R$ {formatCurrency(transaction.amount)}
+                    </span>
+                    <span className="text-[10px] text-[#86868B] font-normal block">
+                      {isIncome ? "Entrada" : onCredit ? "Fatura" : "Débito"}
+                    </span>
+                  </div>
                 </div>
               );
             })}
@@ -360,33 +414,5 @@ export function MonthlyMovementOverview({
         )}
       </div>
     </section>
-  );
-}
-
-function SummaryMetric({
-  label,
-  value,
-  tone = "neutral",
-}: {
-  label: string;
-  value: string;
-  tone?: "neutral" | "positive" | "negative" | "credit";
-}) {
-  const toneClass = {
-    neutral: "text-[#1D1D1F]",
-    positive: "text-emerald-700",
-    negative: "text-rose-600",
-    credit: "text-indigo-700",
-  }[tone];
-
-  return (
-    <div className="rounded-xl bg-[#F7F7F9] p-3">
-      <span className="block text-[9px] font-semibold uppercase tracking-wider text-[#86868B]">
-        {label}
-      </span>
-      <strong className={`mt-1 block text-xs font-semibold sm:text-sm ${toneClass}`}>
-        {value}
-      </strong>
-    </div>
   );
 }

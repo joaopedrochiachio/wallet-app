@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Image from "next/image";
 import { Plus } from "lucide-react";
 
 interface WalletHeaderProps {
@@ -14,18 +15,28 @@ export function WalletHeader({
 }: WalletHeaderProps) {
   return (
     <div className="flex items-center justify-between gap-4 max-w-4xl mx-auto font-sans">
-      <div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold tracking-wider uppercase text-[#86868B]">
-            Experiência Apple Wallet
-          </span>
-          <span className="text-[10px] font-mono font-semibold uppercase px-2 py-0.5 rounded-full bg-[#1D1D1F] text-white">
-            W Pay
-          </span>
+      <div className="flex items-center gap-3.5">
+        <Image
+          src="/logo2.png"
+          alt="Wallet"
+          width={44}
+          height={44}
+          className="rounded-2xl shadow-xs border border-black/5 shrink-0"
+          priority
+        />
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold tracking-wider uppercase text-[#86868B]">
+              Experiência Apple Wallet
+            </span>
+            <span className="text-[10px] font-mono font-semibold uppercase px-2 py-0.5 rounded-full bg-[#1D1D1F] text-white">
+              W Pay
+            </span>
+          </div>
+          <h1 className="text-3xl font-semibold tracking-tight text-[#1D1D1F] mt-0.5">
+            Carteira
+          </h1>
         </div>
-        <h1 className="text-3xl font-semibold tracking-tight text-[#1D1D1F] mt-0.5">
-          Carteira
-        </h1>
       </div>
 
       <div className="flex items-center gap-2.5">

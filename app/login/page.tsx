@@ -6,6 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { getUserProfile } from "@/lib/services/userService";
 import { Lock, Mail, ArrowRight, ShieldCheck, Loader2 } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -96,10 +97,15 @@ export default function LoginPage() {
     <div className="min-h-screen bg-[#F2F2F7] flex flex-col justify-between items-center px-4 py-8 md:py-12 font-sans selection:bg-[#1D1D1F] selection:text-white">
       
       {/* Top Brand Indicator */}
-      <div className="flex items-center gap-2.5">
-        <div className="w-9 h-9 rounded-2xl bg-[#1D1D1F] text-white flex items-center justify-center font-semibold text-sm shadow-sm">
-          W
-        </div>
+      <Link href="/" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity">
+        <Image
+          src="/logo2.png"
+          alt="Wallet"
+          width={36}
+          height={36}
+          className="rounded-xl object-contain shadow-xs shrink-0"
+          priority
+        />
         <div className="flex items-center gap-1.5">
           <span className="font-semibold text-base tracking-tight text-[#1D1D1F]">
             Wallet
@@ -108,13 +114,24 @@ export default function LoginPage() {
             ID
           </span>
         </div>
-      </div>
+      </Link>
 
       {/* Cartão de Autenticação Estilo Pass Kit Físico */}
       <div className="w-full max-w-md bg-white rounded-[28px] shadow-[0_12px_36px_rgba(0,0,0,0.06)] border border-black/[0.04] p-7 md:p-8 space-y-5 my-auto animate-in fade-in zoom-in-95 duration-300">
         
         {/* Thumb Notch Decorativo no topo do Cartão */}
         <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto -mt-2 mb-2" />
+
+        <div className="flex justify-center mb-1">
+          <Image
+            src="/logo2.png"
+            alt="Wallet Logo"
+            width={60}
+            height={60}
+            className="rounded-[18px] shadow-xs border border-black/5"
+            priority
+          />
+        </div>
 
         <div className="text-center space-y-1.5">
           <h1 className="text-2xl font-semibold tracking-tight text-[#1D1D1F]">
