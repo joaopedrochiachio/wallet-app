@@ -21,13 +21,17 @@ import {
 
 const TRANSACTIONS_COLLECTION = "transactions";
 
-function getTransactionsCollectionRef(userId?: string) {
-  return userId
-    ? collection(db, "users", userId, TRANSACTIONS_COLLECTION)
-    : collection(db, TRANSACTIONS_COLLECTION);
+function getTransactionsCollectionRef(userId: string) {
+  if (!userId) {
+    throw new Error("userId é obrigatório para acessar a coleção de lançamentos.");
+  }
+  return collection(db, "users", userId, TRANSACTIONS_COLLECTION);
 }
 
-function transactionPayload(data: Omit<Transaction, "id">, userId?: string) {
+function transactionPayload(data: Omit<Transaction, "id">, userId: string) {
+  if (!userId) {
+    throw new Error("userId é obrigatório para construir o payload de lançamento.");
+  }
   return {
     amount: Number(data.amount),
     type: data.type,
@@ -43,20 +47,23 @@ function transactionPayload(data: Omit<Transaction, "id">, userId?: string) {
     date: typeof data.date === "string" ? data.date : data.date.toISOString(),
     occurredAt: data.occurredAt || Timestamp.now(),
     createdAt: serverTimestamp(),
-    userId: userId || data.userId || null,
+    userId,
   };
 }
 
 /** Grava o lançamento e a eventual atualização do planejamento no mesmo batch. */
 export async function addTransaction(
   data: Omit<Transaction, "id">,
-  userId?: string,
+  userId: string,
   recurringItem?: RecurringItem
 ): Promise<string> {
-  const transactionsCol = getTransactionsCollectionRef(userId || data.userId);
+  if (!userId) {
+    throw new Error("Usuário não autenticado para criar lançamento.");
+  }
+  const transactionsCol = getTransactionsCollectionRef(userId);
   const transactionRef = doc(transactionsCol);
 
-  if (!userId || !recurringItem) {
+  if (!recurringItem) {
     await setDoc(transactionRef, transactionPayload(data, userId));
     return transactionRef.id;
   }
@@ -131,51 +138,6 @@ export async function payCreditCardInvoice(
     )
   );
 
-  await batch.commit();
-}
-
-/** Materializa uma ocorrência vencida do planejamento sem risco de duplicidade. */
-export async function materializeRecurringTransaction(
-  userId: string,
-  item: RecurringItem,
-  cardId: string | null,
-  occurredAt: Date,
-  periodKey: string
-): Promise<void> {
-  const transactionRef = doc(
-    db,
-    "users",
-    userId,
-    TRANSACTIONS_COLLECTION,
-    `planned-${item.id}-${periodKey}`
-  );
-  const recurringRef = doc(db, "users", userId, "recurring", item.id);
-  const batch = writeBatch(db);
-  const formattedDate = `${occurredAt.toLocaleDateString("pt-BR", {
-    day: "2-digit",
-    month: "short",
-  })}, 00:00`;
-
-  batch.set(
-    transactionRef,
-    transactionPayload(
-      {
-        amount: item.amount,
-        type: item.type === "income" ? "in" : "out",
-        category: item.category,
-        description: item.title,
-        paymentMethod: item.account,
-        cardId,
-        kind: "regular",
-        recurringItemId: item.id,
-        periodKey,
-        date: formattedDate,
-        occurredAt,
-      },
-      userId
-    )
-  );
-  batch.set(recurringRef, { realizedPeriods: arrayUnion(periodKey) }, { merge: true });
   await batch.commit();
 }
 
@@ -264,9 +226,14 @@ export async function updateTransactionInFirestore(
 
 export function subscribeToTransactions(
   callback: (transactions: Transaction[]) => void,
-  userId?: string,
+  userId: string,
   onError?: (error: Error) => void
 ): () => void {
+  if (!userId) {
+    callback([]);
+    return () => {};
+  }
+
   const transactionsQuery = query(
     getTransactionsCollectionRef(userId),
     orderBy("createdAt", "desc")
@@ -276,31 +243,29 @@ export function subscribeToTransactions(
     transactionsQuery,
     (snapshot) => {
       callback(
-        snapshot.docs
-          .filter((snapshotDoc) => !snapshotDoc.id.startsWith("planned-"))
-          .map((snapshotDoc) => {
-            const data = snapshotDoc.data();
-            return {
-              id: snapshotDoc.id,
-              amount: Number(data.amount) || 0,
-              type: data.type as "in" | "out",
-              category: data.category || "Outros",
-              date: data.date || new Date().toLocaleDateString("pt-BR"),
-              description: data.description || "Lançamento",
-              paymentMethod: data.paymentMethod || "Débito/Pix",
-              cardId: data.cardId || null,
-              kind: data.kind || "regular",
-              relatedCardId: data.relatedCardId || null,
-              groupId: data.groupId || null,
-              recurringItemId: data.recurringItemId || null,
-              periodKey: data.periodKey || null,
-              occurredAt: data.occurredAt?.toDate
-                ? data.occurredAt.toDate()
-                : data.occurredAt || null,
-              createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : data.createdAt,
-              userId: data.userId,
-            };
-          })
+        snapshot.docs.map((snapshotDoc) => {
+          const data = snapshotDoc.data();
+          return {
+            id: snapshotDoc.id,
+            amount: Number(data.amount) || 0,
+            type: data.type as "in" | "out",
+            category: data.category || "Outros",
+            date: data.date || new Date().toLocaleDateString("pt-BR"),
+            description: data.description || "Lançamento",
+            paymentMethod: data.paymentMethod || "Débito/Pix",
+            cardId: data.cardId || null,
+            kind: data.kind || "regular",
+            relatedCardId: data.relatedCardId || null,
+            groupId: data.groupId || null,
+            recurringItemId: data.recurringItemId || null,
+            periodKey: data.periodKey || null,
+            occurredAt: data.occurredAt?.toDate
+              ? data.occurredAt.toDate()
+              : data.occurredAt || null,
+            createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : data.createdAt,
+            userId: data.userId || userId,
+          };
+        })
       );
     },
     (error) => {

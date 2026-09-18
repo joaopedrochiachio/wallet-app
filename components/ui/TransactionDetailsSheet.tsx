@@ -159,7 +159,7 @@ export function TransactionDetailsSheet({
 
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4">
+      <div className="fixed inset-0 z-[100] flex items-end justify-center sm:items-center sm:p-4">
         {/* Backdrop com Blur Suave */}
         <button
           type="button"

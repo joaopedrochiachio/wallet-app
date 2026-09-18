@@ -17,7 +17,6 @@ import { MonthlyMovementOverview } from "@/components/planning/MonthlyMovementOv
 import {
   get5thBusinessDay,
   getEffectiveDueDay,
-  getPlanningMonths,
   getPlanningMonthsWindow,
   getPeriodKey,
   getRecurringMonthOffset,
@@ -38,10 +37,10 @@ export default function PlanningPage() {
     transactions,
   } = useWallet();
 
-  const planningMonths = getPlanningMonthsWindow(1, 2);
+  const planningMonths = getPlanningMonthsWindow(0, 3);
   const currentMonthIdx = planningMonths.findIndex((m) => m.isCurrent);
   const [selectedMonthIndex, setSelectedMonthIndex] = useState(
-    currentMonthIdx >= 0 ? currentMonthIdx : 1
+    currentMonthIdx >= 0 ? currentMonthIdx : 0
   );
   const [isAddingModalOpen, setIsAddingModalOpen] = useState(false);
   const [isAddingMenuOpen, setIsAddingMenuOpen] = useState(false);
@@ -64,8 +63,6 @@ export default function PlanningPage() {
   // Duração: uma vez, por um número de meses ou contínuo.
   const [durationMode, setDurationMode] = useState<"one-time" | "continuous" | "installments">("continuous");
   const [installmentsCount, setInstallmentsCount] = useState<number>(3);
-  const [isCustomInstallment, setIsCustomInstallment] = useState(false);
-  const [customInstallmentInput, setCustomInstallmentInput] = useState("4");
 
   const activeMonthObj = planningMonths[selectedMonthIndex] || planningMonths[currentMonthIdx >= 0 ? currentMonthIdx : 0];
   const targetYear = activeMonthObj.year;
@@ -183,7 +180,6 @@ export default function PlanningPage() {
     setIsCustomDayActive(false);
     setDurationMode(isIncome ? "continuous" : isCredit ? "continuous" : "one-time");
     setInstallmentsCount(3);
-    setIsCustomInstallment(false);
     setIsAddingMenuOpen(false);
     setIsAddingModalOpen(true);
   };
@@ -259,7 +255,7 @@ export default function PlanningPage() {
                 ? "Saldo em conta:"
                 : activeMonthObj.isPast
                   ? `Realizado em ${activeMonthObj.short}:`
-                  : `Saldo de ${planningMonths[selectedMonthIndex - 1]?.short}:`}
+                  : `Saldo vindo de ${planningMonths[selectedMonthIndex - 1]?.short}:`}
             </span>
             <span className="text-xs font-semibold text-[#1D1D1F]">
               R$ {formatCurrency(projection.openingBalance)}
@@ -352,7 +348,7 @@ export default function PlanningPage() {
               key={m.name}
               type="button"
               onClick={() => setSelectedMonthIndex(idx)}
-              className={`flex-1 min-w-[100px] py-1.5 px-3 rounded-full text-xs font-semibold transition-all select-none text-center cursor-pointer ${
+              className={`flex-1 min-w-[76px] sm:min-w-[90px] py-1.5 px-2.5 sm:px-3 rounded-full text-xs font-semibold transition-all select-none text-center cursor-pointer ${
                 selectedMonthIndex === idx
                   ? "bg-white text-[#1D1D1F] shadow-xs"
                   : "text-[#86868B] hover:text-[#1D1D1F]"
@@ -411,7 +407,7 @@ export default function PlanningPage() {
                   ? `Considera R$ ${formatCurrency(projection.openingBalance)} em conta · ${freePercentage}% livre`
                   : activeMonthObj.isPast
                     ? `Resultado consolidado de ${activeMonthObj.name}`
-                    : `Inclui R$ ${formatCurrency(projection.openingBalance)} de ${planningMonths[selectedMonthIndex - 1]?.name}`}
+                    : `Inclui R$ ${formatCurrency(projection.openingBalance)} vindo de ${planningMonths[selectedMonthIndex - 1]?.name}`}
               </p>
             </div>
           </div>
@@ -905,7 +901,7 @@ export default function PlanningPage() {
 
       {/* MODAL PADRÃO APPLE PAY (SMART ANIMATE APPLE PAY INTERACTION) */}
       {isAddingModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div
             onClick={() => setIsAddingModalOpen(false)}
             className="fixed inset-0 bg-black/45 animate-apple-backdrop"
@@ -1167,9 +1163,7 @@ export default function PlanningPage() {
                       type="button"
                       onClick={() => {
                         setDurationMode("installments");
-                        if (!isCustomInstallment) {
-                          setInstallmentsCount(3);
-                        }
+                        setInstallmentsCount((prev) => prev || 3);
                       }}
                       className={`p-2.5 rounded-xl text-xs font-semibold transition-all border text-left cursor-pointer ${
                         durationMode === "installments"
@@ -1208,12 +1202,9 @@ export default function PlanningPage() {
                           <button
                             key={count}
                             type="button"
-                            onClick={() => {
-                              setIsCustomInstallment(false);
-                              setInstallmentsCount(count);
-                            }}
+                            onClick={() => setInstallmentsCount(count)}
                             className={`h-8 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
-                              !isCustomInstallment && installmentsCount === count
+                              installmentsCount === count
                                 ? "bg-[#1D1D1F] text-white"
                                 : "bg-white border border-black/5 text-[#1D1D1F] hover:bg-gray-100"
                             }`}

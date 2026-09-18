@@ -23,6 +23,7 @@ export default function OnboardingPage() {
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [submitting, setSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Etapa 1: Dados Pessoais
   const [name, setName] = useState("");
@@ -92,6 +93,7 @@ export default function OnboardingPage() {
 
   const handleFinish = async () => {
     if (!user) return;
+    setErrorMessage(null);
     setSubmitting(true);
 
     try {
@@ -155,7 +157,7 @@ export default function OnboardingPage() {
       router.replace("/dashboard");
     } catch (err: unknown) {
       console.error("Erro ao finalizar onboarding:", err);
-      alert(err instanceof Error ? err.message : "Ocorreu um erro ao salvar suas informações. Tente novamente.");
+      setErrorMessage(err instanceof Error ? err.message : "Ocorreu um erro ao salvar suas informações. Tente novamente.");
     } finally {
       setSubmitting(false);
     }
@@ -196,6 +198,11 @@ export default function OnboardingPage() {
 
       {/* Container Principal do Card de Onboarding */}
       <div className="w-full max-w-xl bg-white rounded-[32px] shadow-[0_12px_40px_rgba(0,0,0,0.06)] border border-black/[0.04] p-7 md:p-10 space-y-8 my-auto animate-in fade-in duration-300">
+        {errorMessage && (
+          <div className="bg-red-50 text-red-600 border border-red-200/60 rounded-xl px-4 py-2.5 text-xs font-medium animate-in fade-in duration-200">
+            {errorMessage}
+          </div>
+        )}
         
         {/* Etapa 1: Dados Pessoais & Renda */}
         {step === 1 && (

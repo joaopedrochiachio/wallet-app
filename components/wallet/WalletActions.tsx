@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Plus, CreditCard } from "lucide-react";
+import { Plus } from "lucide-react";
 import { WPayLogo } from "@/components/ui/WPayLogo";
 
 interface WalletActionsProps {

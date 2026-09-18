@@ -34,7 +34,6 @@ import {
   getEffectiveDueDay,
   getPeriodKey,
   getPlanningMonths,
-  getPlanningMonthsWindow,
   PlanningMonth,
   isRecurringActiveInMonth,
 } from "@/lib/utils/dateUtils";
@@ -696,7 +695,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     const months = customMonths || getPlanningMonths();
     const safeIndex = Math.min(Math.max(0, monthIndex), months.length - 1);
     const currentMonthIdx = months.findIndex((m) => m.isCurrent);
-    const baseCurrentIdx = currentMonthIdx >= 0 ? currentMonthIdx : 0;
 
     // Renda cadastrada no perfil (apenas referência cadastral, não entra automático no fluxo)
     const baseIncome = userProfile.monthlyIncomeBase || 0;

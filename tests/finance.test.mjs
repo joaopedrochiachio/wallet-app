@@ -17,9 +17,6 @@ import {
 import {
   createSafeMiddayDate,
   isSameOrBeforeCalendarDay,
-  getOccurrenceDueDate,
-  getDeterministicOccurrenceId,
-  getDueOccurrencesForRecurringItem,
   getPendingDueOccurrences,
 } from "../lib/utils/timeProgression.ts";
 

@@ -11,8 +11,11 @@ import {
   signInWithPopup,
   browserLocalPersistence,
   setPersistence,
+  sendPasswordResetEmail,
+  deleteUser,
 } from "firebase/auth";
 import { auth } from "@/lib/firebase";
+import { deleteUserDataFromFirestore } from "@/lib/services/userService";
 
 interface AuthContextType {
   user: User | null;
@@ -21,6 +24,8 @@ interface AuthContextType {
   signUp: (email: string, pass: string) => Promise<User>;
   signInWithGoogle: () => Promise<User>;
   signOut: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
+  deleteAccount: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -61,9 +66,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await firebaseSignOut(auth);
   };
 
+  const resetPassword = async (email: string) => {
+    await sendPasswordResetEmail(auth, email);
+  };
+
+  const deleteAccount = async () => {
+    if (!auth.currentUser) {
+      throw new Error("Nenhum usuário conectado para exclusão.");
+    }
+    const currentUid = auth.currentUser.uid;
+    await deleteUserDataFromFirestore(currentUid);
+    await deleteUser(auth.currentUser);
+    setUser(null);
+  };
+
   return (
     <AuthContext.Provider
-      value={{ user, loading, signIn, signUp, signInWithGoogle, signOut }}
+      value={{
+        user,
+        loading,
+        signIn,
+        signUp,
+        signInWithGoogle,
+        signOut,
+        resetPassword,
+        deleteAccount,
+      }}
     >
       {children}
     </AuthContext.Provider>

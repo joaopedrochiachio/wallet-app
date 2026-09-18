@@ -54,24 +54,34 @@ export default function GoalsPage() {
     });
 
     setTitle("");
+    setCategory("");
     setTargetAmount("");
     setInitialAmount("");
+    setDeadline("");
     setIsNewGoalModalOpen(false);
   };
 
-  const handleQuickAddTemplate = (template: {
+  const handleOpenNewGoal = () => {
+    setTitle("");
+    setCategory("");
+    setTargetAmount("");
+    setInitialAmount("");
+    setDeadline("");
+    setIsNewGoalModalOpen(true);
+  };
+
+  const handleOpenTemplateModal = (template: {
     title: string;
     category: string;
     target: number;
     deadline: string;
   }) => {
-    addGoal({
-      title: template.title,
-      category: template.category,
-      current: 0,
-      target: template.target,
-      deadline: template.deadline,
-    });
+    setTitle(template.title);
+    setCategory(template.category);
+    setTargetAmount(formatCurrency(template.target));
+    setInitialAmount("0,00");
+    setDeadline(template.deadline);
+    setIsNewGoalModalOpen(true);
   };
 
   const handleContributeSubmit = (e: React.FormEvent) => {
@@ -110,7 +120,7 @@ export default function GoalsPage() {
         </div>
 
         <button
-          onClick={() => setIsNewGoalModalOpen(true)}
+          onClick={handleOpenNewGoal}
           className="bg-[#1D1D1F] hover:bg-black active:scale-[0.98] text-white text-xs font-semibold px-4 py-2.5 rounded-xl transition-all flex items-center gap-1.5 shadow-xs self-start sm:self-auto cursor-pointer"
         >
           <Plus strokeWidth={2} size={15} />
@@ -162,63 +172,68 @@ export default function GoalsPage() {
                 Nenhuma meta cadastrada ainda
               </h3>
               <p className="text-xs text-[#86868B]">
-                Crie metas com valores e prazos definidos. Você pode escolher um dos modelos recomendados abaixo ou criar a sua própria meta personalizada.
+                Crie metas com valores e prazos definidos. Você pode escolher um dos modelos recomendados abaixo para personalizar antes de salvar ou criar a sua própria meta do zero.
               </p>
             </div>
 
-            {/* Modelos de 1-Clique */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 text-left">
-              {[
-                {
-                  title: "Reserva de Emergência",
-                  category: "Segurança Financeira",
-                  target: 15000,
-                  deadline: "6 meses",
-                  icon: <ShieldCheck size={18} className="text-emerald-600" />,
-                },
-                {
-                  title: "Viagem dos Sonhos",
-                  category: "Lazer & Turismo",
-                  target: 10000,
-                  deadline: "Julho 2027",
-                  icon: <Plane size={18} className="text-blue-600" />,
-                },
-                {
-                  title: "Novo Notebook / Setup",
-                  category: "Equipamento & Trabalho",
-                  target: 8500,
-                  deadline: "Dezembro 2026",
-                  icon: <Laptop size={18} className="text-purple-600" />,
-                },
-              ].map((tmpl) => (
-                <div
-                  key={tmpl.title}
-                  onClick={() => handleQuickAddTemplate(tmpl)}
-                  className="p-4 rounded-2xl border border-black/[0.06] hover:border-black/20 hover:shadow-xs transition-all cursor-pointer bg-[#F2F2F7]/50 space-y-2 group"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="w-8 h-8 rounded-xl bg-white flex items-center justify-center shadow-2xs">
-                      {tmpl.icon}
+            {/* Modelos Recomendados para Personalizar */}
+            <div className="space-y-2 pt-2 text-left">
+              <span className="text-[11px] font-medium uppercase tracking-wider text-[#86868B] block text-center sm:text-left">
+                Toque em um modelo para personalizar antes de salvar:
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {[
+                  {
+                    title: "Reserva de Emergência",
+                    category: "Segurança Financeira",
+                    target: 15000,
+                    deadline: "6 meses",
+                    icon: <ShieldCheck size={18} className="text-emerald-600" />,
+                  },
+                  {
+                    title: "Viagem dos Sonhos",
+                    category: "Lazer & Turismo",
+                    target: 10000,
+                    deadline: "Julho 2027",
+                    icon: <Plane size={18} className="text-blue-600" />,
+                  },
+                  {
+                    title: "Novo Notebook / Setup",
+                    category: "Equipamento & Trabalho",
+                    target: 8500,
+                    deadline: "Dezembro 2026",
+                    icon: <Laptop size={18} className="text-purple-600" />,
+                  },
+                ].map((tmpl) => (
+                  <div
+                    key={tmpl.title}
+                    onClick={() => handleOpenTemplateModal(tmpl)}
+                    className="p-4 rounded-2xl border border-black/[0.06] hover:border-black/20 hover:shadow-xs transition-all cursor-pointer bg-[#F2F2F7]/50 space-y-2 group"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="w-8 h-8 rounded-xl bg-white flex items-center justify-center shadow-2xs">
+                        {tmpl.icon}
+                      </div>
+                      <span className="text-[11px] font-semibold text-[#0071E3] group-hover:text-[#0077ED] flex items-center gap-0.5">
+                        Personalizar &rarr;
+                      </span>
                     </div>
-                    <span className="text-[10px] font-semibold text-[#86868B] group-hover:text-[#1D1D1F]">
-                      + Adicionar
-                    </span>
+                    <div>
+                      <h4 className="text-xs font-semibold text-[#1D1D1F]">{tmpl.title}</h4>
+                      <p className="text-[11px] text-[#86868B]">{tmpl.category}</p>
+                      <p className="text-xs font-semibold text-[#1D1D1F] pt-1">
+                        {formatCurrency(tmpl.target)}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="text-xs font-semibold text-[#1D1D1F]">{tmpl.title}</h4>
-                    <p className="text-[11px] text-[#86868B]">{tmpl.category}</p>
-                    <p className="text-xs font-semibold text-[#1D1D1F] pt-1">
-                      {formatCurrency(tmpl.target)}
-                    </p>
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
 
             <div>
               <button
                 type="button"
-                onClick={() => setIsNewGoalModalOpen(true)}
+                onClick={handleOpenNewGoal}
                 className="bg-[#1D1D1F] hover:bg-black text-white text-xs font-semibold px-5 py-3 rounded-xl transition-all cursor-pointer shadow-xs inline-flex items-center gap-1.5"
               >
                 <Plus size={15} />
@@ -315,7 +330,7 @@ export default function GoalsPage() {
 
       {/* MODAL NOVA META */}
       {isNewGoalModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div
             onClick={() => setIsNewGoalModalOpen(false)}
             className="fixed inset-0 bg-black/45 animate-apple-backdrop"
@@ -328,7 +343,7 @@ export default function GoalsPage() {
                   Objetivo Patrimonial
                 </span>
                 <h3 className="text-lg font-semibold text-[#1D1D1F]">
-                  Criar Nova Meta
+                  Personalizar Meta
                 </h3>
               </div>
               <button
@@ -337,6 +352,49 @@ export default function GoalsPage() {
               >
                 <X size={16} />
               </button>
+            </div>
+
+            {/* Atalhos Rápidos de Modelos */}
+            <div className="space-y-1.5 bg-[#F2F2F7]/60 p-2.5 rounded-2xl border border-black/[0.04]">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-[#86868B] block">
+                Modelos Rápidos (preenche e personaliza):
+              </span>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {[
+                  {
+                    title: "Reserva de Emergência",
+                    category: "Segurança Financeira",
+                    target: 15000,
+                    deadline: "6 meses",
+                  },
+                  {
+                    title: "Viagem dos Sonhos",
+                    category: "Lazer & Turismo",
+                    target: 10000,
+                    deadline: "Julho 2027",
+                  },
+                  {
+                    title: "Novo Notebook / Setup",
+                    category: "Equipamento & Trabalho",
+                    target: 8500,
+                    deadline: "Dezembro 2026",
+                  },
+                ].map((tmpl) => (
+                  <button
+                    key={tmpl.title}
+                    type="button"
+                    onClick={() => {
+                      setTitle(tmpl.title);
+                      setCategory(tmpl.category);
+                      setTargetAmount(formatCurrency(tmpl.target));
+                      setDeadline(tmpl.deadline);
+                    }}
+                    className="text-[11px] font-medium bg-white hover:bg-black hover:text-white px-2.5 py-1 rounded-full border border-black/[0.05] shadow-2xs transition-all cursor-pointer text-[#1D1D1F]"
+                  >
+                    {tmpl.title}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <form onSubmit={handleCreateGoal} className="space-y-4">
@@ -422,7 +480,7 @@ export default function GoalsPage() {
 
       {/* MODAL APORTAR EM UMA META */}
       {contributeGoalId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div
             onClick={() => setContributeGoalId(null)}
             className="fixed inset-0 bg-black/45 animate-apple-backdrop"

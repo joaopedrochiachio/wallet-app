@@ -5,6 +5,7 @@ import { useWallet } from "@/context/WalletContext";
 import {
   CreditCard,
   CheckCircle2,
+  AlertCircle,
   SlidersHorizontal,
   ShieldCheck,
   Check,
@@ -29,6 +30,7 @@ export default function CardsPage() {
   const [editingCardId, setEditingCardId] = useState<string | null>(null);
   const [newLimitInput, setNewLimitInput] = useState("");
   const [paymentSuccessMessage, setPaymentSuccessMessage] = useState<string | null>(null);
+  const [paymentErrorMessage, setPaymentErrorMessage] = useState<string | null>(null);
   const [isPayingInvoice, setIsPayingInvoice] = useState(false);
   const [isAddCardOpen, setIsAddCardOpen] = useState(false);
   const [confirmPayModal, setConfirmPayModal] = useState<{
@@ -65,8 +67,9 @@ export default function CardsPage() {
     if (!confirmPayModal) return;
     const { cardId, cardName, amount } = confirmPayModal;
     if (mainBalance < amount) {
-      alert("Saldo na Conta Principal insuficiente para quitar esta fatura!");
+      setPaymentErrorMessage("Saldo na Conta Principal insuficiente para quitar esta fatura!");
       setConfirmPayModal(null);
+      setTimeout(() => setPaymentErrorMessage(null), 5000);
       return;
     }
     setIsPayingInvoice(true);
@@ -76,7 +79,8 @@ export default function CardsPage() {
       setPaymentSuccessMessage(`Fatura do ${cardName} paga com sucesso!`);
       setTimeout(() => setPaymentSuccessMessage(null), 4000);
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Não foi possível pagar a fatura.");
+      setPaymentErrorMessage(error instanceof Error ? error.message : "Não foi possível pagar a fatura.");
+      setTimeout(() => setPaymentErrorMessage(null), 5000);
     } finally {
       setIsPayingInvoice(false);
     }
@@ -118,6 +122,13 @@ export default function CardsPage() {
           <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-2xl flex items-center gap-2.5 text-xs font-medium animate-in fade-in">
             <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
             <span>{paymentSuccessMessage}</span>
+          </div>
+        )}
+
+        {paymentErrorMessage && (
+          <div className="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-3 rounded-2xl flex items-center gap-2.5 text-xs font-medium animate-in fade-in">
+            <AlertCircle size={16} className="text-rose-600 shrink-0" />
+            <span>{paymentErrorMessage}</span>
           </div>
         )}
 

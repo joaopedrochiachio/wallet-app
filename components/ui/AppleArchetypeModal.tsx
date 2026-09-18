@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { X, Check } from "lucide-react";
 import { FinancialPersonaId } from "@/types";
 
@@ -53,17 +53,25 @@ export function AppleArchetypeModal({
   onClose,
   onConfirm,
 }: AppleArchetypeModalProps) {
+  if (!isOpen) return null;
+
+  return (
+    <AppleArchetypeModalContent
+      currentPersonaId={currentPersonaId}
+      onClose={onClose}
+      onConfirm={onConfirm}
+    />
+  );
+}
+
+function AppleArchetypeModalContent({
+  currentPersonaId,
+  onClose,
+  onConfirm,
+}: Omit<AppleArchetypeModalProps, "isOpen">) {
   const [selectedId, setSelectedId] = useState<FinancialPersonaId>(
     currentPersonaId || "optimizer"
   );
-
-  useEffect(() => {
-    if (isOpen) {
-      setSelectedId(currentPersonaId || "optimizer");
-    }
-  }, [isOpen, currentPersonaId]);
-
-  if (!isOpen) return null;
 
   const handleConfirm = () => {
     onConfirm(selectedId);
@@ -71,7 +79,7 @@ export function AppleArchetypeModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4">
       {/* Backdrop Apple-like */}
       <div
         className="fixed inset-0 bg-black/45 animate-apple-backdrop"

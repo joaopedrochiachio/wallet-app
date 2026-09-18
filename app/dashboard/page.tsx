@@ -9,7 +9,6 @@ import {
   CardStack,
   WalletCard,
   WalletHeader,
-  WalletActions,
 } from "@/components/wallet";
 import { WalletCardData, CardBrand } from "@/types/wallet";
 import {
@@ -27,7 +26,7 @@ import {
   Plane,
 } from "lucide-react";
 import Link from "next/link";
-import { formatAccountLabel, matchesLedgerCard } from "@/lib/utils/ledger";
+import { formatAccountLabel } from "@/lib/utils/ledger";
 
 export default function DashboardPage() {
   const {

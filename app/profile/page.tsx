@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   Award,
   LogOut,
+  Trash2,
 } from "lucide-react";
 
 interface PersonaConfig {
@@ -78,7 +79,7 @@ const PERSONAS: PersonaConfig[] = [
 
 export default function ProfilePage() {
   const router = useRouter();
-  const { user, signOut } = useAuth();
+  const { user, signOut, deleteAccount } = useAuth();
   const { userProfile, updateUserProfile, cards, mainBalance } = useWallet();
 
   const [name, setName] = useState(userProfile.name);
@@ -90,6 +91,8 @@ export default function ProfilePage() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isSignOutConfirmOpen, setIsSignOutConfirmOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const [isDeleteAccountOpen, setIsDeleteAccountOpen] = useState(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [isArchetypeModalOpen, setIsArchetypeModalOpen] = useState(false);
   const [initialSelectedPersona, setInitialSelectedPersona] = useState<FinancialPersonaId | null>(null);
 
@@ -117,6 +120,25 @@ export default function ProfilePage() {
       showToast("Não foi possível encerrar a sessão. Tente novamente.");
     } finally {
       setIsSigningOut(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    setIsDeletingAccount(true);
+    try {
+      await deleteAccount();
+      setIsDeleteAccountOpen(false);
+      router.replace("/");
+    } catch (error: unknown) {
+      console.error("Erro ao excluir conta:", error);
+      const code = typeof error === "object" && error && "code" in error ? String(error.code) : "";
+      if (code === "auth/requires-recent-login") {
+        showToast("Por segurança, saia e entre novamente na sua conta antes de solicitar a exclusão definitiva.");
+      } else {
+        showToast(error instanceof Error ? error.message : "Não foi possível excluir sua conta. Tente novamente.");
+      }
+    } finally {
+      setIsDeletingAccount(false);
     }
   };
 
@@ -201,54 +223,79 @@ export default function ProfilePage() {
         </div>
       </header>
 
-      {/* Hero Apple ID Card */}
-      <section className="bg-gradient-to-br from-[#1C1C1E] via-[#141416] to-[#0A0A0C] text-white rounded-[28px] p-6 md:p-8 shadow-[0_20px_40px_rgba(0,0,0,0.12)] border border-white/10 relative overflow-hidden">
-        {/* Glow dinâmico no fundo */}
-        <div className="absolute top-0 right-0 w-72 h-72 bg-purple-500/10 rounded-full blur-3xl pointer-events-none" />
+      {/* Hero Apple ID / Titanium Card */}
+      <section className="relative overflow-hidden rounded-[26px] bg-[#161618] border border-white/[0.12] shadow-[0_12px_36px_rgba(0,0,0,0.18)] p-5 sm:p-7 text-white font-sans">
+        {/* Apple Titanium ambient sheen & watermark */}
+        <div className="absolute top-0 right-0 -mt-8 -mr-8 w-48 h-48 rounded-full bg-radial from-white/[0.06] to-transparent blur-2xl pointer-events-none" />
+        <div className="absolute top-4 right-5 text-white/[0.06] font-semibold text-3xl tracking-tighter select-none pointer-events-none hidden sm:block font-mono">
+          WALLET ID
+        </div>
 
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="flex items-center gap-5">
-            {/* Avatar Monograma com Aura */}
-            <div className="relative">
-              <div className="w-18 h-18 md:w-20 md:h-20 rounded-full bg-gradient-to-tr from-zinc-700 to-zinc-500 text-white font-semibold text-2xl flex items-center justify-center border-2 border-white/20 shadow-lg">
-                {userProfile.avatarInitials}
+        <div className="relative z-10 space-y-5">
+          {/* Linha Superior: Avatar, Identidade e Badge de Arquétipo */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-4 min-w-0">
+              {/* Avatar Monograma estilo Apple ID */}
+              <div className="relative shrink-0">
+                <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-b from-[#3A3A3C] to-[#242426] text-white font-semibold text-xl sm:text-2xl flex items-center justify-center border border-white/20 shadow-inner">
+                  {userProfile.avatarInitials}
+                </div>
+                <span
+                  className="absolute bottom-0 right-0 w-4 h-4 rounded-full bg-emerald-500 border-2 border-[#161618] shadow-2xs flex items-center justify-center"
+                  title="Carteira Ativa"
+                >
+                  <span className="w-1 h-1 rounded-full bg-white" />
+                </span>
               </div>
-              <div className="absolute bottom-0 right-0 w-5 h-5 rounded-full bg-emerald-500 border-2 border-[#1C1C1E] shadow-xs flex items-center justify-center" title="Carteira Ativa">
-                <div className="w-1.5 h-1.5 rounded-full bg-white" />
-              </div>
-            </div>
 
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <h2 className="text-2xl font-semibold tracking-tight text-white">
+              {/* Informações Pessoais */}
+              <div className="min-w-0 space-y-0.5">
+                <h2 className="text-lg sm:text-xl font-semibold tracking-tight text-white truncate">
                   {userProfile.name}
                 </h2>
-                {activePersona && (
-                  <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-white/15 text-white/90 border border-white/10">
+                <p className="text-xs text-white/65 truncate">{userProfile.role}</p>
+                <p className="text-[11px] text-white/40 font-mono truncate">{userProfile.email}</p>
+              </div>
+            </div>
+
+            {/* Badge do Arquétipo Ativo */}
+            {activePersona && (
+              <div className="self-start sm:self-center shrink-0">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/[0.08] backdrop-blur-md border border-white/10 shadow-2xs">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  <span className="text-[11px] font-semibold tracking-wide text-white/90">
                     {activePersona.title}
                   </span>
-                )}
+                </div>
               </div>
-              <p className="text-xs text-white/70">{userProfile.role}</p>
-              <p className="text-xs text-white/40 font-mono">{userProfile.email}</p>
-            </div>
+            )}
           </div>
 
-          {/* Quick Metrics no Cartão */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 border-t md:border-t-0 md:border-l border-white/10 pt-4 md:pt-0 md:pl-6 text-left">
-            <div>
-              <span className="text-[10px] uppercase tracking-wider text-white/50 block">Renda Base</span>
-              <span className="text-sm font-semibold text-white">
+          {/* Quick Metrics Shelf: 3 Colunas Horizontais estilo Apple Card */}
+          <div className="grid grid-cols-3 divide-x divide-white/10 rounded-2xl bg-white/[0.04] border border-white/[0.08] p-3 sm:p-4 text-center">
+            <div className="px-1.5 sm:px-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-white/45 block truncate">
+                Renda Base
+              </span>
+              <span className="text-xs sm:text-sm font-semibold text-white tracking-tight mt-0.5 block truncate">
                 R$ {formatCurrency(userProfile.monthlyIncomeBase)}
               </span>
             </div>
-            <div>
-              <span className="text-[10px] uppercase tracking-wider text-white/50 block">Cartões</span>
-              <span className="text-sm font-semibold text-white">{cards.length} ativos</span>
+
+            <div className="px-1.5 sm:px-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-white/45 block truncate">
+                Cartões
+              </span>
+              <span className="text-xs sm:text-sm font-semibold text-white tracking-tight mt-0.5 block truncate">
+                {cards.length} {cards.length === 1 ? "ativo" : "ativos"}
+              </span>
             </div>
-            <div>
-              <span className="text-[10px] uppercase tracking-wider text-white/50 block">Saldo Atual</span>
-              <span className="text-sm font-semibold text-emerald-400">
+
+            <div className="px-1.5 sm:px-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-white/45 block truncate">
+                Saldo Atual
+              </span>
+              <span className="text-xs sm:text-sm font-semibold text-emerald-400 tracking-tight mt-0.5 block truncate">
                 R$ {formatCurrency(mainBalance)}
               </span>
             </div>
@@ -615,9 +662,9 @@ export default function ProfilePage() {
         </form>
       </section>
 
-      {/* Seção de Sessão e Logout Estilo Apple HIG */}
-      <section className="bg-white rounded-[24px] p-6 shadow-sm border border-black/[0.04] space-y-4">
-        <div className="flex items-center justify-between">
+      {/* Seção de Sessão, Conta e Privacidade LGPD */}
+      <section className="bg-white rounded-[24px] p-6 shadow-sm border border-black/[0.04] space-y-5">
+        <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <h3 className="text-sm font-semibold text-[#1D1D1F]">
               Sessão & Conta
@@ -630,10 +677,30 @@ export default function ProfilePage() {
           <button
             type="button"
             onClick={() => setIsSignOutConfirmOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100/80 active:scale-95 transition-all cursor-pointer"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-gray-700 bg-[#F2F2F7] hover:bg-gray-200 active:scale-95 transition-all cursor-pointer"
           >
             <LogOut size={14} strokeWidth={2} />
             <span>Encerrar Sessão</span>
+          </button>
+        </div>
+
+        <div className="pt-4 border-t border-black/[0.05] flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h4 className="text-xs font-semibold text-rose-600">
+              Privacidade e Exclusão de Dados (LGPD)
+            </h4>
+            <p className="text-[11px] text-[#86868B] mt-0.5 max-w-md">
+              Apaga permanentemente seu histórico de transações, faturas, contas, metas e credenciais. Esta ação não poderá ser desfeita.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsDeleteAccountOpen(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold text-rose-600 border border-rose-200 bg-rose-50/60 hover:bg-rose-100 active:scale-95 transition-all cursor-pointer"
+          >
+            <Trash2 size={13} strokeWidth={2} />
+            <span>Excluir Minha Conta</span>
           </button>
         </div>
       </section>
@@ -649,6 +716,19 @@ export default function ProfilePage() {
         variant="danger"
         iconType="alert"
         isLoading={isSigningOut}
+      />
+
+      <AppleConfirmModal
+        isOpen={isDeleteAccountOpen}
+        onClose={() => setIsDeleteAccountOpen(false)}
+        onConfirm={handleDeleteAccount}
+        title="Excluir conta definitivamente?"
+        description="Todos os seus lançamentos, cartões, metas e planejamentos salvos no Firestore serão apagados permanentemente de acordo com a LGPD. Esta operação é irreversível."
+        confirmLabel="Excluir Definitivamente"
+        cancelLabel="Cancelar"
+        variant="danger"
+        iconType="trash"
+        isLoading={isDeletingAccount}
       />
 
       <AppleArchetypeModal

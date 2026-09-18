@@ -7,7 +7,6 @@ import {
   CreditCard,
   Repeat,
   Sparkles,
-  X,
 } from "lucide-react";
 import { useWallet } from "@/context/WalletContext";
 import { WPayLogo } from "@/components/ui/WPayLogo";
@@ -87,6 +86,7 @@ export function AddTransactionSheet({
   const [installmentsInput, setInstallmentsInput] = useState("3");
 
   const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const now = new Date();
   const currentMonthIndex = now.getMonth();
@@ -121,9 +121,8 @@ export function AddTransactionSheet({
     parseFloat(amountInput.replace(/\./g, "").replace(",", ".")) || 0;
   const installmentsCount = Math.min(
     60,
-    Math.max(2, parseInt(installmentsInput, 10) || 2)
+    Math.max(2, parseInt(installmentsInput, 10) || 3)
   );
-
   const effectiveDueDay =
     recurrenceType === "business_day_5"
       ? current5thBusinessDay
@@ -131,12 +130,12 @@ export function AddTransactionSheet({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMessage(null);
     if (parsedAmount <= 0) return;
 
     setLoading(true);
     try {
-      const txDescription =
-        title.trim() || (type === "despesa" ? "Novo Pagamento" : "Novo Recebimento");
+      const txDescription = title.trim() || category;
       const formattedDate = `${now.toLocaleDateString("pt-BR", {
         day: "2-digit",
         month: "short",
@@ -164,10 +163,11 @@ export function AddTransactionSheet({
       setIsRecurring(false);
       setDurationMode("continuous");
       setInstallmentsInput("3");
+      setErrorMessage(null);
       onClose();
     } catch (err: unknown) {
       console.error("Erro ao salvar transação:", err);
-      alert(
+      setErrorMessage(
         err instanceof Error
           ? err.message
           : "Erro ao gravar a transação. Verifique sua conexão."
@@ -178,7 +178,7 @@ export function AddTransactionSheet({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4">
+    <div className="fixed inset-0 z-[100] flex items-end justify-center sm:items-center sm:p-4">
       {/* Backdrop com Blur Suave */}
       <button
         type="button"
@@ -215,7 +215,13 @@ export function AddTransactionSheet({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-4 sm:space-y-5">
+        <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-4 sm:space-y-5 pb-8 sm:pb-6">
+          {errorMessage && (
+            <div className="bg-red-50 text-red-600 border border-red-200/60 rounded-xl px-4 py-2.5 text-xs font-medium animate-in fade-in duration-200">
+              {errorMessage}
+            </div>
+          )}
+
           {/* 2. SELEÇÃO DA OPERAÇÃO (Segmented Control Nativo) */}
           <div className="p-1 rounded-full bg-[#E5E5EA]/60 border border-black/[0.04] grid grid-cols-2 gap-0.5">
             <button
