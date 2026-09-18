@@ -32,7 +32,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="pt-BR">
-      <body className="flex h-[100dvh] min-h-[100dvh] w-full overflow-hidden bg-[#F2F2F7]">
+      <body className="min-h-screen w-full bg-[#F2F2F7] text-[#1D1D1F] antialiased selection:bg-[#1D1D1F] selection:text-white">
         <AppShell>{children}</AppShell>
       </body>
     </html>

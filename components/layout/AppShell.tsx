@@ -26,7 +26,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return (
       <AuthProvider>
         <AuthRouteGuard>
-          <WalletProvider>{children}</WalletProvider>
+          <WalletProvider>
+            <div className="min-h-screen w-full flex flex-col bg-[#F2F2F7]">
+              {children}
+            </div>
+          </WalletProvider>
         </AuthRouteGuard>
       </AuthProvider>
     );
@@ -36,8 +40,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <AuthProvider>
       <AuthRouteGuard>
         <WalletProvider>
-          {/* SIDEBAR (Desktop) */}
-          <aside className="hidden md:flex flex-col w-64 h-full bg-white/80 backdrop-blur-xl border-r border-gray-200/60 p-6 z-50">
+          <div className="flex h-[100dvh] min-h-[100dvh] w-full overflow-hidden bg-[#F2F2F7]">
+            {/* SIDEBAR (Desktop) */}
+            <aside className="hidden md:flex flex-col w-64 h-full bg-white/80 backdrop-blur-xl border-r border-gray-200/60 p-6 z-50 shrink-0">
             <Link
               href="/dashboard"
               className="mb-8 flex items-center hover:opacity-85 transition-opacity"
@@ -141,6 +146,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               />
             </div>
           </nav>
+          </div>
         </WalletProvider>
       </AuthRouteGuard>
     </AuthProvider>

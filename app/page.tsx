@@ -20,11 +20,11 @@ export default function PresentationPage() {
   const { userProfile } = useWallet();
 
   return (
-    <div className="min-h-screen bg-[#F2F2F7] text-[#1D1D1F] font-sans selection:bg-[#1D1D1F] selection:text-white pb-24">
+    <div className="w-full min-h-screen bg-[#F2F2F7] text-[#1D1D1F] font-sans selection:bg-[#1D1D1F] selection:text-white pb-24">
       
       {/* Top Navbar Wallet Intelligence Standard */}
-      <header className="sticky top-0 z-50 bg-[#F2F2F7]/85 backdrop-blur-xl border-b border-black/[0.04]">
-        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+      <header className="sticky top-0 z-50 w-full bg-[#F2F2F7]/85 backdrop-blur-xl border-b border-black/[0.04]">
+        <div className="w-full max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
           
           <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
             <Image
@@ -39,13 +39,13 @@ export default function PresentationPage() {
               <span className="font-semibold text-base tracking-tight text-[#1D1D1F]">
                 Wallet
               </span>
-              <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#1D1D1F] text-white font-mono">
+              <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#1D1D1F] text-white">
                 Intelligence
               </span>
             </div>
           </Link>
 
-          <nav className="hidden md:flex items-center gap-8 text-xs font-medium text-[#86868B]">
+          <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-[#6E6E73]">
             <a href="#showcase" className="hover:text-[#1D1D1F] transition-colors">
               Passes 3D
             </a>
@@ -63,13 +63,13 @@ export default function PresentationPage() {
           <div className="flex items-center gap-3">
             <Link
               href="/login"
-              className="hidden sm:inline-flex text-xs font-medium text-[#86868B] hover:text-[#1D1D1F] transition-colors"
+              className="hidden sm:inline-flex text-sm font-medium text-[#6E6E73] hover:text-[#1D1D1F] transition-colors px-2 py-1"
             >
               Entrar
             </Link>
             <Link
               href="/login"
-              className="bg-[#1D1D1F] hover:bg-black text-white text-xs font-semibold px-4 py-2 rounded-full transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
+              className="bg-[#1D1D1F] hover:bg-black text-white text-xs sm:text-sm font-semibold px-4 py-2 rounded-full transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
             >
               <span>Acessar Carteira</span>
               <ArrowRight size={14} />
@@ -79,7 +79,7 @@ export default function PresentationPage() {
       </header>
 
       {/* Hero Section */}
-      <section className="max-w-4xl mx-auto px-6 pt-10 md:pt-14 pb-6 text-center space-y-5">
+      <section className="w-full max-w-4xl mx-auto px-6 pt-10 md:pt-14 pb-6 text-center space-y-5">
         
         {/* Logo Icon Hero */}
         <div className="flex justify-center animate-in fade-in zoom-in-95 duration-500">
@@ -97,11 +97,11 @@ export default function PresentationPage() {
         </div>
 
         {/* Badge Luminoso */}
-        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-black/[0.06] shadow-xs text-xs font-medium text-[#86868B] animate-in fade-in">
+        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-black/[0.06] shadow-xs text-xs font-medium text-[#6E6E73] animate-in fade-in">
           <div className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
           <span className="text-[#1D1D1F] font-semibold">Wallet Intelligence</span>
           <span>•</span>
-          <span className="font-mono text-[11px]">Pass Kit Standard</span>
+          <span>Pass Kit Standard</span>
         </div>
 
         {/* Headline Principal */}
