@@ -11,6 +11,10 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   CalendarDays,
+  Pencil,
+  Zap,
+  RotateCcw,
+  Loader2,
 } from "lucide-react";
 import { AppleConfirmModal } from "@/components/ui/AppleConfirmModal";
 import { MonthlyMovementOverview } from "@/components/planning/MonthlyMovementOverview";
@@ -21,6 +25,7 @@ import {
   getPeriodKey,
   getRecurringMonthOffset,
   isRecurringActiveInMonth,
+  groupRecurringItemsByDate,
 } from "@/lib/utils/dateUtils";
 import { formatAccountLabel, getLedgerEntryDate } from "@/lib/utils/ledger";
 import { RecurrenceType, RecurringItem } from "@/types";
@@ -29,8 +34,11 @@ export default function PlanningPage() {
   const {
     recurringItems,
     addRecurringItem,
+    updateRecurringItem,
     toggleRecurringItem,
     deleteRecurringItem,
+    realizeRecurringItemNow,
+    unrealizeRecurringItem,
     getMonthlyProjection,
     accountOptions,
     cards,
@@ -63,6 +71,22 @@ export default function PlanningPage() {
   // Duração: uma vez, por um número de meses ou contínuo.
   const [durationMode, setDurationMode] = useState<"one-time" | "continuous" | "installments">("continuous");
   const [installmentsCount, setInstallmentsCount] = useState<number>(3);
+
+  // Estados para edição de planejamento
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<RecurringItem | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editAmount, setEditAmount] = useState("");
+  const [editAccount, setEditAccount] = useState("Débito/Pix");
+  const [editCategory, setEditCategory] = useState("Moradia & Contas");
+  const [editType, setEditType] = useState<"income" | "expense">("expense");
+  const [editRecurrence, setEditRecurrence] = useState<RecurrenceType>("fixed_day");
+  const [editFixedDay, setEditFixedDay] = useState("10");
+  const [editIsCustomDay, setEditIsCustomDay] = useState(false);
+  const [editCustomDay, setEditCustomDay] = useState("10");
+  const [editDurationMode, setEditDurationMode] = useState<"one-time" | "continuous" | "installments">("continuous");
+  const [editInstallmentsCount, setEditInstallmentsCount] = useState<number>(3);
+  const [processingItemId, setProcessingItemId] = useState<string | null>(null);
 
   const activeMonthObj = planningMonths[selectedMonthIndex] || planningMonths[currentMonthIdx >= 0 ? currentMonthIdx : 0];
   const targetYear = activeMonthObj.year;
@@ -110,6 +134,23 @@ export default function PlanningPage() {
   const visiblePlannedIncomes = plannedIncomes.filter(isScheduledForSelectedMonth);
   const visiblePlannedDebitExpenses = plannedDebitExpenses.filter(isScheduledForSelectedMonth);
   const visiblePlannedCreditExpenses = plannedCreditExpenses.filter(isScheduledForSelectedMonth);
+
+  // Agrupamento inteligente por data com subtotais diários
+  const groupedPlannedIncomes = groupRecurringItemsByDate(
+    visiblePlannedIncomes,
+    targetYear,
+    targetMonth
+  );
+  const groupedPlannedDebitExpenses = groupRecurringItemsByDate(
+    visiblePlannedDebitExpenses,
+    targetYear,
+    targetMonth
+  );
+  const groupedPlannedCreditExpenses = groupRecurringItemsByDate(
+    visiblePlannedCreditExpenses,
+    targetYear,
+    targetMonth
+  );
 
   const totalIncomesActive = plannedIncomes
     .filter(isActiveInSelectedMonth)
@@ -232,6 +273,319 @@ export default function PlanningPage() {
     } catch (error) {
       alert(error instanceof Error ? error.message : "Não foi possível alterar o planejamento.");
     }
+  };
+
+  const handleOpenEditModal = (item: RecurringItem) => {
+    setEditingItem(item);
+    setEditTitle(item.title);
+    setEditAmount(item.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 }));
+    setEditAccount(item.account);
+    setEditCategory(item.category);
+    setEditType(item.type || "expense");
+    setEditRecurrence(item.recurrenceType || "fixed_day");
+    const isSpecialDay = item.dueDay === 5 || item.dueDay === 10 || item.dueDay === 20;
+    setEditFixedDay(isSpecialDay ? String(item.dueDay) : "10");
+    setEditIsCustomDay(!isSpecialDay && item.recurrenceType !== "business_day_5");
+    setEditCustomDay(String(item.dueDay || 10));
+
+    if (!item.installmentsCount || item.installmentsCount === 0) {
+      setEditDurationMode("continuous");
+      setEditInstallmentsCount(3);
+    } else if (item.installmentsCount === 1) {
+      setEditDurationMode("one-time");
+      setEditInstallmentsCount(1);
+    } else {
+      setEditDurationMode("installments");
+      setEditInstallmentsCount(item.installmentsCount);
+    }
+
+    setIsEditModalOpen(true);
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingItem) return;
+    const cleanAmount = parseFloat(editAmount.replace(/\./g, "").replace(",", "."));
+    if (isNaN(cleanAmount) || cleanAmount <= 0 || !editTitle.trim()) return;
+
+    let computedDay = 10;
+    if (editRecurrence === "business_day_5") {
+      computedDay = currentMonth5thBusinessDay;
+    } else if (editIsCustomDay) {
+      computedDay = parseInt(editCustomDay) || 10;
+    } else {
+      computedDay = parseInt(editFixedDay) || 10;
+    }
+
+    try {
+      await updateRecurringItem(editingItem.id, {
+        title: editTitle.trim(),
+        amount: cleanAmount,
+        type: editType,
+        account: editAccount,
+        cardId: cards.find((card) => card.name === editAccount)?.id || null,
+        category: editCategory,
+        dueDay: computedDay,
+        recurrenceType: editRecurrence,
+        installmentsCount:
+          editDurationMode === "one-time"
+            ? 1
+            : editDurationMode === "installments"
+              ? editInstallmentsCount
+              : undefined,
+      });
+      setIsEditModalOpen(false);
+      setEditingItem(null);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Não foi possível atualizar o planejamento.");
+    }
+  };
+
+  const handleRealizeFromEditModal = async () => {
+    if (!editingItem) return;
+    const cleanAmount = parseFloat(editAmount.replace(/\./g, "").replace(",", "."));
+    const finalAmount = !isNaN(cleanAmount) && cleanAmount > 0 ? cleanAmount : editingItem.amount;
+
+    let computedDay = 10;
+    if (editRecurrence === "business_day_5") {
+      computedDay = currentMonth5thBusinessDay;
+    } else if (editIsCustomDay) {
+      computedDay = parseInt(editCustomDay) || 10;
+    } else {
+      computedDay = parseInt(editFixedDay) || 10;
+    }
+
+    try {
+      setProcessingItemId(editingItem.id);
+      const updatedItem: RecurringItem = {
+        ...editingItem,
+        title: editTitle.trim() || editingItem.title,
+        amount: finalAmount,
+        type: editType,
+        account: editAccount,
+        cardId: cards.find((card) => card.name === editAccount)?.id || null,
+        category: editCategory,
+        dueDay: computedDay,
+        recurrenceType: editRecurrence,
+      };
+
+      await updateRecurringItem(editingItem.id, updatedItem);
+      await realizeRecurringItemNow(updatedItem, targetYear, targetMonth, finalAmount);
+      setIsEditModalOpen(false);
+      setEditingItem(null);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Não foi possível efetivar o planejamento.");
+    } finally {
+      setProcessingItemId(null);
+    }
+  };
+
+  const handleRealizeNow = async (item: RecurringItem) => {
+    try {
+      setProcessingItemId(item.id);
+      await realizeRecurringItemNow(item, targetYear, targetMonth);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Não foi possível efetivar o lançamento.");
+    } finally {
+      setProcessingItemId(null);
+    }
+  };
+
+  const handleUnrealize = async (item: RecurringItem) => {
+    try {
+      setProcessingItemId(item.id);
+      await unrealizeRecurringItem(item, targetYear, targetMonth);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Não foi possível desfazer a efetivação.");
+    } finally {
+      setProcessingItemId(null);
+    }
+  };
+
+  const renderItemRow = (item: RecurringItem, sectionKind: "income" | "debit" | "credit") => {
+    const effectiveDay = getEffectiveDueDay(item, targetYear, targetMonth);
+    const monthOffset = getRecurringMonthOffset(item, targetYear, targetMonth);
+    const hasInstallments = Boolean(item.installmentsCount && item.installmentsCount > 1);
+    const isFinishedInThisMonth = hasInstallments && monthOffset >= (item.installmentsCount || 0);
+    const currentInstallmentNum = monthOffset >= 0 ? monthOffset + 1 : 1;
+    const isRealizedInThisMonth = Boolean(item.realizedPeriods?.includes(getPeriodKey(targetYear, targetMonth)));
+    const isProcessing = processingItemId === item.id;
+
+    let dateDescription = "";
+    if (sectionKind === "income") {
+      dateDescription = item.recurrenceType === "business_day_5"
+        ? `5º dia útil (dia ${effectiveDay})`
+        : `Previsão dia ${effectiveDay}`;
+    } else if (sectionKind === "debit") {
+      dateDescription = item.recurrenceType === "business_day_5"
+        ? `5º dia útil (dia ${effectiveDay})`
+        : `Dia ${effectiveDay}`;
+    } else {
+      dateDescription = `Cobrado dia ${effectiveDay}`;
+    }
+
+    return (
+      <div
+        key={item.id}
+        onClick={() => handleOpenEditModal(item)}
+        className="group flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 p-4 hover:bg-[#F9F9FB] transition-colors cursor-pointer"
+      >
+        <div className="flex items-center gap-3.5 min-w-0">
+          {isRealizedInThisMonth ? (
+            <div
+              className={`w-5 h-5 rounded-full text-white flex items-center justify-center shrink-0 shadow-2xs ${
+                sectionKind === "income"
+                  ? "bg-emerald-600"
+                  : sectionKind === "credit"
+                  ? "bg-indigo-600"
+                  : "bg-[#1D1D1F]"
+              }`}
+              title="Efetivado nesta competência"
+            >
+              <Check size={12} strokeWidth={3} />
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                void handleToggleRecurring(item.id);
+              }}
+              className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors shrink-0 cursor-pointer ${
+                item.active
+                  ? sectionKind === "income"
+                    ? "bg-emerald-600 border-emerald-600 text-white"
+                    : sectionKind === "credit"
+                    ? "bg-indigo-600 border-indigo-600 text-white"
+                    : "bg-[#1D1D1F] border-[#1D1D1F] text-white"
+                  : "border-gray-300 bg-white hover:border-gray-400"
+              }`}
+              title={item.active ? "Desativar" : "Ativar"}
+            >
+              {item.active && <Check size={11} strokeWidth={3} />}
+            </button>
+          )}
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h4
+                className={`text-sm font-medium truncate ${
+                  item.active ? "text-[#1D1D1F] group-hover:text-black" : "text-gray-400 line-through"
+                }`}
+              >
+                {item.title}
+              </h4>
+              {isRealizedInThisMonth && (
+                <span
+                  className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full border shrink-0 ${
+                    sectionKind === "income"
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                      : sectionKind === "credit"
+                      ? "bg-indigo-50 text-indigo-700 border-indigo-200"
+                      : "bg-gray-100 text-[#1D1D1F] border-black/5"
+                  }`}
+                >
+                  {sectionKind === "credit" ? "Na fatura" : "Efetivado"}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-[#86868B] truncate mt-0.5">
+              {dateDescription} · {formatAccountLabel(item.account)} · {item.category}
+              {hasInstallments && ` · Parcela ${currentInstallmentNum} de ${item.installmentsCount}`}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-1 sm:pt-0 border-t sm:border-t-0 border-gray-100">
+          {/* Ação Rápida Antecipada: "Recebi antes" / "Paguei antes" ("clico e já faz na hora") */}
+          {!isRealizedInThisMonth && !isFinishedInThisMonth && item.active ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                void handleRealizeNow(item);
+              }}
+              disabled={isProcessing}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#1D1D1F]/5 hover:bg-[#1D1D1F] hover:text-white text-[#1D1D1F] transition-all cursor-pointer active:scale-95 disabled:opacity-50 shadow-2xs"
+              title={
+                item.type === "income"
+                  ? "Recebi adiantado: efetivar entrada agora"
+                  : "Paguei adiantado: debitar e efetivar saída agora"
+              }
+            >
+              {isProcessing ? (
+                <Loader2 size={12} className="animate-spin text-current" />
+              ) : (
+                <Zap size={12} className="text-amber-500 fill-amber-500 shrink-0" />
+              )}
+              <span>{item.type === "income" ? "Recebi antes" : "Paguei antes"}</span>
+            </button>
+          ) : isRealizedInThisMonth ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                void handleUnrealize(item);
+              }}
+              disabled={isProcessing}
+              className="inline-flex items-center gap-1 text-[11px] text-[#86868B] hover:text-rose-600 transition-colors cursor-pointer px-2 py-1 rounded-md hover:bg-rose-50"
+              title="Desfazer efetivação desta competência"
+            >
+              {isProcessing ? (
+                <Loader2 size={11} className="animate-spin" />
+              ) : (
+                <RotateCcw size={11} />
+              )}
+              <span className="text-[11px]">Desfazer</span>
+            </button>
+          ) : null}
+
+          {/* Valor formatado */}
+          <span
+            className={`text-sm font-semibold tracking-tight min-w-[90px] text-right ${
+              isFinishedInThisMonth
+                ? "text-gray-400 line-through text-xs"
+                : isRealizedInThisMonth || item.active
+                ? sectionKind === "income"
+                  ? "text-emerald-600"
+                  : "text-[#1D1D1F]"
+                : "text-gray-400"
+            }`}
+          >
+            {isFinishedInThisMonth
+              ? "Quitado"
+              : sectionKind === "income"
+              ? `+ R$ ${formatCurrency(item.amount)}`
+              : `R$ ${formatCurrency(item.amount)}`}
+          </span>
+
+          {/* Botão de Edição */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleOpenEditModal(item);
+            }}
+            className="text-gray-400 hover:text-[#1D1D1F] transition-colors p-1.5 rounded-lg hover:bg-black/5 cursor-pointer"
+            title="Editar planejamento"
+          >
+            <Pencil size={14} />
+          </button>
+
+          {/* Botão de Exclusão */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setItemToDelete(item);
+            }}
+            className="text-gray-300 hover:text-rose-500 transition-colors p-1.5 rounded-lg hover:bg-rose-50 cursor-pointer"
+            title="Excluir"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -524,7 +878,7 @@ export default function PlanningPage() {
             </div>
 
             <div className="bg-white rounded-[22px] border border-black/[0.04] shadow-[0_1px_4px_rgba(0,0,0,0.02)] overflow-hidden divide-y divide-gray-100">
-              {visiblePlannedIncomes.length === 0 ? (
+              {groupedPlannedIncomes.length === 0 ? (
                 <div className="p-8 text-center space-y-1.5">
                   <p className="text-sm font-medium text-[#1D1D1F]">
                     Nenhum recebimento previsto em {activeMonthObj.name}
@@ -534,90 +888,25 @@ export default function PlanningPage() {
                   </p>
                 </div>
               ) : (
-                visiblePlannedIncomes.map((item) => {
-                  const effectiveDay = getEffectiveDueDay(item, targetYear, targetMonth);
-                  const monthOffset = getRecurringMonthOffset(item, targetYear, targetMonth);
-                  const hasInstallments = Boolean(item.installmentsCount && item.installmentsCount > 1);
-                  const isFinishedInThisMonth = hasInstallments && monthOffset >= (item.installmentsCount || 0);
-                  const currentInstallmentNum = monthOffset >= 0 ? monthOffset + 1 : 1;
-                  const isRealizedInThisMonth = Boolean(item.realizedPeriods?.includes(getPeriodKey(targetYear, targetMonth)));
-                  const dateDescription = item.recurrenceType === "business_day_5"
-                    ? `5º dia útil (dia ${effectiveDay})`
-                    : `Previsão dia ${effectiveDay}`;
-
-                  return (
-                    <div
-                      key={item.id}
-                      className="flex items-center justify-between gap-4 p-4 hover:bg-[#F9F9FB] transition-colors"
-                    >
-                      <div className="flex items-center gap-3.5 min-w-0">
-                        {isRealizedInThisMonth ? (
-                          <div
-                            className="w-4.5 h-4.5 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-2xs"
-                            title="Efetivado nesta competência"
-                          >
-                            <Check size={11} strokeWidth={3} />
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => { void handleToggleRecurring(item.id); }}
-                            className={`w-4.5 h-4.5 rounded-full border flex items-center justify-center transition-colors shrink-0 cursor-pointer ${
-                              item.active
-                                ? "bg-emerald-600 border-emerald-600 text-white"
-                                : "border-gray-300 bg-white"
-                            }`}
-                            title={item.active ? "Desativar" : "Ativar"}
-                          >
-                            {item.active && <Check size={11} strokeWidth={3} />}
-                          </button>
-                        )}
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <h4
-                              className={`text-sm font-medium truncate ${
-                                item.active ? "text-[#1D1D1F]" : "text-gray-400 line-through"
-                              }`}
-                            >
-                              {item.title}
-                            </h4>
-                            {isRealizedInThisMonth && (
-                              <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
-                                Efetivado
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-[#86868B] truncate mt-0.5">
-                            {dateDescription} · {formatAccountLabel(item.account)} · {item.category}
-                            {hasInstallments && ` · Parcela ${currentInstallmentNum} de ${item.installmentsCount}`}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-3 shrink-0">
-                        <span
-                          className={`text-sm font-semibold tracking-tight ${
-                            isFinishedInThisMonth
-                              ? "text-gray-400 line-through text-xs"
-                              : isRealizedInThisMonth || item.active
-                              ? "text-emerald-600"
-                              : "text-gray-400"
-                          }`}
-                        >
-                          {isFinishedInThisMonth ? "Quitado" : `+ R$ ${formatCurrency(item.amount)}`}
+                groupedPlannedIncomes.map((group) => (
+                  <div key={group.day} className="divide-y divide-gray-100">
+                    <div className="bg-[#FBFBFD] px-4 py-2 flex items-center justify-between border-b border-black/[0.03]">
+                      <div className="flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-600/70" />
+                        <span className="text-xs font-semibold text-[#1D1D1F] tracking-tight">
+                          {group.label}
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => setItemToDelete(item)}
-                          className="text-gray-300 hover:text-rose-500 transition-colors p-1 cursor-pointer"
-                          title="Excluir"
-                        >
-                          <Trash2 size={14} />
-                        </button>
+                        <span className="text-[11px] text-[#86868B]">
+                          · {group.items.length} {group.items.length === 1 ? "recebimento" : "recebimentos"}
+                        </span>
                       </div>
+                      <span className="text-xs font-semibold text-emerald-600">
+                        + R$ {formatCurrency(group.totalAmount)}
+                      </span>
                     </div>
-                  );
-                })
+                    {group.items.map((item) => renderItemRow(item, "income"))}
+                  </div>
+                ))
               )}
             </div>
           </div>
@@ -648,7 +937,7 @@ export default function PlanningPage() {
             </div>
 
             <div className="bg-white rounded-[22px] border border-black/[0.04] shadow-[0_1px_4px_rgba(0,0,0,0.02)] overflow-hidden divide-y divide-gray-100">
-              {visiblePlannedDebitExpenses.length === 0 ? (
+              {groupedPlannedDebitExpenses.length === 0 ? (
                 <div className="p-8 text-center space-y-1.5">
                   <p className="text-sm font-medium text-[#1D1D1F]">
                     Nenhuma saída da conta planejada em {activeMonthObj.name}
@@ -658,90 +947,25 @@ export default function PlanningPage() {
                   </p>
                 </div>
               ) : (
-                visiblePlannedDebitExpenses.map((item) => {
-                  const effectiveDay = getEffectiveDueDay(item, targetYear, targetMonth);
-                  const monthOffset = getRecurringMonthOffset(item, targetYear, targetMonth);
-                  const hasInstallments = Boolean(item.installmentsCount && item.installmentsCount > 1);
-                  const isFinishedInThisMonth = hasInstallments && monthOffset >= (item.installmentsCount || 0);
-                  const currentInstallmentNum = monthOffset >= 0 ? monthOffset + 1 : 1;
-                  const isRealizedInThisMonth = Boolean(item.realizedPeriods?.includes(getPeriodKey(targetYear, targetMonth)));
-                  const dateDescription = item.recurrenceType === "business_day_5"
-                    ? `5º dia útil (dia ${effectiveDay})`
-                    : `Dia ${effectiveDay}`;
-
-                  return (
-                    <div
-                      key={item.id}
-                      className="flex items-center justify-between gap-4 p-4 hover:bg-[#F9F9FB] transition-colors"
-                    >
-                      <div className="flex items-center gap-3.5 min-w-0">
-                        {isRealizedInThisMonth ? (
-                          <div
-                            className="w-4.5 h-4.5 rounded-full bg-[#1D1D1F] text-white flex items-center justify-center shrink-0 shadow-2xs"
-                            title="Efetivado nesta competência"
-                          >
-                            <Check size={11} strokeWidth={3} />
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => { void handleToggleRecurring(item.id); }}
-                            className={`w-4.5 h-4.5 rounded-full border flex items-center justify-center transition-colors shrink-0 cursor-pointer ${
-                              item.active
-                                ? "bg-[#1D1D1F] border-[#1D1D1F] text-white"
-                                : "border-gray-300 bg-white"
-                            }`}
-                            title={item.active ? "Desativar" : "Ativar"}
-                          >
-                            {item.active && <Check size={11} strokeWidth={3} />}
-                          </button>
-                        )}
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <h4
-                              className={`text-sm font-medium truncate ${
-                                item.active ? "text-[#1D1D1F]" : "text-gray-400 line-through"
-                              }`}
-                            >
-                              {item.title}
-                            </h4>
-                            {isRealizedInThisMonth && (
-                              <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-gray-100 text-[#1D1D1F] border border-black/5 shrink-0">
-                                Efetivado
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-[#86868B] truncate mt-0.5">
-                            {dateDescription} · {formatAccountLabel(item.account)}
-                            {hasInstallments && ` · Parcela ${currentInstallmentNum} de ${item.installmentsCount}`}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-3 shrink-0">
-                        <span
-                          className={`text-sm font-semibold tracking-tight ${
-                            isFinishedInThisMonth
-                              ? "text-gray-400 line-through text-xs"
-                              : isRealizedInThisMonth || item.active
-                              ? "text-[#1D1D1F]"
-                              : "text-gray-400"
-                          }`}
-                        >
-                          {isFinishedInThisMonth ? "Quitado" : `R$ ${formatCurrency(item.amount)}`}
+                groupedPlannedDebitExpenses.map((group) => (
+                  <div key={group.day} className="divide-y divide-gray-100">
+                    <div className="bg-[#FBFBFD] px-4 py-2 flex items-center justify-between border-b border-black/[0.03]">
+                      <div className="flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#1D1D1F]" />
+                        <span className="text-xs font-semibold text-[#1D1D1F] tracking-tight">
+                          {group.label}
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => setItemToDelete(item)}
-                          className="text-gray-300 hover:text-rose-500 transition-colors p-1 cursor-pointer"
-                          title="Excluir"
-                        >
-                          <Trash2 size={14} />
-                        </button>
+                        <span className="text-[11px] text-[#86868B]">
+                          · {group.items.length} {group.items.length === 1 ? "saída" : "saídas"}
+                        </span>
                       </div>
+                      <span className="text-xs font-semibold text-[#1D1D1F]">
+                        R$ {formatCurrency(group.totalAmount)}
+                      </span>
                     </div>
-                  );
-                })
+                    {group.items.map((item) => renderItemRow(item, "debit"))}
+                  </div>
+                ))
               )}
             </div>
           </div>
@@ -777,7 +1001,7 @@ export default function PlanningPage() {
 
             {/* Lista de Compras do Cartão */}
             <div className="bg-white rounded-[18px] border border-black/[0.04] overflow-hidden divide-y divide-gray-100">
-              {visiblePlannedCreditExpenses.length === 0 && projection.cardInstallments === 0 ? (
+              {groupedPlannedCreditExpenses.length === 0 && projection.cardInstallments === 0 ? (
                 <div className="p-7 text-center space-y-1">
                   <p className="text-xs font-medium text-[#1D1D1F]">
                     Nenhuma assinatura ou compra cadastrada no cartão para {activeMonthObj.name}.
@@ -788,87 +1012,25 @@ export default function PlanningPage() {
                 </div>
               ) : (
                 <>
-                  {visiblePlannedCreditExpenses.map((item) => {
-                    const effectiveDay = getEffectiveDueDay(item, targetYear, targetMonth);
-                    const monthOffset = getRecurringMonthOffset(item, targetYear, targetMonth);
-                    const hasInstallments = Boolean(item.installmentsCount && item.installmentsCount > 1);
-                    const isFinishedInThisMonth = hasInstallments && monthOffset >= (item.installmentsCount || 0);
-                    const currentInstallmentNum = monthOffset >= 0 ? monthOffset + 1 : 1;
-                    const isRealizedInThisMonth = Boolean(item.realizedPeriods?.includes(getPeriodKey(targetYear, targetMonth)));
-
-                    return (
-                      <div
-                        key={item.id}
-                        className="flex items-center justify-between gap-4 p-4 hover:bg-[#F9F9FB] transition-colors"
-                      >
-                        <div className="flex items-center gap-3.5 min-w-0">
-                          {isRealizedInThisMonth ? (
-                            <div
-                              className="w-4.5 h-4.5 rounded-full bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-2xs"
-                              title="Lançado na fatura"
-                            >
-                              <Check size={11} strokeWidth={3} />
-                            </div>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => { void handleToggleRecurring(item.id); }}
-                              className={`w-4.5 h-4.5 rounded-full border flex items-center justify-center transition-colors shrink-0 cursor-pointer ${
-                                item.active
-                                  ? "bg-[#1D1D1F] border-[#1D1D1F] text-white"
-                                  : "border-gray-300 bg-white"
-                              }`}
-                              title={item.active ? "Desativar" : "Ativar"}
-                            >
-                              {item.active && <Check size={11} strokeWidth={3} />}
-                            </button>
-                          )}
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <h4
-                                className={`text-sm font-medium truncate ${
-                                  item.active ? "text-[#1D1D1F]" : "text-gray-400 line-through"
-                                }`}
-                              >
-                                {item.title}
-                              </h4>
-                              {isRealizedInThisMonth && (
-                                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 shrink-0">
-                                  Na fatura
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-xs text-[#86868B] truncate mt-0.5">
-                              Cobrado dia {effectiveDay} · {formatAccountLabel(item.account)}
-                              {hasInstallments && ` · Parcela ${currentInstallmentNum} de ${item.installmentsCount}`}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-3 shrink-0">
-                          <span
-                            className={`text-sm font-semibold tracking-tight ${
-                              isFinishedInThisMonth
-                                ? "text-gray-400 line-through text-xs"
-                                : isRealizedInThisMonth || item.active
-                                ? "text-[#1D1D1F]"
-                                : "text-gray-400"
-                            }`}
-                          >
-                            {isFinishedInThisMonth ? "Quitado" : `R$ ${formatCurrency(item.amount)}`}
+                  {groupedPlannedCreditExpenses.map((group) => (
+                    <div key={group.day} className="divide-y divide-gray-100">
+                      <div className="bg-[#FBFBFD] px-4 py-2 flex items-center justify-between border-b border-black/[0.03]">
+                        <div className="flex items-center gap-2">
+                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-600/70" />
+                          <span className="text-xs font-semibold text-[#1D1D1F] tracking-tight">
+                            {group.label}
                           </span>
-                          <button
-                            type="button"
-                            onClick={() => setItemToDelete(item)}
-                            className="text-gray-300 hover:text-rose-500 transition-colors p-1 cursor-pointer"
-                            title="Excluir"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                          <span className="text-[11px] text-[#86868B]">
+                            · {group.items.length} {group.items.length === 1 ? "assinatura/compra" : "assinaturas/compras"}
+                          </span>
                         </div>
+                        <span className="text-xs font-semibold text-[#1D1D1F]">
+                          R$ {formatCurrency(group.totalAmount)}
+                        </span>
                       </div>
-                    );
-                  })}
+                      {group.items.map((item) => renderItemRow(item, "credit"))}
+                    </div>
+                  ))}
 
                   {projection.cardInstallments > 0 && (
                     <div className="flex items-center justify-between gap-4 p-4 bg-gray-50/40">
@@ -1287,6 +1449,412 @@ export default function PlanningPage() {
                     {modalType === "income" ? "Salvar Recebimento" : "Salvar Planejamento"}
                   </span>
                 </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE EDIÇÃO DE PLANEJAMENTO ESTILO APPLE */}
+      {isEditModalOpen && editingItem && (
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div
+            onClick={() => {
+              setIsEditModalOpen(false);
+              setEditingItem(null);
+            }}
+            className="fixed inset-0 bg-black/45 animate-apple-backdrop"
+          />
+
+          <div className="relative w-full max-w-lg bg-white rounded-t-[32px] sm:rounded-[32px] shadow-[0_-8px_40px_rgba(0,0,0,0.18)] z-50 animate-apple-sheet sm:animate-apple-modal max-h-[90dvh] sm:max-h-[85vh] overflow-y-auto font-sans pb-safe touch-scroll">
+            {/* Pílula Apple */}
+            <div className="w-10 h-1 bg-gray-300 rounded-full mx-auto mt-3 mb-1 sm:hidden" />
+
+            {/* HEADER DO MODAL */}
+            <div className="flex items-center justify-between px-6 pt-4 pb-3 border-b border-[#E5E5EA]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-black/[0.04] flex items-center justify-center text-[#1D1D1F]">
+                  <Pencil size={15} strokeWidth={2} />
+                </div>
+                <div>
+                  <h2 className="text-base font-semibold text-[#1D1D1F] leading-tight">
+                    Editar Planejamento
+                  </h2>
+                  <span className="text-[11px] font-medium text-[#86868B]">
+                    Ajuste os dados ou efetive adiantado
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsEditModalOpen(false);
+                  setEditingItem(null);
+                }}
+                className="text-[#0071E3] hover:text-[#0077ED] font-normal text-sm sm:text-base cursor-pointer active:opacity-60 transition-opacity"
+              >
+                Cancelar
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit}>
+              {/* TABELA AGRUPADA ESTILO APPLE */}
+              <div className="divide-y divide-[#E5E5EA] border-b border-[#E5E5EA] bg-white">
+                {/* LINHA: TIPO */}
+                <div className="flex items-center px-6 py-3.5">
+                  <span className="w-24 text-[11px] font-semibold text-[#86868B] uppercase tracking-wider">
+                    TIPO
+                  </span>
+                  <div className="flex-1 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditType("income")}
+                      className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                        editType === "income"
+                          ? "bg-emerald-600 text-white shadow-2xs"
+                          : "bg-[#F2F2F7] text-[#86868B] hover:text-[#1D1D1F]"
+                      }`}
+                    >
+                      <ArrowDownLeft size={13} />
+                      <span>Recebimento</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditType("expense")}
+                      className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                        editType === "expense"
+                          ? "bg-[#1D1D1F] text-white shadow-2xs"
+                          : "bg-[#F2F2F7] text-[#86868B] hover:text-[#1D1D1F]"
+                      }`}
+                    >
+                      <ArrowUpRight size={13} />
+                      <span>Pagamento</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* LINHA: IDENTIFICAÇÃO */}
+                <div className="flex items-center px-6 py-3.5">
+                  <span className="w-24 text-[11px] font-semibold text-[#86868B] uppercase tracking-wider">
+                    ITEM
+                  </span>
+                  <input
+                    type="text"
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    placeholder="Nome do compromisso"
+                    className="flex-1 text-sm font-medium text-[#1D1D1F] placeholder:text-[#86868B] outline-none bg-transparent"
+                  />
+                </div>
+
+                {/* LINHA: VALOR */}
+                <div className="flex items-center px-6 py-4">
+                  <span className="w-24 text-[11px] font-semibold text-[#86868B] uppercase tracking-wider">
+                    VALOR
+                  </span>
+                  <div className="flex-1 flex items-baseline gap-1">
+                    <span className="text-xl font-bold text-[#1D1D1F]">R$</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="0,00"
+                      value={editAmount}
+                      onChange={(e) => setEditAmount(e.target.value)}
+                      className="w-full text-2xl sm:text-3xl font-bold text-[#1D1D1F] placeholder:text-gray-300 outline-none bg-transparent"
+                    />
+                  </div>
+                </div>
+
+                {/* LINHA: DATA / RECORRÊNCIA */}
+                <div className="px-6 py-4 space-y-3 bg-[#FAFAFC]">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-[#86868B] uppercase tracking-wider">
+                      DATA / VENCIMENTO
+                    </span>
+                    <span className="text-xs font-semibold text-[#1D1D1F]">
+                      Mês Base: {activeMonthObj.short}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditRecurrence("business_day_5");
+                        setEditIsCustomDay(false);
+                      }}
+                      className={`p-2.5 rounded-xl text-xs font-semibold transition-all border text-left cursor-pointer ${
+                        editRecurrence === "business_day_5"
+                          ? "bg-white border-[#1D1D1F] shadow-xs text-[#1D1D1F]"
+                          : "bg-[#F2F2F7] border-transparent text-[#86868B] hover:text-[#1D1D1F]"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-emerald-700 font-bold">⚡ 5º Dia Útil</span>
+                        {editRecurrence === "business_day_5" && (
+                          <Check size={14} className="text-emerald-700" />
+                        )}
+                      </div>
+                      <span className="text-[10px] text-[#86868B] block mt-0.5">
+                        Cálculo bancário
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditRecurrence("fixed_day");
+                        setEditFixedDay("5");
+                        setEditIsCustomDay(false);
+                      }}
+                      className={`p-2.5 rounded-xl text-xs font-semibold transition-all border text-left cursor-pointer ${
+                        editRecurrence === "fixed_day" && editFixedDay === "5" && !editIsCustomDay
+                          ? "bg-white border-[#1D1D1F] shadow-xs text-[#1D1D1F]"
+                          : "bg-[#F2F2F7] border-transparent text-[#86868B] hover:text-[#1D1D1F]"
+                      }`}
+                    >
+                      <span>Todo Dia 5</span>
+                      <span className="text-[10px] text-[#86868B] block mt-0.5">Fixo todo mês</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditRecurrence("fixed_day");
+                        setEditFixedDay("10");
+                        setEditIsCustomDay(false);
+                      }}
+                      className={`p-2.5 rounded-xl text-xs font-semibold transition-all border text-left cursor-pointer ${
+                        editRecurrence === "fixed_day" && editFixedDay === "10" && !editIsCustomDay
+                          ? "bg-white border-[#1D1D1F] shadow-xs text-[#1D1D1F]"
+                          : "bg-[#F2F2F7] border-transparent text-[#86868B] hover:text-[#1D1D1F]"
+                      }`}
+                    >
+                      <span>Todo Dia 10</span>
+                      <span className="text-[10px] text-[#86868B] block mt-0.5">Fixo todo mês</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditRecurrence("fixed_day");
+                        setEditFixedDay("20");
+                        setEditIsCustomDay(false);
+                      }}
+                      className={`p-2.5 rounded-xl text-xs font-semibold transition-all border text-left cursor-pointer ${
+                        editRecurrence === "fixed_day" && editFixedDay === "20" && !editIsCustomDay
+                          ? "bg-white border-[#1D1D1F] shadow-xs text-[#1D1D1F]"
+                          : "bg-[#F2F2F7] border-transparent text-[#86868B] hover:text-[#1D1D1F]"
+                      }`}
+                    >
+                      <span>Todo Dia 20</span>
+                      <span className="text-[10px] text-[#86868B] block mt-0.5">Fixo todo mês</span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditRecurrence("fixed_day");
+                        setEditIsCustomDay(true);
+                      }}
+                      className={`text-xs font-semibold hover:underline cursor-pointer ${
+                        editIsCustomDay ? "text-[#1D1D1F] font-bold" : "text-[#86868B]"
+                      }`}
+                    >
+                      Outro dia fixo do mês:
+                    </button>
+                    {editIsCustomDay && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-[#86868B]">Dia</span>
+                        <input
+                          type="number"
+                          min="1"
+                          max="31"
+                          value={editCustomDay}
+                          onChange={(e) => setEditCustomDay(e.target.value)}
+                          className="w-14 h-7 text-center rounded-lg border border-black/10 bg-white font-semibold text-xs outline-none"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* DURAÇÃO */}
+                <div className="px-6 py-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-[#86868B] uppercase tracking-wider">
+                      DURAÇÃO DO COMPROMISSO
+                    </span>
+                    <span className="text-[11px] text-[#86868B]">
+                      {editDurationMode === "one-time"
+                        ? "Apenas neste mês"
+                        : editDurationMode === "installments"
+                          ? `${editInstallmentsCount} parcelas mensais`
+                          : "Recorrente contínuo"}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditDurationMode("one-time")}
+                      className={`p-2.5 rounded-xl text-xs font-semibold transition-all border text-left cursor-pointer ${
+                        editDurationMode === "one-time"
+                          ? "bg-white border-[#1D1D1F] shadow-xs text-[#1D1D1F]"
+                          : "bg-[#F2F2F7] border-transparent text-[#86868B] hover:text-[#1D1D1F]"
+                      }`}
+                    >
+                      <span>Apenas 1 mês</span>
+                      <span className="text-[10px] text-[#86868B] block mt-0.5">Pagamento único</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditDurationMode("installments");
+                        setEditInstallmentsCount((prev) => prev || 3);
+                      }}
+                      className={`p-2.5 rounded-xl text-xs font-semibold transition-all border text-left cursor-pointer ${
+                        editDurationMode === "installments"
+                          ? "bg-white border-[#1D1D1F] shadow-xs text-[#1D1D1F]"
+                          : "bg-[#F2F2F7] border-transparent text-[#86868B] hover:text-[#1D1D1F]"
+                      }`}
+                    >
+                      <span>Parcelado</span>
+                      <span className="text-[10px] text-[#86868B] block mt-0.5">Duração definida</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setEditDurationMode("continuous")}
+                      className={`p-2.5 rounded-xl text-xs font-semibold transition-all border text-left cursor-pointer ${
+                        editDurationMode === "continuous"
+                          ? "bg-white border-[#1D1D1F] shadow-xs text-[#1D1D1F]"
+                          : "bg-[#F2F2F7] border-transparent text-[#86868B] hover:text-[#1D1D1F]"
+                      }`}
+                    >
+                      <span>Contínuo</span>
+                      <span className="text-[10px] text-[#86868B] block mt-0.5">Sem prazo final</span>
+                    </button>
+                  </div>
+
+                  {editDurationMode === "installments" && (
+                    <div className="rounded-xl border border-black/5 bg-[#F9F9FB] p-3 space-y-2">
+                      <div className="flex items-center justify-between text-xs text-[#86868B]">
+                        <span>Número de meses:</span>
+                        <span className="font-semibold text-[#1D1D1F]">
+                          {editInstallmentsCount} parcelas
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {[2, 3, 6, 12].map((count) => (
+                          <button
+                            key={count}
+                            type="button"
+                            onClick={() => setEditInstallmentsCount(count)}
+                            className={`h-8 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                              editInstallmentsCount === count
+                                ? "bg-[#1D1D1F] text-white"
+                                : "bg-white border border-black/5 text-[#1D1D1F] hover:bg-gray-100"
+                            }`}
+                          >
+                            {count}x
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* LINHA: CONTA / CARTÃO */}
+                <div className="flex items-center px-6 py-3.5">
+                  <span className="w-24 text-[11px] font-semibold text-[#86868B] uppercase tracking-wider">
+                    {editType === "income" ? "DESTINO" : "FORMA"}
+                  </span>
+                  <select
+                    value={editAccount}
+                    onChange={(e) => setEditAccount(e.target.value)}
+                    className="flex-1 text-xs font-medium text-[#1D1D1F] bg-transparent outline-none cursor-pointer"
+                  >
+                    {accountOptions.map((acc) => (
+                      <option key={acc} value={acc}>
+                        {formatAccountLabel(acc)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* LINHA: CATEGORIA */}
+                <div className="flex items-center px-6 py-3.5">
+                  <span className="w-24 text-[11px] font-semibold text-[#86868B] uppercase tracking-wider">
+                    CATEGORIA
+                  </span>
+                  <select
+                    value={editCategory}
+                    onChange={(e) => setEditCategory(e.target.value)}
+                    className="flex-1 text-xs font-medium text-[#1D1D1F] bg-transparent outline-none cursor-pointer"
+                  >
+                    {editType === "income" ? (
+                      <>
+                        <option value="Salário / Extra">Salário / Renda Principal</option>
+                        <option value="13º / Bônus">13º / Bônus / PLR</option>
+                        <option value="Freelance / Extra">Freelance / Extra</option>
+                        <option value="Rendimentos">Rendimentos de Investimento</option>
+                        <option value="Reembolso">Reembolso / Outros</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="Moradia & Contas">Moradia & Contas Fixas</option>
+                        <option value="Assinaturas & Lazer">Assinaturas & Lazer</option>
+                        <option value="Alimentação">Alimentação & Supermercado</option>
+                        <option value="Transporte">Transporte & Mobilidade</option>
+                        <option value="Saúde & Bem-estar">Saúde & Bem-estar</option>
+                        <option value="Educação">Educação</option>
+                        <option value="Outros">Outros Compromissos</option>
+                      </>
+                    )}
+                  </select>
+                </div>
+              </div>
+
+              {/* BOTÕES DE AÇÃO DO MODAL */}
+              <div className="p-5 sm:p-6 pb-safe space-y-2">
+                {!editingItem.realizedPeriods?.includes(getPeriodKey(targetYear, targetMonth)) ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={handleRealizeFromEditModal}
+                      disabled={processingItemId === editingItem.id}
+                      className="h-12 rounded-full border border-[#1D1D1F]/20 hover:bg-black/5 text-[#1D1D1F] font-semibold text-xs transition-all active:scale-[0.98] select-none cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      {processingItemId === editingItem.id ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <Zap size={14} className="text-amber-500 fill-amber-500" />
+                      )}
+                      <span>Efetivar Agora (Hoje)</span>
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={!editTitle.trim() || !editAmount.trim()}
+                      className="h-12 rounded-full bg-[#1D1D1F] hover:bg-black text-white font-semibold text-xs transition-all duration-150 active:scale-[0.98] select-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-xs flex items-center justify-center gap-2"
+                    >
+                      <Check size={15} strokeWidth={2.5} />
+                      <span>Salvar Alterações</span>
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={!editTitle.trim() || !editAmount.trim()}
+                    className="w-full h-12 rounded-full bg-[#1D1D1F] hover:bg-black text-white font-semibold text-xs transition-all duration-150 active:scale-[0.98] select-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-xs flex items-center justify-center gap-2"
+                  >
+                    <Check size={15} strokeWidth={2.5} />
+                    <span>Salvar Alterações</span>
+                  </button>
+                )}
               </div>
             </form>
           </div>

@@ -216,3 +216,60 @@ export function formatRecurrenceLabel(
 
   return `Todo dia ${item.dueDay || 10}`;
 }
+
+export interface PlannedDateGroup<T extends { dueDay?: number; recurrenceType?: "business_day_5" | "fixed_day"; amount: number }> {
+  day: number;
+  label: string;
+  totalAmount: number;
+  items: T[];
+}
+
+/**
+ * Agrupa itens planejados pelo dia de vencimento efetivo no mês especificado,
+ * ordenados cronologicamente e calculando o subtotal de cada data.
+ */
+export function groupRecurringItemsByDate<T extends { dueDay?: number; recurrenceType?: "business_day_5" | "fixed_day"; amount: number }>(
+  items: T[],
+  year: number,
+  monthIndex: number
+): PlannedDateGroup<T>[] {
+  const map = new Map<number, { has5thBusiness: boolean; hasFixed: boolean; items: T[]; totalAmount: number }>();
+
+  for (const item of items) {
+    const effectiveDay = getEffectiveDueDay(item, year, monthIndex);
+    const is5thBusiness = item.recurrenceType === "business_day_5";
+    const existing = map.get(effectiveDay);
+
+    if (!existing) {
+      map.set(effectiveDay, {
+        has5thBusiness: is5thBusiness,
+        hasFixed: !is5thBusiness,
+        items: [item],
+        totalAmount: item.amount,
+      });
+    } else {
+      existing.items.push(item);
+      existing.totalAmount += item.amount;
+      if (is5thBusiness) existing.has5thBusiness = true;
+      else existing.hasFixed = true;
+    }
+  }
+
+  const sortedDays = Array.from(map.keys()).sort((a, b) => a - b);
+  return sortedDays.map((day) => {
+    const group = map.get(day)!;
+    let label = `Dia ${day}`;
+    if (group.has5thBusiness && !group.hasFixed) {
+      label = `5º dia útil (Dia ${day})`;
+    } else if (group.has5thBusiness && group.hasFixed) {
+      label = `Dia ${day} · Inclui 5º dia útil`;
+    }
+
+    return {
+      day,
+      label,
+      totalAmount: group.totalAmount,
+      items: group.items,
+    };
+  });
+}

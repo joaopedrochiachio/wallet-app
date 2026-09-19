@@ -16,6 +16,8 @@ import {
   deleteTransactionFromFirestore,
   payCreditCardInvoice,
   updateTransactionInFirestore,
+  realizePlannedOccurrence,
+  unrealizePlannedOccurrence,
   TransactionUpdateInput,
 } from "@/lib/services/transactionsService";
 import {
@@ -26,6 +28,7 @@ import {
 import {
   subscribeToRecurring,
   saveRecurringToFirestore,
+  updateRecurringInFirestore,
   deleteRecurringFromFirestore,
 } from "@/lib/services/recurringService";
 import { processDueOccurrencesForUser } from "@/lib/services/timeProgressionService";
@@ -134,8 +137,21 @@ interface WalletContextType {
   payInvoice: (cardId: string) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
   addRecurringItem: (item: Omit<RecurringItem, "id">) => Promise<void>;
+  updateRecurringItem: (id: string, updates: Partial<RecurringItem>) => Promise<void>;
   toggleRecurringItem: (id: string) => Promise<void>;
   deleteRecurringItem: (id: string) => Promise<void>;
+  realizeRecurringItemNow: (
+    item: RecurringItem,
+    targetYear: number,
+    targetMonth: number,
+    customAmount?: number,
+    customDate?: Date
+  ) => Promise<void>;
+  unrealizeRecurringItem: (
+    item: RecurringItem,
+    targetYear: number,
+    targetMonth: number
+  ) => Promise<void>;
   getMonthlyProjection: (monthIndex: number, customMonths?: PlanningMonth[]) => MonthProjection;
   addGoal: (goal: Omit<GoalItem, "id">) => GoalItem;
   updateGoalProgress: (goalId: string, amountToAdd: number) => void;
@@ -634,6 +650,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     await saveRecurringToFirestore(user.uid, newItem);
   };
 
+  const updateRecurringItem = async (id: string, updates: Partial<RecurringItem>) => {
+    if (!user) throw new Error("Entre na sua conta para editar o planejamento.");
+    await updateRecurringInFirestore(user.uid, id, updates);
+  };
+
   const toggleRecurringItem = async (id: string) => {
     if (!user) throw new Error("Entre na sua conta para alterar o planejamento.");
     const item = recurringItems.find((candidate) => candidate.id === id);
@@ -644,6 +665,31 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const deleteRecurringItem = async (id: string) => {
     if (!user) throw new Error("Entre na sua conta para excluir o planejamento.");
     await deleteRecurringFromFirestore(user.uid, id);
+  };
+
+  const realizeRecurringItemNow = async (
+    item: RecurringItem,
+    targetYear: number,
+    targetMonth: number,
+    customAmount?: number,
+    customDate?: Date
+  ) => {
+    if (!user) throw new Error("Entre na sua conta para efetivar o planejamento.");
+    const periodKey = getPeriodKey(targetYear, targetMonth);
+    await realizePlannedOccurrence(user.uid, item, periodKey, {
+      customAmount,
+      customDate,
+    });
+  };
+
+  const unrealizeRecurringItem = async (
+    item: RecurringItem,
+    targetYear: number,
+    targetMonth: number
+  ) => {
+    if (!user) throw new Error("Entre na sua conta para desfazer a efetivação.");
+    const periodKey = getPeriodKey(targetYear, targetMonth);
+    await unrealizePlannedOccurrence(user.uid, item.id, periodKey);
   };
 
   const addGoal = (goalInput: Omit<GoalItem, "id">): GoalItem => {
@@ -857,8 +903,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         payInvoice,
         deleteTransaction,
         addRecurringItem,
+        updateRecurringItem,
         toggleRecurringItem,
         deleteRecurringItem,
+        realizeRecurringItemNow,
+        unrealizeRecurringItem,
         getMonthlyProjection,
         addGoal,
         updateGoalProgress,

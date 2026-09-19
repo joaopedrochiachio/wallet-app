@@ -161,6 +161,102 @@ export async function linkTransactionToRecurring(
   await batch.commit();
 }
 
+/**
+ * Efetiva imediatamente uma ocorrência planejada (pagamento ou recebimento adiantado).
+ * Cria a transação real e marca a competência como realizada de forma atômica e idempotente.
+ */
+export async function realizePlannedOccurrence(
+  userId: string,
+  item: RecurringItem,
+  periodKey: string,
+  options?: { customDate?: Date; customAmount?: number }
+): Promise<string> {
+  if (!userId) {
+    throw new Error("userId é obrigatório para efetivar a previsão.");
+  }
+  const transactionsCol = getTransactionsCollectionRef(userId);
+  const txId = `rec-tx-${item.id}-${periodKey}`;
+  const txRef = doc(transactionsCol, txId);
+  const recurringRef = doc(db, "users", userId, "recurring", item.id);
+
+  const occurredAt = options?.customDate ?? new Date();
+  const amount = options?.customAmount !== undefined ? options.customAmount : item.amount;
+  const formattedDate = `${occurredAt.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}, ${occurredAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+
+  const batch = writeBatch(db);
+  batch.set(
+    txRef,
+    transactionPayload(
+      {
+        amount,
+        type: item.type === "income" ? "in" : "out",
+        category: item.category,
+        description: item.title,
+        paymentMethod: item.account,
+        cardId: item.cardId ?? null,
+        kind: "regular",
+        relatedCardId: null,
+        groupId: null,
+        recurringItemId: item.id,
+        periodKey,
+        date: formattedDate,
+        occurredAt,
+      },
+      userId
+    ),
+    { merge: true }
+  );
+
+  batch.set(
+    recurringRef,
+    {
+      realizedPeriods: arrayUnion(periodKey),
+    },
+    { merge: true }
+  );
+
+  await batch.commit();
+  return txId;
+}
+
+/**
+ * Desfaz a efetivação de uma competência planejada, removendo a transação criada
+ * e restaurando a competência como pendente no planejamento.
+ */
+export async function unrealizePlannedOccurrence(
+  userId: string,
+  recurringItemId: string,
+  periodKey: string
+): Promise<void> {
+  if (!userId) {
+    throw new Error("userId é obrigatório para desfazer a efetivação.");
+  }
+  const txId = `rec-tx-${recurringItemId}-${periodKey}`;
+  const batch = writeBatch(db);
+
+  batch.delete(doc(db, "users", userId, TRANSACTIONS_COLLECTION, txId));
+
+  const q = query(
+    getTransactionsCollectionRef(userId),
+    where("recurringItemId", "==", recurringItemId),
+    where("periodKey", "==", periodKey)
+  );
+  const snap = await getDocs(q);
+  snap.docs.forEach((d) => {
+    batch.delete(d.ref);
+  });
+
+  const recurringRef = doc(db, "users", userId, "recurring", recurringItemId);
+  const recurringSnapshot = await getDoc(recurringRef);
+  if (recurringSnapshot.exists()) {
+    batch.update(recurringRef, {
+      realizedPeriods: arrayRemove(periodKey),
+    });
+  }
+
+  await batch.commit();
+}
+
 /** Exclui também a outra perna de uma fatura e reabre o planejamento realizado. */
 export async function deleteTransactionFromFirestore(
   userId: string,

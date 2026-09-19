@@ -25,6 +25,19 @@ export async function saveRecurringToFirestore(
 }
 
 /**
+ * Atualiza campos específicos de um item recorrente no Firestore
+ */
+export async function updateRecurringInFirestore(
+  userId: string,
+  itemId: string,
+  updates: Partial<RecurringItem>
+): Promise<void> {
+  const recurringDocRef = doc(db, "users", userId, "recurring", itemId);
+  const cleanUpdates = sanitizeData(updates);
+  await setDoc(recurringDocRef, cleanUpdates, { merge: true });
+}
+
+/**
  * Exclui um item recorrente do Firestore
  */
 export async function deleteRecurringFromFirestore(

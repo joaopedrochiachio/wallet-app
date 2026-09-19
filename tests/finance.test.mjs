@@ -13,6 +13,7 @@ import {
   get5thBusinessDay,
   getPlanningMonthsWindow,
   isBusinessDay,
+  groupRecurringItemsByDate,
 } from "../lib/utils/dateUtils.ts";
 import {
   createSafeMiddayDate,
@@ -556,5 +557,99 @@ test("saldo real versus projetado: materialização não causa dupla contagem no
   // Total projetado se manteve íntegro (5.000 antes, 5.000 depois), sem dupla contagem para 9.000!
   assert.equal(projectedBefore, projectedAfter);
 });
+
+test("groupRecurringItemsByDate agrupa lançamentos pelo dia e calcula subtotais diários ordenados", () => {
+  const items = [
+    { id: "1", title: "Aluguel", amount: 2000, dueDay: 20, recurrenceType: "fixed_day" },
+    { id: "2", title: "Luz", amount: 120, dueDay: 10, recurrenceType: "fixed_day" },
+    { id: "3", title: "Internet", amount: 150, dueDay: 20, recurrenceType: "fixed_day" },
+    { id: "4", title: "Salário 5º DU", amount: 5000, recurrenceType: "business_day_5" }, // Em Setembro/2026 cai no dia 8
+    { id: "5", title: "Condomínio", amount: 500, dueDay: 20, recurrenceType: "fixed_day" },
+    { id: "6", title: "Streaming", amount: 40, dueDay: 10, recurrenceType: "fixed_day" },
+  ];
+
+  const grouped = groupRecurringItemsByDate(items, 2026, 8);
+
+  // Deve haver 3 grupos de dias distintos: Dia 8 (5º DU), Dia 10 e Dia 20
+  assert.equal(grouped.length, 3);
+
+  // 1º grupo: 5º dia útil (Dia 8)
+  assert.equal(grouped[0].day, 8);
+  assert.equal(grouped[0].items.length, 1);
+  assert.equal(grouped[0].totalAmount, 5000);
+  assert.match(grouped[0].label, /5º dia útil/i);
+
+  // 2º grupo: Dia 10
+  assert.equal(grouped[1].day, 10);
+  assert.equal(grouped[1].items.length, 2);
+  assert.equal(grouped[1].totalAmount, 160); // 120 + 40
+  assert.equal(grouped[1].label, "Dia 10");
+
+  // 3º grupo: Dia 20 (Aluguel 2000 + Internet 150 + Condomínio 500 = 2650)
+  assert.equal(grouped[2].day, 20);
+  assert.equal(grouped[2].items.length, 3);
+  assert.equal(grouped[2].totalAmount, 2650);
+  assert.equal(grouped[2].label, "Dia 20");
+});
+
+test("antecipação imediata de pagamento/recebimento futuro atualiza saldo e remove pendência sem duplicidade", () => {
+  const initialAccount = { ...checking, openingBalance: 3000 };
+
+  const plannedBill = {
+    id: "bill-energy",
+    title: "Conta de Luz",
+    amount: 250,
+    type: "expense",
+    account: checking.name,
+    cardId: checking.id,
+    category: "Moradia & Contas",
+    dueDay: 20,
+    recurrenceType: "fixed_day",
+    active: true,
+  };
+
+  // 1. Antes de pagar antecipado (ex: dia 5 do mês)
+  const isPendingInitial = isRecurringActiveInMonth(plannedBill, 2026, 8);
+  assert.equal(isPendingInitial, true);
+  const balanceInitial = calculateCheckingBalance(initialAccount, []);
+  assert.equal(balanceInitial, 3000);
+
+  // 2. Usuário clica em 'Pagar antes' no dia 5:
+  // Lançamento é materializado adiantado com a data de hoje (05/09/2026)
+  const earlyTx = {
+    id: `rec-tx-${plannedBill.id}-2026-09`,
+    amount: plannedBill.amount,
+    type: "despesa",
+    account: checking.name,
+    cardId: checking.id,
+    occurredAt: new Date(2026, 8, 5, 14, 30),
+    recurringItemId: plannedBill.id,
+    periodKey: "2026-09",
+  };
+
+  const updatedBill = {
+    ...plannedBill,
+    realizedPeriods: ["2026-09"],
+  };
+
+  // 3. Após a antecipação:
+  // Saldo real é debitado imediatamente: 3000 - 250 = 2750
+  const balanceAfter = calculateCheckingBalance(initialAccount, [earlyTx]);
+  assert.equal(balanceAfter, 2750);
+
+  // O item de planejamento NÃO está mais pendente para Setembro
+  const isPendingAfter = isRecurringActiveInMonth(updatedBill, 2026, 8);
+  assert.equal(isPendingAfter, false);
+
+  // O motor de progressão temporal não o reprocessará no dia 20 (idempotência garantida)
+  const dueOnDay20 = getPendingDueOccurrences(
+    [updatedBill],
+    [checking],
+    [earlyTx],
+    new Date(2026, 8, 20)
+  );
+  assert.equal(dueOnDay20.length, 0);
+});
+
 
 
