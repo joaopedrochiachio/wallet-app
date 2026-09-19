@@ -23,6 +23,8 @@ import { deleteUserDataFromFirestore } from "@/lib/services/userService";
 interface AuthContextType {
   user: User | null;
   loading: boolean;
+  authError: string | null;
+  clearAuthError: () => void;
   signIn: (email: string, pass: string) => Promise<User>;
   signUp: (email: string, pass: string) => Promise<User>;
   signInWithGoogle: () => Promise<User | null>;
@@ -33,14 +35,13 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-function isStandaloneOrMobile(): boolean {
+function isStandalone(): boolean {
   if (typeof window === "undefined") return false;
-  const isStandalone =
+  return (
     window.matchMedia("(display-mode: standalone)").matches ||
     ("standalone" in window.navigator &&
-      (window.navigator as unknown as { standalone?: boolean }).standalone === true);
-  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-  return isStandalone || isMobile;
+      (window.navigator as unknown as { standalone?: boolean }).standalone === true)
+  );
 }
 
 async function configureBestPersistence() {
@@ -58,24 +59,54 @@ async function configureBestPersistence() {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  const clearAuthError = () => setAuthError(null);
 
   useEffect(() => {
-    // Trata resultado de redirecionamento do Google OAuth (PWA standalone e mobile)
-    getRedirectResult(auth)
-      .then((cred) => {
-        if (cred?.user) {
-          setUser(cred.user);
-        }
-      })
-      .catch((err) => {
-        console.warn("[Auth] Redirect result listener:", err);
-      });
+    let isMounted = true;
+    let unsubscribe: (() => void) | null = null;
 
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setLoading(false);
+    // Garante persistência IndexedDB configurada logo no boot
+    configureBestPersistence().finally(() => {
+      // Trata resultado de redirecionamento OAuth exclusivamente aqui
+      getRedirectResult(auth)
+        .then((cred) => {
+          if (!isMounted) return;
+          if (cred?.user) {
+            setUser(cred.user);
+          }
+        })
+        .catch((err: unknown) => {
+          if (!isMounted) return;
+          console.error("[Auth] Redirect result listener error:", err);
+          const code =
+            typeof err === "object" && err && "code" in err ? String(err.code) : "";
+          if (code === "auth/unauthorized-domain") {
+            setAuthError(
+              "Domínio não autorizado no Firebase. Adicione o link da Vercel em 'Domínios Autorizados' no Firebase Console."
+            );
+          } else if (code === "auth/missing-or-invalid-nonce") {
+            setAuthError("A sessão de autenticação expirou. Por favor, tente novamente.");
+          } else if (code !== "auth/popup-closed-by-user" && code !== "auth/cancelled-popup-request") {
+            setAuthError("Não foi possível concluir a autenticação com o Google. Tente novamente.");
+          }
+        })
+        .finally(() => {
+          if (!isMounted) return;
+          // Libera loading apenas depois de processar o resultado do redirect
+          unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+            if (!isMounted) return;
+            setUser(currentUser);
+            setLoading(false);
+          });
+        });
     });
-    return () => unsubscribe();
+
+    return () => {
+      isMounted = false;
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
 
   const signIn = async (email: string, pass: string) => {
@@ -91,17 +122,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signInWithGoogle = async (): Promise<User | null> => {
+    setAuthError(null);
     await configureBestPersistence();
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: "select_account" });
 
-    // No modo PWA standalone ou em dispositivos móveis, popups são desconectados da janela pai
-    // signInWithRedirect é o padrão exigido pelo Safari/Chrome para PWAs instalados
-    if (isStandaloneOrMobile()) {
+    // Em modo PWA standalone (app instalado na tela inicial)
+    if (isStandalone()) {
       await signInWithRedirect(auth, provider);
       return null;
     }
 
+    // Em navegadores comuns (Desktop e Mobile Web), tentamos popup primeiro
     try {
       const cred = await signInWithPopup(auth, provider);
       return cred.user;
@@ -110,8 +142,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         typeof popupError === "object" && popupError && "code" in popupError
           ? String(popupError.code)
           : "";
-      // Se popup foi bloqueado pelo navegador, tenta via redirecionamento seguro
-      if (code === "auth/popup-blocked" || code === "auth/cancelled-popup-request") {
+      // Se popup foi bloqueado pelo navegador mobile, faz fallback para redirect
+      if (
+        code === "auth/popup-blocked" ||
+        code === "auth/cancelled-popup-request" ||
+        code === "auth/operation-not-supported-in-this-environment"
+      ) {
         await signInWithRedirect(auth, provider);
         return null;
       }
@@ -142,6 +178,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       value={{
         user,
         loading,
+        authError,
+        clearAuthError,
         signIn,
         signUp,
         signInWithGoogle,

@@ -2,8 +2,6 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { getRedirectResult } from "firebase/auth";
-import { auth } from "@/lib/firebase";
 import { useAuth } from "@/context/AuthContext";
 import { getUserProfile } from "@/lib/services/userService";
 import { Lock, Mail, ArrowRight, ShieldCheck, Loader2, CheckCircle2 } from "lucide-react";
@@ -12,7 +10,16 @@ import Image from "next/image";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { user, loading: authLoading, signIn, signUp, signInWithGoogle, resetPassword } = useAuth();
+  const {
+    user,
+    loading: authLoading,
+    authError,
+    clearAuthError,
+    signIn,
+    signUp,
+    signInWithGoogle,
+    resetPassword,
+  } = useAuth();
 
   const [mode, setMode] = useState<"login" | "register" | "reset">("login");
   const [email, setEmail] = useState("");
@@ -30,49 +37,40 @@ export default function LoginPage() {
     };
   }, []);
 
+  // Sincroniza erro de autenticação/redirect do contexto
+  useEffect(() => {
+    if (authError) {
+      setError(authError);
+    }
+  }, [authError]);
+
+  // Se o usuário estiver autenticado (seja por redirect, popup ou e-mail), direciona com base no onboarding
   useEffect(() => {
     if (!authLoading && user) {
-      router.replace("/dashboard");
-    }
-  }, [user, authLoading, router]);
-
-  // Captura retorno de redirect OAuth do Google (específico para PWA no iOS e Android)
-  useEffect(() => {
-    let isMounted = true;
-    getRedirectResult(auth)
-      .then(async (result) => {
-        if (!isMounted) return;
-        if (result?.user) {
-          setGoogleLoading(true);
-          const existingProfile = await getUserProfile(result.user.uid);
-          if (existingProfile && existingProfile.isOnboarded) {
+      let isMounted = true;
+      getUserProfile(user.uid)
+        .then((profile) => {
+          if (!isMounted) return;
+          if (profile?.isOnboarded) {
             router.replace("/dashboard");
           } else {
             router.replace("/onboarding");
           }
-        }
-      })
-      .catch((err: unknown) => {
-        if (!isMounted) return;
-        console.error("Erro no retorno do redirect Google:", err);
-        const code = typeof err === "object" && err && "code" in err ? String(err.code) : "";
-        if (code === "auth/unauthorized-domain") {
-          setError("Domínio da Vercel não autorizado no Firebase. Adicione o domínio nas configurações de autenticação do Firebase Console.");
-        } else if (code !== "auth/popup-closed-by-user") {
-          setError("Não foi possível concluir o login com o Google. Tente novamente.");
-        }
-      })
-      .finally(() => {
-        if (isMounted) setGoogleLoading(false);
-      });
+        })
+        .catch(() => {
+          if (!isMounted) return;
+          router.replace("/dashboard");
+        });
 
-    return () => {
-      isMounted = false;
-    };
-  }, [router]);
+      return () => {
+        isMounted = false;
+      };
+    }
+  }, [user, authLoading, router]);
 
   const handleGoogleSignIn = async () => {
     setError(null);
+    clearAuthError();
     setSuccessMessage(null);
     setGoogleLoading(true);
 
@@ -80,14 +78,14 @@ export default function LoginPage() {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
       setGoogleLoading(false);
-    }, 15000);
+    }, 10000);
 
     try {
       const loggedUser = await signInWithGoogle();
       if (loggedUser) {
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
         const existingProfile = await getUserProfile(loggedUser.uid);
-        if (existingProfile && existingProfile.isOnboarded) {
+        if (existingProfile?.isOnboarded) {
           router.replace("/dashboard");
         } else {
           router.replace("/onboarding");
@@ -99,7 +97,9 @@ export default function LoginPage() {
       console.error("Erro no login Google:", err);
       const code = typeof err === "object" && err && "code" in err ? String(err.code) : "";
       if (code === "auth/unauthorized-domain") {
-        setError("Domínio da Vercel não autorizado no Firebase. Adicione o seu link da Vercel em 'Domínios Autorizados' no Firebase Console.");
+        setError(
+          "Domínio da Vercel não autorizado no Firebase. Adicione o seu link da Vercel em 'Domínios Autorizados' no Firebase Console."
+        );
       } else if (code !== "auth/popup-closed-by-user") {
         setError("Não foi possível autenticar com o Google. Tente novamente.");
       }
