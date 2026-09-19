@@ -1,7 +1,9 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { getRedirectResult } from "firebase/auth";
+import { auth } from "@/lib/firebase";
 import { useAuth } from "@/context/AuthContext";
 import { getUserProfile } from "@/lib/services/userService";
 import { Lock, Mail, ArrowRight, ShieldCheck, Loader2, CheckCircle2 } from "lucide-react";
@@ -20,6 +22,13 @@ export default function LoginPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (!authLoading && user) {
@@ -27,25 +36,73 @@ export default function LoginPage() {
     }
   }, [user, authLoading, router]);
 
+  // Captura retorno de redirect OAuth do Google (específico para PWA no iOS e Android)
+  useEffect(() => {
+    let isMounted = true;
+    getRedirectResult(auth)
+      .then(async (result) => {
+        if (!isMounted) return;
+        if (result?.user) {
+          setGoogleLoading(true);
+          const existingProfile = await getUserProfile(result.user.uid);
+          if (existingProfile && existingProfile.isOnboarded) {
+            router.replace("/dashboard");
+          } else {
+            router.replace("/onboarding");
+          }
+        }
+      })
+      .catch((err: unknown) => {
+        if (!isMounted) return;
+        console.error("Erro no retorno do redirect Google:", err);
+        const code = typeof err === "object" && err && "code" in err ? String(err.code) : "";
+        if (code === "auth/unauthorized-domain") {
+          setError("Domínio da Vercel não autorizado no Firebase. Adicione o domínio nas configurações de autenticação do Firebase Console.");
+        } else if (code !== "auth/popup-closed-by-user") {
+          setError("Não foi possível concluir o login com o Google. Tente novamente.");
+        }
+      })
+      .finally(() => {
+        if (isMounted) setGoogleLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [router]);
+
   const handleGoogleSignIn = async () => {
     setError(null);
     setSuccessMessage(null);
     setGoogleLoading(true);
+
+    // Timeout de segurança para evitar que a tela fique congelada indefinidamente
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => {
+      setGoogleLoading(false);
+    }, 15000);
+
     try {
-      const user = await signInWithGoogle();
-      const existingProfile = await getUserProfile(user.uid);
-      if (existingProfile && existingProfile.isOnboarded) {
-        router.replace("/dashboard");
-      } else {
-        router.replace("/onboarding");
+      const loggedUser = await signInWithGoogle();
+      if (loggedUser) {
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        const existingProfile = await getUserProfile(loggedUser.uid);
+        if (existingProfile && existingProfile.isOnboarded) {
+          router.replace("/dashboard");
+        } else {
+          router.replace("/onboarding");
+        }
       }
+      // Se loggedUser for null, foi disparado o redirecionamento nativo do PWA
     } catch (err: unknown) {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
       console.error("Erro no login Google:", err);
       const code = typeof err === "object" && err && "code" in err ? String(err.code) : "";
-      if (code !== "auth/popup-closed-by-user") {
+      if (code === "auth/unauthorized-domain") {
+        setError("Domínio da Vercel não autorizado no Firebase. Adicione o seu link da Vercel em 'Domínios Autorizados' no Firebase Console.");
+      } else if (code !== "auth/popup-closed-by-user") {
         setError("Não foi possível autenticar com o Google. Tente novamente.");
       }
-    } finally {
       setGoogleLoading(false);
     }
   };
