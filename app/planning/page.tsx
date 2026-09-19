@@ -10,8 +10,8 @@ import {
   CreditCard,
   ArrowDownLeft,
   ArrowUpRight,
+  CalendarDays,
 } from "lucide-react";
-import { WPayLogo, WPayButton } from "@/components/ui/WPayLogo";
 import { AppleConfirmModal } from "@/components/ui/AppleConfirmModal";
 import { MonthlyMovementOverview } from "@/components/planning/MonthlyMovementOverview";
 import {
@@ -911,18 +911,25 @@ export default function PlanningPage() {
             {/* Pílula Apple */}
             <div className="w-10 h-1 bg-gray-300 rounded-full mx-auto mt-3 mb-1 sm:hidden" />
 
-            {/* HEADER OFICIAL APPLE PAY */}
+            {/* HEADER DO MODAL */}
             <div className="flex items-center justify-between px-6 pt-4 pb-3 border-b border-[#E5E5EA]">
-              <div className="flex items-center gap-2">
-                <WPayLogo size="lg" />
-                <span className="text-[10px] font-semibold text-[#86868B] uppercase tracking-wider ml-1 bg-gray-100 px-2 py-0.5 rounded-md">
-                  Previsão Futura
-                </span>
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-black/[0.04] flex items-center justify-center text-[#1D1D1F]">
+                  <CalendarDays size={16} strokeWidth={2} />
+                </div>
+                <div>
+                  <h2 className="text-base font-semibold text-[#1D1D1F] leading-tight">
+                    {modalType === "income" ? "Novo Recebimento" : "Nova Despesa Planejada"}
+                  </h2>
+                  <span className="text-[11px] font-medium text-[#86868B]">
+                    Previsão para {activeMonthObj.name}
+                  </span>
+                </div>
               </div>
               <button
                 type="button"
                 onClick={() => setIsAddingModalOpen(false)}
-                className="text-[#0071E3] hover:text-[#0077ED] font-normal text-base cursor-pointer active:opacity-60 transition-opacity"
+                className="text-[#0071E3] hover:text-[#0077ED] font-normal text-sm sm:text-base cursor-pointer active:opacity-60 transition-opacity"
               >
                 Cancelar
               </button>
@@ -1268,14 +1275,18 @@ export default function PlanningPage() {
                 </div>
               </div>
 
-              {/* BOTÃO CONFIRMAR APPLE PAY */}
+              {/* BOTÃO SALVAR PLANEJAMENTO */}
               <div className="p-5 sm:p-6 pb-safe">
-                <WPayButton
+                <button
                   type="submit"
-                  label="Confirmar Planejamento"
-                  theme="black"
                   disabled={!newTitle.trim() || !newAmount.trim()}
-                />
+                  className="w-full h-12.5 rounded-full bg-[#1D1D1F] hover:bg-black text-white font-semibold text-sm transition-all duration-150 active:scale-[0.98] select-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-xs flex items-center justify-center gap-2"
+                >
+                  <Check size={16} strokeWidth={2.5} />
+                  <span>
+                    {modalType === "income" ? "Salvar Recebimento" : "Salvar Planejamento"}
+                  </span>
+                </button>
               </div>
             </form>
           </div>

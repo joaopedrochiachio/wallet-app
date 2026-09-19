@@ -2,7 +2,6 @@
 
 import React from "react";
 import { Plus } from "lucide-react";
-import { WPayLogo } from "@/components/ui/WPayLogo";
 
 interface WalletActionsProps {
   onPayWithWPay?: () => void;
@@ -27,15 +26,15 @@ export function WalletActions({
         </button>
       )}
 
-      {/* Botão Principal W Pay */}
+      {/* Botão Principal Nova Transação */}
       {onPayWithWPay && (
         <button
           type="button"
           onClick={onPayWithWPay}
-          className="h-9 px-4 bg-[#1D1D1F] hover:bg-black text-white rounded-full flex items-center justify-center gap-1.5 text-xs font-semibold shadow-2xs hover:shadow-xs transition-all active:scale-[0.98] cursor-pointer"
+          className="h-9 px-3.5 sm:px-4 bg-[#1D1D1F] hover:bg-black text-white rounded-full flex items-center justify-center gap-1.5 text-xs font-semibold shadow-2xs hover:shadow-xs transition-all active:scale-[0.98] cursor-pointer"
         >
-          <WPayLogo size="sm" variant="light" />
-          <span>Pagar Lançamento</span>
+          <Plus size={14} strokeWidth={2.5} />
+          <span>Nova Transação</span>
         </button>
       )}
     </div>

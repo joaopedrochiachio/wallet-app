@@ -7,9 +7,9 @@ import {
   CreditCard,
   Repeat,
   Sparkles,
+  Check,
 } from "lucide-react";
 import { useWallet } from "@/context/WalletContext";
-import { WPayLogo } from "@/components/ui/WPayLogo";
 import { get5thBusinessDay, MONTH_NAMES_PT } from "@/lib/utils/dateUtils";
 import { formatAccountLabel } from "@/lib/utils/ledger";
 import { RecurrenceType } from "@/types";
@@ -195,7 +195,9 @@ export function AddTransactionSheet({
         {/* 1. CABEÇALHO DO MODAL */}
         <div className="flex items-center justify-between px-5 sm:px-6 pt-4 sm:pt-5 pb-3.5 sm:pb-4 border-b border-black/[0.04]">
           <div className="flex items-center gap-2.5">
-            <WPayLogo size="md" />
+            <h2 className="text-base font-semibold text-[#1D1D1F]">
+              {type === "receita" ? "Nova Receita" : "Nova Despesa"}
+            </h2>
             <span
               className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-medium ${
                 type === "receita"
@@ -677,14 +679,14 @@ export function AddTransactionSheet({
                 <line x1="15" y1="10" x2="15.01" y2="10" />
                 <path d="M9.5 15a3.5 3.5 0 0 0 5 0" />
               </svg>
-              <span>Confirmação segura com W Pay</span>
+              <span>Confirmação instantânea na carteira</span>
             </div>
 
-            {/* CTA Principal Estilo Apple Pay */}
+            {/* CTA Principal */}
             <button
               type="submit"
               disabled={loading || parsedAmount <= 0}
-              className="w-full h-12.5 rounded-full bg-[#1D1D1F] hover:bg-black text-white font-medium text-sm transition-all duration-150 active:scale-[0.98] select-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-xs flex items-center justify-center gap-2"
+              className="w-full h-12.5 rounded-full bg-[#1D1D1F] hover:bg-black text-white font-semibold text-sm transition-all duration-150 active:scale-[0.98] select-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-xs flex items-center justify-center gap-2"
             >
               {loading ? (
                 <div className="flex items-center gap-2 text-xs">
@@ -692,11 +694,11 @@ export function AddTransactionSheet({
                   <span>Processando...</span>
                 </div>
               ) : (
-                <div className="flex items-center gap-1.5">
-                  <span className="text-sm font-normal">
-                    {type === "receita" ? "Receber com" : "Pagar com"}
+                <div className="flex items-center gap-2">
+                  <Check size={16} strokeWidth={2.5} />
+                  <span>
+                    {type === "receita" ? "Confirmar Recebimento" : "Confirmar Pagamento"}
                   </span>
-                  <WPayLogo size="md" variant="light" />
                 </div>
               )}
             </button>

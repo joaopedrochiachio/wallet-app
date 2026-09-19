@@ -3,7 +3,6 @@
 import React from "react";
 import { Plus } from "lucide-react";
 import { WalletLogo } from "@/components/ui/WalletLogo";
-import { WPayLogo } from "@/components/ui/WPayLogo";
 
 interface WalletHeaderProps {
   onOpenNewTransaction?: () => void;
@@ -61,11 +60,11 @@ export function WalletHeader({
           <button
             type="button"
             onClick={onOpenNewTransaction}
-            className="h-9 px-4 rounded-full bg-[#1D1D1F] hover:bg-black active:scale-[0.98] text-white text-xs font-semibold shadow-2xs hover:shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
-            title="Registrar pagamento ou lançamento"
+            className="h-9 px-3.5 sm:px-4 rounded-full bg-[#1D1D1F] hover:bg-black active:scale-[0.98] text-white text-xs font-semibold shadow-2xs hover:shadow-xs transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+            title="Registrar nova transação"
           >
-            <WPayLogo size="sm" variant="light" />
-            <span>Pagar Lançamento</span>
+            <Plus size={14} strokeWidth={2.5} />
+            <span>Nova Transação</span>
           </button>
         )}
       </div>
