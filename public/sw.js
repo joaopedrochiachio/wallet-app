@@ -1,4 +1,4 @@
-const CACHE_NAME = "wallet-pwa-v1";
+const CACHE_NAME = "wallet-pwa-v2";
 const PRECACHE_ASSETS = [
   "/",
   "/dashboard",
@@ -38,6 +38,11 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
+
+  // Não interceptar requisições em ambiente local (desenvolvimento) para garantir hot reload
+  if (url.hostname === "localhost" || url.hostname === "127.0.0.1") {
+    return;
+  }
 
   // Ignorar métodos não-GET, rotas de API, Firebase Auth e Webpack HMR
   if (
