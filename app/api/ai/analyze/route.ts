@@ -7,6 +7,9 @@ import {
   SafeFinancialContext,
 } from "@/lib/services/financialContextService";
 
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
 export interface SpendingPatternItem {
   title: string;
   description: string;

@@ -206,11 +206,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     goalsLoadedFor,
   ].every((loadedUserId) => loadedUserId === user.uid));
 
-  // Remove apenas caches financeiros legados. A sessão do Firebase Auth é preservada.
+  // Remove apenas caches financeiros legados. A sessão do Firebase Auth e o cache da IA são preservados.
   useEffect(() => {
     const legacyKeys = new Set([
       ...LEGACY_FINANCIAL_STORAGE_KEYS,
-      ...Object.keys(window.localStorage).filter((key) => key.startsWith("wallet_")),
+      ...Object.keys(window.localStorage).filter(
+        (key) => key.startsWith("wallet_") && !key.startsWith("wallet_ai_")
+      ),
     ]);
     legacyKeys.forEach((key) => window.localStorage.removeItem(key));
   }, []);

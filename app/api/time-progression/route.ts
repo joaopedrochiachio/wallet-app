@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processDueOccurrencesForUser } from "@/lib/services/timeProgressionService";
 
+export const dynamic = "force-dynamic";
+
 function isAuthorized(request: NextRequest): boolean {
   const cronSecret = process.env.CRON_SECRET;
   if (!cronSecret) {

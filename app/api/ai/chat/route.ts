@@ -12,6 +12,9 @@ import {
   type FinancialTextPrivacyInput,
 } from "@/lib/services/privacyService";
 
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
 const MAX_HISTORY_MESSAGES = 8;
 const MAX_MESSAGE_LENGTH = 2_000;
 
