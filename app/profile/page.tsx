@@ -132,7 +132,9 @@ export default function ProfilePage() {
     } catch (error: unknown) {
       console.error("Erro ao excluir conta:", error);
       const code = typeof error === "object" && error && "code" in error ? String(error.code) : "";
-      if (code === "auth/requires-recent-login") {
+      if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
+        showToast("Confirmação de identidade cancelada. Seus dados e sua conta continuam preservados.");
+      } else if (code === "auth/requires-recent-login") {
         showToast("Por segurança, saia e entre novamente na sua conta antes de solicitar a exclusão definitiva.");
       } else {
         showToast(error instanceof Error ? error.message : "Não foi possível excluir sua conta. Tente novamente.");

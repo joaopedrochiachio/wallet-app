@@ -16,6 +16,9 @@ import {
   setPersistence,
   sendPasswordResetEmail,
   deleteUser,
+  reauthenticateWithPopup,
+  reauthenticateWithCredential,
+  EmailAuthProvider,
 } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { deleteUserDataFromFirestore } from "@/lib/services/userService";
@@ -30,7 +33,7 @@ interface AuthContextType {
   signInWithGoogle: () => Promise<User | null>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
-  deleteAccount: () => Promise<void>;
+  deleteAccount: (password?: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -163,13 +166,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await sendPasswordResetEmail(auth, email);
   };
 
-  const deleteAccount = async () => {
+  const deleteAccount = async (password?: string) => {
     if (!auth.currentUser) {
       throw new Error("Nenhum usuário conectado para exclusão.");
     }
-    const currentUid = auth.currentUser.uid;
+    const currentUser = auth.currentUser;
+    const currentUid = currentUser.uid;
+
+    // 1. Validar e renovar a autenticação ANTES de excluir os dados do Firestore
+    // Evita que os dados sejam apagados caso o Firebase Auth exija login recente
+    const isGoogleUser = currentUser.providerData.some(
+      (p) => p.providerId === "google.com"
+    );
+
+    const tokenResult = await currentUser.getIdTokenResult(true);
+    const authTimeMs = new Date(tokenResult.authTime).getTime();
+    const diffMinutes = (Date.now() - authTimeMs) / (1000 * 60);
+
+    if (isGoogleUser) {
+      // Para login com Google, aciona reautenticação com popup para renovar a sessão
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: "select_account" });
+      await reauthenticateWithPopup(currentUser, provider);
+    } else if (password && currentUser.email) {
+      // Para login com e-mail/senha, valida a credencial fornecida
+      const credential = EmailAuthProvider.credential(currentUser.email, password);
+      await reauthenticateWithCredential(currentUser, credential);
+    } else if (diffMinutes > 4) {
+      // Se a sessão expirou para operações sensíveis e não foi renovada
+      const err = new Error(
+        "Por segurança, a exclusão da conta exige login recente. Saia e entre novamente antes de solicitar a exclusão."
+      );
+      (err as unknown as { code: string }).code = "auth/requires-recent-login";
+      throw err;
+    }
+
+    // 2. Com a autenticação recente comprovada, apaga os dados no Firestore
     await deleteUserDataFromFirestore(currentUid);
-    await deleteUser(auth.currentUser);
+
+    // 3. E finalmente exclui a conta no Firebase Auth
+    await deleteUser(currentUser);
     setUser(null);
   };
 
