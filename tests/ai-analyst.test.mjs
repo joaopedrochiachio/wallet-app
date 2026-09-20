@@ -4,9 +4,15 @@ import assert from "node:assert/strict";
 import { MODEL_CASCADE } from "../lib/services/geminiService.ts";
 import {
   synthesizeFinancialTelemetry,
+  createSafeFinancialContext,
+  normalizeFinancialCategory,
   simulatePurchaseImpact,
   buildFinancialAnalystSystemPrompt,
 } from "../lib/services/financialContextService.ts";
+import {
+  redactKnownFinancialText,
+  redactPersonalData,
+} from "../lib/services/privacyService.ts";
 
 test("MODEL_CASCADE contém exatamente os 8 modelos na ordem requisitada", () => {
   const expectedOrder = [
@@ -205,6 +211,8 @@ test("simulatePurchaseImpact avalia compra parcelada no crédito e limite de car
   assert.equal(simResult.monthlyInstallmentAmount, 200);
   assert.equal(simResult.after.cardAvailableLimit, 800);
   assert.equal(simResult.verdict, "safe");
+  assert.equal(simResult.cardName, "Cartão 1");
+  assert.ok(!simResult.impactSummary.includes("Nubank"));
 
   // Compra que excede o limite restante de R$ 2.000
   const overLimitSim = simulatePurchaseImpact(
@@ -240,10 +248,197 @@ test("buildFinancialAnalystSystemPrompt incorpora arquétipo e tom da IA", () =>
     monthExpense: 4000,
   });
 
-  const prompt = buildFinancialAnalystSystemPrompt(telemetry);
+  const safeContext = createSafeFinancialContext(telemetry);
+  const prompt = buildFinancialAnalystSystemPrompt(safeContext);
 
   assert.ok(prompt.includes("Arquetipo: GUARDIAN"));
   assert.ok(prompt.includes("Tom: Colaborativo"));
-  assert.ok(prompt.includes("Camila"));
+  assert.ok(!prompt.includes("Camila"));
+  assert.ok(!prompt.includes("c@c.com"));
   assert.ok(prompt.includes("R$ 12000.00"));
+});
+
+test("redactPersonalData remove identificadores pessoais e normaliza espaços", () => {
+  const input = `
+    CPF 123.456.789-09, e-mail pessoa.teste+wallet@example.com,
+    telefone (11) 98765-4321, CEP 01310-100,
+    cartão 4111 1111 1111 1111 e CVV: 123.
+  `;
+
+  const redacted = redactPersonalData(input);
+
+  assert.equal(
+    redacted,
+    "CPF [CPF REMOVIDO], e-mail [E-MAIL REMOVIDO], telefone [TELEFONE REMOVIDO], CEP [CEP REMOVIDO], cartão [CARTÃO REMOVIDO] e [DADO REMOVIDO]."
+  );
+});
+
+test("redactPersonalData preserva valores monetários, datas e números de parcelas", () => {
+  const input = "Compra de R$ 1.234,56 em 12 parcelas em 20/09/2026 (12x de R$ 102,88).";
+  assert.equal(redactPersonalData(input), input);
+});
+
+test("createSafeFinancialContext pseudonimiza cartões, metas, recorrências e contas", () => {
+  const telemetry = synthesizeFinancialTelemetry({
+    userProfile: {
+      name: "Marina Confidencial",
+      email: "marina@example.com",
+      role: "User",
+      avatarInitials: "MC",
+      monthlyIncomeBase: 9000,
+      currency: "BRL",
+      persona: "optimizer",
+      riskTolerance: "moderate",
+      aiTone: "analytical",
+      maxCommitmentAlertPercent: 55,
+      primaryFocus: "Quitar dívida de familiar identificado",
+    },
+    cards: [
+      {
+        id: "credit-1",
+        name: "Banco Real Black da Marina",
+        brand: "Visa",
+        type: "credit",
+        limit: 8000,
+        spent: 2000,
+        closingDay: 8,
+        dueDay: 15,
+        colorScheme: { gradient: "", border: "", accent: "", badgeText: "", chipGradient: "" },
+      },
+      {
+        id: "credit-2",
+        name: "Cartão Viagem Particular",
+        brand: "Mastercard",
+        type: "credit",
+        limit: 4000,
+        spent: 500,
+        closingDay: 18,
+        dueDay: 25,
+        colorScheme: { gradient: "", border: "", accent: "", badgeText: "", chipGradient: "" },
+      },
+    ],
+    transactions: [
+      { id: "tx-1", title: "Consulta com pessoa", amount: 300, type: "despesa", category: "Categoria da Família Silva", account: "Banco Real Black da Marina", date: "2026-09-01" },
+      { id: "tx-2", title: "Mercado", amount: 700, type: "despesa", category: "Supermercado", account: "Conta Família", date: "2026-09-02" },
+    ],
+    recurringItems: [
+      { id: "rec-1", title: "Terapia de João", amount: 300, account: "Banco Real Black da Marina", category: "Saúde & Bem-estar", dueDay: 10, active: true },
+      { id: "rec-2", title: "Ajuda para Maria", amount: 200, account: "Conta Família", category: "Categoria secreta", dueDay: 20, active: true },
+    ],
+    goals: [
+      { id: "goal-1", title: "Casa da Marina", category: "Moradia", current: 10000, target: 50000, deadline: "2027-12-31" },
+      { id: "goal-2", title: "Viagem para Ana", category: "Lazer", current: 2500, target: 5000 },
+    ],
+    mainBalance: 6000,
+    monthIncome: 9000,
+    monthExpense: 1000,
+  });
+
+  const safeContext = createSafeFinancialContext(telemetry);
+
+  assert.deepEqual(
+    safeContext.credit.cardsSummary.map((card) => card.alias),
+    ["Cartão 1", "Cartão 2"]
+  );
+  assert.deepEqual(
+    safeContext.goals.map((goal) => goal.alias),
+    ["Meta 1", "Meta 2"]
+  );
+  assert.equal(safeContext.commitments.recurringItems[0].paymentMethod, "Cartão 1");
+  assert.equal(safeContext.commitments.recurringItems[1].paymentMethod, "Conta corrente");
+  assert.equal(safeContext.commitments.recurringItems[0].category, "Saúde");
+  assert.equal(safeContext.commitments.recurringItems[1].category, "Outros");
+  assert.equal(safeContext.categories.find((item) => item.category === "Outros")?.total, 300);
+  assert.equal(safeContext.categories.find((item) => item.category === "Alimentação")?.total, 700);
+
+  const serialized = JSON.stringify(safeContext);
+  for (const sensitiveValue of [
+    "Marina Confidencial",
+    "marina@example.com",
+    "Banco Real Black da Marina",
+    "Visa",
+    "Mastercard",
+    "Terapia de João",
+    "Ajuda para Maria",
+    "Casa da Marina",
+    "Viagem para Ana",
+    "Categoria da Família Silva",
+  ]) {
+    assert.ok(!serialized.includes(sensitiveValue));
+  }
+});
+
+test("categorias personalizadas são convertidas para Outros", () => {
+  assert.equal(normalizeFinancialCategory("Alimentação & Delivery"), "Alimentação");
+  assert.equal(normalizeFinancialCategory("Assinaturas & Lazer"), "Assinaturas");
+  assert.equal(normalizeFinancialCategory("Meu gasto privado com João"), "Outros");
+});
+
+test("prompt contém somente aliases e não inclui nomes ou títulos originais", () => {
+  const telemetry = synthesizeFinancialTelemetry({
+    userProfile: {
+      name: "Carolina Souza",
+      email: "carolina.souza@example.com",
+      role: "User",
+      avatarInitials: "CS",
+      monthlyIncomeBase: 7000,
+      currency: "BRL",
+      persona: "guardian",
+      riskTolerance: "low",
+      aiTone: "direct",
+      maxCommitmentAlertPercent: 50,
+      primaryFocus: "Reserva da Carolina",
+    },
+    cards: [{
+      id: "private-card",
+      name: "Banco Secreto Platinum",
+      brand: "Elo",
+      type: "credit",
+      limit: 6000,
+      spent: 1000,
+      closingDay: 5,
+      dueDay: 12,
+      colorScheme: { gradient: "", border: "", accent: "", badgeText: "", chipGradient: "" },
+    }],
+    transactions: [],
+    recurringItems: [{ id: "rec", title: "Pensão do Carlos", amount: 500, account: "Banco Secreto Platinum", category: "Moradia", dueDay: 5, active: true }],
+    goals: [{ id: "goal", title: "Faculdade da Beatriz", category: "Educação", current: 3000, target: 10000 }],
+    mainBalance: 4000,
+    monthIncome: 7000,
+    monthExpense: 2500,
+  });
+
+  const prompt = buildFinancialAnalystSystemPrompt(createSafeFinancialContext(telemetry));
+
+  assert.ok(prompt.includes("Cartão 1"));
+  assert.ok(prompt.includes("Meta 1"));
+  for (const sensitiveValue of [
+    "Carolina Souza",
+    "carolina.souza@example.com",
+    "Banco Secreto Platinum",
+    "Elo",
+    "Pensão do Carlos",
+    "Faculdade da Beatriz",
+    "Reserva da Carolina",
+  ]) {
+    assert.ok(!prompt.includes(sensitiveValue));
+  }
+});
+
+test("redactKnownFinancialText remove rótulos conhecidos do chat", () => {
+  const redacted = redactKnownFinancialText(
+    "Carolina quer comprar Notebook do Carlos no Banco Secreto com cartão Visa para a Faculdade da Beatriz na Categoria Família Silva.",
+    {
+      userProfile: { name: "Carolina" },
+      cards: [{ name: "Banco Secreto", brand: "Visa", type: "credit" }],
+      recurringItems: [{ title: "Notebook do Carlos", account: "Banco Secreto" }],
+      transactions: [{ category: "Categoria Família Silva" }],
+      goals: [{ title: "Faculdade da Beatriz" }],
+    }
+  );
+
+  assert.equal(
+    redacted,
+    "Usuário quer comprar Recorrência 1 no Cartão 1 com cartão [DADO REMOVIDO] para a Meta 1 na Outros."
+  );
 });

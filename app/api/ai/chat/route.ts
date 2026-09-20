@@ -2,10 +2,26 @@ import { NextRequest, NextResponse } from "next/server";
 import { callGeminiCascade, GeminiChatMessage } from "@/lib/services/geminiService";
 import {
   synthesizeFinancialTelemetry,
+  createSafeFinancialContext,
   buildFinancialAnalystSystemPrompt,
   simulatePurchaseImpact,
   PurchaseSimulationInput,
 } from "@/lib/services/financialContextService";
+import {
+  redactKnownFinancialText,
+  type FinancialTextPrivacyInput,
+} from "@/lib/services/privacyService";
+
+const MAX_HISTORY_MESSAGES = 8;
+const MAX_MESSAGE_LENGTH = 2_000;
+
+function sanitizeChatMessage(
+  content: unknown,
+  privacyInput: FinancialTextPrivacyInput
+): string {
+  if (typeof content !== "string") return "";
+  return redactKnownFinancialText(content, privacyInput).slice(0, MAX_MESSAGE_LENGTH).trim();
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -34,8 +50,9 @@ export async function POST(req: NextRequest) {
       monthIncome,
       monthExpense,
     });
+    const safeContext = createSafeFinancialContext(telemetry);
 
-    let systemPrompt = buildFinancialAnalystSystemPrompt(telemetry);
+    let systemPrompt = buildFinancialAnalystSystemPrompt(safeContext);
 
     let simulationResult = null;
     if (simulation && typeof simulation.amount === "number" && simulation.amount > 0) {
@@ -50,7 +67,7 @@ export async function POST(req: NextRequest) {
 - Forma de Pagamento: ${simulationResult.method === "cash" ? "À vista (Débito/PIX)" : `Cartão de Crédito (${simulationResult.cardName})`}
 - Parcelas: ${simulationResult.installments}x de R$ ${simulationResult.monthlyInstallmentAmount.toFixed(2)}
 - Saldo em Conta Antes: R$ ${simulationResult.before.checkingBalance.toFixed(2)} ➔ Depois: R$ ${simulationResult.after.checkingBalance.toFixed(2)}
-- Comprometimento de Renda Antes: ${simulationResult.before.monthlyCommitmentPercent}% ➔ Depois: ${simulationResult.after.monthlyCommitmentPercent}% (Teto: ${telemetry.user.maxCommitmentAlertPercent}%)
+- Comprometimento de Renda Antes: ${simulationResult.before.monthlyCommitmentPercent}% ➔ Depois: ${simulationResult.after.monthlyCommitmentPercent}% (Teto: ${safeContext.profile.maxCommitmentAlertPercent}%)
 - Limite Disponível no Cartão Antes: R$ ${simulationResult.before.cardAvailableLimit?.toFixed(2) ?? "N/A"} ➔ Depois: R$ ${simulationResult.after.cardAvailableLimit?.toFixed(2) ?? "N/A"}
 - Veredito Matemático Preliminar: [${simulationResult.verdict.toUpperCase()}] - ${simulationResult.verdictMessage}
 
@@ -69,21 +86,48 @@ Apresente seu parecer de assistente com clareza e empatia:
 
     // Monta o histórico de mensagens
     const conversationMessages: GeminiChatMessage[] = [];
+    const privacyInput: FinancialTextPrivacyInput = {
+      userProfile,
+      cards,
+      transactions,
+      recurringItems,
+      goals,
+      simulationDescription:
+        simulation && typeof simulation.description === "string"
+          ? simulation.description
+          : undefined,
+    };
 
-    // Adiciona mensagens anteriores do chat (limita a últimas 8 para manter foco e tokens)
-    const recentMessages = messages.slice(-8);
-    for (const msg of recentMessages) {
-      conversationMessages.push({
-        role: msg.role === "assistant" ? "model" : (msg.role as "user" | "model"),
-        content: msg.content,
-      });
+    // Aceita apenas o contrato público do chat e mantém as oito entradas válidas mais recentes.
+    const sanitizedHistory: GeminiChatMessage[] = [];
+    if (Array.isArray(messages)) {
+      for (const message of messages.slice(-MAX_HISTORY_MESSAGES)) {
+        if (!message || typeof message !== "object") continue;
+        const candidate = message as { role?: unknown; content?: unknown };
+        if (
+          candidate.role !== "user" &&
+          candidate.role !== "assistant" &&
+          candidate.role !== "model"
+        ) {
+          continue;
+        }
+
+        const content = sanitizeChatMessage(candidate.content, privacyInput);
+        if (!content) continue;
+        sanitizedHistory.push({
+          role: candidate.role === "assistant" ? "model" : candidate.role,
+          content,
+        });
+      }
     }
+    conversationMessages.push(...sanitizedHistory);
 
     // Adiciona a mensagem atual se fornecida separadamente
-    if (userMessage) {
+    const sanitizedUserMessage = sanitizeChatMessage(userMessage, privacyInput);
+    if (sanitizedUserMessage) {
       conversationMessages.push({
         role: "user",
-        content: userMessage,
+        content: sanitizedUserMessage,
       });
     }
 
@@ -109,13 +153,12 @@ Apresente seu parecer de assistente com clareza e empatia:
       attemptedModels: response.attemptedModels,
       simulationResult,
     });
-  } catch (error: unknown) {
-    console.error("[API AI Chat Error]:", error);
-    const message = error instanceof Error ? error.message : "Erro interno no processamento do chat";
+  } catch {
+    console.error("[AI_CHAT_ERROR]", { errorCode: "AI_CHAT_FAILED" });
     return NextResponse.json(
       {
         success: false,
-        error: message,
+        error: "Não foi possível processar a conversa no momento.",
       },
       { status: 500 }
     );

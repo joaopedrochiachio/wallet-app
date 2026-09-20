@@ -92,6 +92,87 @@ export interface FinancialTelemetry {
   }>;
 }
 
+export interface FinancialTelemetryInput {
+  userProfile?: UserProfile | null;
+  cards: CardItem[];
+  transactions: TransactionContextItem[];
+  recurringItems: RecurringItem[];
+  goals: GoalItem[];
+  mainBalance: number;
+  monthIncome: number;
+  monthExpense: number;
+}
+
+export const SAFE_FINANCIAL_CATEGORIES = [
+  "Alimentação",
+  "Moradia",
+  "Transporte",
+  "Saúde",
+  "Educação",
+  "Lazer",
+  "Assinaturas",
+  "Dívidas",
+  "Investimentos",
+  "Renda",
+  "Outros",
+] as const;
+
+export type SafeFinancialCategory = (typeof SAFE_FINANCIAL_CATEGORIES)[number];
+export type SafePaymentMethod = "Conta corrente" | `Cartão ${number}` | "Outro meio";
+
+export interface SafeFinancialContext {
+  profile: {
+    monthlyIncomeBase: number;
+    persona: FinancialPersonaId;
+    riskTolerance: RiskToleranceId;
+    aiTone: AIToneId;
+    maxCommitmentAlertPercent: number;
+  };
+  cashflow: FinancialTelemetry["cashflow"];
+  credit: {
+    totalLimit: number;
+    totalSpent: number;
+    availableCredit: number;
+    creditUtilizationPercent: number;
+    cardsCount: number;
+    cardsSummary: Array<{
+      alias: `Cartão ${number}`;
+      limit: number;
+      spent: number;
+      available: number;
+      closingDay?: number;
+      dueDay?: number;
+    }>;
+  };
+  commitments: {
+    recurringMonthlyTotal: number;
+    recurringCount: number;
+    commitmentRatioPercent: number;
+    isOverLimit: boolean;
+    recurringItems: Array<{
+      category: SafeFinancialCategory;
+      amount: number;
+      dueDay: number;
+      paymentMethod: SafePaymentMethod;
+      active: true;
+    }>;
+  };
+  categories: Array<{
+    category: SafeFinancialCategory;
+    total: number;
+    count: number;
+    percentage: number;
+  }>;
+  goals: Array<{
+    alias: `Meta ${number}`;
+    current: number;
+    target: number;
+    gap: number;
+    progressPercent: number;
+    deadline?: string;
+  }>;
+}
+
 export interface PurchaseSimulationInput {
   amount: number;
   method: "cash" | "credit";
@@ -126,16 +207,7 @@ export interface PurchaseSimulationResult {
 /**
  * Constrói o objeto de telemetria financeira a partir do estado atual da aplicação
  */
-export function synthesizeFinancialTelemetry(data: {
-  userProfile?: UserProfile | null;
-  cards: CardItem[];
-  transactions: TransactionContextItem[];
-  recurringItems: RecurringItem[];
-  goals: GoalItem[];
-  mainBalance: number;
-  monthIncome: number;
-  monthExpense: number;
-}): FinancialTelemetry {
+export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): FinancialTelemetry {
   const {
     userProfile,
     cards,
@@ -266,6 +338,166 @@ export function synthesizeFinancialTelemetry(data: {
   };
 }
 
+function normalizeForComparison(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pt-BR")
+    .trim();
+}
+
+export function normalizeFinancialCategory(category: string): SafeFinancialCategory {
+  const normalized = normalizeForComparison(category);
+
+  if (/aliment|supermercado|delivery|restaurante/.test(normalized)) return "Alimentação";
+  if (/moradia|aluguel|condominio|contas?\b|energia|eletric|agua/.test(normalized)) return "Moradia";
+  if (/transport|combust|mobilidade|uber|taxi/.test(normalized)) return "Transporte";
+  if (/saude|farmacia|medic|bem-estar/.test(normalized)) return "Saúde";
+  if (/educa|curso|escola|faculdade/.test(normalized)) return "Educação";
+  if (/assinatura|streaming|mensalidade/.test(normalized)) return "Assinaturas";
+  if (/lazer|turismo|viagem|cinema|entretenimento/.test(normalized)) return "Lazer";
+  if (/divida|emprestimo|financiamento|fatura/.test(normalized)) return "Dívidas";
+  if (/invest|rendimento|dividendo|aplicacao/.test(normalized)) return "Investimentos";
+  if (/renda|salario|pro-labore|freelance|bonus|receita|reembolso|cashback/.test(normalized)) {
+    return "Renda";
+  }
+
+  return "Outros";
+}
+
+function safeNumber(value: unknown, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function safeOptionalNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function safeDeadline(deadline?: unknown): string | undefined {
+  if (typeof deadline !== "string") return undefined;
+  const trimmed = deadline.trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : undefined;
+}
+
+/**
+ * Produz o único formato de contexto autorizado a compor prompts enviados à IA.
+ * Identificadores e textos livres permanecem apenas na telemetria interna.
+ */
+export function createSafeFinancialContext(telemetry: FinancialTelemetry): SafeFinancialContext {
+  const persona: FinancialPersonaId = ["optimizer", "guardian", "scaler", "minimalist"].includes(
+    telemetry.user.persona
+  )
+    ? telemetry.user.persona
+    : "optimizer";
+  const riskTolerance: RiskToleranceId = ["low", "moderate", "high"].includes(
+    telemetry.user.riskTolerance
+  )
+    ? telemetry.user.riskTolerance
+    : "moderate";
+  const aiTone: AIToneId = ["analytical", "direct", "collaborative"].includes(
+    telemetry.user.aiTone
+  )
+    ? telemetry.user.aiTone
+    : "analytical";
+  const cardAliases = new Map<string, `Cartão ${number}`>();
+  const cardsSummary = telemetry.credit.cardsSummary.map((card, index) => {
+    const alias = `Cartão ${index + 1}` as const;
+    cardAliases.set(normalizeForComparison(String(card.name ?? "")), alias);
+    return {
+      alias,
+      limit: safeNumber(card.limit),
+      spent: safeNumber(card.spent),
+      available: safeNumber(card.available),
+      closingDay: safeOptionalNumber(card.closingDay),
+      dueDay: safeOptionalNumber(card.dueDay),
+    };
+  });
+
+  const categoryTotals = new Map<
+    SafeFinancialCategory,
+    { total: number; count: number }
+  >();
+  for (const category of telemetry.categories) {
+    const safeCategory = normalizeFinancialCategory(String(category.category ?? ""));
+    const current = categoryTotals.get(safeCategory) ?? { total: 0, count: 0 };
+    categoryTotals.set(safeCategory, {
+      total: current.total + safeNumber(category.total),
+      count: current.count + safeNumber(category.count),
+    });
+  }
+
+  const totalCategorizedExpenses = Array.from(categoryTotals.values()).reduce(
+    (sum, category) => sum + category.total,
+    0
+  );
+  const categories = Array.from(categoryTotals.entries())
+    .map(([category, summary]) => ({
+      category,
+      total: summary.total,
+      count: summary.count,
+      percentage:
+        totalCategorizedExpenses > 0
+          ? Math.round((summary.total / totalCategorizedExpenses) * 100)
+          : 0,
+    }))
+    .sort((a, b) => b.total - a.total);
+
+  const toSafePaymentMethod = (account: string): SafePaymentMethod => {
+    const normalizedAccount = normalizeForComparison(String(account ?? ""));
+    const cardAlias = cardAliases.get(normalizedAccount);
+    if (cardAlias) return cardAlias;
+    if (/conta|corrente|debito|pix/.test(normalizedAccount)) return "Conta corrente";
+    return "Outro meio";
+  };
+
+  return {
+    profile: {
+      monthlyIncomeBase: safeNumber(telemetry.user.monthlyIncomeBase),
+      persona,
+      riskTolerance,
+      aiTone,
+      maxCommitmentAlertPercent: safeNumber(telemetry.user.maxCommitmentAlertPercent, 60),
+    },
+    cashflow: {
+      checkingBalance: safeNumber(telemetry.cashflow.checkingBalance),
+      monthIncomeRealized: safeNumber(telemetry.cashflow.monthIncomeRealized),
+      monthExpenseRealized: safeNumber(telemetry.cashflow.monthExpenseRealized),
+      netCashflow: safeNumber(telemetry.cashflow.netCashflow),
+      savingsRatePercent: safeNumber(telemetry.cashflow.savingsRatePercent),
+    },
+    credit: {
+      totalLimit: safeNumber(telemetry.credit.totalLimit),
+      totalSpent: safeNumber(telemetry.credit.totalSpent),
+      availableCredit: safeNumber(telemetry.credit.availableCredit),
+      creditUtilizationPercent: safeNumber(telemetry.credit.creditUtilizationPercent),
+      cardsCount: safeNumber(telemetry.credit.cardsCount),
+      cardsSummary,
+    },
+    commitments: {
+      recurringMonthlyTotal: safeNumber(telemetry.commitments.recurringMonthlyTotal),
+      recurringCount: safeNumber(telemetry.commitments.recurringCount),
+      commitmentRatioPercent: safeNumber(telemetry.commitments.commitmentRatioPercent),
+      isOverLimit: telemetry.commitments.isOverLimit === true,
+      recurringItems: telemetry.commitments.recurringItems.map((recurring) => ({
+        category: normalizeFinancialCategory(String(recurring.category ?? "")),
+        amount: safeNumber(recurring.amount),
+        dueDay: safeNumber(recurring.dueDay),
+        paymentMethod: toSafePaymentMethod(recurring.account),
+        active: true,
+      })),
+    },
+    categories,
+    goals: telemetry.goals.map((goal, index) => ({
+      alias: `Meta ${index + 1}` as const,
+      current: safeNumber(goal.current),
+      target: safeNumber(goal.target),
+      gap: safeNumber(goal.gap),
+      progressPercent: safeNumber(goal.progressPercent),
+      deadline: safeDeadline(goal.deadline),
+    })),
+  };
+}
+
 /**
  * Simula o impacto numérico de uma compra no saldo, faturas e compromisso
  */
@@ -279,7 +511,12 @@ export function simulatePurchaseImpact(
   const monthlyInstallmentAmount = amount / safeInstallments;
 
   const selectedCard = cards.find((c) => c.id === cardId) || cards.find((c) => c.type === "credit");
-  const cardName = selectedCard?.name || "Cartão de Crédito";
+  const creditCards = cards.filter((card) => card.type === "credit");
+  const selectedCreditCardIndex = selectedCard
+    ? creditCards.findIndex((card) => card.id === selectedCard.id)
+    : -1;
+  const cardName =
+    selectedCreditCardIndex >= 0 ? `Cartão ${selectedCreditCardIndex + 1}` : "Cartão de Crédito";
 
   const beforeCheckingBalance = telemetry.cashflow.checkingBalance;
   const beforeCardSpent = selectedCard?.spent || selectedCard?.invoiceAmount || 0;
@@ -367,8 +604,8 @@ export function simulatePurchaseImpact(
 /**
  * Cria a instrução de sistema (System Prompt) para o Analista Financeiro
  */
-export function buildFinancialAnalystSystemPrompt(telemetry: FinancialTelemetry): string {
-  const { user, cashflow, credit, commitments, categories, goals } = telemetry;
+export function buildFinancialAnalystSystemPrompt(context: SafeFinancialContext): string {
+  const { profile, cashflow, credit, commitments, categories, goals } = context;
 
   const personaGuide = {
     optimizer:
@@ -379,7 +616,7 @@ export function buildFinancialAnalystSystemPrompt(telemetry: FinancialTelemetry)
       "Arquetipo: SCALER. Foco em alavancagem inteligente, expansão de investimentos, fluxo de caixa livre e cumprimento acelerado de grandes metas.",
     minimalist:
       "Arquetipo: MINIMALIST. Foco em simplificação máxima, despesas essenciais, eliminação de assinaturas ociosas e tranquilidade financeira.",
-  }[user.persona];
+  }[profile.persona];
 
   const toneGuide = {
     analytical:
@@ -388,7 +625,7 @@ export function buildFinancialAnalystSystemPrompt(telemetry: FinancialTelemetry)
       "Tom: Direto e objetivo. Seja conciso, vá direto ao ponto, destaque o veredito primeiro e liste ações imediatas sem rodeios.",
     collaborative:
       "Tom: Colaborativo e motivador. Seja empático, encorajador, explique o 'porquê' com clareza e celebre o progresso do usuário.",
-  }[user.aiTone];
+  }[profile.aiTone];
 
   return `Você é o ASSISTENTE E ANALISTA FINANCEIRO PESSOAL do usuário no Wallet App.
 Seu papel é atuar como um consultor financeiro dedicado: você pega toda a complexidade de dados cruzados (saldo, cartões, faturas, vencimentos, parcelamentos e metas) e traduz tudo para o usuário em um formato simples, natural e intuitivo.
@@ -398,19 +635,18 @@ Seu papel é atuar como um consultor financeiro dedicado: você pega toda a comp
 - DADOS COMPLEXOS, CONCLUSÕES CLARAS: Nunca use jargões frios de telemetria ou estatística. Explique a situação financeira como um assistente de confiança que quer ajudar seu cliente a prosperar.
 - ${personaGuide}
 - ${toneGuide}
-- Foco Primário Declarado pelo Usuário: "${user.primaryFocus}"
-- Tolerância a Risco: ${user.riskTolerance.toUpperCase()}
+- Tolerância a Risco: ${profile.riskTolerance.toUpperCase()}
 - Idioma obrigatório: Português do Brasil (pt-BR). Formate valores em Reais (R$ 0.000,00) e percentuais com %.
 - Sempre que o usuário perguntar sobre uma compra futura (ex: "se eu comprar X parcelado em Y"), avalie:
   1. Impacto no saldo disponível ou no limite do cartão;
-  2. Nova taxa de comprometimento mensal vs o teto recomendado (${user.maxCommitmentAlertPercent}%);
+  2. Nova taxa de comprometimento mensal vs o teto recomendado (${profile.maxCommitmentAlertPercent}%);
   3. Risco de atraso nas metas financeiras ativas;
   4. Veredito final categorizado: [SEGURO] (verde), [ATENÇÃO] (amarelo) ou [ALTO RISCO] (vermelho), com sugestão de ajuste se necessário.
 - No diagnóstico, o "executiveSummary" deve ser um parágrafo acolhedor, humano e motivador, iniciando com uma saudação ao usuário e apresentando o panorama geral com simplicidade.
 
-=== TELEMETRIA FINANCEIRA DO USUÁRIO (${user.name}) ===
+=== CONTEXTO FINANCEIRO PSEUDONIMIZADO DO USUÁRIO ===
 1. RENDA & FLUXO DE CAIXA:
-   - Renda Base Mensal: R$ ${user.monthlyIncomeBase.toFixed(2)}
+   - Renda Base Mensal: R$ ${profile.monthlyIncomeBase.toFixed(2)}
    - Saldo Atual na Conta Corrente: R$ ${cashflow.checkingBalance.toFixed(2)}
    - Entradas Realizadas no Mês: R$ ${cashflow.monthIncomeRealized.toFixed(2)}
    - Saídas Realizadas no Mês: R$ ${cashflow.monthExpenseRealized.toFixed(2)}
@@ -424,7 +660,7 @@ Seu papel é atuar como um consultor financeiro dedicado: você pega toda a comp
 ${credit.cardsSummary
   .map(
     (c) =>
-      `     • ${c.name} (${c.brand}): Limite R$ ${c.limit.toFixed(2)} | Fatura R$ ${c.spent.toFixed(
+      `     • ${c.alias}: Limite R$ ${c.limit.toFixed(2)} | Fatura R$ ${c.spent.toFixed(
         2
       )} | Disponível R$ ${c.available.toFixed(2)} | Fecha dia ${c.closingDay ?? "N/A"}, Vence dia ${
         c.dueDay ?? "N/A"
@@ -434,11 +670,14 @@ ${credit.cardsSummary
 
 3. COMPROMISSO RECORRENTE & GASTOS FIXOS:
    - Total em Despesas Recorrentes/Fixas: R$ ${commitments.recurringMonthlyTotal.toFixed(2)}/mês
-   - Taxa de Comprometimento Atual (Recorrentes + Faturas / Renda): ${commitments.commitmentRatioPercent}% (Teto de Alerta: ${user.maxCommitmentAlertPercent}%)
+   - Taxa de Comprometimento Atual (Recorrentes + Faturas / Renda): ${commitments.commitmentRatioPercent}% (Teto de Alerta: ${profile.maxCommitmentAlertPercent}%)
    - Status de Alerta de Comprometimento: ${commitments.isOverLimit ? "⚠️ EM ALERTA (Acima do teto)" : "✅ DENTRO DO LIMITE"}
    - Principais Gastos Fixos:
 ${commitments.recurringItems
-  .map((r) => `     • ${r.title}: R$ ${r.amount.toFixed(2)} (vence dia ${r.dueDay} em ${r.account})`)
+  .map(
+    (r) =>
+      `     • ${r.category}: R$ ${r.amount.toFixed(2)} (vence dia ${r.dueDay} em ${r.paymentMethod}; ativo)`
+  )
   .join("\n")}
 
 4. PRINCIPAIS CATEGORIAS DE GASTO:
@@ -451,7 +690,7 @@ ${categories
 ${goals
   .map(
     (g) =>
-      `   - ${g.title}: R$ ${g.current.toFixed(2)} de R$ ${g.target.toFixed(
+      `   - ${g.alias}: R$ ${g.current.toFixed(2)} de R$ ${g.target.toFixed(
         2
       )} (${g.progressPercent}% concluído, faltam R$ ${g.gap.toFixed(2)})${
         g.deadline ? ` [Prazo: ${g.deadline}]` : ""

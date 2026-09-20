@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { callGeminiCascade } from "@/lib/services/geminiService";
 import {
   synthesizeFinancialTelemetry,
+  createSafeFinancialContext,
   buildFinancialAnalystSystemPrompt,
-  FinancialTelemetry,
+  SafeFinancialContext,
 } from "@/lib/services/financialContextService";
 
 export interface SpendingPatternItem {
@@ -68,7 +69,7 @@ function sanitizeText(str: unknown): string {
 
 function safeParseFinancialDiagnosis(
   rawText: string,
-  telemetry: FinancialTelemetry
+  context: SafeFinancialContext
 ): FinancialDiagnosis {
   let candidate = rawText.trim();
 
@@ -89,8 +90,8 @@ function safeParseFinancialDiagnosis(
   let parsed: Record<string, unknown> | null = null;
   try {
     parsed = JSON.parse(candidate);
-  } catch (err) {
-    console.warn("[safeParseFinancialDiagnosis] Parse direto falhou, tentando extração:", err);
+  } catch {
+    console.warn("[AI_ANALYZE_PARSE_FAILED]", { errorCode: "INVALID_MODEL_JSON" });
   }
 
   // 1. Extração do Score
@@ -103,8 +104,8 @@ function safeParseFinancialDiagnosis(
       healthScore = Math.max(0, Math.min(100, parseInt(matchScore[1], 10)));
     } else {
       // Cálculo heurístico baseado na telemetria
-      const savingsBonus = Math.min(25, telemetry.cashflow.savingsRatePercent * 0.5);
-      const commitmentPenalty = telemetry.commitments.isOverLimit ? 35 : 10;
+      const savingsBonus = Math.min(25, context.cashflow.savingsRatePercent * 0.5);
+      const commitmentPenalty = context.commitments.isOverLimit ? 35 : 10;
       healthScore = Math.max(25, Math.min(95, Math.round(75 + savingsBonus - commitmentPenalty)));
     }
   }
@@ -124,11 +125,10 @@ function safeParseFinancialDiagnosis(
     }
   }
   if (!executiveSummary || executiveSummary.startsWith("{")) {
-    const userName = telemetry.user.name || "você";
-    const netFormatted = telemetry.cashflow.netCashflow >= 0 ? "positivo" : "negativo";
+    const netFormatted = context.cashflow.netCashflow >= 0 ? "positivo" : "negativo";
     const statusWord = healthStatus === "critical" ? "requer atenção prioritária" : "está equilibrado";
 
-    executiveSummary = `Olá, ${userName}! Analisei todo o seu fluxo deste mês. Seu saldo em conta fechou ${netFormatted}, mas o comprometimento total com cartões e despesas fixas ${statusWord}. Estou acompanhando cada movimentação de perto para sugerir passos simples que mantenham sua estabilidade e acelerem suas metas.`;
+    executiveSummary = `Olá! Analisei todo o seu fluxo deste mês. Seu saldo em conta fechou ${netFormatted}, mas o comprometimento total com cartões e despesas fixas ${statusWord}. Estou acompanhando cada movimentação de perto para sugerir passos simples que mantenham sua estabilidade e acelerem suas metas.`;
   }
 
   // 4. Normalização de Padrões de Consumo
@@ -163,8 +163,8 @@ function safeParseFinancialDiagnosis(
     spendingPatterns.push({
       title: "Concentração por Categoria",
       description:
-        telemetry.categories.length > 0
-          ? `A maior fatia das suas despesas esteve concentrada em ${telemetry.categories[0].category} (${telemetry.categories[0].percentage}% do total gasto).`
+        context.categories.length > 0
+          ? `A maior fatia das suas despesas esteve concentrada em ${context.categories[0].category} (${context.categories[0].percentage}% do total gasto).`
           : "Seus lançamentos estão distribuídos entre as despesas essenciais do dia a dia.",
       type: "info",
     });
@@ -199,7 +199,7 @@ function safeParseFinancialDiagnosis(
   }
 
   if (futureProjections.length === 0) {
-    const totalInvoices = telemetry.credit.totalSpent;
+    const totalInvoices = context.credit.totalSpent;
     futureProjections.push({
       period: "Próximas Faturas",
       description:
@@ -208,7 +208,7 @@ function safeParseFinancialDiagnosis(
               2
             )} programado para vencer nas próximas semanas.`
           : "Nenhuma fatura pesada acumulada para o próximo vencimento.",
-      severity: totalInvoices > telemetry.user.monthlyIncomeBase * 0.5 ? "warning" : "info",
+      severity: totalInvoices > context.profile.monthlyIncomeBase * 0.5 ? "warning" : "info",
     });
   }
 
@@ -278,15 +278,16 @@ export async function POST(req: NextRequest) {
       monthIncome,
       monthExpense,
     });
+    const safeContext = createSafeFinancialContext(telemetry);
 
-    const systemPrompt = buildFinancialAnalystSystemPrompt(telemetry);
+    const systemPrompt = buildFinancialAnalystSystemPrompt(safeContext);
 
     const userPrompt = `Realize o DIAGNÓSTICO FINANCEIRO do usuário para apresentar no painel do aplicativo.
 
 DIRETRIZES DE TOM:
 - Use padrão formal, porém INTUITIVO, NATURAL e CONVERSACIONAL, como um assistente financeiro pessoal de confiança.
 - Apresente conclusões simples e claras a partir dos dados cruzados, sem usar termos técnicos frios.
-- O "executiveSummary" deve conversar diretamente com o usuário em primeira pessoa ("Olá, ${telemetry.user.name}! Analisei suas contas..."), acolhendo os acertos e alertando sobre pontos de atenção com empatia.
+- O "executiveSummary" deve conversar diretamente com o usuário em primeira pessoa ("Olá! Analisei suas contas..."), acolhendo os acertos e alertando sobre pontos de atenção com empatia.
 
 RESPONDA ESTRITAMENTE EM FORMATO JSON com a seguinte estrutura:
 {
@@ -327,7 +328,7 @@ IMPORTANTE: Responda APENAS o JSON válido. Não coloque texto antes ou depois. 
       maxOutputTokens: 3500,
     });
 
-    const parsedDiagnosis = safeParseFinancialDiagnosis(response.text, telemetry);
+    const parsedDiagnosis = safeParseFinancialDiagnosis(response.text, safeContext);
 
     return NextResponse.json({
       success: true,
@@ -336,13 +337,12 @@ IMPORTANTE: Responda APENAS o JSON válido. Não coloque texto antes ou depois. 
       durationMs: response.durationMs,
       attemptedModels: response.attemptedModels,
     });
-  } catch (error: unknown) {
-    console.error("[API AI Analyze Error]:", error);
-    const message = error instanceof Error ? error.message : "Erro interno no processamento de IA";
+  } catch {
+    console.error("[AI_ANALYZE_ERROR]", { errorCode: "AI_ANALYZE_FAILED" });
     return NextResponse.json(
       {
         success: false,
-        error: message,
+        error: "Não foi possível concluir a análise financeira no momento.",
       },
       { status: 500 }
     );

@@ -29,7 +29,6 @@ export interface GeminiCascadeOptions {
   maxOutputTokens?: number;
   jsonMode?: boolean;
   timeoutMs?: number;
-  customApiKey?: string;
 }
 
 export interface GeminiCascadeResponse {
@@ -58,9 +57,7 @@ export class GeminiCascadeError extends Error {
 export async function callGeminiCascade(
   options: GeminiCascadeOptions
 ): Promise<GeminiCascadeResponse> {
-  const apiKey =
-    options.customApiKey ||
-    process.env.GEMINI_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
     throw new Error(
@@ -145,22 +142,23 @@ export async function callGeminiCascade(
       }
 
       // Se a resposta retornou erro HTTP (ex: 404, 429 quota, 503 overload), continua cascata
-      const errorMsg =
-        data?.error?.message ||
-        `Status ${response.status} (${response.statusText || "Erro desconhecido"})`;
-
-      console.warn(
-        `[Gemini Cascade] Modelo ${model} falhou (${response.status}): ${errorMsg}. Tentando próximo...`
-      );
-      lastError = data?.error || { status: response.status, message: errorMsg };
+      console.warn("[GEMINI_MODEL_FAILED]", {
+        model,
+        durationMs: Date.now() - start,
+        errorCode: `HTTP_${response.status}`,
+        attempt: attemptedModels.length,
+      });
+      lastError = data?.error || { status: response.status };
     } catch (err: unknown) {
       clearTimeout(timeoutId);
       const isAbort = (err as { name?: string })?.name === "AbortError";
-      const message = isAbort ? `Timeout de ${timeoutMs}ms excedido` : (err as Error)?.message;
 
-      console.warn(
-        `[Gemini Cascade] Exceção no modelo ${model}: ${message}. Tentando próximo modelo...`
-      );
+      console.warn("[GEMINI_MODEL_FAILED]", {
+        model,
+        durationMs: Date.now() - start,
+        errorCode: isAbort ? "TIMEOUT" : "REQUEST_FAILED",
+        attempt: attemptedModels.length,
+      });
       lastError = err;
     }
   }

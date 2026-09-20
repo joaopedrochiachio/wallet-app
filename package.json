@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "node --experimental-strip-types --test --test-isolation=none tests/finance.test.mjs tests/ai-analyst.test.mjs",
     "test:finance": "node --experimental-strip-types --test tests/finance.test.mjs"
   },
   "dependencies": {
