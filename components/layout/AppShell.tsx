@@ -11,6 +11,7 @@ import {
   Target,
   MessageCircle,
   User,
+  Sparkles,
 } from "lucide-react";
 import { WalletProvider } from "@/context/WalletContext";
 import { AuthProvider } from "@/context/AuthContext";
@@ -92,9 +93,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
             <div className="mt-auto space-y-1.5">
               <NavItem
-                href="#"
-                icon={<MessageCircle strokeWidth={1.5} size={18} />}
-                label="AI Assistant"
+                href="/ai"
+                icon={<Sparkles strokeWidth={1.5} size={18} className="text-amber-500" />}
+                label="Analista IA"
                 active={pathname === "/ai"}
               />
             </div>
@@ -107,7 +108,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           {/* BOTTOM BAR (Mobile) */}
           <nav className="md:hidden fixed bottom-0 left-0 right-0 w-full bg-white/90 backdrop-blur-xl border-t border-gray-200/60 pb-safe z-50">
-            <div className="flex justify-around items-center h-14 sm:h-16 px-2">
+            <div className="flex justify-around items-center h-14 sm:h-16 px-1">
               <MobileNavItem
                 href="/dashboard"
                 icon={<Home strokeWidth={1.5} size={21} />}
@@ -131,6 +132,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 icon={<CreditCard strokeWidth={1.5} size={21} />}
                 active={pathname === "/cards"}
                 label="Cartões"
+              />
+              <MobileNavItem
+                href="/ai"
+                icon={<Sparkles strokeWidth={1.5} size={21} className={pathname === "/ai" ? "text-amber-500" : ""} />}
+                active={pathname === "/ai"}
+                label="Analista IA"
               />
               <MobileNavItem
                 href="/goals"
