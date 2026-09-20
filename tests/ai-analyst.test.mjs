@@ -442,3 +442,68 @@ test("redactKnownFinancialText remove rótulos conhecidos do chat", () => {
     "Usuário quer comprar Recorrência 1 no Cartão 1 com cartão [DADO REMOVIDO] para a Meta 1 na Outros."
   );
 });
+
+test("monthlyProjections são integradas à telemetria e geram seção 6 com integridade contábil", () => {
+  const mockProjections = [
+    {
+      monthName: "Out",
+      year: 2026,
+      openingBalance: 1200,
+      plannedIncomesTotal: 5000,
+      recurringDebitTotal: 2000,
+      recurringCreditTotal: 800,
+      cardInstallments: 1200,
+      totalCommitted: 4000,
+      projectedFreeBalance: 2200,
+    },
+    {
+      monthName: "Nov",
+      year: 2026,
+      openingBalance: 2200,
+      plannedIncomesTotal: 5000,
+      recurringDebitTotal: 2000,
+      recurringCreditTotal: 800,
+      cardInstallments: 5000,
+      totalCommitted: 7800,
+      projectedFreeBalance: -600,
+    },
+  ];
+
+  const telemetry = synthesizeFinancialTelemetry({
+    userProfile: {
+      name: "Arthur Teste",
+      monthlyIncomeBase: 5000,
+      persona: "optimizer",
+      riskTolerance: "moderate",
+      aiTone: "analytical",
+      maxCommitmentAlertPercent: 60,
+    },
+    cards: [],
+    transactions: [],
+    recurringItems: [],
+    goals: [],
+    mainBalance: 1200,
+    monthIncome: 5000,
+    monthExpense: 3000,
+    monthlyProjections: mockProjections,
+  });
+
+  assert.equal(telemetry.monthlyProjections?.length, 2);
+  assert.equal(telemetry.monthlyProjections[0].projectedFreeBalance, 2200);
+  assert.equal(telemetry.monthlyProjections[1].projectedFreeBalance, -600);
+
+  const safeContext = createSafeFinancialContext(telemetry);
+  assert.equal(safeContext.monthlyProjections.length, 2);
+  assert.equal(safeContext.monthlyProjections[1].projectedFreeBalance, -600);
+
+  const prompt = buildFinancialAnalystSystemPrompt(safeContext);
+
+  assert.ok(prompt.includes("6. PROJEÇÃO REAL MÊS A MÊS"));
+  assert.ok(prompt.includes("Out/2026 (Mês Atual)"));
+  assert.ok(prompt.includes("Nov/2026 (Mês +1)"));
+  assert.ok(prompt.includes("⚠️ [DÉFICIT PREVISTO]"));
+  assert.ok(prompt.includes("DIRETRIZES DE INTEGRIDADE CONTÁBIL MÊS A MÊS:"));
+  assert.ok(prompt.includes("Não assuma lucros ou sobras que não constem estritamente na linha 'Saldo Livre Final Projetado'"));
+  assert.ok(prompt.includes("Nunca afirme que o usuário está lucrando se os meses futuros apresentarem déficit"));
+});
+

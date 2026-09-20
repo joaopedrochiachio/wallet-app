@@ -90,6 +90,19 @@ export interface FinancialTelemetry {
     progressPercent: number;
     deadline?: string;
   }>;
+  monthlyProjections?: MonthProjectionSummary[];
+}
+
+export interface MonthProjectionSummary {
+  monthName: string;
+  year: number;
+  openingBalance: number;
+  plannedIncomesTotal: number;
+  recurringDebitTotal: number;
+  recurringCreditTotal: number;
+  cardInstallments: number;
+  totalCommitted: number;
+  projectedFreeBalance: number;
 }
 
 export interface FinancialTelemetryInput {
@@ -101,6 +114,7 @@ export interface FinancialTelemetryInput {
   mainBalance: number;
   monthIncome: number;
   monthExpense: number;
+  monthlyProjections?: MonthProjectionSummary[];
 }
 
 export const SAFE_FINANCIAL_CATEGORIES = [
@@ -171,6 +185,7 @@ export interface SafeFinancialContext {
     progressPercent: number;
     deadline?: string;
   }>;
+  monthlyProjections: MonthProjectionSummary[];
 }
 
 export interface PurchaseSimulationInput {
@@ -335,6 +350,7 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
     },
     categories,
     goals: goalsSummary,
+    monthlyProjections: data.monthlyProjections || [],
   };
 }
 
@@ -494,6 +510,17 @@ export function createSafeFinancialContext(telemetry: FinancialTelemetry): SafeF
       gap: safeNumber(goal.gap),
       progressPercent: safeNumber(goal.progressPercent),
       deadline: safeDeadline(goal.deadline),
+    })),
+    monthlyProjections: (telemetry.monthlyProjections || []).map((p) => ({
+      monthName: String(p.monthName || ""),
+      year: safeNumber(p.year),
+      openingBalance: safeNumber(p.openingBalance),
+      plannedIncomesTotal: safeNumber(p.plannedIncomesTotal),
+      recurringDebitTotal: safeNumber(p.recurringDebitTotal),
+      recurringCreditTotal: safeNumber(p.recurringCreditTotal),
+      cardInstallments: safeNumber(p.cardInstallments),
+      totalCommitted: safeNumber(p.totalCommitted),
+      projectedFreeBalance: safeNumber(p.projectedFreeBalance),
     })),
   };
 }
@@ -697,5 +724,29 @@ ${goals
       }`
   )
   .join("\n")}
+${
+  context.monthlyProjections && context.monthlyProjections.length > 0
+    ? `\n6. PROJEÇÃO REAL MÊS A MÊS (Calculada pelo motor do livro-caixa do sistema):\n` +
+      context.monthlyProjections
+        .map(
+          (p, idx) => `   • ${p.monthName}/${p.year} (${idx === 0 ? "Mês Atual" : `Mês +${idx}`}):
+     - Saldo Inicial que entra no mês: R$ ${p.openingBalance.toFixed(2)}
+     - Entradas Planejadas: R$ ${p.plannedIncomesTotal.toFixed(2)}
+     - Contas Fixas em Débito: R$ ${p.recurringDebitTotal.toFixed(2)}
+     - Faturas de Cartão (Parcelamentos + Assinaturas Crédito): R$ ${(p.cardInstallments + p.recurringCreditTotal).toFixed(2)}
+     - Total Comprometido (Saídas Previstas): R$ ${p.totalCommitted.toFixed(2)}
+     - Saldo Livre Final Projetado: R$ ${p.projectedFreeBalance.toFixed(2)} ${
+            p.projectedFreeBalance < 0 ? "⚠️ [DÉFICIT PREVISTO]" : "✅ [SALDO POSITIVO]"
+          }`
+        )
+        .join("\n") +
+      `\n\nDIRETRIZES DE INTEGRIDADE CONTÁBIL MÊS A MÊS:
+- Não assuma lucros ou sobras que não constem estritamente na linha 'Saldo Livre Final Projetado' de cada mês acima.
+- Observe a herança do saldo: se um mês fecha com saldo negativo, o mês seguinte já começa com esse saldo negativo herdado!
+- Se as parcelas de cartão diminuírem em determinado mês porque compras parceladas chegam ao fim, aponte isso como o ponto de alívio e dê a data ou mês exato.
+- Se algum mês fechar com saldo livre negativo, alerte explicitamente qual é o mês crítico e de quanto será a falta de caixa.
+- Nunca afirme que o usuário está lucrando se os meses futuros apresentarem déficit ou se o saldo livre for decrescente!`
+    : ""
+}
 `;
 }

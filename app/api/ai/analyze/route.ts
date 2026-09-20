@@ -266,6 +266,7 @@ export async function POST(req: NextRequest) {
       mainBalance = 0,
       monthIncome = 0,
       monthExpense = 0,
+      monthlyProjections = [],
     } = body;
 
     const telemetry = synthesizeFinancialTelemetry({
@@ -277,6 +278,7 @@ export async function POST(req: NextRequest) {
       mainBalance,
       monthIncome,
       monthExpense,
+      monthlyProjections,
     });
     const safeContext = createSafeFinancialContext(telemetry);
 
@@ -289,11 +291,18 @@ DIRETRIZES DE TOM:
 - Apresente conclusões simples e claras a partir dos dados cruzados, sem usar termos técnicos frios.
 - O "executiveSummary" deve conversar diretamente com o usuário em primeira pessoa ("Olá! Analisei suas contas..."), acolhendo os acertos e alertando sobre pontos de atenção com empatia.
 
+DIRETRIZES DE VALIDAÇÃO MÊS A MÊS (RIGOR CONTÁBIL):
+- Consulte com total rigor a Seção 6 do contexto ("PROJEÇÃO REAL MÊS A MÊS"), gerada diretamente pelo livro-caixa contábil.
+- Analise o 'Saldo Livre Final Projetado' de cada mês subsequente e a herança do saldo.
+- NUNCA assuma nem declare que o usuário "está lucrando" ou que "terá sobras confortáveis" nos próximos meses a menos que o Saldo Livre Final Projetado desses meses seja comprovadamente positivo, seguro e constante.
+- Se houver meses com saldo negativo (déficit previsto) ou margem muito apertada, declare explicitamente no "executiveSummary" e em "futureProjections" qual mês sofrerá aperto, o motivo (ex: acúmulo de parcelas de cartão ou contas fixas) e a quantia necessária para cobrir a diferença.
+- Em "futureProjections", cubra os meses projetados de forma cronológica (ex: "Próximo mês (Outubro)", "Mês seguinte (Novembro)"), atribuindo a severidade correta: "alert" se houver déficit ou risco imediato, "warning" se a margem for apertada, ou "info" se estiver estável e positivo.
+
 RESPONDA ESTRITAMENTE EM FORMATO JSON com a seguinte estrutura:
 {
   "healthScore": number, // pontuação inteira de 0 a 100
   "healthStatus": "excellent" | "healthy" | "attention" | "critical",
-  "executiveSummary": "texto natural e acolhedor do assistente avaliando o momento atual",
+  "executiveSummary": "texto natural e acolhedor do assistente avaliando o momento atual e a realidade dos próximos meses",
   "spendingPatterns": [
     {
       "title": "título curto do padrão",
@@ -303,8 +312,8 @@ RESPONDA ESTRITAMENTE EM FORMATO JSON com a seguinte estrutura:
   ],
   "futureProjections": [
     {
-      "period": "ex: Próximos 30 dias / Vencimentos",
-      "description": "previsão de faturas e compromissos futuros explicados de forma simples",
+      "period": "ex: Outubro/2026 ou Próximos 30 dias",
+      "description": "previsão contábil do mês com base no saldo livre projetado, alertando se fecha no azul ou no vermelho",
       "severity": "info" | "warning" | "alert"
     }
   ],

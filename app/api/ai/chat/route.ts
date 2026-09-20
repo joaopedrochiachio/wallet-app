@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
       mainBalance = 0,
       monthIncome = 0,
       monthExpense = 0,
+      monthlyProjections = [],
     } = body;
 
     const telemetry = synthesizeFinancialTelemetry({
@@ -49,6 +50,7 @@ export async function POST(req: NextRequest) {
       mainBalance,
       monthIncome,
       monthExpense,
+      monthlyProjections,
     });
     const safeContext = createSafeFinancialContext(telemetry);
 

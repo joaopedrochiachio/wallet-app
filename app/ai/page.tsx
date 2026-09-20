@@ -45,12 +45,14 @@ export default function AIAnalystPage() {
     monthIncome,
     monthExpense,
     isDataLoaded,
+    getMonthlyProjection,
   } = useWallet();
 
   const [activeTab, setActiveTab] = useState<"diagnosis" | "chat">("diagnosis");
 
   // Estados do Diagnóstico
   const [diagnosis, setDiagnosis] = useState<FinancialDiagnosis | null>(null);
+  const [lastAnalyzedAt, setLastAnalyzedAt] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [analysisModel, setAnalysisModel] = useState<string>("gemini-3.6-flash");
@@ -79,12 +81,29 @@ export default function AIAnalystPage() {
     }
   }, [creditCards, simCardId]);
 
-  // Executa o diagnóstico inicial automaticamente quando os dados carregam
+  // Carrega diagnóstico persistido no localStorage (evita novas chamadas ao trocar de aba ou dar F5)
   useEffect(() => {
-    if (isDataLoaded && !diagnosis && !isAnalyzing && !analysisError) {
-      runDiagnosis();
+    try {
+      const savedDiagnosis = localStorage.getItem("wallet_ai_diagnosis");
+      const savedTimestamp = localStorage.getItem("wallet_ai_diagnosis_timestamp");
+      const savedModel = localStorage.getItem("wallet_ai_model");
+
+      if (savedDiagnosis) {
+        const parsed = JSON.parse(savedDiagnosis);
+        if (parsed && typeof parsed === "object") {
+          setDiagnosis(parsed);
+        }
+      }
+      if (savedTimestamp) {
+        setLastAnalyzedAt(savedTimestamp);
+      }
+      if (savedModel) {
+        setAnalysisModel(savedModel);
+      }
+    } catch (err) {
+      console.warn("Falha ao recuperar diagnóstico em cache", err);
     }
-  }, [isDataLoaded]);
+  }, []);
 
   // Scroll automático no chat
   useEffect(() => {
@@ -98,6 +117,22 @@ export default function AIAnalystPage() {
     setAnalysisError(null);
 
     try {
+      // Coleta rigorosa das projeções mês a mês calculadas pelo motor do livro-caixa (0 = mês atual até +5 meses)
+      const monthlyProjections = [0, 1, 2, 3, 4, 5].map((idx) => {
+        const p = getMonthlyProjection(idx);
+        return {
+          monthName: p.monthName,
+          year: p.year,
+          openingBalance: p.openingBalance,
+          plannedIncomesTotal: p.plannedIncomesTotal,
+          recurringDebitTotal: p.recurringDebitTotal,
+          recurringCreditTotal: p.recurringCreditTotal,
+          cardInstallments: p.cardInstallments,
+          totalCommitted: p.totalCommitted,
+          projectedFreeBalance: p.projectedFreeBalance,
+        };
+      });
+
       const res = await fetch("/api/ai/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -110,13 +145,24 @@ export default function AIAnalystPage() {
           mainBalance,
           monthIncome,
           monthExpense,
+          monthlyProjections,
         }),
       });
 
       const data = await res.json();
       if (data.success && data.diagnosis) {
+        const timestamp = new Date().toISOString();
         setDiagnosis(data.diagnosis);
+        setLastAnalyzedAt(timestamp);
         if (data.modelUsed) setAnalysisModel(data.modelUsed);
+
+        try {
+          localStorage.setItem("wallet_ai_diagnosis", JSON.stringify(data.diagnosis));
+          localStorage.setItem("wallet_ai_diagnosis_timestamp", timestamp);
+          if (data.modelUsed) localStorage.setItem("wallet_ai_model", data.modelUsed);
+        } catch (e) {
+          console.warn("Falha ao persistir análise no cache local", e);
+        }
       } else {
         throw new Error(data.error || "Não foi possível carregar a análise no momento.");
       }
@@ -144,6 +190,21 @@ export default function AIAnalystPage() {
     setIsSending(true);
 
     try {
+      const monthlyProjections = [0, 1, 2, 3, 4, 5].map((idx) => {
+        const p = getMonthlyProjection(idx);
+        return {
+          monthName: p.monthName,
+          year: p.year,
+          openingBalance: p.openingBalance,
+          plannedIncomesTotal: p.plannedIncomesTotal,
+          recurringDebitTotal: p.recurringDebitTotal,
+          recurringCreditTotal: p.recurringCreditTotal,
+          cardInstallments: p.cardInstallments,
+          totalCommitted: p.totalCommitted,
+          projectedFreeBalance: p.projectedFreeBalance,
+        };
+      });
+
       const res = await fetch("/api/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -159,6 +220,7 @@ export default function AIAnalystPage() {
           mainBalance,
           monthIncome,
           monthExpense,
+          monthlyProjections,
         }),
       });
 
@@ -229,6 +291,36 @@ export default function AIAnalystPage() {
   const formatCurrency = (val: number) =>
     val.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+  const formatLastAnalyzed = (isoStr: string | null) => {
+    if (!isoStr) return null;
+    try {
+      const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return null;
+      const now = new Date();
+      const isToday =
+        d.getDate() === now.getDate() &&
+        d.getMonth() === now.getMonth() &&
+        d.getFullYear() === now.getFullYear();
+      const timeStr = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+      if (isToday) {
+        return `Hoje às ${timeStr}`;
+      }
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const isYesterday =
+        d.getDate() === yesterday.getDate() &&
+        d.getMonth() === yesterday.getMonth() &&
+        d.getFullYear() === yesterday.getFullYear();
+      if (isYesterday) {
+        return `Ontem às ${timeStr}`;
+      }
+      const dateStr = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+      return `${dateStr} às ${timeStr}`;
+    } catch {
+      return null;
+    }
+  };
+
   const getPersonaLabel = () => {
     switch (userProfile?.persona) {
       case "optimizer":
@@ -297,12 +389,21 @@ export default function AIAnalystPage() {
       {/* 1. HEADER APPLE WALLET STYLE */}
       <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2 md:pt-0">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-semibold tracking-wider uppercase text-[#86868B]">
               Assistente Pessoal
             </span>
             <span className="w-1.5 h-1.5 rounded-full bg-black/20" />
             <span className="text-xs font-medium text-[#86868B]">{getPersonaLabel()}</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-black/20" />
+            <span className="text-xs text-[#86868B] flex items-center gap-1">
+              <Clock size={11} className="text-[#86868B]" />
+              <span>
+                {lastAnalyzedAt
+                  ? `Última análise: ${formatLastAnalyzed(lastAnalyzedAt)}`
+                  : "Ainda não analisado"}
+              </span>
+            </span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-[#1D1D1F] mt-0.5 flex items-center gap-2.5">
             <span>Analista Financeiro</span>
@@ -340,11 +441,11 @@ export default function AIAnalystPage() {
           <button
             onClick={runDiagnosis}
             disabled={isAnalyzing}
-            title="Atualizar análise com dados recentes"
+            title={diagnosis ? "Recalcular análise com dados recentes" : "Gerar nova análise financeira com IA"}
             className="p-2 sm:px-3.5 sm:py-1.5 rounded-full bg-white hover:bg-black/5 active:scale-95 border border-black/[0.04] text-xs font-medium text-[#1D1D1F] flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 shadow-xs"
           >
             <RefreshCw size={13} className={isAnalyzing ? "animate-spin text-[#86868B]" : ""} />
-            <span className="hidden sm:inline">Recalcular</span>
+            <span className="hidden sm:inline">{diagnosis ? "Recalcular" : "Gerar Análise"}</span>
           </button>
         </div>
       </header>
@@ -352,257 +453,364 @@ export default function AIAnalystPage() {
       {/* 2. CONTEÚDO PRINCIPAL BASEADO NA ABA ATIVA */}
       {activeTab === "diagnosis" ? (
         <div className="space-y-6">
-          {/* Card Principal: Índice de Saúde com Anel Apple Health */}
-          <section className="bg-white rounded-[26px] p-6 sm:p-7 border border-black/[0.04] shadow-[0_2px_12px_rgba(0,0,0,0.035)] space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
-              <div className="flex items-center gap-5">
-                {/* Gauge Circular (SVG) */}
-                <div className="relative w-18 h-18 sm:w-20 sm:h-20 flex items-center justify-center shrink-0">
-                  <svg className="w-full h-full -rotate-90" viewBox="0 0 72 72">
-                    <circle
-                      cx="36"
-                      cy="36"
-                      r="30"
-                      className="stroke-black/[0.06]"
-                      strokeWidth="6"
-                      fill="none"
-                    />
-                    <circle
-                      cx="36"
-                      cy="36"
-                      r="30"
-                      stroke={healthBadge.ringColor}
-                      strokeWidth="6"
-                      strokeDasharray="188.5"
-                      strokeDashoffset={188.5 - (188.5 * currentScore) / 100}
-                      strokeLinecap="round"
-                      fill="none"
-                      className="transition-all duration-1000 ease-out"
-                    />
-                  </svg>
-                  <div className="absolute flex flex-col items-center justify-center">
-                    <span className="text-xl sm:text-2xl font-bold tracking-tight text-[#1D1D1F]">
-                      {isAnalyzing ? "..." : currentScore}
-                    </span>
-                    <span className="text-[9px] font-semibold text-[#86868B] uppercase">Pontos</span>
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-lg font-semibold text-[#1D1D1F]">Saúde Financeira</h2>
-                    <span
-                      className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full border ${healthBadge.bg} ${healthBadge.color}`}
-                    >
-                      {healthBadge.label}
-                    </span>
-                  </div>
-                  <p className="text-xs text-[#86868B] leading-relaxed">
-                    Cruzamento em tempo real de saldo em conta, faturas e metas cadastradas.
-                  </p>
-                  <div className="text-[11px] text-[#A1A1A6] flex items-center gap-1.5 pt-0.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    <span>Conectado via {analysisModel}</span>
-                  </div>
-                </div>
+          {/* Mensagem de Erro se houver */}
+          {analysisError && (
+            <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200/70 text-rose-800 text-xs flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={15} className="text-rose-600 shrink-0" />
+                <span>{analysisError}</span>
               </div>
-
-              {/* Botão de Ação Rápida */}
               <button
-                onClick={() => {
-                  setActiveTab("chat");
-                  setIsSimulatorOpen(true);
-                }}
-                className="self-start sm:self-auto bg-[#1D1D1F] hover:bg-black active:scale-[0.98] text-white text-xs font-semibold px-4 py-2.5 rounded-full transition-all flex items-center gap-2 shadow-xs cursor-pointer shrink-0"
+                onClick={runDiagnosis}
+                className="px-3 py-1 rounded-full bg-rose-600 text-white font-semibold hover:bg-rose-700 transition-all cursor-pointer shrink-0"
               >
-                <Calculator size={15} />
-                <span>Simulador de Compra</span>
+                Tentar novamente
               </button>
             </div>
+          )}
 
-            {/* Grade de 3 Métricas Apple Style */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-black/[0.04]">
-              <div className="p-3.5 rounded-2xl bg-[#FAFAFC] border border-black/[0.03]">
-                <span className="text-[10px] uppercase font-semibold text-[#86868B] tracking-wider block">
-                  Comprometimento
-                </span>
-                <div className="mt-1 flex items-baseline gap-1.5">
-                  <strong
-                    className={`text-base font-semibold ${
-                      commitmentRatio > (userProfile?.maxCommitmentAlertPercent || 60)
-                        ? "text-rose-600"
-                        : "text-[#1D1D1F]"
-                    }`}
-                  >
-                    {commitmentRatio}%
-                  </strong>
-                  <span className="text-[11px] text-[#86868B]">
-                    (teto {userProfile?.maxCommitmentAlertPercent || 60}%)
-                  </span>
-                </div>
+          {/* Estado 1: Carregando Diagnóstico (Skeleton / Pulse) */}
+          {isAnalyzing ? (
+            <section className="bg-white rounded-[26px] p-8 sm:p-12 border border-black/[0.04] shadow-[0_2px_12px_rgba(0,0,0,0.035)] text-center space-y-4">
+              <div className="w-14 h-14 rounded-full bg-[#F2F2F7] mx-auto flex items-center justify-center">
+                <RefreshCw size={24} className="text-[#1D1D1F] animate-spin" />
               </div>
-
-              <div className="p-3.5 rounded-2xl bg-[#FAFAFC] border border-black/[0.03]">
-                <span className="text-[10px] uppercase font-semibold text-[#86868B] tracking-wider block">
-                  Saldo na Conta
-                </span>
-                <strong className="mt-1 block text-base font-semibold text-emerald-600 truncate">
-                  R$ {formatCurrency(mainBalance)}
-                </strong>
+              <div className="space-y-1">
+                <h3 className="text-base sm:text-lg font-semibold text-[#1D1D1F]">
+                  Analisando Livro-Caixa e Projeções Mês a Mês...
+                </h3>
+                <p className="text-xs text-[#86868B] max-w-md mx-auto leading-relaxed">
+                  Cruzando saldo em conta, faturas de cartão, parcelamentos e o livro-caixa projetado dos próximos ciclos para garantir validação contábil exata.
+                </p>
               </div>
-
-              <div className="p-3.5 rounded-2xl bg-[#FAFAFC] border border-black/[0.03]">
-                <span className="text-[10px] uppercase font-semibold text-[#86868B] tracking-wider block">
-                  Faturas em Aberto
-                </span>
-                <strong className="mt-1 block text-base font-semibold text-[#1D1D1F] truncate">
-                  R$ {formatCurrency(totalInvoices)}
-                </strong>
-              </div>
-            </div>
-
-            {/* Parecer do Assistente (Estilo Apple Callout Note) */}
-            <div className="p-5 rounded-[22px] bg-gradient-to-br from-[#FAFAFC] to-[#F2F2F7]/50 border border-black/[0.04] space-y-2">
-              <div className="flex items-center gap-2 text-xs font-semibold text-[#1D1D1F]">
-                <div className="w-5 h-5 rounded-md bg-[#1D1D1F] text-amber-300 flex items-center justify-center">
-                  <Sparkles size={11} />
-                </div>
-                <span>Parecer do seu Assistente</span>
-              </div>
-              <p className="text-sm text-[#1D1D1F] leading-relaxed font-normal">
-                {isAnalyzing
-                  ? "Analisando seu histórico de contas e faturas para preparar um parecer claro..."
-                  : diagnosis?.executiveSummary ||
-                    "Olá! Seus dados mostram um fluxo de caixa ativo este mês. Acompanhe suas faturas para manter seus compromissos sob controle e acelerar suas metas."}
-              </p>
-            </div>
-          </section>
-
-          {/* Grade de Padrões Detectados & Projeção de Faturas */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* 1. Padrões de Gastos */}
-            <section className="space-y-3">
-              <div className="flex items-center justify-between px-1">
-                <h2 className="text-xs uppercase tracking-wider font-semibold text-[#86868B]">
-                  Padrões Detectados
-                </h2>
-                <span className="text-xs text-[#86868B]">
-                  {diagnosis?.spendingPatterns?.length || 1} observados
-                </span>
-              </div>
-
-              <div className="space-y-3">
-                {isAnalyzing ? (
-                  <div className="bg-white rounded-[22px] p-6 text-center text-xs text-[#86868B] border border-black/[0.04]">
-                    Identificando padrões e hábitos de consumo...
-                  </div>
-                ) : (
-                  diagnosis?.spendingPatterns?.map((pat, idx) => (
-                    <div
-                      key={idx}
-                      className="bg-white rounded-[20px] p-4 sm:p-5 border border-black/[0.04] shadow-[0_2px_8px_rgba(0,0,0,0.025)] space-y-1.5 hover:border-black/15 transition-all"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-semibold text-[#1D1D1F]">{pat.title}</span>
-                        <span
-                          className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
-                            pat.type === "warning"
-                              ? "bg-amber-50 text-amber-700 border-amber-200/60"
-                              : pat.type === "alert"
-                              ? "bg-rose-50 text-rose-700 border-rose-200/60"
-                              : "bg-blue-50 text-blue-700 border-blue-200/60"
-                          }`}
-                        >
-                          {pat.type === "warning"
-                            ? "Atenção"
-                            : pat.type === "alert"
-                            ? "Alerta"
-                            : "Observação"}
-                        </span>
-                      </div>
-                      <p className="text-xs text-[#86868B] leading-relaxed">{pat.description}</p>
-                    </div>
-                  ))
-                )}
+              <div className="flex items-center justify-center gap-1.5 text-[11px] text-[#A1A1A6] pt-2">
+                <Sparkles size={13} className="text-amber-400" />
+                <span>Consultando IA sob demanda via {analysisModel}</span>
               </div>
             </section>
+          ) : !diagnosis ? (
+            /* Estado 2: Sem análise salva (Inicial / On-Demand) */
+            <section className="bg-white rounded-[26px] p-7 sm:p-10 border border-black/[0.04] shadow-[0_2px_12px_rgba(0,0,0,0.035)] space-y-6 text-center">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-[#1D1D1F] to-[#434346] text-amber-300 mx-auto flex items-center justify-center shadow-md">
+                <Sparkles size={28} />
+              </div>
 
-            {/* 2. Grupos Futuros & Faturas */}
-            <section className="space-y-3">
-              <div className="flex items-center justify-between px-1">
-                <h2 className="text-xs uppercase tracking-wider font-semibold text-[#86868B]">
-                  Próximos Ciclos & Faturas
+              <div className="space-y-2 max-w-lg mx-auto">
+                <h2 className="text-xl sm:text-2xl font-semibold tracking-tight text-[#1D1D1F]">
+                  Diagnóstico Financeiro Sob Demanda
                 </h2>
-                <span className="text-xs text-[#86868B]">Compromissos futuros</span>
+                <p className="text-xs sm:text-sm text-[#86868B] leading-relaxed">
+                  Para economizar requisições de IA e garantir que você visualize apenas informações sob sua solicitação, o diagnóstico é gerado sob demanda. Uma vez gerado, ele fica salvo para suas próximas consultas sem gastar chamadas adicionais.
+                </p>
               </div>
 
-              <div className="space-y-3">
-                {isAnalyzing ? (
-                  <div className="bg-white rounded-[22px] p-6 text-center text-xs text-[#86868B] border border-black/[0.04]">
-                    Calculando próximos vencimentos e parcelas...
-                  </div>
-                ) : (
-                  diagnosis?.futureProjections?.map((proj, idx) => (
-                    <div
-                      key={idx}
-                      className="bg-white rounded-[20px] p-4 sm:p-5 border border-black/[0.04] shadow-[0_2px_8px_rgba(0,0,0,0.025)] space-y-1.5 hover:border-black/15 transition-all"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-semibold text-[#1D1D1F]">{proj.period}</span>
-                        <span className="text-[10px] font-medium text-[#86868B]">Faturas & Fixos</span>
-                      </div>
-                      <p className="text-xs text-[#86868B] leading-relaxed">{proj.description}</p>
-                    </div>
-                  ))
-                )}
-              </div>
-            </section>
-          </div>
-
-          {/* 3. Recomendações e Melhorias Práticas (Apple Action Cards) */}
-          <section className="space-y-3">
-            <div className="flex items-center justify-between px-1">
-              <h2 className="text-xs uppercase tracking-wider font-semibold text-[#86868B]">
-                Recomendações do Assistente
-              </h2>
-              <span className="text-xs text-[#86868B]">Passos práticos</span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {diagnosis?.actionableSuggestions?.map((sug, idx) => (
-                <div
-                  key={idx}
-                  className="bg-white rounded-[22px] p-5 border border-black/[0.04] shadow-[0_2px_8px_rgba(0,0,0,0.025)] hover:border-black/15 transition-all flex flex-col justify-between space-y-3"
+              <div className="pt-2">
+                <button
+                  onClick={runDiagnosis}
+                  className="bg-[#1D1D1F] hover:bg-black active:scale-[0.98] text-white text-xs sm:text-sm font-semibold px-6 py-3 rounded-full transition-all inline-flex items-center gap-2.5 shadow-md cursor-pointer"
                 >
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <h3 className="text-xs font-semibold text-[#1D1D1F]">{sug.title}</h3>
-                      {sug.potentialGain && (
-                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60 shrink-0">
-                          {sug.potentialGain}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-[#86868B] leading-relaxed">{sug.action}</p>
-                  </div>
+                  <Sparkles size={16} className="text-amber-300" />
+                  <span>Gerar Diagnóstico com IA</span>
+                </button>
+              </div>
 
-                  <div className="pt-2 flex items-center justify-between border-t border-black/[0.04] text-[11px] text-[#86868B]">
-                    <span>{sug.targetGoal ? `Meta: ${sug.targetGoal}` : "Equilíbrio financeiro"}</span>
-                    <button
-                      onClick={() => {
-                        setActiveTab("chat");
-                        handleSendMessage(`Como posso colocar em prática a recomendação "${sug.title}"?`);
-                      }}
-                      className="text-xs font-semibold text-[#1D1D1F] hover:underline flex items-center gap-1 cursor-pointer"
+              {/* Grade de 3 Métricas Rápidas Apple Style (Dados em Tempo Real sem custo de IA) */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-6 border-t border-black/[0.05] text-left">
+                <div className="p-3.5 rounded-2xl bg-[#FAFAFC] border border-black/[0.03]">
+                  <span className="text-[10px] uppercase font-semibold text-[#86868B] tracking-wider block">
+                    Comprometimento Atual
+                  </span>
+                  <div className="mt-1 flex items-baseline gap-1.5">
+                    <strong
+                      className={`text-base font-semibold ${
+                        commitmentRatio > (userProfile?.maxCommitmentAlertPercent || 60)
+                          ? "text-rose-600"
+                          : "text-[#1D1D1F]"
+                      }`}
                     >
-                      <span>Conversar sobre isso</span>
-                      <ChevronRight size={12} />
-                    </button>
+                      {commitmentRatio}%
+                    </strong>
+                    <span className="text-[11px] text-[#86868B]">
+                      (teto {userProfile?.maxCommitmentAlertPercent || 60}%)
+                    </span>
                   </div>
                 </div>
-              ))}
-            </div>
-          </section>
+
+                <div className="p-3.5 rounded-2xl bg-[#FAFAFC] border border-black/[0.03]">
+                  <span className="text-[10px] uppercase font-semibold text-[#86868B] tracking-wider block">
+                    Saldo na Conta
+                  </span>
+                  <strong className="mt-1 block text-base font-semibold text-emerald-600 truncate">
+                    R$ {formatCurrency(mainBalance)}
+                  </strong>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-[#FAFAFC] border border-black/[0.03]">
+                  <span className="text-[10px] uppercase font-semibold text-[#86868B] tracking-wider block">
+                    Faturas em Aberto
+                  </span>
+                  <strong className="mt-1 block text-base font-semibold text-[#1D1D1F] truncate">
+                    R$ {formatCurrency(totalInvoices)}
+                  </strong>
+                </div>
+              </div>
+            </section>
+          ) : (
+            /* Estado 3: Diagnóstico Concluído e Carregado (do cache ou recém-gerado) */
+            <>
+              {/* Card Principal: Índice de Saúde com Anel Apple Health */}
+              <section className="bg-white rounded-[26px] p-6 sm:p-7 border border-black/[0.04] shadow-[0_2px_12px_rgba(0,0,0,0.035)] space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+                  <div className="flex items-center gap-5">
+                    {/* Gauge Circular (SVG) */}
+                    <div className="relative w-18 h-18 sm:w-20 sm:h-20 flex items-center justify-center shrink-0">
+                      <svg className="w-full h-full -rotate-90" viewBox="0 0 72 72">
+                        <circle
+                          cx="36"
+                          cy="36"
+                          r="30"
+                          className="stroke-black/[0.06]"
+                          strokeWidth="6"
+                          fill="none"
+                        />
+                        <circle
+                          cx="36"
+                          cy="36"
+                          r="30"
+                          stroke={healthBadge.ringColor}
+                          strokeWidth="6"
+                          strokeDasharray="188.5"
+                          strokeDashoffset={188.5 - (188.5 * currentScore) / 100}
+                          strokeLinecap="round"
+                          fill="none"
+                          className="transition-all duration-1000 ease-out"
+                        />
+                      </svg>
+                      <div className="absolute flex flex-col items-center justify-center">
+                        <span className="text-xl sm:text-2xl font-bold tracking-tight text-[#1D1D1F]">
+                          {currentScore}
+                        </span>
+                        <span className="text-[9px] font-semibold text-[#86868B] uppercase">Pontos</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-lg font-semibold text-[#1D1D1F]">Saúde Financeira</h2>
+                        <span
+                          className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full border ${healthBadge.bg} ${healthBadge.color}`}
+                        >
+                          {healthBadge.label}
+                        </span>
+                      </div>
+                      <p className="text-xs text-[#86868B] leading-relaxed">
+                        Cruzamento em tempo real de saldo em conta, faturas e metas cadastradas.
+                      </p>
+                      <div className="text-[11px] text-[#A1A1A6] flex items-center gap-1.5 pt-0.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <span>Conectado via {analysisModel}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Botão de Ação Rápida */}
+                  <button
+                    onClick={() => {
+                      setActiveTab("chat");
+                      setIsSimulatorOpen(true);
+                    }}
+                    className="self-start sm:self-auto bg-[#1D1D1F] hover:bg-black active:scale-[0.98] text-white text-xs font-semibold px-4 py-2.5 rounded-full transition-all flex items-center gap-2 shadow-xs cursor-pointer shrink-0"
+                  >
+                    <Calculator size={15} />
+                    <span>Simulador de Compra</span>
+                  </button>
+                </div>
+
+                {/* Grade de 3 Métricas Apple Style */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-black/[0.04]">
+                  <div className="p-3.5 rounded-2xl bg-[#FAFAFC] border border-black/[0.03]">
+                    <span className="text-[10px] uppercase font-semibold text-[#86868B] tracking-wider block">
+                      Comprometimento
+                    </span>
+                    <div className="mt-1 flex items-baseline gap-1.5">
+                      <strong
+                        className={`text-base font-semibold ${
+                          commitmentRatio > (userProfile?.maxCommitmentAlertPercent || 60)
+                            ? "text-rose-600"
+                            : "text-[#1D1D1F]"
+                        }`}
+                      >
+                        {commitmentRatio}%
+                      </strong>
+                      <span className="text-[11px] text-[#86868B]">
+                        (teto {userProfile?.maxCommitmentAlertPercent || 60}%)
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 rounded-2xl bg-[#FAFAFC] border border-black/[0.03]">
+                    <span className="text-[10px] uppercase font-semibold text-[#86868B] tracking-wider block">
+                      Saldo na Conta
+                    </span>
+                    <strong className="mt-1 block text-base font-semibold text-emerald-600 truncate">
+                      R$ {formatCurrency(mainBalance)}
+                    </strong>
+                  </div>
+
+                  <div className="p-3.5 rounded-2xl bg-[#FAFAFC] border border-black/[0.03]">
+                    <span className="text-[10px] uppercase font-semibold text-[#86868B] tracking-wider block">
+                      Faturas em Aberto
+                    </span>
+                    <strong className="mt-1 block text-base font-semibold text-[#1D1D1F] truncate">
+                      R$ {formatCurrency(totalInvoices)}
+                    </strong>
+                  </div>
+                </div>
+
+                {/* Parecer do Assistente (Estilo Apple Callout Note) */}
+                <div className="p-5 rounded-[22px] bg-gradient-to-br from-[#FAFAFC] to-[#F2F2F7]/50 border border-black/[0.04] space-y-2">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-[#1D1D1F]">
+                    <div className="w-5 h-5 rounded-md bg-[#1D1D1F] text-amber-300 flex items-center justify-center">
+                      <Sparkles size={11} />
+                    </div>
+                    <span>Parecer do seu Assistente</span>
+                  </div>
+                  <p className="text-sm text-[#1D1D1F] leading-relaxed font-normal">
+                    {diagnosis?.executiveSummary ||
+                      "Olá! Seus dados mostram um fluxo de caixa ativo este mês. Acompanhe suas faturas para manter seus compromissos sob controle e acelerar suas metas."}
+                  </p>
+                </div>
+              </section>
+
+              {/* Grade de Padrões Detectados & Projeção de Faturas */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* 1. Padrões de Gastos */}
+                <section className="space-y-3">
+                  <div className="flex items-center justify-between px-1">
+                    <h2 className="text-xs uppercase tracking-wider font-semibold text-[#86868B]">
+                      Padrões Detectados
+                    </h2>
+                    <span className="text-xs text-[#86868B]">
+                      {diagnosis?.spendingPatterns?.length || 1} observados
+                    </span>
+                  </div>
+
+                  <div className="space-y-3">
+                    {diagnosis?.spendingPatterns?.map((pat, idx) => (
+                      <div
+                        key={idx}
+                        className="bg-white rounded-[20px] p-4 sm:p-5 border border-black/[0.04] shadow-[0_2px_8px_rgba(0,0,0,0.025)] space-y-1.5 hover:border-black/15 transition-all"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold text-[#1D1D1F]">{pat.title}</span>
+                          <span
+                            className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                              pat.type === "warning"
+                                ? "bg-amber-50 text-amber-700 border-amber-200/60"
+                                : pat.type === "alert"
+                                ? "bg-rose-50 text-rose-700 border-rose-200/60"
+                                : "bg-blue-50 text-blue-700 border-blue-200/60"
+                            }`}
+                          >
+                            {pat.type === "warning"
+                              ? "Atenção"
+                              : pat.type === "alert"
+                              ? "Alerta"
+                              : "Observação"}
+                          </span>
+                        </div>
+                        <p className="text-xs text-[#86868B] leading-relaxed">{pat.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                {/* 2. Grupos Futuros & Faturas */}
+                <section className="space-y-3">
+                  <div className="flex items-center justify-between px-1">
+                    <h2 className="text-xs uppercase tracking-wider font-semibold text-[#86868B]">
+                      Próximos Ciclos & Faturas
+                    </h2>
+                    <span className="text-xs text-[#86868B]">Compromissos futuros</span>
+                  </div>
+
+                  <div className="space-y-3">
+                    {diagnosis?.futureProjections?.map((proj, idx) => (
+                      <div
+                        key={idx}
+                        className="bg-white rounded-[20px] p-4 sm:p-5 border border-black/[0.04] shadow-[0_2px_8px_rgba(0,0,0,0.025)] space-y-1.5 hover:border-black/15 transition-all"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold text-[#1D1D1F]">{proj.period}</span>
+                          <span
+                            className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                              proj.severity === "alert"
+                                ? "bg-rose-50 text-rose-700 border-rose-200/60"
+                                : proj.severity === "warning"
+                                ? "bg-amber-50 text-amber-700 border-amber-200/60"
+                                : "bg-emerald-50 text-emerald-700 border-emerald-200/60"
+                            }`}
+                          >
+                            {proj.severity === "alert"
+                              ? "Déficit / Alerta"
+                              : proj.severity === "warning"
+                              ? "Atenção"
+                              : "Estável"}
+                          </span>
+                        </div>
+                        <p className="text-xs text-[#86868B] leading-relaxed">{proj.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              </div>
+
+              {/* 3. Recomendações e Melhorias Práticas (Apple Action Cards) */}
+              <section className="space-y-3">
+                <div className="flex items-center justify-between px-1">
+                  <h2 className="text-xs uppercase tracking-wider font-semibold text-[#86868B]">
+                    Recomendações do Assistente
+                  </h2>
+                  <span className="text-xs text-[#86868B]">Passos práticos</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {diagnosis?.actionableSuggestions?.map((sug, idx) => (
+                    <div
+                      key={idx}
+                      className="bg-white rounded-[22px] p-5 border border-black/[0.04] shadow-[0_2px_8px_rgba(0,0,0,0.025)] hover:border-black/15 transition-all flex flex-col justify-between space-y-3"
+                    >
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <h3 className="text-xs font-semibold text-[#1D1D1F]">{sug.title}</h3>
+                          {sug.potentialGain && (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60 shrink-0">
+                              {sug.potentialGain}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-[#86868B] leading-relaxed">{sug.action}</p>
+                      </div>
+
+                      <div className="pt-2 flex items-center justify-between border-t border-black/[0.04] text-[11px] text-[#86868B]">
+                        <span>{sug.targetGoal ? `Meta: ${sug.targetGoal}` : "Equilíbrio financeiro"}</span>
+                        <button
+                          onClick={() => {
+                            setActiveTab("chat");
+                            handleSendMessage(`Como posso colocar em prática a recomendação "${sug.title}"?`);
+                          }}
+                          className="text-xs font-semibold text-[#1D1D1F] hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          <span>Conversar sobre isso</span>
+                          <ChevronRight size={12} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </>
+          )}
         </div>
       ) : (
         /* ABA 2: CHAT DO ASSISTENTE & SIMULADOR DE COMPRA */
