@@ -3,28 +3,255 @@ import { callGeminiCascade } from "@/lib/services/geminiService";
 import {
   synthesizeFinancialTelemetry,
   buildFinancialAnalystSystemPrompt,
+  FinancialTelemetry,
 } from "@/lib/services/financialContextService";
+
+export interface SpendingPatternItem {
+  title: string;
+  description: string;
+  type: "info" | "warning" | "alert";
+}
+
+export interface FutureProjectionItem {
+  period: string;
+  description: string;
+  severity: "info" | "warning" | "alert";
+}
+
+export interface ActionableSuggestionItem {
+  title: string;
+  action: string;
+  potentialGain?: string;
+  targetGoal?: string;
+}
 
 export interface FinancialDiagnosis {
   healthScore: number;
   healthStatus: "excellent" | "healthy" | "attention" | "critical";
   executiveSummary: string;
-  spendingPatterns: Array<{
-    title: string;
-    description: string;
-    type: "info" | "warning" | "alert";
-  }>;
-  futureProjections: Array<{
-    period: string;
-    description: string;
-    severity: "info" | "warning" | "alert";
-  }>;
-  actionableSuggestions: Array<{
-    title: string;
-    action: string;
-    potentialGain?: string;
-    targetGoal?: string;
-  }>;
+  spendingPatterns: SpendingPatternItem[];
+  futureProjections: FutureProjectionItem[];
+  actionableSuggestions: ActionableSuggestionItem[];
+}
+
+function normalizeHealthStatus(
+  statusStr: unknown,
+  score: number
+): "excellent" | "healthy" | "attention" | "critical" {
+  const s = String(statusStr || "").toLowerCase();
+  if (s.includes("excel") || s.includes("ótimo") || s.includes("otimo")) return "excellent";
+  if (s.includes("saud") || s.includes("bom") || s.includes("healthy")) return "healthy";
+  if (s.includes("aten") || s.includes("alerta") || s.includes("warning") || s.includes("moderado")) {
+    return "attention";
+  }
+  if (s.includes("crit") || s.includes("grave") || s.includes("danger")) return "critical";
+
+  // Inferência por pontuação
+  if (score >= 80) return "excellent";
+  if (score >= 65) return "healthy";
+  if (score >= 45) return "attention";
+  return "critical";
+}
+
+function sanitizeText(str: unknown): string {
+  if (typeof str !== "string") return "";
+  let clean = str.trim();
+  // Remove sobras de JSON caso o texto contenha chaves cruas
+  if (clean.startsWith("{") && clean.includes('"executiveSummary"')) {
+    const match = clean.match(/"executiveSummary"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/i);
+    if (match) {
+      clean = match[1].replace(/\\"/g, '"').replace(/\\n/g, " ");
+    }
+  }
+  return clean.replace(/\\"/g, '"').replace(/\\n/g, "\n");
+}
+
+function safeParseFinancialDiagnosis(
+  rawText: string,
+  telemetry: FinancialTelemetry
+): FinancialDiagnosis {
+  let candidate = rawText.trim();
+
+  // Remove blocos de código markdown se existirem
+  if (candidate.startsWith("```json")) {
+    candidate = candidate.replace(/^```json\s*/i, "").replace(/```\s*$/i, "");
+  } else if (candidate.startsWith("```")) {
+    candidate = candidate.replace(/^```\s*/i, "").replace(/```\s*$/i, "");
+  }
+
+  // Encontra o trecho JSON delimitado por { e }
+  const firstBrace = candidate.indexOf("{");
+  const lastBrace = candidate.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    candidate = candidate.slice(firstBrace, lastBrace + 1);
+  }
+
+  let parsed: Record<string, unknown> | null = null;
+  try {
+    parsed = JSON.parse(candidate);
+  } catch (err) {
+    console.warn("[safeParseFinancialDiagnosis] Parse direto falhou, tentando extração:", err);
+  }
+
+  // 1. Extração do Score
+  let healthScore = 75;
+  if (parsed && typeof parsed.healthScore === "number") {
+    healthScore = Math.max(0, Math.min(100, Math.round(parsed.healthScore)));
+  } else {
+    const matchScore = rawText.match(/"healthScore"\s*:\s*(\d+)/i);
+    if (matchScore) {
+      healthScore = Math.max(0, Math.min(100, parseInt(matchScore[1], 10)));
+    } else {
+      // Cálculo heurístico baseado na telemetria
+      const savingsBonus = Math.min(25, telemetry.cashflow.savingsRatePercent * 0.5);
+      const commitmentPenalty = telemetry.commitments.isOverLimit ? 35 : 10;
+      healthScore = Math.max(25, Math.min(95, Math.round(75 + savingsBonus - commitmentPenalty)));
+    }
+  }
+
+  // 2. Extração do Status
+  const healthStatus = normalizeHealthStatus(parsed?.healthStatus, healthScore);
+
+  // 3. Extração do Parecer Executivo
+  let executiveSummary = "";
+  if (parsed && typeof parsed.executiveSummary === "string") {
+    executiveSummary = sanitizeText(parsed.executiveSummary);
+  }
+  if (!executiveSummary) {
+    const matchSummary = rawText.match(/"executiveSummary"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/i);
+    if (matchSummary) {
+      executiveSummary = sanitizeText(matchSummary[1]);
+    }
+  }
+  if (!executiveSummary || executiveSummary.startsWith("{")) {
+    const userName = telemetry.user.name || "você";
+    const netFormatted = telemetry.cashflow.netCashflow >= 0 ? "positivo" : "negativo";
+    const statusWord = healthStatus === "critical" ? "requer atenção prioritária" : "está equilibrado";
+
+    executiveSummary = `Olá, ${userName}! Analisei todo o seu fluxo deste mês. Seu saldo em conta fechou ${netFormatted}, mas o comprometimento total com cartões e despesas fixas ${statusWord}. Estou acompanhando cada movimentação de perto para sugerir passos simples que mantenham sua estabilidade e acelerem suas metas.`;
+  }
+
+  // 4. Normalização de Padrões de Consumo
+  const spendingPatterns: SpendingPatternItem[] = [];
+  const rawPatterns = parsed?.spendingPatterns;
+  if (Array.isArray(rawPatterns)) {
+    for (const p of rawPatterns) {
+      if (typeof p === "string") {
+        spendingPatterns.push({
+          title: "Padrão Identificado",
+          description: sanitizeText(p),
+          type: "info",
+        });
+      } else if (p && typeof p === "object") {
+        const item = p as Record<string, unknown>;
+        spendingPatterns.push({
+          title: String(item.title || "Comportamento de Consumo"),
+          description: sanitizeText(item.description || item.detalhe || ""),
+          type: (item.type as "info" | "warning" | "alert") || "info",
+        });
+      }
+    }
+  } else if (typeof rawPatterns === "string" && rawPatterns.trim()) {
+    spendingPatterns.push({
+      title: "Análise de Gastos",
+      description: sanitizeText(rawPatterns),
+      type: "info",
+    });
+  }
+
+  if (spendingPatterns.length === 0) {
+    spendingPatterns.push({
+      title: "Concentração por Categoria",
+      description:
+        telemetry.categories.length > 0
+          ? `A maior fatia das suas despesas esteve concentrada em ${telemetry.categories[0].category} (${telemetry.categories[0].percentage}% do total gasto).`
+          : "Seus lançamentos estão distribuídos entre as despesas essenciais do dia a dia.",
+      type: "info",
+    });
+  }
+
+  // 5. Normalização de Projeções Futuras
+  const futureProjections: FutureProjectionItem[] = [];
+  const rawProjections = parsed?.futureProjections;
+  if (Array.isArray(rawProjections)) {
+    for (const proj of rawProjections) {
+      if (typeof proj === "string") {
+        futureProjections.push({
+          period: "Próximas Faturas",
+          description: sanitizeText(proj),
+          severity: "info",
+        });
+      } else if (proj && typeof proj === "object") {
+        const item = proj as Record<string, unknown>;
+        futureProjections.push({
+          period: String(item.period || item.prazo || "Próximo Ciclo"),
+          description: sanitizeText(item.description || item.detalhe || ""),
+          severity: (item.severity as "info" | "warning" | "alert") || "info",
+        });
+      }
+    }
+  } else if (typeof rawProjections === "string" && rawProjections.trim()) {
+    futureProjections.push({
+      period: "Próximos 30 dias",
+      description: sanitizeText(rawProjections),
+      severity: "info",
+    });
+  }
+
+  if (futureProjections.length === 0) {
+    const totalInvoices = telemetry.credit.totalSpent;
+    futureProjections.push({
+      period: "Próximas Faturas",
+      description:
+        totalInvoices > 0
+          ? `Você tem um total acumulado de faturas de R$ ${totalInvoices.toFixed(
+              2
+            )} programado para vencer nas próximas semanas.`
+          : "Nenhuma fatura pesada acumulada para o próximo vencimento.",
+      severity: totalInvoices > telemetry.user.monthlyIncomeBase * 0.5 ? "warning" : "info",
+    });
+  }
+
+  // 6. Normalização de Recomendações Práticas
+  const actionableSuggestions: ActionableSuggestionItem[] = [];
+  const rawSuggestions = parsed?.actionableSuggestions;
+  if (Array.isArray(rawSuggestions)) {
+    for (const sug of rawSuggestions) {
+      if (typeof sug === "string") {
+        actionableSuggestions.push({
+          title: "Orientação do Assistente",
+          action: sanitizeText(sug),
+          potentialGain: "Mais folga no orçamento",
+        });
+      } else if (sug && typeof sug === "object") {
+        const item = sug as Record<string, unknown>;
+        actionableSuggestions.push({
+          title: String(item.title || "Sugestão Prática"),
+          action: sanitizeText(item.action || item.descricao || ""),
+          potentialGain: item.potentialGain ? String(item.potentialGain) : undefined,
+          targetGoal: item.targetGoal ? String(item.targetGoal) : undefined,
+        });
+      }
+    }
+  }
+
+  if (actionableSuggestions.length === 0) {
+    actionableSuggestions.push({
+      title: "Reserva e Equilíbrio",
+      action:
+        "Separe uma quantia fixa logo no início do mês antes de comprometer o limite com novas compras parceladas.",
+      potentialGain: "Segurança de liquidez",
+    });
+  }
+
+  return {
+    healthScore,
+    healthStatus,
+    executiveSummary,
+    spendingPatterns,
+    futureProjections,
+    actionableSuggestions,
+  };
 }
 
 export async function POST(req: NextRequest) {
@@ -54,85 +281,53 @@ export async function POST(req: NextRequest) {
 
     const systemPrompt = buildFinancialAnalystSystemPrompt(telemetry);
 
-    const userPrompt = `Realize um DIAGNÓSTICO FINANCEIRO EXECUTIVO completo dos dados acima.
-Você deve responder ESTRITAMENTE em formato JSON com a seguinte estrutura schema:
+    const userPrompt = `Realize o DIAGNÓSTICO FINANCEIRO do usuário para apresentar no painel do aplicativo.
+
+DIRETRIZES DE TOM:
+- Use padrão formal, porém INTUITIVO, NATURAL e CONVERSACIONAL, como um assistente financeiro pessoal de confiança.
+- Apresente conclusões simples e claras a partir dos dados cruzados, sem usar termos técnicos frios.
+- O "executiveSummary" deve conversar diretamente com o usuário em primeira pessoa ("Olá, ${telemetry.user.name}! Analisei suas contas..."), acolhendo os acertos e alertando sobre pontos de atenção com empatia.
+
+RESPONDA ESTRITAMENTE EM FORMATO JSON com a seguinte estrutura:
 {
-  "healthScore": number, // pontuação de 0 a 100 baseada na solidez, reservas, compromissos e dívidas
+  "healthScore": number, // pontuação inteira de 0 a 100
   "healthStatus": "excellent" | "healthy" | "attention" | "critical",
-  "executiveSummary": "string concisa com o parecer geral do analista sobre a situação atual",
+  "executiveSummary": "texto natural e acolhedor do assistente avaliando o momento atual",
   "spendingPatterns": [
     {
-      "title": "string curta do padrão detectado",
-      "description": "análise detalhada de onde o dinheiro está vazando ou como se comporta",
+      "title": "título curto do padrão",
+      "description": "explicação simples em linguagem natural",
       "type": "info" | "warning" | "alert"
     }
   ],
   "futureProjections": [
     {
-      "period": "ex: Próximo Mês / 60 dias",
-      "description": "projeção dos grupos de gastos futuros, impacto das faturas e parcelas a vencer",
+      "period": "ex: Próximos 30 dias / Vencimentos",
+      "description": "previsão de faturas e compromissos futuros explicados de forma simples",
       "severity": "info" | "warning" | "alert"
     }
   ],
   "actionableSuggestions": [
     {
-      "title": "string título da melhoria recomendada",
-      "action": "passo prático e objetivo que o usuário deve executar",
-      "potentialGain": "estimativa numérica de economia ou ganho (ex: R$ 250/mês)",
-      "targetGoal": "nome da meta beneficiada ou equilíbrio geral"
+      "title": "título da melhoria recomendada",
+      "action": "passo prático e objetivo explicado com clareza",
+      "potentialGain": "ganho ou economia estimada (ex: R$ 200/mês)",
+      "targetGoal": "meta beneficiada se houver"
     }
   ]
 }
 
-Responda APENAS o JSON válido, sem texto introdutório ou markdown ao redor do JSON.`;
+IMPORTANTE: Responda APENAS o JSON válido. Não coloque texto antes ou depois. Nunca use aspas duplas dentro dos valores de texto.`;
 
     const response = await callGeminiCascade({
       systemPrompt,
       prompt: userPrompt,
-      temperature: 0.2,
+      temperature: 0.25,
       jsonMode: true,
-      maxOutputTokens: 2500,
+      maxOutputTokens: 3500,
     });
 
-    let parsedDiagnosis: FinancialDiagnosis;
-    try {
-      // Tenta parse direto ou extração de bloco json
-      let cleanText = response.text.trim();
-      if (cleanText.startsWith("```json")) {
-        cleanText = cleanText.replace(/^```json\s*/, "").replace(/```\s*$/, "");
-      } else if (cleanText.startsWith("```")) {
-        cleanText = cleanText.replace(/^```\s*/, "").replace(/```\s*$/, "");
-      }
-      parsedDiagnosis = JSON.parse(cleanText);
-    } catch {
-      // Fallback estruturado caso o modelo tenha retornado formato alternativo
-      parsedDiagnosis = {
-        healthScore: 78,
-        healthStatus: "healthy",
-        executiveSummary: response.text.slice(0, 300),
-        spendingPatterns: [
-          {
-            title: "Padrão de Gastos Gerais",
-            description: "Análise processada pelo modelo de inteligência financeira.",
-            type: "info",
-          },
-        ],
-        futureProjections: [
-          {
-            period: "Próximos 30 dias",
-            description: "Fluxo sob monitoramento contínuo.",
-            severity: "info",
-          },
-        ],
-        actionableSuggestions: [
-          {
-            title: "Revisão Periódica",
-            action: "Mantenha o registro frequente das transações.",
-            potentialGain: "Visibilidade total do caixa",
-          },
-        ],
-      };
-    }
+    const parsedDiagnosis = safeParseFinancialDiagnosis(response.text, telemetry);
 
     return NextResponse.json({
       success: true,

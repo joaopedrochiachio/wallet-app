@@ -55,11 +55,16 @@ export async function POST(req: NextRequest) {
 - Veredito Matemático Preliminar: [${simulationResult.verdict.toUpperCase()}] - ${simulationResult.verdictMessage}
 
 INSTRUÇÃO PARA AVALIAÇÃO DA COMPRA:
-Apresente seu parecer de analista com clareza executiva:
+Apresente seu parecer de assistente com clareza e empatia:
 1. Responda diretamente se é recomendável ou não realizar essa compra no momento;
-2. Destaque o impacto no saldo líquido ou nas próximas faturas;
+2. Destaque o impacto no saldo líquido ou nas próximas faturas em números simples;
 3. Mostre o efeito dessa compra nas metas ativas (se atrasará alguma meta);
-4. Se o risco for alto ou alerta, sugira um plano alternativo (ex: esperar N meses, negociar desconto à vista, ou poupar R$ X antes).`;
+4. Se o risco for alto ou alerta, sugira um plano alternativo (ex: esperar N meses, negociar desconto à vista, ou poupar R$ X antes).
+
+=== DIRETRIZ DE LINGUAGEM DO ASSISTENTE NO CHAT ===
+- Converse de forma formal, porém acolhedora, natural e intuitiva.
+- Trate o usuário com respeito e proximidade, explicando o 'porquê' de cada número sem jargões frios.
+- Entregue a complexidade cruzada de forma simples e imediatamente compreensível.`;
     }
 
     // Monta o histórico de mensagens
