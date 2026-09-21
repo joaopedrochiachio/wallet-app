@@ -120,7 +120,7 @@ export function AddTransactionSheet({
   const parsedAmount =
     parseFloat(amountInput.replace(/\./g, "").replace(",", ".")) || 0;
   const installmentsCount = Math.min(
-    60,
+    360,
     Math.max(2, parseInt(installmentsInput, 10) || 3)
   );
   const effectiveDueDay =
@@ -570,35 +570,62 @@ export function AddTransactionSheet({
                   </div>
 
                   {durationMode === "limited" && (
-                    <div className="flex items-center gap-1.5 pt-1 animate-in fade-in">
-                      {[2, 3, 6, 12].map((count) => (
-                        <button
-                          key={count}
-                          type="button"
-                          onClick={() => setInstallmentsInput(String(count))}
-                          className={`px-3 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
-                            installmentsCount === count &&
-                            installmentsInput === String(count)
-                              ? "bg-[#1D1D1F] text-white"
-                              : "bg-[#E5E5EA]/60 text-[#86868B] hover:text-[#1D1D1F]"
-                          }`}
-                        >
-                          {count}x
-                        </button>
-                      ))}
-                      <div className="ml-auto flex items-center gap-1.5 text-xs text-[#86868B]">
-                        <span>Outro:</span>
-                        <input
-                          type="number"
-                          min="2"
-                          max="60"
-                          value={installmentsInput}
-                          onChange={(e) => setInstallmentsInput(e.target.value)}
-                          onBlur={() =>
-                            setInstallmentsInput(String(installmentsCount))
-                          }
-                          className="w-14 rounded-lg border border-black/10 bg-white px-2 py-1 text-center text-xs font-semibold text-[#1D1D1F] outline-none"
-                        />
+                    <div className="space-y-2 pt-1 animate-in fade-in">
+                      <div className="flex flex-wrap gap-1.5">
+                        {[2, 3, 4, 5, 6, 8, 10, 12, 18, 24].map((count) => (
+                          <button
+                            key={count}
+                            type="button"
+                            onClick={() => setInstallmentsInput(String(count))}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                              installmentsCount === count &&
+                              installmentsInput === String(count)
+                                ? "bg-[#1D1D1F] text-white shadow-2xs"
+                                : "bg-[#E5E5EA]/60 text-[#86868B] hover:text-[#1D1D1F]"
+                            }`}
+                          >
+                            {count}x
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-[#86868B] pt-1">
+                        <span>Outro número de vezes:</span>
+                        <div className="flex items-center gap-1 bg-white border border-black/10 rounded-lg p-0.5 shadow-2xs">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const current = parseInt(installmentsInput, 10) || 2;
+                              setInstallmentsInput(String(Math.max(2, current - 1)));
+                            }}
+                            className="w-6 h-6 rounded bg-[#F2F2F7] hover:bg-[#E5E5EA] text-[#1D1D1F] font-bold text-xs flex items-center justify-center cursor-pointer select-none"
+                            title="Diminuir"
+                          >
+                            -
+                          </button>
+                          <input
+                            type="number"
+                            min="2"
+                            max="360"
+                            value={installmentsInput}
+                            onChange={(e) => setInstallmentsInput(e.target.value)}
+                            onBlur={() =>
+                              setInstallmentsInput(String(installmentsCount))
+                            }
+                            className="w-12 text-center text-xs font-bold text-[#1D1D1F] outline-none"
+                          />
+                          <span className="text-xs font-bold text-[#86868B] pr-1">x</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const current = parseInt(installmentsInput, 10) || 2;
+                              setInstallmentsInput(String(current + 1));
+                            }}
+                            className="w-6 h-6 rounded bg-[#F2F2F7] hover:bg-[#E5E5EA] text-[#1D1D1F] font-bold text-xs flex items-center justify-center cursor-pointer select-none"
+                            title="Aumentar"
+                          >
+                            +
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}

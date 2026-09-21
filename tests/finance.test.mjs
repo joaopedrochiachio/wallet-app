@@ -990,6 +990,28 @@ test("ocorrência vencida com override reflete o valor customizado daquele mês 
   assert.equal(occurrences[0].periodKey, "2026-09");
 });
 
+test("agendamento parcelado flexível suporta qualquer número de parcelas (ex: 18x, 36x)", () => {
+  const purchase36x = {
+    id: "rec-carro",
+    title: "Financiamento",
+    amount: 500,
+    startYear: 2026,
+    startMonth: 8, // Setembro/2026 (mês 0)
+    installmentsCount: 36,
+    active: true,
+  };
+
+  // Mês 0 (Setembro/2026) -> ativo (1ª parcela)
+  assert.equal(isRecurringActiveInMonth(purchase36x, 2026, 8), true);
+  // Mês 17 (Fevereiro/2028) -> ativo (18ª parcela)
+  assert.equal(isRecurringActiveInMonth(purchase36x, 2028, 1), true);
+  // Mês 35 (Agosto/2029) -> ativo (36ª parcela final)
+  assert.equal(isRecurringActiveInMonth(purchase36x, 2029, 7), true);
+  // Mês 36 (Setembro/2029) -> inativo (após término das 36 parcelas)
+  assert.equal(isRecurringActiveInMonth(purchase36x, 2029, 8), false);
+});
+
+
 
 
 

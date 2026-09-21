@@ -75,6 +75,8 @@ export default function PlanningPage() {
   // Duração: uma vez, por um número de meses ou contínuo.
   const [durationMode, setDurationMode] = useState<"one-time" | "continuous" | "installments">("continuous");
   const [installmentsCount, setInstallmentsCount] = useState<number>(3);
+  const [installmentsInput, setInstallmentsInput] = useState<string>("3");
+  const [installmentPricingType, setInstallmentPricingType] = useState<"total" | "monthly">("total");
 
   // Estados para edição de planejamento
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -90,6 +92,8 @@ export default function PlanningPage() {
   const [editCustomDay, setEditCustomDay] = useState("10");
   const [editDurationMode, setEditDurationMode] = useState<"one-time" | "continuous" | "installments">("continuous");
   const [editInstallmentsCount, setEditInstallmentsCount] = useState<number>(3);
+  const [editInstallmentsInput, setEditInstallmentsInput] = useState<string>("3");
+  const [editInstallmentPricingType, setEditInstallmentPricingType] = useState<"total" | "monthly">("monthly");
   const [processingItemId, setProcessingItemId] = useState<string | null>(null);
   const [scopeEditModal, setScopeEditModal] = useState<{
     isOpen: boolean;
@@ -245,6 +249,8 @@ export default function PlanningPage() {
     setIsCustomDayActive(false);
     setDurationMode(isIncome ? "continuous" : isCredit ? "one-time" : "one-time");
     setInstallmentsCount(3);
+    setInstallmentsInput("3");
+    setInstallmentPricingType("total");
     setIsAddingMenuOpen(false);
     setIsAddingModalOpen(true);
   };
@@ -263,22 +269,29 @@ export default function PlanningPage() {
       computedDay = parseInt(fixedDayValue) || 10;
     }
 
+    const effectiveInstallments =
+      durationMode === "installments"
+        ? Math.max(2, parseInt(installmentsInput, 10) || installmentsCount || 2)
+        : durationMode === "one-time"
+          ? 1
+          : undefined;
+
+    const finalAmount =
+      durationMode === "installments" && installmentPricingType === "total" && effectiveInstallments
+        ? Math.round((cleanAmount / effectiveInstallments) * 100) / 100
+        : cleanAmount;
+
     try {
       await addRecurringItem({
         title: newTitle.trim(),
-        amount: cleanAmount,
+        amount: finalAmount,
         type: modalType,
         account: newAccount,
         cardId: cards.find((card) => card.name === newAccount)?.id || null,
         category: newCategory,
         dueDay: computedDay,
         recurrenceType: recurrenceSelection,
-        installmentsCount:
-          durationMode === "one-time"
-            ? 1
-            : durationMode === "installments"
-              ? installmentsCount
-              : undefined,
+        installmentsCount: effectiveInstallments,
         startMonth: targetMonth,
         startYear: targetYear,
         active: true,
@@ -316,12 +329,18 @@ export default function PlanningPage() {
     if (!item.installmentsCount || item.installmentsCount === 0) {
       setEditDurationMode("continuous");
       setEditInstallmentsCount(3);
+      setEditInstallmentsInput("3");
+      setEditInstallmentPricingType("monthly");
     } else if (item.installmentsCount === 1) {
       setEditDurationMode("one-time");
       setEditInstallmentsCount(1);
+      setEditInstallmentsInput("1");
+      setEditInstallmentPricingType("monthly");
     } else {
       setEditDurationMode("installments");
       setEditInstallmentsCount(item.installmentsCount);
+      setEditInstallmentsInput(String(item.installmentsCount));
+      setEditInstallmentPricingType("monthly");
     }
 
     setIsEditModalOpen(true);
@@ -342,21 +361,28 @@ export default function PlanningPage() {
       computedDay = parseInt(editFixedDay) || 10;
     }
 
+    const effectiveEditInstallments =
+      editDurationMode === "installments"
+        ? Math.max(2, parseInt(editInstallmentsInput, 10) || editInstallmentsCount || 2)
+        : editDurationMode === "one-time"
+          ? 1
+          : undefined;
+
+    const finalEditAmount =
+      editDurationMode === "installments" && editInstallmentPricingType === "total" && effectiveEditInstallments
+        ? Math.round((cleanAmount / effectiveEditInstallments) * 100) / 100
+        : cleanAmount;
+
     const updates: Partial<RecurringItem> = {
       title: editTitle.trim(),
-      amount: cleanAmount,
+      amount: finalEditAmount,
       type: editType,
       account: editAccount,
       cardId: cards.find((card) => card.name === editAccount)?.id || null,
       category: editCategory,
       dueDay: computedDay,
       recurrenceType: editRecurrence,
-      installmentsCount:
-        editDurationMode === "one-time"
-          ? 1
-          : editDurationMode === "installments"
-            ? editInstallmentsCount
-            : undefined,
+      installmentsCount: effectiveEditInstallments,
     };
 
     const isMultiMonth = !editingItem.installmentsCount || editingItem.installmentsCount > 1;
@@ -1468,7 +1494,7 @@ export default function PlanningPage() {
                       {durationMode === "one-time"
                         ? "Apenas neste mês"
                         : durationMode === "installments"
-                          ? `${installmentsCount} parcelas mensais`
+                          ? `${Math.max(2, parseInt(installmentsInput, 10) || installmentsCount || 2)} parcelas mensais`
                           : "Recorrente contínuo"}
                     </span>
                   </div>
@@ -1491,7 +1517,10 @@ export default function PlanningPage() {
                       type="button"
                       onClick={() => {
                         setDurationMode("installments");
-                        setInstallmentsCount((prev) => prev || 3);
+                        if (!installmentsInput || parseInt(installmentsInput, 10) < 2) {
+                          setInstallmentsCount(3);
+                          setInstallmentsInput("3");
+                        }
                       }}
                       className={`p-2.5 rounded-xl text-xs font-semibold transition-all border text-left cursor-pointer ${
                         durationMode === "installments"
@@ -1518,28 +1547,152 @@ export default function PlanningPage() {
                   </div>
 
                   {durationMode === "installments" && (
-                    <div className="rounded-xl border border-black/5 bg-[#F9F9FB] p-3 space-y-2">
-                      <div className="flex items-center justify-between text-xs text-[#86868B]">
-                        <span>Número de meses:</span>
-                        <span className="font-semibold text-[#1D1D1F]">
-                          {installmentsCount} parcelas
+                    <div className="rounded-2xl border border-black/[0.06] bg-[#F9F9FB] p-3.5 space-y-3">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-[#86868B] font-medium">Quantidade de parcelas:</span>
+                        <span className="font-bold text-[#1D1D1F] bg-black/[0.04] px-2.5 py-0.5 rounded-md">
+                          {Math.max(2, parseInt(installmentsInput, 10) || installmentsCount || 2)}x mensais
                         </span>
                       </div>
-                      <div className="grid grid-cols-4 gap-1.5">
-                        {[2, 3, 6, 12].map((count) => (
+
+                      {/* Chips rápidos mais usados */}
+                      <div className="flex flex-wrap gap-1.5">
+                        {[2, 3, 4, 5, 6, 8, 10, 12, 18, 24].map((count) => {
+                          const isSelected = (parseInt(installmentsInput, 10) || installmentsCount) === count;
+                          return (
+                            <button
+                              key={count}
+                              type="button"
+                              onClick={() => {
+                                setInstallmentsCount(count);
+                                setInstallmentsInput(String(count));
+                              }}
+                              className={`h-7 px-2.5 rounded-lg text-xs font-semibold transition-all cursor-pointer select-none ${
+                                isSelected
+                                  ? "bg-[#1D1D1F] text-white shadow-2xs"
+                                  : "bg-white border border-black/[0.06] text-[#1D1D1F] hover:bg-gray-100"
+                              }`}
+                            >
+                              {count}x
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Campo livre: parcelar em quantas vezes quiser */}
+                      <div className="flex items-center justify-between pt-2 border-t border-black/[0.06]">
+                        <div className="text-left pr-2">
+                          <span className="text-xs font-semibold text-[#1D1D1F] block">
+                            Outro número de parcelas:
+                          </span>
+                          <span className="text-[10px] text-[#86868B] block">
+                            Digite qualquer quantidade (ex: 7, 9, 15, 36, 48, 60...)
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-1 bg-white border border-black/10 rounded-xl p-1 shadow-2xs shrink-0">
                           <button
-                            key={count}
                             type="button"
-                            onClick={() => setInstallmentsCount(count)}
-                            className={`h-8 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
-                              installmentsCount === count
-                                ? "bg-[#1D1D1F] text-white"
-                                : "bg-white border border-black/5 text-[#1D1D1F] hover:bg-gray-100"
+                            onClick={() => {
+                              const current = parseInt(installmentsInput, 10) || installmentsCount || 2;
+                              const next = Math.max(2, current - 1);
+                              setInstallmentsInput(String(next));
+                              setInstallmentsCount(next);
+                            }}
+                            className="w-7 h-7 rounded-lg bg-[#F2F2F7] hover:bg-[#E5E5EA] active:scale-95 text-[#1D1D1F] font-bold text-xs flex items-center justify-center cursor-pointer select-none transition-all"
+                            title="Diminuir 1 parcela"
+                          >
+                            -
+                          </button>
+                          <div className="flex items-center px-1">
+                            <input
+                              type="number"
+                              min="2"
+                              max="360"
+                              value={installmentsInput}
+                              onChange={(e) => {
+                                setInstallmentsInput(e.target.value);
+                                const parsed = parseInt(e.target.value, 10);
+                                if (parsed && parsed >= 2) {
+                                  setInstallmentsCount(parsed);
+                                }
+                              }}
+                              onBlur={() => {
+                                const parsed = Math.max(2, parseInt(installmentsInput, 10) || 2);
+                                setInstallmentsInput(String(parsed));
+                                setInstallmentsCount(parsed);
+                              }}
+                              className="w-12 text-center text-xs font-bold text-[#1D1D1F] outline-none bg-transparent"
+                            />
+                            <span className="text-xs font-bold text-[#86868B]">x</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const current = parseInt(installmentsInput, 10) || installmentsCount || 2;
+                              const next = current + 1;
+                              setInstallmentsInput(String(next));
+                              setInstallmentsCount(next);
+                            }}
+                            className="w-7 h-7 rounded-lg bg-[#F2F2F7] hover:bg-[#E5E5EA] active:scale-95 text-[#1D1D1F] font-bold text-xs flex items-center justify-center cursor-pointer select-none transition-all"
+                            title="Aumentar 1 parcela"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Seletor de Modo de Valor: Total da compra vs Valor de cada parcela */}
+                      <div className="bg-white rounded-xl p-2.5 border border-black/[0.05] space-y-2 mt-2">
+                        <div className="flex items-center justify-between text-[11px] text-[#86868B]">
+                          <span>Como você digitou o valor acima?</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-1 p-0.5 bg-[#F2F2F7] rounded-lg">
+                          <button
+                            type="button"
+                            onClick={() => setInstallmentPricingType("total")}
+                            className={`py-1 text-center text-xs font-semibold rounded-md transition-all cursor-pointer ${
+                              installmentPricingType === "total"
+                                ? "bg-white text-[#1D1D1F] shadow-2xs"
+                                : "text-[#86868B] hover:text-[#1D1D1F]"
                             }`}
                           >
-                            {count}x
+                            Valor total da compra
                           </button>
-                        ))}
+                          <button
+                            type="button"
+                            onClick={() => setInstallmentPricingType("monthly")}
+                            className={`py-1 text-center text-xs font-semibold rounded-md transition-all cursor-pointer ${
+                              installmentPricingType === "monthly"
+                                ? "bg-white text-[#1D1D1F] shadow-2xs"
+                                : "text-[#86868B] hover:text-[#1D1D1F]"
+                            }`}
+                          >
+                            Valor de cada parcela
+                          </button>
+                        </div>
+
+                        {(() => {
+                          const clean = parseFloat(newAmount.replace(/\./g, "").replace(",", ".")) || 0;
+                          const count = Math.max(2, parseInt(installmentsInput, 10) || installmentsCount || 2);
+                          if (clean <= 0) return null;
+                          return (
+                            <div className="text-[11px] bg-blue-50/60 border border-blue-100 rounded-lg p-2 text-blue-900 flex items-center justify-between">
+                              {installmentPricingType === "total" ? (
+                                <span>
+                                  Total <strong>R$ {formatCurrency(clean)}</strong> ÷ {count}x = <strong>R$ {formatCurrency(clean / count)}/mês</strong>
+                                </span>
+                              ) : (
+                                <span>
+                                  {count}x de <strong>R$ {formatCurrency(clean)}</strong> = Total de <strong>R$ {formatCurrency(clean * count)}</strong>
+                                </span>
+                              )}
+                              <span className="text-[10px] text-blue-700/80 font-medium ml-2 shrink-0">
+                                {installmentPricingType === "total" ? "Divisão automática" : "Valor fixo por mês"}
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   )}
@@ -1862,7 +2015,7 @@ export default function PlanningPage() {
                       {editDurationMode === "one-time"
                         ? "Apenas neste mês"
                         : editDurationMode === "installments"
-                          ? `${editInstallmentsCount} parcelas mensais`
+                          ? `${Math.max(2, parseInt(editInstallmentsInput, 10) || editInstallmentsCount || 2)} parcelas mensais`
                           : "Recorrente contínuo"}
                     </span>
                   </div>
@@ -1885,7 +2038,10 @@ export default function PlanningPage() {
                       type="button"
                       onClick={() => {
                         setEditDurationMode("installments");
-                        setEditInstallmentsCount((prev) => prev || 3);
+                        if (!editInstallmentsInput || parseInt(editInstallmentsInput, 10) < 2) {
+                          setEditInstallmentsCount(3);
+                          setEditInstallmentsInput("3");
+                        }
                       }}
                       className={`p-2.5 rounded-xl text-xs font-semibold transition-all border text-left cursor-pointer ${
                         editDurationMode === "installments"
@@ -1912,28 +2068,152 @@ export default function PlanningPage() {
                   </div>
 
                   {editDurationMode === "installments" && (
-                    <div className="rounded-xl border border-black/5 bg-[#F9F9FB] p-3 space-y-2">
-                      <div className="flex items-center justify-between text-xs text-[#86868B]">
-                        <span>Número de meses:</span>
-                        <span className="font-semibold text-[#1D1D1F]">
-                          {editInstallmentsCount} parcelas
+                    <div className="rounded-2xl border border-black/[0.06] bg-[#F9F9FB] p-3.5 space-y-3">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-[#86868B] font-medium">Quantidade de parcelas:</span>
+                        <span className="font-bold text-[#1D1D1F] bg-black/[0.04] px-2.5 py-0.5 rounded-md">
+                          {Math.max(2, parseInt(editInstallmentsInput, 10) || editInstallmentsCount || 2)}x mensais
                         </span>
                       </div>
-                      <div className="grid grid-cols-4 gap-1.5">
-                        {[2, 3, 6, 12].map((count) => (
+
+                      {/* Chips rápidos mais usados */}
+                      <div className="flex flex-wrap gap-1.5">
+                        {[2, 3, 4, 5, 6, 8, 10, 12, 18, 24].map((count) => {
+                          const isSelected = (parseInt(editInstallmentsInput, 10) || editInstallmentsCount) === count;
+                          return (
+                            <button
+                              key={count}
+                              type="button"
+                              onClick={() => {
+                                setEditInstallmentsCount(count);
+                                setEditInstallmentsInput(String(count));
+                              }}
+                              className={`h-7 px-2.5 rounded-lg text-xs font-semibold transition-all cursor-pointer select-none ${
+                                isSelected
+                                  ? "bg-[#1D1D1F] text-white shadow-2xs"
+                                  : "bg-white border border-black/[0.06] text-[#1D1D1F] hover:bg-gray-100"
+                              }`}
+                            >
+                              {count}x
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Campo livre: parcelar em quantas vezes quiser */}
+                      <div className="flex items-center justify-between pt-2 border-t border-black/[0.06]">
+                        <div className="text-left pr-2">
+                          <span className="text-xs font-semibold text-[#1D1D1F] block">
+                            Outro número de parcelas:
+                          </span>
+                          <span className="text-[10px] text-[#86868B] block">
+                            Digite qualquer quantidade (ex: 7, 9, 15, 36, 48, 60...)
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-1 bg-white border border-black/10 rounded-xl p-1 shadow-2xs shrink-0">
                           <button
-                            key={count}
                             type="button"
-                            onClick={() => setEditInstallmentsCount(count)}
-                            className={`h-8 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
-                              editInstallmentsCount === count
-                                ? "bg-[#1D1D1F] text-white"
-                                : "bg-white border border-black/5 text-[#1D1D1F] hover:bg-gray-100"
+                            onClick={() => {
+                              const current = parseInt(editInstallmentsInput, 10) || editInstallmentsCount || 2;
+                              const next = Math.max(2, current - 1);
+                              setEditInstallmentsInput(String(next));
+                              setEditInstallmentsCount(next);
+                            }}
+                            className="w-7 h-7 rounded-lg bg-[#F2F2F7] hover:bg-[#E5E5EA] active:scale-95 text-[#1D1D1F] font-bold text-xs flex items-center justify-center cursor-pointer select-none transition-all"
+                            title="Diminuir 1 parcela"
+                          >
+                            -
+                          </button>
+                          <div className="flex items-center px-1">
+                            <input
+                              type="number"
+                              min="2"
+                              max="360"
+                              value={editInstallmentsInput}
+                              onChange={(e) => {
+                                setEditInstallmentsInput(e.target.value);
+                                const parsed = parseInt(e.target.value, 10);
+                                if (parsed && parsed >= 2) {
+                                  setEditInstallmentsCount(parsed);
+                                }
+                              }}
+                              onBlur={() => {
+                                const parsed = Math.max(2, parseInt(editInstallmentsInput, 10) || 2);
+                                setEditInstallmentsInput(String(parsed));
+                                setEditInstallmentsCount(parsed);
+                              }}
+                              className="w-12 text-center text-xs font-bold text-[#1D1D1F] outline-none bg-transparent"
+                            />
+                            <span className="text-xs font-bold text-[#86868B]">x</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const current = parseInt(editInstallmentsInput, 10) || editInstallmentsCount || 2;
+                              const next = current + 1;
+                              setEditInstallmentsInput(String(next));
+                              setEditInstallmentsCount(next);
+                            }}
+                            className="w-7 h-7 rounded-lg bg-[#F2F2F7] hover:bg-[#E5E5EA] active:scale-95 text-[#1D1D1F] font-bold text-xs flex items-center justify-center cursor-pointer select-none transition-all"
+                            title="Aumentar 1 parcela"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Seletor de Modo de Valor: Total da compra vs Valor de cada parcela */}
+                      <div className="bg-white rounded-xl p-2.5 border border-black/[0.05] space-y-2 mt-2">
+                        <div className="flex items-center justify-between text-[11px] text-[#86868B]">
+                          <span>Como você informou o valor na edição?</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-1 p-0.5 bg-[#F2F2F7] rounded-lg">
+                          <button
+                            type="button"
+                            onClick={() => setEditInstallmentPricingType("total")}
+                            className={`py-1 text-center text-xs font-semibold rounded-md transition-all cursor-pointer ${
+                              editInstallmentPricingType === "total"
+                                ? "bg-white text-[#1D1D1F] shadow-2xs"
+                                : "text-[#86868B] hover:text-[#1D1D1F]"
                             }`}
                           >
-                            {count}x
+                            Valor total
                           </button>
-                        ))}
+                          <button
+                            type="button"
+                            onClick={() => setEditInstallmentPricingType("monthly")}
+                            className={`py-1 text-center text-xs font-semibold rounded-md transition-all cursor-pointer ${
+                              editInstallmentPricingType === "monthly"
+                                ? "bg-white text-[#1D1D1F] shadow-2xs"
+                                : "text-[#86868B] hover:text-[#1D1D1F]"
+                            }`}
+                          >
+                            Valor por parcela / mês
+                          </button>
+                        </div>
+
+                        {(() => {
+                          const clean = parseFloat(editAmount.replace(/\./g, "").replace(",", ".")) || 0;
+                          const count = Math.max(2, parseInt(editInstallmentsInput, 10) || editInstallmentsCount || 2);
+                          if (clean <= 0) return null;
+                          return (
+                            <div className="text-[11px] bg-blue-50/60 border border-blue-100 rounded-lg p-2 text-blue-900 flex items-center justify-between">
+                              {editInstallmentPricingType === "total" ? (
+                                <span>
+                                  Total <strong>R$ {formatCurrency(clean)}</strong> ÷ {count}x = <strong>R$ {formatCurrency(clean / count)}/mês</strong>
+                                </span>
+                              ) : (
+                                <span>
+                                  {count}x de <strong>R$ {formatCurrency(clean)}</strong> = Total de <strong>R$ {formatCurrency(clean * count)}</strong>
+                                </span>
+                              )}
+                              <span className="text-[10px] text-blue-700/80 font-medium ml-2 shrink-0">
+                                {editInstallmentPricingType === "total" ? "Divisão automática" : "Valor fixo por mês"}
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   )}
