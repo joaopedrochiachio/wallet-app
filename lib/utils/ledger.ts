@@ -8,6 +8,7 @@ export interface LedgerEntry {
   cardId?: string | null;
   occurredAt?: string | number | Date | null;
   createdAt?: string | number | Date | null;
+  periodKey?: string | null;
 }
 
 export interface AccountFlow {
@@ -140,7 +141,7 @@ export function calculateInvoiceSchedule(
       continue;
     }
     const dueDate = getInvoiceDueDate(card, getLedgerEntryDate(entry) || fallbackDate);
-    const key = `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, "0")}`;
+    const key = entry.periodKey || `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, "0")}`;
     charges.set(key, (charges.get(key) || 0) + entry.amount);
   }
 

@@ -39,6 +39,7 @@ import {
   getPlanningMonths,
   PlanningMonth,
   isRecurringActiveInMonth,
+  getRecurringMonthOffset,
 } from "@/lib/utils/dateUtils";
 import {
   calculateCheckingBalance,
@@ -96,6 +97,21 @@ export interface TransactionItem {
   periodKey?: string | null;
 }
 
+export interface CardInvoiceProjection {
+  cardId: string;
+  cardName: string;
+  cardColor?: string;
+  dueDay: number;
+  closingDay: number;
+  installmentsAmount: number;
+  recurringAmount: number;
+  totalInvoice: number;
+  paidAmount: number;
+  pendingInvoice: number;
+  isPaid: boolean;
+  recurringItems: RecurringItem[];
+}
+
 export interface MonthProjection {
   monthName: string;
   year: number;
@@ -111,6 +127,10 @@ export interface MonthProjection {
   pendingCommitted: number;
   projectedFreeBalance: number;
   openingBalance: number;
+  cardInvoices: CardInvoiceProjection[];
+  totalInvoicesScheduled: number;
+  totalInvoicesPending: number;
+  totalInvoicesPaid: number;
 }
 
 interface WalletContextType {
@@ -795,44 +815,102 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             .filter((r) => r.type !== "income" && isCheckingRecurring(r) && activeInTargetMonth(r))
             .reduce((acc, r) => acc + r.amount, 0);
 
-      // Compras planejadas no crédito entram no mês em que a fatura vence
-      let recurringCreditTotal = 0;
-      if (!isPastMonth) {
-        for (const item of recurringItems.filter((candidate) =>
-          candidate.type !== "income" && !isCheckingRecurring(candidate)
-        )) {
-          const creditCard = cards.find((card) =>
-            card.type === "credit" && matchesLedgerCard(card, item.account, item.cardId)
+      // Faturas de cartão de crédito detalhadas por cartão
+      const creditCards = cards.filter((card) => card.type === "credit");
+
+      const cardInvoices: CardInvoiceProjection[] = creditCards.map((creditCard) => {
+        // 1. Parcelas e compras faturadas
+        const schedule = calculateInvoiceSchedule(creditCard, transactions);
+        const installmentsAmount = isPastMonth ? 0 : (schedule[targetPeriodKey] || 0);
+
+        // 2. Assinaturas e cobranças recorrentes que caem nesta fatura
+        const cardRecurringItems: RecurringItem[] = [];
+        let cardRecurringTotal = 0;
+        if (!isPastMonth) {
+          const matchingCreditItems = recurringItems.filter((candidate: RecurringItem) =>
+            candidate.type !== "income" && !isCheckingRecurring(candidate) && matchesLedgerCard(creditCard, candidate.account, candidate.cardId)
           );
-          if (!creditCard) continue;
-          for (let sourceOffset = -2; sourceOffset <= 0; sourceOffset += 1) {
-            const source = new Date(m.year, m.monthIndex + sourceOffset, 1);
-            if (!isRecurringActiveInMonth(item, source.getFullYear(), source.getMonth())) continue;
-            const chargeDate = new Date(
-              source.getFullYear(),
-              source.getMonth(),
-              getEffectiveDueDay(item, source.getFullYear(), source.getMonth()),
-              12
+          for (const item of matchingCreditItems) {
+            const monthOffset = getRecurringMonthOffset(item, m.year, m.monthIndex);
+            const isScheduledForMonth = monthOffset >= 0 && (
+              !item.installmentsCount ||
+              item.installmentsCount <= 0 ||
+              monthOffset < item.installmentsCount
             );
-            const invoiceDueDate = getInvoiceDueDate(creditCard, chargeDate);
-            if (getPeriodKey(invoiceDueDate.getFullYear(), invoiceDueDate.getMonth()) === targetPeriodKey) {
-              recurringCreditTotal += item.amount;
+
+            let matchesByInvoiceCycle = false;
+            for (let sourceOffset = -2; sourceOffset <= 0; sourceOffset += 1) {
+              const source = new Date(m.year, m.monthIndex + sourceOffset, 1);
+              const chargeDate = new Date(
+                source.getFullYear(),
+                source.getMonth(),
+                getEffectiveDueDay(item, source.getFullYear(), source.getMonth()),
+                12
+              );
+              const invoiceDueDate = getInvoiceDueDate(creditCard, chargeDate);
+              if (getPeriodKey(invoiceDueDate.getFullYear(), invoiceDueDate.getMonth()) === targetPeriodKey) {
+                matchesByInvoiceCycle = true;
+                break;
+              }
+            }
+
+            if (!item.active || (!isScheduledForMonth && !matchesByInvoiceCycle)) continue;
+
+            const isRealizedInPeriod = Boolean(item.realizedPeriods?.includes(targetPeriodKey));
+            cardRecurringItems.push(item);
+
+            // Se o item já foi efetivado para esta competência, sua cobrança foi gerada em transactions.
+            // Se calculateInvoiceSchedule já contabilizou a transação em installmentsAmount, não somamos aqui para não duplicar.
+            const isAlreadyInTransactions = transactions.some((t) =>
+              t.recurringItemId === item.id && (
+                t.periodKey === targetPeriodKey ||
+                (calculateInvoiceSchedule(creditCard, [t])[targetPeriodKey] || 0) > 0
+              )
+            );
+
+            if (!isRealizedInPeriod || !isAlreadyInTransactions) {
+              cardRecurringTotal += item.amount;
             }
           }
         }
-      }
 
-      const cardInstallments = isPastMonth
-        ? 0
-        : cards
-            .filter((card) => card.type === "credit")
-            .reduce((total, card) => {
-              const schedule = calculateInvoiceSchedule(card, transactions);
-              return total + (schedule[targetPeriodKey] || 0);
-            }, 0);
+        // 3. Pagamentos de fatura já efetuados neste mês para este cartão específico
+        const paidAmount = transactionsInTargetMonth
+          .filter((t) =>
+            t.type === "despesa" &&
+            t.kind === "invoice_payment" &&
+            (t.relatedCardId === creditCard.id || matchesLedgerCard(creditCard, t.account, t.cardId))
+          )
+          .reduce((sum, t) => sum + t.amount, 0);
 
-      // Total comprometido = Contas Fixas Débito + Assinaturas Crédito + Faturas Atuais
-      const pendingCommitted = recurringDebitTotal + recurringCreditTotal + cardInstallments;
+        const pendingInvoice = isPastMonth ? 0 : installmentsAmount + cardRecurringTotal;
+        const totalInvoice = pendingInvoice + paidAmount;
+        const isPaid = isPastMonth || (paidAmount > 0 && pendingInvoice <= 0);
+
+        return {
+          cardId: creditCard.id,
+          cardName: creditCard.name,
+          cardColor: creditCard.colorScheme?.accent || "#1D1D1F",
+          dueDay: creditCard.dueDay || 10,
+          closingDay: creditCard.closingDay || 3,
+          installmentsAmount,
+          recurringAmount: cardRecurringTotal,
+          totalInvoice,
+          paidAmount,
+          pendingInvoice,
+          isPaid,
+          recurringItems: cardRecurringItems,
+        };
+      });
+
+      const recurringCreditTotal = cardInvoices.reduce((sum, ci) => sum + ci.recurringAmount, 0);
+      const cardInstallments = cardInvoices.reduce((sum, ci) => sum + ci.installmentsAmount, 0);
+      const totalInvoicesScheduled = cardInvoices.reduce((sum, ci) => sum + ci.totalInvoice, 0);
+      const totalInvoicesPending = cardInvoices.reduce((sum, ci) => sum + ci.pendingInvoice, 0);
+      const totalInvoicesPaid = cardInvoices.reduce((sum, ci) => sum + ci.paidAmount, 0);
+
+      // Total comprometido = Contas Fixas Débito + Faturas de Cartão Pendentes
+      const pendingCommitted = recurringDebitTotal + totalInvoicesPending;
       const totalCommitted = actualOutflowTotal + pendingCommitted;
 
       // Saldo inicial do mês e saldo projetado
@@ -872,6 +950,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           pendingCommitted,
           projectedFreeBalance,
           openingBalance,
+          cardInvoices,
+          totalInvoicesScheduled,
+          totalInvoicesPending,
+          totalInvoicesPaid,
         };
       }
     }

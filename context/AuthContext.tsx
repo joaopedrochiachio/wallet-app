@@ -47,6 +47,13 @@ function isStandalone(): boolean {
   );
 }
 
+function isMobile(): boolean {
+  if (typeof window === "undefined") return false;
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+    navigator.userAgent
+  );
+}
+
 async function configureBestPersistence() {
   try {
     await setPersistence(auth, indexedDBLocalPersistence);
@@ -72,8 +79,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Garante persistência IndexedDB configurada logo no boot
     configureBestPersistence().finally(() => {
-      // Trata resultado de redirecionamento OAuth exclusivamente aqui
-      getRedirectResult(auth)
+      // Trata resultado de redirecionamento OAuth com timeout de 3.5s para não travar o boot
+      const redirectPromise = getRedirectResult(auth)
         .then((cred) => {
           if (!isMounted) return;
           if (cred?.user) {
@@ -87,23 +94,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             typeof err === "object" && err && "code" in err ? String(err.code) : "";
           if (code === "auth/unauthorized-domain") {
             setAuthError(
-              "Domínio não autorizado no Firebase. Adicione o link da Vercel em 'Domínios Autorizados' no Firebase Console."
+              "Domínio não autorizado no Firebase. Adicione o link em 'Domínios Autorizados' no Firebase Console."
             );
           } else if (code === "auth/missing-or-invalid-nonce") {
             setAuthError("A sessão de autenticação expirou. Por favor, tente novamente.");
-          } else if (code !== "auth/popup-closed-by-user" && code !== "auth/cancelled-popup-request") {
+          } else if (
+            code !== "auth/popup-closed-by-user" &&
+            code !== "auth/cancelled-popup-request"
+          ) {
             setAuthError("Não foi possível concluir a autenticação com o Google. Tente novamente.");
           }
-        })
-        .finally(() => {
-          if (!isMounted) return;
-          // Libera loading apenas depois de processar o resultado do redirect
-          unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-            if (!isMounted) return;
-            setUser(currentUser);
-            setLoading(false);
-          });
         });
+
+      const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 3500));
+
+      Promise.race([redirectPromise, timeoutPromise]).finally(() => {
+        if (!isMounted) return;
+        // Escuta mudanças no estado de autenticação em tempo real
+        unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+          if (!isMounted) return;
+          setUser(currentUser);
+          setLoading(false);
+        });
+      });
     });
 
     return () => {
@@ -126,30 +139,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithGoogle = async (): Promise<User | null> => {
     setAuthError(null);
-    await configureBestPersistence();
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: "select_account" });
 
-    // Em modo PWA standalone (app instalado na tela inicial)
-    if (isStandalone()) {
+    // Em modo PWA standalone ou em dispositivos móveis (onde popups abrem nova aba e perdem window.opener)
+    if (isStandalone() || isMobile()) {
       await signInWithRedirect(auth, provider);
       return null;
     }
 
-    // Em navegadores comuns (Desktop e Mobile Web), tentamos popup primeiro
+    // Em navegadores Desktop convencionais, tentamos popup com fallback automático para redirect
     try {
       const cred = await signInWithPopup(auth, provider);
+      if (cred?.user) {
+        setUser(cred.user);
+      }
       return cred.user;
     } catch (popupError: unknown) {
       const code =
         typeof popupError === "object" && popupError && "code" in popupError
           ? String(popupError.code)
           : "";
-      // Se popup foi bloqueado pelo navegador mobile, faz fallback para redirect
+      // Se popup foi bloqueado, cancelado ou fechado sem comunicação, aciona redirect seguro
       if (
         code === "auth/popup-blocked" ||
         code === "auth/cancelled-popup-request" ||
-        code === "auth/operation-not-supported-in-this-environment"
+        code === "auth/operation-not-supported-in-this-environment" ||
+        code === "auth/popup-closed-by-user"
       ) {
         await signInWithRedirect(auth, provider);
         return null;

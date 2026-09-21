@@ -137,6 +137,48 @@ function escapeRegularExpression(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+const COMMON_COMMERCIAL_TERMS = new Set([
+  "ifood",
+  "uber",
+  "99",
+  "rappi",
+  "delivery",
+  "mercado",
+  "supermercado",
+  "restaurante",
+  "padaria",
+  "lanchonete",
+  "cafeteria",
+  "farmacia",
+  "farmácia",
+  "netflix",
+  "spotify",
+  "amazon",
+  "prime",
+  "apple",
+  "google",
+  "gympass",
+  "smartfit",
+  "combustivel",
+  "combustível",
+  "gasolina",
+  "posto",
+  "estacionamento",
+  "cinema",
+  "shopping",
+  "steam",
+]);
+
+export function isCommonCommercialTerm(title?: string): boolean {
+  if (!title) return false;
+  const clean = title.trim().toLowerCase();
+  if (COMMON_COMMERCIAL_TERMS.has(clean)) return true;
+  for (const term of COMMON_COMMERCIAL_TERMS) {
+    if (clean.includes(term)) return true;
+  }
+  return false;
+}
+
 /**
  * Remove do texto livre os rótulos financeiros conhecidos na própria requisição.
  * Isso cobre nomes que não podem ser identificados com segurança por expressão regular.
@@ -171,7 +213,9 @@ export function redactKnownFinancialText(
   }
 
   for (const transaction of input.transactions ?? []) {
-    addReplacement(transaction.title, "Transação");
+    if (transaction.title && !isCommonCommercialTerm(transaction.title)) {
+      addReplacement(transaction.title, "Transação");
+    }
     addReplacement(transaction.account, "Outro meio");
     if (typeof transaction.category === "string") {
       addReplacement(transaction.category, normalizeFinancialCategory(transaction.category));

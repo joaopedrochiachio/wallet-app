@@ -44,29 +44,36 @@ export default function LoginPage() {
     }
   }, [authError]);
 
+  // Navega para o destino correto com fallback imediato se o router do Next.js engasgar em mobile/PWA
+  const navigateToAuthenticatedApp = async (uid: string) => {
+    let target = "/dashboard";
+    try {
+      const profilePromise = getUserProfile(uid);
+      const timeoutPromise = new Promise<null>((resolve) =>
+        setTimeout(() => resolve(null), 2000)
+      );
+      const profile = await Promise.race([profilePromise, timeoutPromise]);
+      target = profile?.isOnboarded ? "/dashboard" : "/onboarding";
+    } catch {
+      target = "/dashboard";
+    }
+
+    router.replace(target);
+
+    // Fallback garantido se o roteador do Next.js não completar a transição
+    setTimeout(() => {
+      if (window.location.pathname === "/login") {
+        window.location.replace(target);
+      }
+    }, 1200);
+  };
+
   // Se o usuário estiver autenticado (seja por redirect, popup ou e-mail), direciona com base no onboarding
   useEffect(() => {
     if (!authLoading && user) {
-      let isMounted = true;
-      getUserProfile(user.uid)
-        .then((profile) => {
-          if (!isMounted) return;
-          if (profile?.isOnboarded) {
-            router.replace("/dashboard");
-          } else {
-            router.replace("/onboarding");
-          }
-        })
-        .catch(() => {
-          if (!isMounted) return;
-          router.replace("/dashboard");
-        });
-
-      return () => {
-        isMounted = false;
-      };
+      navigateToAuthenticatedApp(user.uid);
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading]);
 
   const handleGoogleSignIn = async () => {
     setError(null);
@@ -78,29 +85,26 @@ export default function LoginPage() {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
       setGoogleLoading(false);
-    }, 10000);
+    }, 15000);
 
     try {
       const loggedUser = await signInWithGoogle();
       if (loggedUser) {
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
-        const existingProfile = await getUserProfile(loggedUser.uid);
-        if (existingProfile?.isOnboarded) {
-          router.replace("/dashboard");
-        } else {
-          router.replace("/onboarding");
-        }
+        await navigateToAuthenticatedApp(loggedUser.uid);
       }
-      // Se loggedUser for null, foi disparado o redirecionamento nativo do PWA
+      // Se loggedUser for null, foi disparado o redirecionamento nativo do PWA / navegador
     } catch (err: unknown) {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       console.error("Erro no login Google:", err);
       const code = typeof err === "object" && err && "code" in err ? String(err.code) : "";
       if (code === "auth/unauthorized-domain") {
         setError(
-          "Domínio da Vercel não autorizado no Firebase. Adicione o seu link da Vercel em 'Domínios Autorizados' no Firebase Console."
+          "Domínio não autorizado no Firebase. Adicione o seu link em 'Domínios Autorizados' no Firebase Console."
         );
-      } else if (code !== "auth/popup-closed-by-user") {
+      } else if (code === "auth/popup-closed-by-user") {
+        setError("A janela de autenticação foi fechada antes de concluir o login. Tente novamente.");
+      } else {
         setError("Não foi possível autenticar com o Google. Tente novamente.");
       }
       setGoogleLoading(false);
@@ -159,12 +163,16 @@ export default function LoginPage() {
 
     try {
       if (mode === "login") {
-        const user = await signIn(trimmedEmail, password);
-        const existingProfile = await getUserProfile(user.uid);
-        router.replace(existingProfile?.isOnboarded ? "/dashboard" : "/onboarding");
+        const loggedUser = await signIn(trimmedEmail, password);
+        await navigateToAuthenticatedApp(loggedUser.uid);
       } else {
         await signUp(trimmedEmail, password);
         router.replace("/onboarding");
+        setTimeout(() => {
+          if (window.location.pathname === "/login") {
+            window.location.replace("/onboarding");
+          }
+        }, 1200);
       }
     } catch (err: unknown) {
       console.error("Erro na autenticação:", err);

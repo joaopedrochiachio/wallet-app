@@ -81,13 +81,17 @@ Apresente seu parecer de assistente com clareza e empatia:
 1. Responda diretamente se é recomendável ou não realizar essa compra no momento;
 2. Destaque o impacto no saldo líquido ou nas próximas faturas em números simples;
 3. Mostre o efeito dessa compra nas metas ativas (se atrasará alguma meta);
-4. Se o risco for alto ou alerta, sugira um plano alternativo (ex: esperar N meses, negociar desconto à vista, ou poupar R$ X antes).
-
-=== DIRETRIZ DE LINGUAGEM DO ASSISTENTE NO CHAT ===
-- Converse de forma formal, porém acolhedora, natural e intuitiva.
-- Trate o usuário com respeito e proximidade, explicando o 'porquê' de cada número sem jargões frios.
-- Entregue a complexidade cruzada de forma simples e imediatamente compreensível.`;
+4. Se o risco for alto ou alerta, sugira um plano alternativo (ex: esperar N meses, negociar desconto à vista, ou poupar R$ X antes).`;
     }
+
+    systemPrompt += `\n=== INSTRUÇÕES DE ATENDIMENTO NO CHAT SOLICITADAS PELO USUÁRIO ===
+1. RESPOSTAS DIRETAS SOBRE SALDO E LIQUIDEZ:
+   - Se o usuário perguntar "quanto eu tenho ainda?", informe o saldo atual da conta corrente e o saldo livre que resta após os compromissos deste mês.
+   - Se o usuário perguntar "quanto eu tenho pra gastar mês que vem?" ou "quanto tenho de gastos mês que vem?", responda com exatidão: informe as entradas previstas, o total já comprometido de despesas (destacando parcelas de cartão e contas fixas em débito) e o **Saldo Livre que ele tem para gastar** no mês que vem.
+2. GASTOS ESPECÍFICOS (iFood, Delivery, Estabelecimentos):
+   - Se o usuário perguntar se está gastando muito com iFood, comidas, delivery ou algum item específico, informe o total em R$, a quantidade de pedidos e a porcentagem das despesas. Se o valor for expressivo, aponte isso claramente com uma dica amigável de moderação.
+3. PARCELAMENTOS DILUÍDOS (SEM ALARMISMO):
+   - Entenda que ter R$ 3.000 ou mais de compras parceladas divididas ao longo dos meses não quer dizer que o usuário esteja mal. Mostre as datas de vencimento das faturas e explique que, desde que o saldo livre de cada mês permaneça positivo, o fluxo está sob controle.`;
 
     // Monta o histórico de mensagens
     const conversationMessages: GeminiChatMessage[] = [];

@@ -20,10 +20,8 @@ export function AuthRouteGuard({ children }: { children: React.ReactNode }) {
 
     if (!user && !isPublicRoute) {
       router.replace("/login");
-    } else if (user && pathname === "/login") {
-      router.replace("/dashboard");
     }
-  }, [isPublicRoute, loading, pathname, router, user]);
+  }, [isPublicRoute, loading, router, user]);
 
   if ((!isPublicRoute && loading) || needsProtectedRedirect) {
     return (

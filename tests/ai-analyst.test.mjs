@@ -12,6 +12,7 @@ import {
 import {
   redactKnownFinancialText,
   redactPersonalData,
+  isCommonCommercialTerm,
 } from "../lib/services/privacyService.ts";
 
 test("MODEL_CASCADE contém exatamente os 8 modelos na ordem requisitada", () => {
@@ -506,4 +507,150 @@ test("monthlyProjections são integradas à telemetria e geram seção 6 com int
   assert.ok(prompt.includes("Não assuma lucros ou sobras que não constem estritamente na linha 'Saldo Livre Final Projetado'"));
   assert.ok(prompt.includes("Nunca afirme que o usuário está lucrando se os meses futuros apresentarem déficit"));
 });
+
+test("synthesizeFinancialTelemetry detecta e agrega gastos específicos como iFood e Uber", () => {
+  const mockTransactions = [
+    { id: "tx-1", title: "iFood", amount: 65.5, type: "despesa", category: "Alimentação", account: "Cartão 1", date: "2026-09-02" },
+    { id: "tx-2", title: "iFood", amount: 48.0, type: "despesa", category: "Alimentação", account: "Cartão 1", date: "2026-09-05" },
+    { id: "tx-3", title: "iFood", amount: 55.0, type: "despesa", category: "Alimentação", account: "Cartão 1", date: "2026-09-12" },
+    { id: "tx-4", title: "Uber", amount: 28.5, type: "despesa", category: "Transporte", account: "Cartão 1", date: "2026-09-08" },
+    { id: "tx-5", title: "Supermercado", amount: 400.0, type: "despesa", category: "Alimentação", account: "Conta corrente", date: "2026-09-10" },
+  ];
+
+  const telemetry = synthesizeFinancialTelemetry({
+    cards: [],
+    transactions: mockTransactions,
+    recurringItems: [],
+    goals: [],
+    mainBalance: 2500,
+    monthIncome: 6000,
+    monthExpense: 597,
+  });
+
+  assert.ok(telemetry.topSpendItems);
+  const ifoodItem = telemetry.topSpendItems.find((item) => item.title.toLowerCase() === "ifood");
+  assert.ok(ifoodItem, "Deveria encontrar iFood nos maiores gastos");
+  assert.equal(ifoodItem.count, 3);
+  assert.equal(ifoodItem.total, 168.5);
+  assert.equal(ifoodItem.category, "Alimentação");
+
+  const uberItem = telemetry.topSpendItems.find((item) => item.title.toLowerCase() === "uber");
+  assert.ok(uberItem, "Deveria encontrar Uber nos maiores gastos");
+  assert.equal(uberItem.count, 1);
+  assert.equal(uberItem.total, 28.5);
+});
+
+test("liquidityAnalysis calcula saldo livre hoje e saldo livre projetado mês que vem", () => {
+  const mockProjections = [
+    {
+      monthName: "Out",
+      year: 2026,
+      openingBalance: 3000,
+      plannedIncomesTotal: 7000,
+      recurringDebitTotal: 2500,
+      recurringCreditTotal: 500,
+      cardInstallments: 1000,
+      totalCommitted: 4000,
+      projectedFreeBalance: 6000,
+    },
+    {
+      monthName: "Nov",
+      year: 2026,
+      openingBalance: 6000,
+      plannedIncomesTotal: 7000,
+      recurringDebitTotal: 2500,
+      recurringCreditTotal: 500,
+      cardInstallments: 1200,
+      totalCommitted: 4200,
+      projectedFreeBalance: 8800,
+    },
+  ];
+
+  const telemetry = synthesizeFinancialTelemetry({
+    cards: [],
+    transactions: [],
+    recurringItems: [],
+    goals: [],
+    mainBalance: 3000,
+    monthIncome: 7000,
+    monthExpense: 1500,
+    monthlyProjections: mockProjections,
+  });
+
+  assert.ok(telemetry.liquidityAnalysis);
+  assert.equal(telemetry.liquidityAnalysis.currentMonth.checkingBalance, 3000);
+  assert.equal(telemetry.liquidityAnalysis.currentMonth.projectedFreeBalance, 6000);
+  assert.equal(telemetry.liquidityAnalysis.nextMonth.projectedIncome, 7000);
+  assert.equal(telemetry.liquidityAnalysis.nextMonth.committedExpenses, 4200);
+  assert.equal(telemetry.liquidityAnalysis.nextMonth.projectedFreeBalance, 8800);
+});
+
+test("isCommonCommercialTerm e redactKnownFinancialText preservam termos comerciais como iFood", () => {
+  assert.equal(isCommonCommercialTerm("ifood"), true);
+  assert.equal(isCommonCommercialTerm("iFood"), true);
+  assert.equal(isCommonCommercialTerm("Uber Viagem"), true);
+  assert.equal(isCommonCommercialTerm("Supermercado Extra"), true);
+  assert.equal(isCommonCommercialTerm("Consulta particular com Dr. José"), false);
+
+  const redacted = redactKnownFinancialText(
+    "Quanto eu gastei no iFood este mês comparado ao supermercado?",
+    {
+      transactions: [
+        { title: "iFood", category: "Alimentação" },
+        { title: "Supermercado Extra", category: "Alimentação" },
+      ],
+    }
+  );
+
+  assert.ok(redacted.toLowerCase().includes("ifood"), "Deveria preservar a palavra ifood na pergunta do usuário");
+});
+
+test("buildFinancialAnalystSystemPrompt inclui diretrizes de gastos específicos, liquidez e parcelas diluídas", () => {
+  const telemetry = synthesizeFinancialTelemetry({
+    cards: [],
+    transactions: [
+      { id: "tx-1", title: "iFood", amount: 350, type: "despesa", category: "Alimentação", account: "Cartão 1", date: "2026-09-10" },
+    ],
+    recurringItems: [],
+    goals: [],
+    mainBalance: 1500,
+    monthIncome: 5000,
+    monthExpense: 800,
+    monthlyProjections: [
+      {
+        monthName: "Out",
+        year: 2026,
+        openingBalance: 1500,
+        plannedIncomesTotal: 5000,
+        recurringDebitTotal: 1000,
+        recurringCreditTotal: 200,
+        cardInstallments: 500,
+        totalCommitted: 1700,
+        projectedFreeBalance: 4800,
+      },
+      {
+        monthName: "Nov",
+        year: 2026,
+        openingBalance: 4800,
+        plannedIncomesTotal: 5000,
+        recurringDebitTotal: 1000,
+        recurringCreditTotal: 200,
+        cardInstallments: 500,
+        totalCommitted: 1700,
+        projectedFreeBalance: 8100,
+      },
+    ],
+  });
+
+  const safeContext = createSafeFinancialContext(telemetry);
+  const prompt = buildFinancialAnalystSystemPrompt(safeContext);
+
+  assert.ok(prompt.includes("7. LIQUIDEZ REAL: HOJE vs PRÓXIMO MÊS"));
+  assert.ok(prompt.includes("8. GASTOS ESPECÍFICOS & ESTABELECIMENTOS MAIS FREQUENTES"));
+  assert.ok(prompt.includes("iFood"));
+  assert.ok(prompt.includes("R$ 350.00"));
+  assert.ok(prompt.includes("GASTOS PARCELADOS AO LONGO DO TEMPO (MATURIDADE CONTÁBIL - NÃO ALARMISMO)"));
+  assert.ok(prompt.includes("Ter um total parcelado futuro de R$ 2.000, R$ 3.000 ou mais distribuído nos próximos meses NÃO significa que o usuário está no vermelho"));
+});
+
 

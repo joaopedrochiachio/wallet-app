@@ -5,7 +5,9 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Wallet Intelligence",
     short_name: "Wallet",
     description: "Gestão Financeira Pessoal com Padrão Apple Wallet",
+    id: "/",
     start_url: "/dashboard",
+    scope: "/",
     display: "standalone",
     background_color: "#F2F2F7",
     theme_color: "#F2F2F7",
@@ -18,10 +20,22 @@ export default function manifest(): MetadataRoute.Manifest {
         purpose: "any",
       },
       {
+        src: "/icon-192.png",
+        sizes: "192x192",
+        type: "image/png",
+        purpose: "maskable",
+      },
+      {
         src: "/icon-512.png",
         sizes: "512x512",
         type: "image/png",
         purpose: "any",
+      },
+      {
+        src: "/icon-512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "maskable",
       },
       {
         src: "/apple-touch-icon.png",
@@ -31,3 +45,4 @@ export default function manifest(): MetadataRoute.Manifest {
     ],
   };
 }
+

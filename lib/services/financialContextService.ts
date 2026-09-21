@@ -12,6 +12,7 @@ import type {
   RiskToleranceId,
   AIToneId,
 } from "../../types/index.ts";
+import { isCommonCommercialTerm, redactPersonalData } from "./privacyService.ts";
 
 export interface TransactionContextItem {
   id: string;
@@ -32,6 +33,32 @@ export interface CategorySummary {
   total: number;
   count: number;
   percentage: number;
+}
+
+export interface SpecificSpendItem {
+  title: string;
+  total: number;
+  count: number;
+  category: string;
+  percentage: number;
+}
+
+export interface LiquidityAnalysis {
+  currentMonth: {
+    monthName: string;
+    checkingBalance: number;
+    pendingBills: number;
+    projectedFreeBalance: number;
+  };
+  nextMonth: {
+    monthName: string;
+    projectedIncome: number;
+    committedExpenses: number;
+    cardInstallments: number;
+    recurringDebit: number;
+    recurringCredit: number;
+    projectedFreeBalance: number;
+  };
 }
 
 export interface FinancialTelemetry {
@@ -91,6 +118,9 @@ export interface FinancialTelemetry {
     deadline?: string;
   }>;
   monthlyProjections?: MonthProjectionSummary[];
+  topSpendItems?: SpecificSpendItem[];
+  recentExpenses?: Array<{ title: string; amount: number; date: string; category: string }>;
+  liquidityAnalysis?: LiquidityAnalysis;
 }
 
 export interface MonthProjectionSummary {
@@ -186,6 +216,9 @@ export interface SafeFinancialContext {
     deadline?: string;
   }>;
   monthlyProjections: MonthProjectionSummary[];
+  topSpendItems: SpecificSpendItem[];
+  recentExpenses: Array<{ title: string; amount: number; date: string; category: string }>;
+  liquidityAnalysis: LiquidityAnalysis;
 }
 
 export interface PurchaseSimulationInput {
@@ -292,6 +325,87 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
     }))
     .sort((a, b) => b.total - a.total);
 
+  // Agrupamento por item/estabelecimento específico de despesa (ex: iFood, Uber, etc.)
+  const nonSettlementExpenses = expenseTransactions.filter(
+    (t) => t.kind !== "invoice_payment" && t.kind !== "invoice_settlement"
+  );
+  const spendMap = new Map<string, { title: string; total: number; count: number; category: string }>();
+  for (const t of nonSettlementExpenses) {
+    const rawTitle = t.title?.trim() || "Outras despesas";
+    const key = rawTitle.toLowerCase();
+    const existing = spendMap.get(key);
+    if (existing) {
+      existing.total += t.amount;
+      existing.count += 1;
+    } else {
+      spendMap.set(key, {
+        title: rawTitle,
+        total: t.amount,
+        count: 1,
+        category: t.category || "Outros",
+      });
+    }
+  }
+
+  const topSpendItems: SpecificSpendItem[] = Array.from(spendMap.values())
+    .map((item) => ({
+      title: item.title,
+      total: item.total,
+      count: item.count,
+      category: item.category,
+      percentage: totalExpenses > 0 ? Math.round((item.total / totalExpenses) * 100) : 0,
+    }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 10);
+
+  const recentExpenses = [...nonSettlementExpenses]
+    .sort((a, b) => {
+      const dateA = a.occurredAt ? new Date(a.occurredAt).getTime() : new Date(a.date).getTime();
+      const dateB = b.occurredAt ? new Date(b.occurredAt).getTime() : new Date(b.date).getTime();
+      return (isNaN(dateB) ? 0 : dateB) - (isNaN(dateA) ? 0 : dateA);
+    })
+    .slice(0, 12)
+    .map((t) => ({
+      title: t.title || "Despesa",
+      amount: t.amount,
+      date: typeof t.date === "string" ? t.date : new Date(t.date).toLocaleDateString("pt-BR"),
+      category: t.category || "Outros",
+    }));
+
+  // Análise de Liquidez: Mês Atual vs Mês Que Vem
+  const projections = data.monthlyProjections || [];
+  const currentProj = projections[0];
+  const nextProj = projections[1];
+
+  const currentCheckingBalance = mainBalance;
+  const currentPendingBills = currentProj ? currentProj.totalCommitted : monthExpense;
+  const currentProjectedFree = currentProj ? currentProj.projectedFreeBalance : Math.max(0, mainBalance - monthExpense);
+
+  const nextIncome = nextProj?.plannedIncomesTotal || (userProfile?.monthlyIncomeBase || monthIncome) || 0;
+  const nextCommitted = nextProj?.totalCommitted || 0;
+  const nextCardInstallments = nextProj?.cardInstallments || 0;
+  const nextRecurringDebit = nextProj?.recurringDebitTotal || 0;
+  const nextRecurringCredit = nextProj?.recurringCreditTotal || 0;
+  const nextProjectedFree = nextProj?.projectedFreeBalance ?? Math.max(0, nextIncome - nextCommitted);
+
+  const liquidityAnalysis: LiquidityAnalysis = {
+    currentMonth: {
+      monthName: currentProj?.monthName || "Mês Atual",
+      checkingBalance: currentCheckingBalance,
+      pendingBills: currentPendingBills,
+      projectedFreeBalance: currentProjectedFree,
+    },
+    nextMonth: {
+      monthName: nextProj?.monthName || "Próximo Mês",
+      projectedIncome: nextIncome,
+      committedExpenses: nextCommitted,
+      cardInstallments: nextCardInstallments,
+      recurringDebit: nextRecurringDebit,
+      recurringCredit: nextRecurringCredit,
+      projectedFreeBalance: nextProjectedFree,
+    },
+  };
+
   // Metas
   const goalsSummary = goals.map((g) => {
     const progressPercent = g.target > 0 ? Math.min(100, Math.round((g.current / g.target) * 100)) : 0;
@@ -351,6 +465,9 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
     categories,
     goals: goalsSummary,
     monthlyProjections: data.monthlyProjections || [],
+    topSpendItems,
+    recentExpenses,
+    liquidityAnalysis,
   };
 }
 
@@ -522,6 +639,60 @@ export function createSafeFinancialContext(telemetry: FinancialTelemetry): SafeF
       totalCommitted: safeNumber(p.totalCommitted),
       projectedFreeBalance: safeNumber(p.projectedFreeBalance),
     })),
+    topSpendItems: (telemetry.topSpendItems || []).map((item) => {
+      const isCommercial = isCommonCommercialTerm(item.title);
+      let safeTitle = item.title;
+      if (!isCommercial) {
+        const redacted = redactPersonalData(item.title);
+        const nameParts = (telemetry.user.name || "").split(/\s+/).filter((p) => p.length > 2);
+        const containsUserName = nameParts.some((p) => item.title.toLowerCase().includes(p.toLowerCase()));
+        if (redacted.includes("[") || containsUserName) {
+          safeTitle = `${normalizeFinancialCategory(item.category)} (Gasto específico)`;
+        } else {
+          safeTitle = normalizeFinancialCategory(item.category);
+        }
+      }
+      return {
+        title: safeTitle,
+        total: safeNumber(item.total),
+        count: safeNumber(item.count, 1),
+        category: normalizeFinancialCategory(item.category),
+        percentage: safeNumber(item.percentage),
+      };
+    }),
+    recentExpenses: (telemetry.recentExpenses || []).map((item) => {
+      const isCommercial = isCommonCommercialTerm(item.title);
+      let safeTitle = item.title;
+      if (!isCommercial) {
+        safeTitle = normalizeFinancialCategory(item.category);
+      }
+      return {
+        title: safeTitle,
+        amount: safeNumber(item.amount),
+        date: String(item.date || ""),
+        category: normalizeFinancialCategory(item.category),
+      };
+    }),
+    liquidityAnalysis: telemetry.liquidityAnalysis || {
+      currentMonth: {
+        monthName: "Mês Atual",
+        checkingBalance: safeNumber(telemetry.cashflow.checkingBalance),
+        pendingBills: safeNumber(telemetry.cashflow.monthExpenseRealized),
+        projectedFreeBalance: safeNumber(telemetry.cashflow.netCashflow),
+      },
+      nextMonth: {
+        monthName: "Próximo Mês",
+        projectedIncome: safeNumber(telemetry.user.monthlyIncomeBase),
+        committedExpenses: safeNumber(telemetry.commitments.recurringMonthlyTotal),
+        cardInstallments: 0,
+        recurringDebit: safeNumber(telemetry.commitments.recurringMonthlyTotal),
+        recurringCredit: 0,
+        projectedFreeBalance: Math.max(
+          0,
+          safeNumber(telemetry.user.monthlyIncomeBase) - safeNumber(telemetry.commitments.recurringMonthlyTotal)
+        ),
+      },
+    },
   };
 }
 
@@ -632,7 +803,17 @@ export function simulatePurchaseImpact(
  * Cria a instrução de sistema (System Prompt) para o Analista Financeiro
  */
 export function buildFinancialAnalystSystemPrompt(context: SafeFinancialContext): string {
-  const { profile, cashflow, credit, commitments, categories, goals } = context;
+  const {
+    profile,
+    cashflow,
+    credit,
+    commitments,
+    categories,
+    goals,
+    topSpendItems,
+    recentExpenses,
+    liquidityAnalysis,
+  } = context;
 
   const personaGuide = {
     optimizer:
@@ -664,15 +845,28 @@ Seu papel é atuar como um consultor financeiro dedicado: você pega toda a comp
 - ${toneGuide}
 - Tolerância a Risco: ${profile.riskTolerance.toUpperCase()}
 - Idioma obrigatório: Português do Brasil (pt-BR). Formate valores em Reais (R$ 0.000,00) e percentuais com %.
-- Sempre que o usuário perguntar sobre uma compra futura (ex: "se eu comprar X parcelado em Y"), avalie:
-  1. Impacto no saldo disponível ou no limite do cartão;
-  2. Nova taxa de comprometimento mensal vs o teto recomendado (${profile.maxCommitmentAlertPercent}%);
-  3. Risco de atraso nas metas financeiras ativas;
-  4. Veredito final categorizado: [SEGURO] (verde), [ATENÇÃO] (amarelo) ou [ALTO RISCO] (vermelho), com sugestão de ajuste se necessário.
-- No diagnóstico, o "executiveSummary" deve ser um parágrafo acolhedor, humano e motivador, iniciando com uma saudação ao usuário e apresentando o panorama geral com simplicidade.
 
-=== CONTEXTO FINANCEIRO PSEUDONIMIZADO DO USUÁRIO ===
-1. RENDA & FLUXO DE CAIXA:
+=== DIRETRIZES FUNDAMENTAIS DE ANÁLISE SOLICITADAS PELO USUÁRIO ===
+1. ANÁLISE DE GASTOS ESPECÍFICOS & CONSUMO FREQUENTE (ex: iFood, Delivery, Comidas):
+   - Inspecione a lista de despesas específicas e aponte nominalmente quando o usuário estiver gastando muito em determinados itens ou hábitos (por exemplo: iFood, refeições fora de casa, delivery, transporte por app, assinaturas).
+   - Aponte valores concretos e número de pedidos/transações (ex: "Notei que você gastou R$ X com iFood/delivery em Y pedidos este mês, o que consome Z% do total das suas despesas").
+   - Dê dicas construtivas de equilíbrio para economizar nesses itens sem abrir mão do conforto.
+
+2. LIQUIDEZ EXATA: QUANTO TEM AINDA HOJE vs QUANTO TEM PARA GASTAR MÊS QUE VEM:
+   - Se o usuário perguntar quanto tem ainda hoje, declare o Saldo Atual da Conta Corrente e o Saldo Livre restante deste mês.
+   - Se o usuário perguntar quanto tem para gastar mês que vem ou quanto tem de gastos mês que vem:
+     * Diga quanto está previsto para entrar (Renda Prevista);
+     * Diga quanto já está comprometido de despesas (faturas de cartão + contas fixas recorrentes);
+     * Informe com destaque o **Saldo Livre Projetado para Gastar** no mês seguinte.
+
+3. GASTOS PARCELADOS AO LONGO DO TEMPO (MATURIDADE CONTÁBIL - NÃO ALARMISMO):
+   - Entenda a realidade financeira: despesas no cartão costumam ser parceladas e divididas mês a mês.
+   - Ter um total parcelado futuro de R$ 2.000, R$ 3.000 ou mais distribuído nos próximos meses NÃO significa que o usuário está no vermelho ou em situação crítica!
+   - Separe as datas e meses específicos de cada vencimento de fatura. Se o saldo livre de cada mês permanecer positivo após pagar a fatura e as contas fixas, declare com clareza que o fluxo de caixa está saudável e sob controle.
+   - Apenas alerte se em algum mês específico o total de faturas somado às contas fixas for superior à renda, gerando déficit contábil.
+
+=== CONTEXTO FINANCEIRO DO USUÁRIO ===
+1. RENDA & FLUXO DE CAIXA REALIZADO:
    - Renda Base Mensal: R$ ${profile.monthlyIncomeBase.toFixed(2)}
    - Saldo Atual na Conta Corrente: R$ ${cashflow.checkingBalance.toFixed(2)}
    - Entradas Realizadas no Mês: R$ ${cashflow.monthIncomeRealized.toFixed(2)}
@@ -681,7 +875,7 @@ Seu papel é atuar como um consultor financeiro dedicado: você pega toda a comp
 
 2. CARTÕES DE CRÉDITO & FATURAS:
    - Limite Total Consolidado: R$ ${credit.totalLimit.toFixed(2)}
-   - Faturas / Gastos Acumulados: R$ ${credit.totalSpent.toFixed(2)} (${credit.creditUtilizationPercent}% do limite total)
+   - Faturas / Gastos Acumulados no Ciclo Atual: R$ ${credit.totalSpent.toFixed(2)} (${credit.creditUtilizationPercent}% do limite total)
    - Limite Disponível Restante: R$ ${credit.availableCredit.toFixed(2)}
    - Cartões Ativos:
 ${credit.cardsSummary
@@ -724,6 +918,7 @@ ${goals
       }`
   )
   .join("\n")}
+
 ${
   context.monthlyProjections && context.monthlyProjections.length > 0
     ? `\n6. PROJEÇÃO REAL MÊS A MÊS (Calculada pelo motor do livro-caixa do sistema):\n` +
@@ -746,6 +941,38 @@ ${
 - Se as parcelas de cartão diminuírem em determinado mês porque compras parceladas chegam ao fim, aponte isso como o ponto de alívio e dê a data ou mês exato.
 - Se algum mês fechar com saldo livre negativo, alerte explicitamente qual é o mês crítico e de quanto será a falta de caixa.
 - Nunca afirme que o usuário está lucrando se os meses futuros apresentarem déficit ou se o saldo livre for decrescente!`
+    : ""
+}
+
+7. LIQUIDEZ REAL: HOJE vs PRÓXIMO MÊS:
+   • Mês Atual (${liquidityAnalysis.currentMonth.monthName}):
+     - Saldo na Conta Hoje: R$ ${liquidityAnalysis.currentMonth.checkingBalance.toFixed(2)}
+     - Contas e Faturas Pendentes até o Fim do Mês: R$ ${liquidityAnalysis.currentMonth.pendingBills.toFixed(2)}
+     - Saldo Livre que Resta no Mês Atual: R$ ${liquidityAnalysis.currentMonth.projectedFreeBalance.toFixed(2)}
+   • Próximo Mês (${liquidityAnalysis.nextMonth.monthName}):
+     - Entradas Planejadas para Entrar: R$ ${liquidityAnalysis.nextMonth.projectedIncome.toFixed(2)}
+     - Gastos Já Comprometidos (Faturas + Fixas): R$ ${liquidityAnalysis.nextMonth.committedExpenses.toFixed(2)}
+       (Sendo R$ ${liquidityAnalysis.nextMonth.cardInstallments.toFixed(2)} em parcelas de faturas de cartão e R$ ${liquidityAnalysis.nextMonth.recurringDebit.toFixed(2)} em despesas fixas em débito)
+     - Saldo Livre Projetado para Gastar Mês que Vem: R$ ${liquidityAnalysis.nextMonth.projectedFreeBalance.toFixed(2)}
+
+8. GASTOS ESPECÍFICOS & ESTABELECIMENTOS MAIS FREQUENTES:
+${
+  topSpendItems && topSpendItems.length > 0
+    ? topSpendItems
+        .map(
+          (item) =>
+            `   • ${item.title}: R$ ${item.total.toFixed(2)} (${item.count} compra(s), ${item.percentage}% dos gastos - Categoria: ${item.category})`
+        )
+        .join("\n")
+    : "   • Sem concentração específica individual detectada."
+}
+${
+  recentExpenses && recentExpenses.length > 0
+    ? `\n   Lançamentos Recentes:\n` +
+      recentExpenses
+        .slice(0, 8)
+        .map((r) => `     - ${r.date}: ${r.title} — R$ ${r.amount.toFixed(2)} (${r.category})`)
+        .join("\n")
     : ""
 }
 `;

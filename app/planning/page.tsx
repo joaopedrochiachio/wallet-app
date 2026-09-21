@@ -199,7 +199,10 @@ export default function PlanningPage() {
     ? `dia ${primaryCreditCard.dueDay}`
     : "dia 15";
 
-  const handleOpenModal = (mode: "income" | "expense" | "expense-debit" | "expense-credit") => {
+  const handleOpenModal = (
+    mode: "income" | "expense" | "expense-debit" | "expense-credit",
+    targetCardId?: string
+  ) => {
     const isIncome = mode === "income";
     const isCredit = mode === "expense-credit";
 
@@ -211,7 +214,9 @@ export default function PlanningPage() {
       accountOptions.find((acc) => acc.includes("Débito") || acc.includes("Pix")) ||
       "Débito/Pix";
 
+    const targetCreditCard = targetCardId ? cards.find((c) => c.id === targetCardId) : null;
     const creditAcc =
+      targetCreditCard?.name ||
       cards.find((card) => card.type === "credit")?.name ||
       accountOptions.find((acc) => !acc.includes("Débito") && !acc.includes("Pix")) ||
       "Cartão de Crédito";
@@ -383,7 +388,9 @@ export default function PlanningPage() {
   const handleRealizeNow = async (item: RecurringItem) => {
     try {
       setProcessingItemId(item.id);
-      await realizeRecurringItemNow(item, targetYear, targetMonth);
+      const effectiveDay = getEffectiveDueDay(item, targetYear, targetMonth);
+      const plannedDate = new Date(targetYear, targetMonth, effectiveDay, 12, 0, 0);
+      await realizeRecurringItemNow(item, targetYear, targetMonth, undefined, plannedDate);
     } catch (error) {
       alert(error instanceof Error ? error.message : "Não foi possível efetivar o lançamento.");
     } finally {
@@ -786,7 +793,7 @@ export default function PlanningPage() {
             <div>
               <span className="text-xs text-[#86868B] flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#8E8E93]" />
-                Saiu
+                Já saiu da conta
               </span>
               <div className="text-base sm:text-lg font-semibold text-[#1D1D1F] mt-0.5">
                 R$ {formatCurrency(projection.actualOutflowTotal)}
@@ -796,7 +803,7 @@ export default function PlanningPage() {
             <div>
               <span className="text-xs text-[#86868B] flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#1D1D1F]" />
-                Sai da conta
+                Contas diretas a pagar
               </span>
               <div className="text-base sm:text-lg font-semibold text-[#1D1D1F] mt-0.5">
                 R$ {formatCurrency(debitCommitments)}
@@ -806,10 +813,10 @@ export default function PlanningPage() {
             <div>
               <span className="text-xs text-[#86868B] flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#6366F1]" />
-                Cartão / faturas
+                Faturas de cartão a pagar
               </span>
               <div className="text-base sm:text-lg font-semibold text-[#1D1D1F] mt-0.5">
-                R$ {formatCurrency(creditCommitments)}
+                R$ {formatCurrency(projection.totalInvoicesPending ?? creditCommitments)}
               </div>
             </div>
           </div>
@@ -824,17 +831,17 @@ export default function PlanningPage() {
                 <div
                   className="h-full bg-[#8E8E93] transition-all duration-500"
                   style={{ width: `${realizedShare}%` }}
-                  title={`Saiu: R$ ${formatCurrency(projection.actualOutflowTotal)}`}
+                  title={`Já saiu: R$ ${formatCurrency(projection.actualOutflowTotal)}`}
                 />
                 <div
                   className="h-full bg-[#1D1D1F] transition-all duration-500"
                   style={{ width: `${debitShare}%` }}
-                  title={`Sai da conta: R$ ${formatCurrency(debitCommitments)}`}
+                  title={`Contas diretas: R$ ${formatCurrency(debitCommitments)}`}
                 />
                 <div
                   className="h-full bg-[#6366F1] transition-all duration-500"
                   style={{ width: `${creditShare}%` }}
-                  title={`Faturas: R$ ${formatCurrency(creditCommitments)}`}
+                  title={`Faturas de cartão: R$ ${formatCurrency(creditCommitments)}`}
                 />
               </>
             ) : (
@@ -844,8 +851,8 @@ export default function PlanningPage() {
 
           {/* Pequeno Insight Complementar */}
           <p className="text-xs text-[#86868B] leading-relaxed pt-0.5">
-            R$ {formatCurrency(debitCommitments)} ainda sairão da sua conta e R${" "}
-            {formatCurrency(creditCommitments)} estão concentrados nas faturas.
+            R$ {formatCurrency(debitCommitments)} em contas diretas + R$ {formatCurrency(projection.totalInvoicesPending ?? creditCommitments)} em faturas de cartão totalizam R${" "}
+            {formatCurrency(projection.pendingCommitted)} que sairão da sua conta.
           </p>
         </section>
 
@@ -911,24 +918,24 @@ export default function PlanningPage() {
             </div>
           </div>
 
-          {/* 4.2 Saídas da Conta (Débito Direto) */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between px-1">
+          {/* 4.2 Saídas da Conta (Faturas dos Cartões + Débitos Diretos) */}
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
               <div>
                 <h3 className="text-base font-semibold text-[#1D1D1F] tracking-tight">
                   Saídas da conta
                 </h3>
                 <p className="text-xs text-[#86868B] mt-0.5">
-                  Valores planejados que serão descontados diretamente do seu saldo.
+                  Faturas de cartão e despesas programadas que saem do seu saldo bancário.
                 </p>
               </div>
               <div className="flex items-center gap-3 shrink-0">
                 <span className="text-sm font-semibold text-[#1D1D1F]">
-                  R$ {formatCurrency(totalDebitExpensesActive)}
+                  Total: R$ {formatCurrency(totalDebitExpensesActive + (projection.totalInvoicesScheduled ?? creditCommitments))}
                 </span>
                 <button
                   type="button"
-                  onClick={() => handleOpenModal("expense-debit")}
+                  onClick={() => setIsAddingMenuOpen(true)}
                   className="text-xs font-semibold text-[#0071E3] hover:text-[#0077ED] cursor-pointer"
                 >
                   Adicionar
@@ -936,119 +943,219 @@ export default function PlanningPage() {
               </div>
             </div>
 
-            <div className="bg-white rounded-[22px] border border-black/[0.04] shadow-[0_1px_4px_rgba(0,0,0,0.02)] overflow-hidden divide-y divide-gray-100">
-              {groupedPlannedDebitExpenses.length === 0 ? (
-                <div className="p-8 text-center space-y-1.5">
-                  <p className="text-sm font-medium text-[#1D1D1F]">
-                    Nenhuma saída da conta planejada em {activeMonthObj.name}
-                  </p>
+            {/* 4.2.A: Faturas dos Cartões de Crédito (Valor Somado + Cartão por Cartão) */}
+            <div className="bg-[#F8F8FA] rounded-[22px] p-5 sm:p-6 border border-black/[0.04] space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-black/[0.04]">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-[#1D1D1F] text-white flex items-center justify-center shrink-0 shadow-xs">
+                    <CreditCard size={16} strokeWidth={2} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-[#86868B]">
+                        Faturas dos Cartões
+                      </span>
+                      {projection.totalInvoicesPending === 0 && (projection.totalInvoicesScheduled ?? 0) > 0 ? (
+                        <span className="text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          ✓ Pagas na conta
+                        </span>
+                      ) : null}
+                    </div>
+                    <h4 className="text-sm font-semibold text-[#1D1D1F] tracking-tight mt-0.5">
+                      {projection.cardInvoices && projection.cardInvoices.length > 0
+                        ? `${projection.cardInvoices.length} ${projection.cardInvoices.length === 1 ? "cartão com fatura na saída da conta" : "cartões com faturas na saída da conta"}`
+                        : "Nenhum cartão cadastrado"}
+                    </h4>
+                  </div>
+                </div>
+
+                <div className="flex sm:flex-col sm:items-end justify-between items-center shrink-0">
+                  <div className="text-right">
+                    <span className="text-[11px] text-[#86868B] mr-1.5 font-medium">
+                      Valor Somado:
+                    </span>
+                    <span className="text-lg sm:text-xl font-semibold text-[#1D1D1F] tracking-tight">
+                      R$ {formatCurrency(projection.totalInvoicesScheduled ?? creditCommitments)}
+                    </span>
+                  </div>
+                  {projection.totalInvoicesPending !== undefined && projection.totalInvoicesPending < (projection.totalInvoicesScheduled ?? 0) && (
+                    <span className="text-[11px] text-[#86868B]">
+                      (R$ {formatCurrency(projection.totalInvoicesPending)} ainda pendente)
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Lista Detalhada Cartão por Cartão */}
+              {(!projection.cardInvoices || projection.cardInvoices.length === 0) ? (
+                <div className="bg-white rounded-[18px] p-6 text-center border border-black/[0.04]">
                   <p className="text-xs text-[#86868B]">
-                    Cadastre contas fixas como Aluguel, Luz, Internet ou Condomínio.
+                    Cadastre um cartão de crédito na aba Cartões para visualizar faturas aqui.
                   </p>
                 </div>
               ) : (
-                groupedPlannedDebitExpenses.map((group) => (
-                  <div key={group.day} className="divide-y divide-gray-100">
-                    <div className="bg-[#FBFBFD] px-4 py-2 flex items-center justify-between border-b border-black/[0.03]">
-                      <div className="flex items-center gap-2">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#1D1D1F]" />
-                        <span className="text-xs font-semibold text-[#1D1D1F] tracking-tight">
-                          {group.label}
-                        </span>
-                        <span className="text-[11px] text-[#86868B]">
-                          · {group.items.length} {group.items.length === 1 ? "saída" : "saídas"}
-                        </span>
+                <div className="grid grid-cols-1 gap-3.5">
+                  {projection.cardInvoices.map((ci) => {
+                    const hasInstallments = ci.installmentsAmount > 0;
+                    const hasRecurring = ci.recurringAmount > 0;
+                    const isEmpty = !hasInstallments && !hasRecurring && ci.totalInvoice === 0;
+
+                    return (
+                      <div
+                        key={ci.cardId}
+                        className="bg-white rounded-[18px] border border-black/[0.05] p-4 sm:p-5 shadow-2xs hover:shadow-xs transition-shadow space-y-3"
+                      >
+                        {/* Topo do Cartão Específico */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                          <div className="flex items-center gap-3">
+                            <div
+                              className="w-8 h-8 rounded-xl flex items-center justify-center text-white shrink-0 shadow-2xs"
+                              style={{ backgroundColor: ci.cardColor || "#1D1D1F" }}
+                            >
+                              <CreditCard size={15} strokeWidth={2} />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h5 className="text-sm font-semibold text-[#1D1D1F]">
+                                  {ci.cardName}
+                                </h5>
+                                {ci.isPaid ? (
+                                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    ✓ Paga na conta
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] font-semibold text-[#86868B] px-2 py-0.5 rounded-full bg-[#F2F2F7]">
+                                    A pagar dia {ci.dueDay}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-[#86868B] mt-0.5">
+                                Vencimento dia {ci.dueDay} · Fechamento dia {ci.closingDay}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between sm:justify-end gap-3 pt-1 sm:pt-0 border-t sm:border-t-0 border-gray-100">
+                            <div className="text-left sm:text-right">
+                              <span className="text-[10px] uppercase font-semibold tracking-wider text-[#86868B] block">
+                                Fatura {ci.cardName}
+                              </span>
+                              <span className="text-base sm:text-lg font-semibold text-[#1D1D1F] tracking-tight">
+                                R$ {formatCurrency(ci.totalInvoice)}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenModal("expense-credit", ci.cardId)}
+                              className="text-xs font-semibold text-[#0071E3] hover:text-[#0077ED] px-2.5 py-1 rounded-full hover:bg-blue-50/50 transition-colors cursor-pointer shrink-0"
+                              title={`Adicionar compra ou assinatura no ${ci.cardName}`}
+                            >
+                              + Compra
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Detalhamento sem duplicidade do que compõe esta fatura específica */}
+                        {isEmpty ? (
+                          <p className="text-xs text-[#86868B] bg-[#FBFBFD] px-3.5 py-2 rounded-xl border border-black/[0.02]">
+                            Fatura zerada para {activeMonthObj.name}. Nenhuma compra faturada ou assinatura vinculada a este cartão.
+                          </p>
+                        ) : (
+                          <div className="bg-[#FBFBFD] rounded-xl p-3 border border-black/[0.03] space-y-2">
+                            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#86868B] border-b border-black/[0.03] pb-1.5">
+                              <span>Composição da fatura</span>
+                              <div className="flex items-center gap-3">
+                                {hasInstallments && (
+                                  <span>Compras: <strong className="text-[#1D1D1F]">R$ {formatCurrency(ci.installmentsAmount)}</strong></span>
+                                )}
+                                {hasRecurring && (
+                                  <span>Assinaturas: <strong className="text-[#1D1D1F]">R$ {formatCurrency(ci.recurringAmount)}</strong></span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Itens de assinaturas vinculadas a este cartão */}
+                            {ci.recurringItems && ci.recurringItems.length > 0 && (
+                              <div className="space-y-1.5 pt-0.5">
+                                {ci.recurringItems.map((item) => renderItemRow(item, "credit"))}
+                              </div>
+                            )}
+
+                            {/* Compras e parcelamentos faturados no cartão */}
+                            {hasInstallments && (
+                              <div className="flex items-center justify-between text-xs pt-1 px-1 text-[#86868B]">
+                                <span>Lançamentos e compras faturadas no {ci.cardName}</span>
+                                <span className="font-medium text-[#1D1D1F]">
+                                  R$ {formatCurrency(ci.installmentsAmount)}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
-                      <span className="text-xs font-semibold text-[#1D1D1F]">
-                        R$ {formatCurrency(group.totalAmount)}
-                      </span>
-                    </div>
-                    {group.items.map((item) => renderItemRow(item, "debit"))}
-                  </div>
-                ))
+                    );
+                  })}
+                </div>
               )}
             </div>
-          </div>
 
-          {/* 4.3 Cartão de Crédito (Tonalidade Muito Sutil Diferenciada Estilo Apple Wallet) */}
-          <div className="bg-[#F8F8FA] rounded-[22px] p-5 sm:p-6 border border-black/[0.04] space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div>
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-[#86868B]">
-                  Cartão de crédito
-                </span>
-                <h3 className="text-lg font-semibold text-[#1D1D1F] tracking-tight mt-0.5">
-                  Fatura de {activeMonthObj.name}
-                </h3>
-                <p className="text-xs text-[#86868B] mt-0.5">
-                  Vencimento {creditCardDueDayText} · Cartão {creditCardNameText}
-                </p>
-              </div>
-
-              <div className="flex sm:flex-col sm:items-end justify-between items-center shrink-0">
-                <span className="text-xl font-semibold text-[#1D1D1F] tracking-tight">
-                  R$ {formatCurrency(creditCommitments)}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => handleOpenModal("expense-credit")}
-                  className="text-xs font-semibold text-[#0071E3] hover:text-[#0077ED] cursor-pointer mt-0.5"
-                >
-                  Adicionar compra
-                </button>
-              </div>
-            </div>
-
-            {/* Lista de Compras do Cartão */}
-            <div className="bg-white rounded-[18px] border border-black/[0.04] overflow-hidden divide-y divide-gray-100">
-              {groupedPlannedCreditExpenses.length === 0 && projection.cardInstallments === 0 ? (
-                <div className="p-7 text-center space-y-1">
-                  <p className="text-xs font-medium text-[#1D1D1F]">
-                    Nenhuma assinatura ou compra cadastrada no cartão para {activeMonthObj.name}.
-                  </p>
-                  <p className="text-[11px] text-[#86868B]">
-                    Assinaturas como iCloud, Netflix ou compras parceladas entrarão na fatura deste mês.
+            {/* 4.2.B: Contas & Débitos Diretos (Débito/Pix direto da conta) */}
+            <div className="space-y-3 pt-2">
+              <div className="flex items-center justify-between px-1">
+                <div>
+                  <h4 className="text-sm font-semibold text-[#1D1D1F] tracking-tight">
+                    Contas e Débitos Diretos
+                  </h4>
+                  <p className="text-xs text-[#86868B] mt-0.5">
+                    Despesas debitadas diretamente da conta corrente (Aluguel, Luz, Pix programado).
                   </p>
                 </div>
-              ) : (
-                <>
-                  {groupedPlannedCreditExpenses.map((group) => (
+                <div className="flex items-center gap-3 shrink-0">
+                  <span className="text-sm font-semibold text-[#1D1D1F]">
+                    R$ {formatCurrency(totalDebitExpensesActive)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenModal("expense-debit")}
+                    className="text-xs font-semibold text-[#0071E3] hover:text-[#0077ED] cursor-pointer"
+                  >
+                    + Adicionar conta
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-[22px] border border-black/[0.04] shadow-[0_1px_4px_rgba(0,0,0,0.02)] overflow-hidden divide-y divide-gray-100">
+                {groupedPlannedDebitExpenses.length === 0 ? (
+                  <div className="p-7 text-center space-y-1.5">
+                    <p className="text-sm font-medium text-[#1D1D1F]">
+                      Nenhuma conta direta planejada em {activeMonthObj.name}
+                    </p>
+                    <p className="text-xs text-[#86868B]">
+                      Cadastre contas fixas como Aluguel, Luz, Internet ou Condomínio.
+                    </p>
+                  </div>
+                ) : (
+                  groupedPlannedDebitExpenses.map((group) => (
                     <div key={group.day} className="divide-y divide-gray-100">
                       <div className="bg-[#FBFBFD] px-4 py-2 flex items-center justify-between border-b border-black/[0.03]">
                         <div className="flex items-center gap-2">
-                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-600/70" />
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#1D1D1F]" />
                           <span className="text-xs font-semibold text-[#1D1D1F] tracking-tight">
                             {group.label}
                           </span>
                           <span className="text-[11px] text-[#86868B]">
-                            · {group.items.length} {group.items.length === 1 ? "assinatura/compra" : "assinaturas/compras"}
+                            · {group.items.length} {group.items.length === 1 ? "saída direta" : "saídas diretas"}
                           </span>
                         </div>
                         <span className="text-xs font-semibold text-[#1D1D1F]">
                           R$ {formatCurrency(group.totalAmount)}
                         </span>
                       </div>
-                      {group.items.map((item) => renderItemRow(item, "credit"))}
+                      {group.items.map((item) => renderItemRow(item, "debit"))}
                     </div>
-                  ))}
-
-                  {projection.cardInstallments > 0 && (
-                    <div className="flex items-center justify-between gap-4 p-4 bg-gray-50/40">
-                      <div className="min-w-0">
-                        <h4 className="text-sm font-medium text-[#1D1D1F] truncate">
-                          Compras faturadas no cartão
-                        </h4>
-                        <p className="text-xs text-[#86868B] truncate mt-0.5">
-                          Lançamentos e parcelas de compras com vencimento em {activeMonthObj.short}
-                        </p>
-                      </div>
-                      <span className="text-sm font-semibold tracking-tight text-[#1D1D1F] shrink-0">
-                        R$ {formatCurrency(projection.cardInstallments)}
-                      </span>
-                    </div>
-                  )}
-                </>
-              )}
+                  ))
+                )}
+              </div>
             </div>
           </div>
         </section>

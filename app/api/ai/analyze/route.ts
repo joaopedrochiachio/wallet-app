@@ -29,6 +29,41 @@ export interface ActionableSuggestionItem {
   targetGoal?: string;
 }
 
+export interface SpecificExpenseAlert {
+  item: string;
+  totalAmount: number;
+  count?: number;
+  alertType: "info" | "warning" | "alert";
+  message: string;
+}
+
+export interface CashflowWindowSummary {
+  currentMonth: {
+    monthName: string;
+    checkingBalance: number;
+    pendingBills: number;
+    projectedFreeBalance: number;
+    insight: string;
+  };
+  nextMonth: {
+    monthName: string;
+    projectedIncome: number;
+    committedExpenses: number;
+    cardInstallments: number;
+    recurringDebit: number;
+    projectedFreeBalance: number;
+    insight: string;
+  };
+}
+
+export interface InstallmentScheduleItem {
+  period: string;
+  dueDateHint?: string;
+  cardInstallmentsAmount: number;
+  status: "safe" | "warning" | "alert";
+  explanation: string;
+}
+
 export interface FinancialDiagnosis {
   healthScore: number;
   healthStatus: "excellent" | "healthy" | "attention" | "critical";
@@ -36,6 +71,9 @@ export interface FinancialDiagnosis {
   spendingPatterns: SpendingPatternItem[];
   futureProjections: FutureProjectionItem[];
   actionableSuggestions: ActionableSuggestionItem[];
+  specificExpensesAlerts?: SpecificExpenseAlert[];
+  cashflowWindow?: CashflowWindowSummary;
+  installmentSchedule?: InstallmentScheduleItem[];
 }
 
 function normalizeHealthStatus(
@@ -247,6 +285,108 @@ function safeParseFinancialDiagnosis(
     });
   }
 
+  // 7. Normalização de Alertas de Gastos Específicos (ex: iFood, Uber, etc.)
+  const specificExpensesAlerts: SpecificExpenseAlert[] = [];
+  const rawSpecific = parsed?.specificExpensesAlerts;
+  if (Array.isArray(rawSpecific) && rawSpecific.length > 0) {
+    for (const item of rawSpecific) {
+      if (item && typeof item === "object") {
+        const obj = item as Record<string, unknown>;
+        specificExpensesAlerts.push({
+          item: String(obj.item || "Gasto Frequente"),
+          totalAmount: typeof obj.totalAmount === "number" ? obj.totalAmount : 0,
+          count: typeof obj.count === "number" ? obj.count : undefined,
+          alertType: (obj.alertType as "info" | "warning" | "alert") || "info",
+          message: sanitizeText(obj.message || ""),
+        });
+      }
+    }
+  }
+
+  // Se a IA não preencheu, deriva deterministicamente dos topSpendItems
+  if (specificExpensesAlerts.length === 0 && context.topSpendItems?.length) {
+    for (const item of context.topSpendItems.slice(0, 4)) {
+      const isHigh = item.percentage >= 10 || item.total > 200;
+      specificExpensesAlerts.push({
+        item: item.title,
+        totalAmount: item.total,
+        count: item.count,
+        alertType: isHigh ? "warning" : "info",
+        message: `Você gastou R$ ${item.total.toFixed(2)} em ${item.count} compra(s) (${item.percentage}% do total gasto em ${item.category}).`,
+      });
+    }
+  }
+
+  // 8. Normalização da Janela de Liquidez (Hoje vs Mês Que Vem)
+  const liq = context.liquidityAnalysis;
+  const rawCashflow = parsed?.cashflowWindow as Record<string, unknown> | undefined;
+  const rawCurrent = rawCashflow?.currentMonth as Record<string, unknown> | undefined;
+  const rawNext = rawCashflow?.nextMonth as Record<string, unknown> | undefined;
+
+  const cashflowWindow: CashflowWindowSummary = {
+    currentMonth: {
+      monthName: liq.currentMonth.monthName,
+      checkingBalance: liq.currentMonth.checkingBalance,
+      pendingBills: liq.currentMonth.pendingBills,
+      projectedFreeBalance: liq.currentMonth.projectedFreeBalance,
+      insight:
+        typeof rawCurrent?.insight === "string" && rawCurrent.insight.trim()
+          ? sanitizeText(rawCurrent.insight)
+          : liq.currentMonth.projectedFreeBalance >= 0
+          ? `Você tem R$ ${liq.currentMonth.projectedFreeBalance.toFixed(2)} livres na conta para terminar o mês atual com tranquilidade.`
+          : `Atenção: as saídas deste mês superam o saldo em conta em R$ ${Math.abs(liq.currentMonth.projectedFreeBalance).toFixed(2)}.`,
+    },
+    nextMonth: {
+      monthName: liq.nextMonth.monthName,
+      projectedIncome: liq.nextMonth.projectedIncome,
+      committedExpenses: liq.nextMonth.committedExpenses,
+      cardInstallments: liq.nextMonth.cardInstallments,
+      recurringDebit: liq.nextMonth.recurringDebit,
+      projectedFreeBalance: liq.nextMonth.projectedFreeBalance,
+      insight:
+        typeof rawNext?.insight === "string" && rawNext.insight.trim()
+          ? sanitizeText(rawNext.insight)
+          : liq.nextMonth.projectedFreeBalance >= 0
+          ? `Mês que vem você terá R$ ${liq.nextMonth.projectedFreeBalance.toFixed(2)} livres para gastar após quitar despesas fixas e parcelas.`
+          : `Mês que vem exigirá cautela: os compromissos previstos superam a renda projetada em R$ ${Math.abs(liq.nextMonth.projectedFreeBalance).toFixed(2)}.`,
+    },
+  };
+
+  // 9. Normalização do Cronograma de Parcelamentos
+  const installmentSchedule: InstallmentScheduleItem[] = [];
+  const rawSchedule = parsed?.installmentSchedule;
+  if (Array.isArray(rawSchedule) && rawSchedule.length > 0) {
+    for (const item of rawSchedule) {
+      if (item && typeof item === "object") {
+        const obj = item as Record<string, unknown>;
+        installmentSchedule.push({
+          period: String(obj.period || "Próximo Ciclo"),
+          dueDateHint: obj.dueDateHint ? String(obj.dueDateHint) : undefined,
+          cardInstallmentsAmount: typeof obj.cardInstallmentsAmount === "number" ? obj.cardInstallmentsAmount : 0,
+          status: (obj.status as "safe" | "warning" | "alert") || "safe",
+          explanation: sanitizeText(obj.explanation || ""),
+        });
+      }
+    }
+  }
+
+  if (installmentSchedule.length === 0 && context.monthlyProjections?.length) {
+    for (const p of context.monthlyProjections.slice(1, 4)) {
+      if (p.cardInstallments > 0) {
+        installmentSchedule.push({
+          period: `${p.monthName}/${p.year}`,
+          dueDateHint: "Fatura programada",
+          cardInstallmentsAmount: p.cardInstallments,
+          status: p.projectedFreeBalance >= 0 ? "safe" : "alert",
+          explanation:
+            p.projectedFreeBalance >= 0
+              ? `Parcelas de cartão de R$ ${p.cardInstallments.toFixed(2)} distribuídas de forma equilibrada, com saldo livre final de R$ ${p.projectedFreeBalance.toFixed(2)}.`
+              : `Parcelas de cartão somam R$ ${p.cardInstallments.toFixed(2)}, exigindo atenção para cobrir o mês.`,
+        });
+      }
+    }
+  }
+
   return {
     healthScore,
     healthStatus,
@@ -254,6 +394,9 @@ function safeParseFinancialDiagnosis(
     spendingPatterns,
     futureProjections,
     actionableSuggestions,
+    specificExpensesAlerts,
+    cashflowWindow,
+    installmentSchedule,
   };
 }
 
@@ -294,12 +437,10 @@ DIRETRIZES DE TOM:
 - Apresente conclusões simples e claras a partir dos dados cruzados, sem usar termos técnicos frios.
 - O "executiveSummary" deve conversar diretamente com o usuário em primeira pessoa ("Olá! Analisei suas contas..."), acolhendo os acertos e alertando sobre pontos de atenção com empatia.
 
-DIRETRIZES DE VALIDAÇÃO MÊS A MÊS (RIGOR CONTÁBIL):
-- Consulte com total rigor a Seção 6 do contexto ("PROJEÇÃO REAL MÊS A MÊS"), gerada diretamente pelo livro-caixa contábil.
-- Analise o 'Saldo Livre Final Projetado' de cada mês subsequente e a herança do saldo.
-- NUNCA assuma nem declare que o usuário "está lucrando" ou que "terá sobras confortáveis" nos próximos meses a menos que o Saldo Livre Final Projetado desses meses seja comprovadamente positivo, seguro e constante.
-- Se houver meses com saldo negativo (déficit previsto) ou margem muito apertada, declare explicitamente no "executiveSummary" e em "futureProjections" qual mês sofrerá aperto, o motivo (ex: acúmulo de parcelas de cartão ou contas fixas) e a quantia necessária para cobrir a diferença.
-- Em "futureProjections", cubra os meses projetados de forma cronológica (ex: "Próximo mês (Outubro)", "Mês seguinte (Novembro)"), atribuindo a severidade correta: "alert" se houver déficit ou risco imediato, "warning" se a margem for apertada, ou "info" se estiver estável e positivo.
+DIRETRIZES FUNDAMENTAIS DO DIAGNÓSTICO:
+1. GASTOS ESPECÍFICOS: Aponte com destaque na lista 'specificExpensesAlerts' os itens onde o usuário mais gasta (ex: iFood, comidas/delivery, Uber, etc.), mostrando o total em R$, frequência e um conselho claro de moderação.
+2. LIQUIDEZ AGORA vs MÊS QUE VEM: Preencha 'cashflowWindow' com clareza matemática e um insight simples para que o usuário saiba quanto tem livre hoje e quanto terá livre para gastar mês que vem.
+3. PARCELAS DILUÍDAS (NÃO ALARMISMO): Em 'installmentSchedule', mostre que compras parceladas divididas mês a mês (ex: 3k divididos em vários meses) são normais e saudáveis se o saldo livre de cada mês for positivo.
 
 RESPONDA ESTRITAMENTE EM FORMATO JSON com a seguinte estrutura:
 {
@@ -311,6 +452,32 @@ RESPONDA ESTRITAMENTE EM FORMATO JSON com a seguinte estrutura:
       "title": "título curto do padrão",
       "description": "explicação simples em linguagem natural",
       "type": "info" | "warning" | "alert"
+    }
+  ],
+  "specificExpensesAlerts": [
+    {
+      "item": "nome do item ou hábito (ex: iFood / Delivery)",
+      "totalAmount": 420.00,
+      "count": 6,
+      "alertType": "info" | "warning" | "alert",
+      "message": "ex: Você realizou 6 pedidos de delivery totalizando R$ 420,00 este mês."
+    }
+  ],
+  "cashflowWindow": {
+    "currentMonth": {
+      "insight": "insight acolhedor sobre o saldo livre que resta neste mês"
+    },
+    "nextMonth": {
+      "insight": "insight claro sobre quanto terá livre para gastar mês que vem"
+    }
+  },
+  "installmentSchedule": [
+    {
+      "period": "ex: Outubro/2026",
+      "dueDateHint": "Vencimento em torno do dia 15",
+      "cardInstallmentsAmount": 500.00,
+      "status": "safe" | "warning" | "alert",
+      "explanation": "explicação de que a parcela está distribuída no mês sem aperto"
     }
   ],
   "futureProjections": [

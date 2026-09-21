@@ -651,5 +651,238 @@ test("antecipação imediata de pagamento/recebimento futuro atualiza saldo e re
   assert.equal(dueOnDay20.length, 0);
 });
 
+test("faturas de múltiplos cartões de crédito constam como saída da conta com valor somado e detalhamento específico por cartão", () => {
+  const cardNubank = {
+    id: "card-nubank",
+    name: "Nubank",
+    type: "credit",
+    limit: 5000,
+    spent: 0,
+    closingDay: 3,
+    dueDay: 10,
+    colorScheme,
+  };
+
+  const cardSantander = {
+    id: "card-santander",
+    name: "Santander",
+    type: "credit",
+    limit: 8000,
+    spent: 0,
+    closingDay: 18,
+    dueDay: 25,
+    colorScheme,
+  };
+
+  const cardsList = [checking, cardNubank, cardSantander];
+
+  // Compras realizadas nos cartões com vencimento em Outubro/2026
+  const txPurchases = [
+    // Compra no Nubank em 20/09 (após fechamento dia 3/set, vence 10/out)
+    {
+      id: "tx-nu-1",
+      amount: 800,
+      type: "despesa",
+      account: "Nubank",
+      cardId: "card-nubank",
+      occurredAt: new Date(2026, 8, 20),
+    },
+    // Compra no Santander em 10/09 (antes do fechamento dia 18/set -> vence 25/set? Se em 20/09 -> vence 25/out)
+    {
+      id: "tx-san-1",
+      amount: 1200,
+      type: "despesa",
+      account: "Santander",
+      cardId: "card-santander",
+      occurredAt: new Date(2026, 8, 20), // após fechamento dia 18/set, vence 25/out
+    },
+  ];
+
+  // Assinaturas recorrentes vinculadas aos respectivos cartões
+  const recNetflix = {
+    id: "rec-netflix",
+    title: "Netflix",
+    amount: 55.9,
+    type: "expense",
+    account: "Nubank",
+    cardId: "card-nubank",
+    dueDay: 1,
+    active: true,
+  };
+
+  const recGym = {
+    id: "rec-gym",
+    title: "Academia",
+    amount: 120,
+    type: "expense",
+    account: "Santander",
+    cardId: "card-santander",
+    dueDay: 15,
+    active: true,
+  };
+
+  // 1. Schedule de parcelas/compras de cada cartão para Outubro/2026 (2026-10)
+  const nubankSchedule = calculateInvoiceSchedule(cardNubank, txPurchases);
+  const santanderSchedule = calculateInvoiceSchedule(cardSantander, txPurchases);
+
+  assert.equal(nubankSchedule["2026-10"], 800);
+  assert.equal(santanderSchedule["2026-10"], 1200);
+
+  // 2. Assinaturas vinculadas especificamente a cada cartão
+  const targetYear = 2026;
+  const targetMonthIndex = 9; // Outubro (0-indexed 9)
+  const targetPeriodKey = "2026-10";
+
+  // Avaliação de cada cartão
+  const creditCards = cardsList.filter((c) => c.type === "credit");
+  const cardInvoices = creditCards.map((card) => {
+    const schedule = calculateInvoiceSchedule(card, txPurchases);
+    const installmentsAmount = schedule[targetPeriodKey] || 0;
+
+    let recurringAmount = 0;
+    const items = [recNetflix, recGym].filter((r) => r.cardId === card.id || r.account === card.name);
+    for (const item of items) {
+      const chargeDate = new Date(targetYear, targetMonthIndex, item.dueDay, 12);
+      const invoiceDueDate = getInvoiceDueDate(card, chargeDate);
+      if (getPeriodKey(invoiceDueDate.getFullYear(), invoiceDueDate.getMonth()) === targetPeriodKey) {
+        recurringAmount += item.amount;
+      }
+    }
+
+    const totalInvoice = installmentsAmount + recurringAmount;
+    return {
+      cardId: card.id,
+      cardName: card.name,
+      dueDay: card.dueDay,
+      installmentsAmount,
+      recurringAmount,
+      totalInvoice,
+      pendingInvoice: totalInvoice,
+      isPaid: false,
+    };
+  });
+
+  // Validação do detalhamento específico por cartão
+  const nuInvoice = cardInvoices.find((c) => c.cardId === "card-nubank");
+  assert.ok(nuInvoice);
+  assert.equal(nuInvoice.cardName, "Nubank");
+  assert.equal(nuInvoice.dueDay, 10);
+  assert.equal(nuInvoice.installmentsAmount, 800);
+  assert.equal(nuInvoice.recurringAmount, 55.9);
+  assert.equal(nuInvoice.totalInvoice, 855.9);
+
+  const sanInvoice = cardInvoices.find((c) => c.cardId === "card-santander");
+  assert.ok(sanInvoice);
+  assert.equal(sanInvoice.cardName, "Santander");
+  assert.equal(sanInvoice.dueDay, 25);
+  assert.equal(sanInvoice.installmentsAmount, 1200);
+  assert.equal(sanInvoice.recurringAmount, 120);
+  assert.equal(sanInvoice.totalInvoice, 1320);
+
+  // Validação do VALOR SOMADO consolidado
+  const totalInvoicesScheduled = cardInvoices.reduce((acc, c) => acc + c.totalInvoice, 0);
+  assert.equal(totalInvoicesScheduled, 855.9 + 1320); // R$ 2.175,90
+});
+
+test("pagamento de fatura de cartão debita da conta corrente e não gera dupla contagem nas saídas nem no saldo projetado", () => {
+  const cardNubank = {
+    id: "card-nubank",
+    name: "Nubank",
+    type: "credit",
+    limit: 5000,
+    spent: 0,
+    closingDay: 3,
+    dueDay: 10,
+    colorScheme,
+  };
+
+  const initialCheckingBalance = 5000;
+  const checkingCard = { ...checking, balance: initialCheckingBalance, openingBalance: initialCheckingBalance };
+
+  // Compra faturada de R$ 1.000 no Nubank com vencimento em Outubro/2026
+  const purchaseEntry = {
+    id: "tx-purchase-1",
+    amount: 1000,
+    type: "despesa",
+    account: "Nubank",
+    cardId: "card-nubank",
+    occurredAt: new Date(2026, 8, 20), // após 03/set -> fatura 10/out
+  };
+
+  // Contas diretas da conta corrente: R$ 500 de condomínio
+  const debitRecurringAmount = 500;
+
+  // CENÁRIO A: Antes de pagar a fatura
+  const scheduleBefore = calculateInvoiceSchedule(cardNubank, [purchaseEntry]);
+  const invoiceAmountBefore = scheduleBefore["2026-10"] || 0;
+  assert.equal(invoiceAmountBefore, 1000);
+
+  const pendingCommittedBefore = debitRecurringAmount + invoiceAmountBefore; // 500 + 1000 = 1500
+  const actualOutflowBefore = 0;
+  const totalCommittedBefore = actualOutflowBefore + pendingCommittedBefore; // 1500
+
+  // Saldo livre projetado antes: Saldo atual (5000) - pendente (1500) = 3500
+  const freeBalanceBefore = calculateProjectedBalance(initialCheckingBalance, 0, pendingCommittedBefore);
+  assert.equal(freeBalanceBefore, 3500);
+
+  // CENÁRIO B: Pagamento da fatura de R$ 1.000 é efetuado
+  // Cria as duas pernas contábeis: saída da conta (kind: invoice_payment) e baixa do cartão (kind: invoice_settlement)
+  const invoicePaymentTx = {
+    id: "tx-pay-checking",
+    amount: 1000,
+    type: "despesa",
+    kind: "invoice_payment",
+    account: checkingCard.name,
+    cardId: checkingCard.id,
+    relatedCardId: cardNubank.id,
+    occurredAt: new Date(2026, 9, 10, 10, 0),
+  };
+
+  const invoiceSettlementTx = {
+    id: "tx-settle-credit",
+    amount: 1000,
+    type: "receita",
+    kind: "invoice_settlement",
+    account: cardNubank.name,
+    cardId: cardNubank.id,
+    relatedCardId: checkingCard.id,
+    occurredAt: new Date(2026, 9, 10, 10, 0),
+  };
+
+  const allLedger = [purchaseEntry, invoicePaymentTx, invoiceSettlementTx];
+
+  // 1. Saldo em conta real após o pagamento da fatura: 5000 - 1000 = 4000
+  const currentCheckingBalance = calculateCheckingBalance(checkingCard, allLedger);
+  assert.equal(currentCheckingBalance, 4000);
+
+  // 2. Schedule da fatura de Outubro agora é 0 (foi liquidada pela baixa de receita)
+  const scheduleAfter = calculateInvoiceSchedule(cardNubank, allLedger);
+  const invoicePendingAfter = scheduleAfter["2026-10"] || 0;
+  assert.equal(invoicePendingAfter, 0);
+
+  // 3. Saída real já realizada na conta (actualOutflowTotal): R$ 1.000 da fatura paga
+  const checkingOutflow = calculateMonthlyAccountFlow(
+    [checkingCard],
+    allLedger,
+    new Date(2026, 9, 15)
+  );
+  assert.equal(checkingOutflow.outflow, 1000);
+
+  // 4. Pendente comprometido: apenas o débito direto de R$ 500 (fatura NÃO duplica mais como pendência)
+  const pendingCommittedAfter = debitRecurringAmount + invoicePendingAfter;
+  assert.equal(pendingCommittedAfter, 500);
+
+  // 5. Total comprometido (realizado + pendente): 1000 + 500 = 1500 (exatamente o mesmo total de antes!)
+  const totalCommittedAfter = checkingOutflow.outflow + pendingCommittedAfter;
+  assert.equal(totalCommittedAfter, 1500);
+  assert.equal(totalCommittedAfter, totalCommittedBefore);
+
+  // 6. Saldo livre projetado final: Saldo em conta (4000) - pendente (500) = 3500 (exatamente o mesmo de antes, sem desconto duplo!)
+  const freeBalanceAfter = calculateProjectedBalance(currentCheckingBalance, 0, pendingCommittedAfter);
+  assert.equal(freeBalanceAfter, 3500);
+  assert.equal(freeBalanceAfter, freeBalanceBefore);
+});
+
+
 
 
