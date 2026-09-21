@@ -70,6 +70,19 @@ export interface GoalItem {
 
 export type RecurrenceType = "business_day_5" | "fixed_day";
 
+export interface RecurringOverride {
+  title?: string;
+  amount?: number;
+  type?: "expense" | "income";
+  account?: string;
+  cardId?: string | null;
+  category?: string;
+  dueDay?: number;
+  recurrenceType?: RecurrenceType;
+  isDeleted?: boolean;
+  [key: string]: any;
+}
+
 export interface RecurringItem {
   id: string;
   title: string;
@@ -86,6 +99,8 @@ export interface RecurringItem {
   startYear?: number; // Ano de início (ex: 2026)
   realizedPeriods?: string[]; // Competências já realizadas, no formato YYYY-MM
   active: boolean;
+  overrides?: Record<string, RecurringOverride>; // Competências customizadas individualmente, indexadas por YYYY-MM
+  excludedPeriods?: string[]; // Competências excluídas individualmente, no formato YYYY-MM
 }
 
 export interface NewCardInput {

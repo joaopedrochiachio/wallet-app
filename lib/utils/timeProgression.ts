@@ -2,6 +2,7 @@ import type { CardItem, RecurringItem } from "@/types";
 import {
   getEffectiveDueDay,
   getPeriodKey,
+  getEffectiveRecurringItemForPeriod,
   MONTH_NAMES_PT,
 } from "./dateUtils.ts";
 
@@ -124,48 +125,57 @@ export function getDueOccurrencesForRecurringItem(
 
     if (monthOffset >= 0) {
       const periodKey = getPeriodKey(curYear, curMonth);
-      const occurrenceId = getDeterministicOccurrenceId(item.id, periodKey);
 
-      // Verificação de Idempotência:
-      // 1. Já está na lista de períodos realizados do item recorrente?
-      const alreadyInRealizedPeriods = Boolean(
-        item.realizedPeriods?.includes(periodKey)
-      );
+      // Se o período foi excluído pontualmente ou marcado como excluído via override, ignora
+      const isExcluded =
+        item.excludedPeriods?.includes(periodKey) ||
+        item.overrides?.[periodKey]?.isDeleted;
 
-      // 2. Já existe transação gravada com esse ID ou chave de competência?
-      const alreadyInTransactions = existingTransactions.some(
-        (tx) =>
-          tx.id === occurrenceId ||
-          (tx.recurringItemId === item.id && tx.periodKey === periodKey)
-      );
+      if (!isExcluded) {
+        const occurrenceId = getDeterministicOccurrenceId(item.id, periodKey);
 
-      if (!alreadyInRealizedPeriods && !alreadyInTransactions) {
-        const dueDate = getOccurrenceDueDate(item, curYear, curMonth);
+        // Verificação de Idempotência:
+        // 1. Já está na lista de períodos realizados do item recorrente?
+        const alreadyInRealizedPeriods = Boolean(
+          item.realizedPeriods?.includes(periodKey)
+        );
 
-        // Se a data de vencimento já chegou (dueDate <= asOfDate)
-        if (isSameOrBeforeCalendarDay(dueDate, asOfDate)) {
-          const isCredit = cards.some(
-            (c) =>
-              c.type === "credit" &&
-              (c.id === item.cardId ||
-                c.id === item.account ||
-                c.name.trim().toLowerCase() === item.account.trim().toLowerCase())
-          );
+        // 2. Já existe transação gravada com esse ID ou chave de competência?
+        const alreadyInTransactions = existingTransactions.some(
+          (tx) =>
+            tx.id === occurrenceId ||
+            (tx.recurringItemId === item.id && tx.periodKey === periodKey)
+        );
 
-          occurrences.push({
-            occurrenceId,
-            recurringItemId: item.id,
-            periodKey,
-            dueDate,
-            formattedDate: formatOccurrenceDate(dueDate),
-            amount: item.amount,
-            type: item.type === "income" ? "in" : "out",
-            description: item.title,
-            category: item.category,
-            paymentMethod: item.account,
-            cardId: item.cardId || null,
-            isCredit,
-          });
+        if (!alreadyInRealizedPeriods && !alreadyInTransactions) {
+          const effectiveItem = getEffectiveRecurringItemForPeriod(item, periodKey);
+          const dueDate = getOccurrenceDueDate(effectiveItem, curYear, curMonth);
+
+          // Se a data de vencimento já chegou (dueDate <= asOfDate)
+          if (isSameOrBeforeCalendarDay(dueDate, asOfDate)) {
+            const isCredit = cards.some(
+              (c) =>
+                c.type === "credit" &&
+                (c.id === effectiveItem.cardId ||
+                  c.id === effectiveItem.account ||
+                  c.name.trim().toLowerCase() === effectiveItem.account.trim().toLowerCase())
+            );
+
+            occurrences.push({
+              occurrenceId,
+              recurringItemId: item.id,
+              periodKey,
+              dueDate,
+              formattedDate: formatOccurrenceDate(dueDate),
+              amount: effectiveItem.amount,
+              type: effectiveItem.type === "income" ? "in" : "out",
+              description: effectiveItem.title,
+              category: effectiveItem.category,
+              paymentMethod: effectiveItem.account,
+              cardId: effectiveItem.cardId || null,
+              isCredit,
+            });
+          }
         }
       }
     }

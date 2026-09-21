@@ -14,6 +14,7 @@ import {
   getPlanningMonthsWindow,
   isBusinessDay,
   groupRecurringItemsByDate,
+  getEffectiveRecurringItemForPeriod,
 } from "../lib/utils/dateUtils.ts";
 import {
   createSafeMiddayDate,
@@ -881,6 +882,112 @@ test("pagamento de fatura de cartão debita da conta corrente e não gera dupla 
   const freeBalanceAfter = calculateProjectedBalance(currentCheckingBalance, 0, pendingCommittedAfter);
   assert.equal(freeBalanceAfter, 3500);
   assert.equal(freeBalanceAfter, freeBalanceBefore);
+});
+
+test("alteração pontual via override modifica apenas o mês selecionado e preserva os outros meses", () => {
+  const recurringItem = {
+    id: "rec-internet",
+    title: "Internet Fibra",
+    amount: 100,
+    dueDay: 10,
+    startYear: 2026,
+    startMonth: 8, // Setembro/2026
+    active: true,
+    overrides: {
+      "2026-10": {
+        amount: 140, // Apenas em Outubro o valor subiu para 140
+        title: "Internet Fibra + Upgrade",
+      },
+    },
+  };
+
+  // Setembro/2026 mantém o valor original
+  const septEffective = getEffectiveRecurringItemForPeriod(recurringItem, "2026-09");
+  assert.equal(septEffective.amount, 100);
+  assert.equal(septEffective.title, "Internet Fibra");
+
+  // Outubro/2026 reflete o override pontual
+  const octEffective = getEffectiveRecurringItemForPeriod(recurringItem, "2026-10");
+  assert.equal(octEffective.amount, 140);
+  assert.equal(octEffective.title, "Internet Fibra + Upgrade");
+
+  // Novembro/2026 preserva o valor base sem alterações
+  const novEffective = getEffectiveRecurringItemForPeriod(recurringItem, "2026-11");
+  assert.equal(novEffective.amount, 100);
+  assert.equal(novEffective.title, "Internet Fibra");
+});
+
+test("compra agendada no cartão para Outubro não é ativa nem vaza para a fatura de Setembro", () => {
+  // Usuário cadastrou compra no cartão com início em Outubro/2026 (mês 9)
+  const octoberCardPurchase = {
+    id: "rec-compra-oct",
+    title: "Tênis Esportivo",
+    amount: 350,
+    type: "expense",
+    account: "Nubank",
+    cardId: "card-nubank",
+    dueDay: 10,
+    startYear: 2026,
+    startMonth: 9, // Outubro/2026
+    installmentsCount: 1, // Compra única daquela fatura
+    active: true,
+  };
+
+  // Em Setembro/2026 (mês 8): NÃO pode ser ativa
+  const isActiveInSept = isRecurringActiveInMonth(octoberCardPurchase, 2026, 8);
+  assert.equal(isActiveInSept, false);
+
+  // Em Outubro/2026 (mês 9): DEVE ser ativa
+  const isActiveInOct = isRecurringActiveInMonth(octoberCardPurchase, 2026, 9);
+  assert.equal(isActiveInOct, true);
+
+  // Em Novembro/2026 (mês 10): parcela única encerrada, NÃO pode ser ativa
+  const isActiveInNov = isRecurringActiveInMonth(octoberCardPurchase, 2026, 10);
+  assert.equal(isActiveInNov, false);
+});
+
+test("exclusão pontual via excludedPeriods remove apenas o mês escolhido sem excluir a série", () => {
+  const recurringPlan = {
+    id: "rec-academia",
+    title: "Academia",
+    amount: 120,
+    startYear: 2026,
+    startMonth: 8, // Setembro
+    active: true,
+    excludedPeriods: ["2026-10"], // Removido apenas em Outubro (ex: férias)
+  };
+
+  assert.equal(isRecurringActiveInMonth(recurringPlan, 2026, 8), true); // Setembro ativo
+  assert.equal(isRecurringActiveInMonth(recurringPlan, 2026, 9), false); // Outubro excluído
+  assert.equal(isRecurringActiveInMonth(recurringPlan, 2026, 10), true); // Novembro volta a ser ativo
+});
+
+test("ocorrência vencida com override reflete o valor customizado daquele mês no processamento", () => {
+  const recurringItem = {
+    id: "rec-luz",
+    title: "Conta de Energia",
+    amount: 150,
+    dueDay: 15,
+    startYear: 2026,
+    startMonth: 8, // Setembro
+    active: true,
+    overrides: {
+      "2026-09": {
+        amount: 210, // Neste mês veio mais caro
+      },
+    },
+  };
+
+  const occurrences = getPendingDueOccurrences(
+    [recurringItem],
+    [checking],
+    [],
+    new Date(2026, 8, 20) // 20 de Setembro (já venceu dia 15)
+  );
+
+  assert.equal(occurrences.length, 1);
+  assert.equal(occurrences[0].amount, 210);
+  assert.equal(occurrences[0].periodKey, "2026-09");
 });
 
 

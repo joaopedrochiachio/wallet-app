@@ -170,17 +170,63 @@ export function isRecurringActiveInMonth(
     startMonth?: number;
     startMonthIndex?: number;
     realizedPeriods?: string[];
+    excludedPeriods?: string[];
+    overrides?: Record<string, RecurringOverrideLike>;
   },
   targetYear: number,
   targetMonth: number
 ): boolean {
-  if (!item.active || item.realizedPeriods?.includes(getPeriodKey(targetYear, targetMonth))) {
+  const periodKey = getPeriodKey(targetYear, targetMonth);
+  if (
+    !item.active ||
+    item.realizedPeriods?.includes(periodKey) ||
+    item.excludedPeriods?.includes(periodKey) ||
+    item.overrides?.[periodKey]?.isDeleted
+  ) {
     return false;
   }
 
   const monthOffset = getRecurringMonthOffset(item, targetYear, targetMonth);
   if (monthOffset < 0) return false;
   return !item.installmentsCount || item.installmentsCount <= 0 || monthOffset < item.installmentsCount;
+}
+
+export interface RecurringOverrideLike {
+  title?: string;
+  amount?: number;
+  type?: "expense" | "income";
+  account?: string;
+  cardId?: string | null;
+  category?: string;
+  dueDay?: number;
+  recurrenceType?: "business_day_5" | "fixed_day";
+  isDeleted?: boolean;
+  [key: string]: any;
+}
+
+/**
+ * Retorna uma versão do item com os campos específicos sobrescritos caso haja um override
+ * para a competência indicada (periodKey no formato YYYY-MM).
+ */
+export function getEffectiveRecurringItemForPeriod<T extends {
+  amount: number;
+  overrides?: Record<string, RecurringOverrideLike>;
+}>(item: T, periodKey: string): T {
+  if (!item.overrides || !item.overrides[periodKey]) {
+    return item;
+  }
+  const override = item.overrides[periodKey];
+  return {
+    ...item,
+    ...(override.title !== undefined ? { title: override.title } : {}),
+    ...(override.amount !== undefined ? { amount: override.amount } : {}),
+    ...(override.type !== undefined ? { type: override.type } : {}),
+    ...(override.account !== undefined ? { account: override.account } : {}),
+    ...(override.cardId !== undefined ? { cardId: override.cardId } : {}),
+    ...(override.category !== undefined ? { category: override.category } : {}),
+    ...(override.dueDay !== undefined ? { dueDay: override.dueDay } : {}),
+    ...(override.recurrenceType !== undefined ? { recurrenceType: override.recurrenceType } : {}),
+  };
 }
 
 /**

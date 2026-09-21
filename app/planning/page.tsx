@@ -17,6 +17,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { AppleConfirmModal } from "@/components/ui/AppleConfirmModal";
+import { AppleScopeModal } from "@/components/ui/AppleScopeModal";
 import { MonthlyMovementOverview } from "@/components/planning/MonthlyMovementOverview";
 import {
   get5thBusinessDay,
@@ -26,6 +27,7 @@ import {
   getRecurringMonthOffset,
   isRecurringActiveInMonth,
   groupRecurringItemsByDate,
+  getEffectiveRecurringItemForPeriod,
 } from "@/lib/utils/dateUtils";
 import { formatAccountLabel, getLedgerEntryDate } from "@/lib/utils/ledger";
 import { RecurrenceType, RecurringItem } from "@/types";
@@ -35,6 +37,8 @@ export default function PlanningPage() {
     recurringItems,
     addRecurringItem,
     updateRecurringItem,
+    updateRecurringItemOccurrence,
+    deleteRecurringItemOccurrence,
     toggleRecurringItem,
     deleteRecurringItem,
     realizeRecurringItemNow,
@@ -87,10 +91,16 @@ export default function PlanningPage() {
   const [editDurationMode, setEditDurationMode] = useState<"one-time" | "continuous" | "installments">("continuous");
   const [editInstallmentsCount, setEditInstallmentsCount] = useState<number>(3);
   const [processingItemId, setProcessingItemId] = useState<string | null>(null);
+  const [scopeEditModal, setScopeEditModal] = useState<{
+    isOpen: boolean;
+    item: RecurringItem;
+    updates: Partial<RecurringItem>;
+  } | null>(null);
 
   const activeMonthObj = planningMonths[selectedMonthIndex] || planningMonths[currentMonthIdx >= 0 ? currentMonthIdx : 0];
   const targetYear = activeMonthObj.year;
   const targetMonth = activeMonthObj.monthIndex;
+  const targetPeriodKey = getPeriodKey(targetYear, targetMonth);
   const currentMonth5thBusinessDay = get5thBusinessDay(targetYear, targetMonth);
 
   const projection = getMonthlyProjection(selectedMonthIndex, planningMonths);
@@ -123,6 +133,9 @@ export default function PlanningPage() {
   );
 
   const isScheduledForSelectedMonth = (item: RecurringItem) => {
+    if (item.excludedPeriods?.includes(targetPeriodKey) || item.overrides?.[targetPeriodKey]?.isDeleted) {
+      return false;
+    }
     const monthOffset = getRecurringMonthOffset(item, targetYear, targetMonth);
     return monthOffset >= 0 && (
       !item.installmentsCount ||
@@ -131,9 +144,15 @@ export default function PlanningPage() {
     );
   };
 
-  const visiblePlannedIncomes = plannedIncomes.filter(isScheduledForSelectedMonth);
-  const visiblePlannedDebitExpenses = plannedDebitExpenses.filter(isScheduledForSelectedMonth);
-  const visiblePlannedCreditExpenses = plannedCreditExpenses.filter(isScheduledForSelectedMonth);
+  const visiblePlannedIncomes = plannedIncomes
+    .filter(isScheduledForSelectedMonth)
+    .map((item) => getEffectiveRecurringItemForPeriod(item, targetPeriodKey));
+  const visiblePlannedDebitExpenses = plannedDebitExpenses
+    .filter(isScheduledForSelectedMonth)
+    .map((item) => getEffectiveRecurringItemForPeriod(item, targetPeriodKey));
+  const visiblePlannedCreditExpenses = plannedCreditExpenses
+    .filter(isScheduledForSelectedMonth)
+    .map((item) => getEffectiveRecurringItemForPeriod(item, targetPeriodKey));
 
   // Agrupamento inteligente por data com subtotais diários
   const groupedPlannedIncomes = groupRecurringItemsByDate(
@@ -152,11 +171,11 @@ export default function PlanningPage() {
     targetMonth
   );
 
-  const totalIncomesActive = plannedIncomes
+  const totalIncomesActive = visiblePlannedIncomes
     .filter(isActiveInSelectedMonth)
     .reduce((acc, r) => acc + r.amount, 0);
 
-  const totalDebitExpensesActive = plannedDebitExpenses
+  const totalDebitExpensesActive = visiblePlannedDebitExpenses
     .filter(isActiveInSelectedMonth)
     .reduce((acc, r) => acc + r.amount, 0);
 
@@ -224,7 +243,7 @@ export default function PlanningPage() {
     setNewAccount(isIncome ? checkingAcc : isCredit ? creditAcc : checkingAcc);
     setRecurrenceSelection(isIncome ? "business_day_5" : "fixed_day");
     setIsCustomDayActive(false);
-    setDurationMode(isIncome ? "continuous" : isCredit ? "continuous" : "one-time");
+    setDurationMode(isIncome ? "continuous" : isCredit ? "one-time" : "one-time");
     setInstallmentsCount(3);
     setIsAddingMenuOpen(false);
     setIsAddingModalOpen(true);
@@ -281,17 +300,18 @@ export default function PlanningPage() {
   };
 
   const handleOpenEditModal = (item: RecurringItem) => {
+    const effective = getEffectiveRecurringItemForPeriod(item, targetPeriodKey);
     setEditingItem(item);
-    setEditTitle(item.title);
-    setEditAmount(item.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 }));
-    setEditAccount(item.account);
-    setEditCategory(item.category);
-    setEditType(item.type || "expense");
-    setEditRecurrence(item.recurrenceType || "fixed_day");
-    const isSpecialDay = item.dueDay === 5 || item.dueDay === 10 || item.dueDay === 20;
-    setEditFixedDay(isSpecialDay ? String(item.dueDay) : "10");
-    setEditIsCustomDay(!isSpecialDay && item.recurrenceType !== "business_day_5");
-    setEditCustomDay(String(item.dueDay || 10));
+    setEditTitle(effective.title);
+    setEditAmount(effective.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 }));
+    setEditAccount(effective.account);
+    setEditCategory(effective.category);
+    setEditType(effective.type || "expense");
+    setEditRecurrence(effective.recurrenceType || "fixed_day");
+    const isSpecialDay = effective.dueDay === 5 || effective.dueDay === 10 || effective.dueDay === 20;
+    setEditFixedDay(isSpecialDay ? String(effective.dueDay) : "10");
+    setEditIsCustomDay(!isSpecialDay && effective.recurrenceType !== "business_day_5");
+    setEditCustomDay(String(effective.dueDay || 10));
 
     if (!item.installmentsCount || item.installmentsCount === 0) {
       setEditDurationMode("continuous");
@@ -322,27 +342,74 @@ export default function PlanningPage() {
       computedDay = parseInt(editFixedDay) || 10;
     }
 
-    try {
-      await updateRecurringItem(editingItem.id, {
-        title: editTitle.trim(),
-        amount: cleanAmount,
-        type: editType,
-        account: editAccount,
-        cardId: cards.find((card) => card.name === editAccount)?.id || null,
-        category: editCategory,
-        dueDay: computedDay,
-        recurrenceType: editRecurrence,
-        installmentsCount:
-          editDurationMode === "one-time"
-            ? 1
-            : editDurationMode === "installments"
-              ? editInstallmentsCount
-              : undefined,
+    const updates: Partial<RecurringItem> = {
+      title: editTitle.trim(),
+      amount: cleanAmount,
+      type: editType,
+      account: editAccount,
+      cardId: cards.find((card) => card.name === editAccount)?.id || null,
+      category: editCategory,
+      dueDay: computedDay,
+      recurrenceType: editRecurrence,
+      installmentsCount:
+        editDurationMode === "one-time"
+          ? 1
+          : editDurationMode === "installments"
+            ? editInstallmentsCount
+            : undefined,
+    };
+
+    const isMultiMonth = !editingItem.installmentsCount || editingItem.installmentsCount > 1;
+
+    if (isMultiMonth) {
+      // Abre modal de confirmação de escopo (Apenas nesta ocorrência vs Todas as ocorrências)
+      setScopeEditModal({
+        isOpen: true,
+        item: editingItem,
+        updates,
       });
+      return;
+    }
+
+    try {
+      await updateRecurringItem(editingItem.id, updates);
       setIsEditModalOpen(false);
       setEditingItem(null);
     } catch (error) {
       alert(error instanceof Error ? error.message : "Não foi possível atualizar o planejamento.");
+    }
+  };
+
+  const handleApplyScopeEdit = async (scope: "single" | "all") => {
+    if (!scopeEditModal) return;
+    const { item, updates } = scopeEditModal;
+
+    try {
+      if (scope === "single") {
+        await updateRecurringItemOccurrence(item.id, targetPeriodKey, updates);
+      } else {
+        await updateRecurringItem(item.id, updates);
+      }
+      setScopeEditModal(null);
+      setIsEditModalOpen(false);
+      setEditingItem(null);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Não foi possível atualizar o planejamento.");
+    }
+  };
+
+  const handleApplyDeleteScope = async (scope: "single" | "all") => {
+    if (!itemToDelete) return;
+    try {
+      if (scope === "single") {
+        await deleteRecurringItemOccurrence(itemToDelete.id, targetPeriodKey);
+      } else {
+        await deleteRecurringItem(itemToDelete.id);
+      }
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Não foi possível excluir o planejamento.");
+    } finally {
+      setItemToDelete(null);
     }
   };
 
@@ -1150,37 +1217,48 @@ export default function PlanningPage() {
             className="fixed inset-0 bg-black/45 animate-apple-backdrop"
           />
 
-          <div className="relative w-full max-w-lg bg-white rounded-t-[32px] sm:rounded-[32px] shadow-[0_-8px_40px_rgba(0,0,0,0.18)] z-50 animate-apple-sheet sm:animate-apple-modal max-h-[90dvh] sm:max-h-[85vh] overflow-y-auto font-sans pb-safe touch-scroll">
+          <div className="relative w-full max-w-lg bg-white rounded-t-[32px] sm:rounded-[32px] shadow-[0_-8px_40px_rgba(0,0,0,0.18)] z-50 animate-apple-sheet sm:animate-apple-modal max-h-[92dvh] sm:max-h-[88vh] flex flex-col font-sans overflow-hidden">
             {/* Pílula Apple */}
-            <div className="w-10 h-1 bg-gray-300 rounded-full mx-auto mt-3 mb-1 sm:hidden" />
+            <div className="w-10 h-1 bg-gray-300 rounded-full mx-auto mt-3 mb-1 shrink-0 sm:hidden" />
 
-            {/* HEADER DO MODAL */}
-            <div className="flex items-center justify-between px-6 pt-4 pb-3 border-b border-[#E5E5EA]">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-black/[0.04] flex items-center justify-center text-[#1D1D1F]">
-                  <CalendarDays size={16} strokeWidth={2} />
+            <form onSubmit={handleCreatePlannedItem} className="flex-1 flex flex-col min-h-0">
+              {/* HEADER DO MODAL FIXO NO TOPO */}
+              <div className="flex items-center justify-between px-5 sm:px-6 pt-3 pb-3 border-b border-[#E5E5EA] shrink-0 bg-white">
+                <button
+                  type="button"
+                  onClick={() => setIsAddingModalOpen(false)}
+                  className="text-[#0071E3] hover:text-[#0077ED] font-normal text-sm sm:text-base cursor-pointer active:opacity-60 transition-opacity py-1 px-1"
+                >
+                  Cancelar
+                </button>
+
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-7 h-7 rounded-xl bg-black/[0.04] flex items-center justify-center text-[#1D1D1F] shrink-0">
+                    <CalendarDays size={15} strokeWidth={2} />
+                  </div>
+                  <div className="text-center sm:text-left min-w-0">
+                    <h2 className="text-sm sm:text-base font-semibold text-[#1D1D1F] leading-tight truncate">
+                      {modalType === "income" ? "Novo Recebimento" : "Nova Despesa Planejada"}
+                    </h2>
+                    <span className="text-[11px] font-medium text-[#86868B] block truncate">
+                      Previsão para {activeMonthObj.name}
+                    </span>
+                  </div>
                 </div>
-                <div>
-                  <h2 className="text-base font-semibold text-[#1D1D1F] leading-tight">
-                    {modalType === "income" ? "Novo Recebimento" : "Nova Despesa Planejada"}
-                  </h2>
-                  <span className="text-[11px] font-medium text-[#86868B]">
-                    Previsão para {activeMonthObj.name}
-                  </span>
-                </div>
+
+                <button
+                  type="submit"
+                  disabled={!newTitle.trim() || !newAmount.trim()}
+                  className="text-[#0071E3] hover:text-[#0077ED] font-semibold text-sm sm:text-base cursor-pointer active:opacity-60 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed py-1 px-1"
+                >
+                  Salvar
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsAddingModalOpen(false)}
-                className="text-[#0071E3] hover:text-[#0077ED] font-normal text-sm sm:text-base cursor-pointer active:opacity-60 transition-opacity"
-              >
-                Cancelar
-              </button>
-            </div>
 
-            <form onSubmit={handleCreatePlannedItem}>
-              {/* TABELA AGRUPADA ESTILO APPLE */}
-              <div className="divide-y divide-[#E5E5EA] border-b border-[#E5E5EA] bg-white">
+              {/* CORPO DO FORMULÁRIO COM ROLAGEM */}
+              <div className="flex-1 overflow-y-auto px-0 touch-scroll">
+                {/* TABELA AGRUPADA ESTILO APPLE */}
+                <div className="divide-y divide-[#E5E5EA] border-b border-[#E5E5EA] bg-white">
                 {/* LINHA: TIPO */}
                 <div className="flex items-center px-6 py-3.5">
                   <span className="w-24 text-[11px] font-semibold text-[#86868B] uppercase tracking-wider">
@@ -1516,10 +1594,11 @@ export default function PlanningPage() {
                     )}
                   </select>
                 </div>
+                </div>
               </div>
 
-              {/* BOTÃO SALVAR PLANEJAMENTO */}
-              <div className="p-5 sm:p-6 pb-safe">
+              {/* BOTÃO SALVAR PLANEJAMENTO FIXO NO RODAPÉ */}
+              <div className="p-4 sm:p-5 bg-white/95 backdrop-blur-md border-t border-[#E5E5EA] shrink-0 pb-safe shadow-[0_-4px_16px_rgba(0,0,0,0.04)] z-10">
                 <button
                   type="submit"
                   disabled={!newTitle.trim() || !newAmount.trim()}
@@ -1547,40 +1626,51 @@ export default function PlanningPage() {
             className="fixed inset-0 bg-black/45 animate-apple-backdrop"
           />
 
-          <div className="relative w-full max-w-lg bg-white rounded-t-[32px] sm:rounded-[32px] shadow-[0_-8px_40px_rgba(0,0,0,0.18)] z-50 animate-apple-sheet sm:animate-apple-modal max-h-[90dvh] sm:max-h-[85vh] overflow-y-auto font-sans pb-safe touch-scroll">
+          <div className="relative w-full max-w-lg bg-white rounded-t-[32px] sm:rounded-[32px] shadow-[0_-8px_40px_rgba(0,0,0,0.18)] z-50 animate-apple-sheet sm:animate-apple-modal max-h-[92dvh] sm:max-h-[88vh] flex flex-col font-sans overflow-hidden">
             {/* Pílula Apple */}
-            <div className="w-10 h-1 bg-gray-300 rounded-full mx-auto mt-3 mb-1 sm:hidden" />
+            <div className="w-10 h-1 bg-gray-300 rounded-full mx-auto mt-3 mb-1 shrink-0 sm:hidden" />
 
-            {/* HEADER DO MODAL */}
-            <div className="flex items-center justify-between px-6 pt-4 pb-3 border-b border-[#E5E5EA]">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-black/[0.04] flex items-center justify-center text-[#1D1D1F]">
-                  <Pencil size={15} strokeWidth={2} />
+            <form onSubmit={handleSaveEdit} className="flex-1 flex flex-col min-h-0">
+              {/* HEADER DO MODAL FIXO NO TOPO */}
+              <div className="flex items-center justify-between px-5 sm:px-6 pt-3 pb-3 border-b border-[#E5E5EA] shrink-0 bg-white">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEditModalOpen(false);
+                    setEditingItem(null);
+                  }}
+                  className="text-[#0071E3] hover:text-[#0077ED] font-normal text-sm sm:text-base cursor-pointer active:opacity-60 transition-opacity py-1 px-1"
+                >
+                  Cancelar
+                </button>
+
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-7 h-7 rounded-xl bg-black/[0.04] flex items-center justify-center text-[#1D1D1F] shrink-0">
+                    <Pencil size={15} strokeWidth={2} />
+                  </div>
+                  <div className="text-center sm:text-left min-w-0">
+                    <h2 className="text-sm sm:text-base font-semibold text-[#1D1D1F] leading-tight truncate">
+                      Editar Planejamento
+                    </h2>
+                    <span className="text-[11px] font-medium text-[#86868B] block truncate">
+                      {activeMonthObj.name} de {targetYear}
+                    </span>
+                  </div>
                 </div>
-                <div>
-                  <h2 className="text-base font-semibold text-[#1D1D1F] leading-tight">
-                    Editar Planejamento
-                  </h2>
-                  <span className="text-[11px] font-medium text-[#86868B]">
-                    Ajuste os dados ou efetive adiantado
-                  </span>
-                </div>
+
+                <button
+                  type="submit"
+                  disabled={!editTitle.trim() || !editAmount.trim()}
+                  className="text-[#0071E3] hover:text-[#0077ED] font-semibold text-sm sm:text-base cursor-pointer active:opacity-60 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed py-1 px-1"
+                >
+                  Salvar
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsEditModalOpen(false);
-                  setEditingItem(null);
-                }}
-                className="text-[#0071E3] hover:text-[#0077ED] font-normal text-sm sm:text-base cursor-pointer active:opacity-60 transition-opacity"
-              >
-                Cancelar
-              </button>
-            </div>
 
-            <form onSubmit={handleSaveEdit}>
-              {/* TABELA AGRUPADA ESTILO APPLE */}
-              <div className="divide-y divide-[#E5E5EA] border-b border-[#E5E5EA] bg-white">
+              {/* CORPO DO FORMULÁRIO COM ROLAGEM */}
+              <div className="flex-1 overflow-y-auto px-0 touch-scroll">
+                {/* TABELA AGRUPADA ESTILO APPLE */}
+                <div className="divide-y divide-[#E5E5EA] border-b border-[#E5E5EA] bg-white">
                 {/* LINHA: TIPO */}
                 <div className="flex items-center px-6 py-3.5">
                   <span className="w-24 text-[11px] font-semibold text-[#86868B] uppercase tracking-wider">
@@ -1898,10 +1988,11 @@ export default function PlanningPage() {
                     )}
                   </select>
                 </div>
+                </div>
               </div>
 
-              {/* BOTÕES DE AÇÃO DO MODAL */}
-              <div className="p-5 sm:p-6 pb-safe space-y-2">
+              {/* BOTÕES DE AÇÃO FIXOS NO RODAPÉ */}
+              <div className="p-4 sm:p-5 bg-white/95 backdrop-blur-md border-t border-[#E5E5EA] shrink-0 pb-safe shadow-[0_-4px_16px_rgba(0,0,0,0.04)] z-10 space-y-2">
                 {!editingItem.realizedPeriods?.includes(getPeriodKey(targetYear, targetMonth)) ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <button
@@ -1942,28 +2033,55 @@ export default function PlanningPage() {
         </div>
       )}
 
-      {/* CONFIRMAÇÃO DE EXCLUSÃO APPLE HIG */}
-      <AppleConfirmModal
-        isOpen={Boolean(itemToDelete)}
-        onClose={() => setItemToDelete(null)}
-        onConfirm={async () => {
-          if (itemToDelete) {
-            try {
-              await deleteRecurringItem(itemToDelete.id);
-            } catch (error) {
-              alert(error instanceof Error ? error.message : "Não foi possível excluir o planejamento.");
-            } finally {
-              setItemToDelete(null);
-            }
-          }
-        }}
-        title="Excluir Planejamento"
-        description={`Tem certeza que deseja remover "${itemToDelete?.title || ""}" dos seus compromissos futuros?`}
-        confirmLabel="Excluir"
-        cancelLabel="Manter"
-        variant="danger"
-        iconType="trash"
+      {/* MODAL DE ESCOPO DE EDIÇÃO APPLE HIG (Apenas esta ocorrência vs Todas as ocorrências) */}
+      <AppleScopeModal
+        isOpen={Boolean(scopeEditModal)}
+        onClose={() => setScopeEditModal(null)}
+        onSelectScope={handleApplyScopeEdit}
+        title="Salvar Alterações"
+        description={`Deseja aplicar as alterações em "${scopeEditModal?.updates.title || ""}" apenas no mês de ${activeMonthObj.name} ou em todas as ocorrências deste compromisso?`}
+        singleLabel={`Apenas neste mês (${activeMonthObj.short})`}
+        allLabel="Todas as ocorrências"
+        cancelLabel="Revisar formulário"
+        variant="primary"
       />
+
+      {/* CONFIRMAÇÃO DE EXCLUSÃO APPLE HIG (COM SUPORTE A ESCOPO SE FOR RECORRENTE) */}
+      {itemToDelete && (!itemToDelete.installmentsCount || itemToDelete.installmentsCount > 1) ? (
+        <AppleScopeModal
+          isOpen={Boolean(itemToDelete)}
+          onClose={() => setItemToDelete(null)}
+          onSelectScope={handleApplyDeleteScope}
+          title="Excluir Planejamento"
+          description={`"${itemToDelete.title}" é um compromisso recorrente. Deseja remover apenas a ocorrência de ${activeMonthObj.name} ou todas as ocorrências deste compromisso?`}
+          singleLabel={`Excluir apenas deste mês (${activeMonthObj.short})`}
+          allLabel="Excluir de todos os meses"
+          cancelLabel="Manter compromisso"
+          variant="danger"
+        />
+      ) : (
+        <AppleConfirmModal
+          isOpen={Boolean(itemToDelete)}
+          onClose={() => setItemToDelete(null)}
+          onConfirm={async () => {
+            if (itemToDelete) {
+              try {
+                await deleteRecurringItem(itemToDelete.id);
+              } catch (error) {
+                alert(error instanceof Error ? error.message : "Não foi possível excluir o planejamento.");
+              } finally {
+                setItemToDelete(null);
+              }
+            }
+          }}
+          title="Excluir Planejamento"
+          description={`Tem certeza que deseja remover "${itemToDelete?.title || ""}" dos seus compromissos futuros?`}
+          confirmLabel="Excluir"
+          cancelLabel="Manter"
+          variant="danger"
+          iconType="trash"
+        />
+      )}
     </div>
   );
 }

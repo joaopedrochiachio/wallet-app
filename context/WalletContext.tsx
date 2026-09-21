@@ -40,6 +40,7 @@ import {
   PlanningMonth,
   isRecurringActiveInMonth,
   getRecurringMonthOffset,
+  getEffectiveRecurringItemForPeriod,
 } from "@/lib/utils/dateUtils";
 import {
   calculateCheckingBalance,
@@ -158,6 +159,15 @@ interface WalletContextType {
   deleteTransaction: (id: string) => Promise<void>;
   addRecurringItem: (item: Omit<RecurringItem, "id">) => Promise<void>;
   updateRecurringItem: (id: string, updates: Partial<RecurringItem>) => Promise<void>;
+  updateRecurringItemOccurrence: (
+    id: string,
+    periodKey: string,
+    override: Partial<RecurringItem>
+  ) => Promise<void>;
+  deleteRecurringItemOccurrence: (
+    id: string,
+    periodKey: string
+  ) => Promise<void>;
   toggleRecurringItem: (id: string) => Promise<void>;
   deleteRecurringItem: (id: string) => Promise<void>;
   realizeRecurringItemNow: (
@@ -677,6 +687,44 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     await updateRecurringInFirestore(user.uid, id, updates);
   };
 
+  const updateRecurringItemOccurrence = async (
+    id: string,
+    periodKey: string,
+    override: Partial<RecurringItem>
+  ) => {
+    if (!user) throw new Error("Entre na sua conta para editar o planejamento.");
+    const item = recurringItems.find((candidate) => candidate.id === id);
+    if (!item) return;
+
+    const existingOverrides = item.overrides || {};
+    const currentOverride = existingOverrides[periodKey] || {};
+    const nextOverrides = {
+      ...existingOverrides,
+      [periodKey]: {
+        ...currentOverride,
+        ...override,
+      },
+    };
+
+    await updateRecurringInFirestore(user.uid, id, {
+      overrides: nextOverrides,
+    });
+  };
+
+  const deleteRecurringItemOccurrence = async (
+    id: string,
+    periodKey: string
+  ) => {
+    if (!user) throw new Error("Entre na sua conta para alterar o planejamento.");
+    const item = recurringItems.find((candidate) => candidate.id === id);
+    if (!item) return;
+
+    const nextExcluded = Array.from(new Set([...(item.excludedPeriods || []), periodKey]));
+    await updateRecurringInFirestore(user.uid, id, {
+      excludedPeriods: nextExcluded,
+    });
+  };
+
   const toggleRecurringItem = async (id: string) => {
     if (!user) throw new Error("Entre na sua conta para alterar o planejamento.");
     const item = recurringItems.find((candidate) => candidate.id === id);
@@ -789,7 +837,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         ? 0
         : recurringItems
             .filter((r) => r.type === "income" && activeInTargetMonth(r))
-            .reduce((acc, r) => acc + r.amount, 0);
+            .reduce((acc, r) => acc + getEffectiveRecurringItemForPeriod(r, targetPeriodKey).amount, 0);
 
       const transactionsInTargetMonth = transactions.filter((transaction) => {
         const occurredAt = getLedgerEntryDate(transaction);
@@ -813,7 +861,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         ? 0
         : recurringItems
             .filter((r) => r.type !== "income" && isCheckingRecurring(r) && activeInTargetMonth(r))
-            .reduce((acc, r) => acc + r.amount, 0);
+            .reduce((acc, r) => acc + getEffectiveRecurringItemForPeriod(r, targetPeriodKey).amount, 0);
 
       // Faturas de cartão de crédito detalhadas por cartão
       const creditCards = cards.filter((card) => card.type === "credit");
@@ -830,7 +878,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           const matchingCreditItems = recurringItems.filter((candidate: RecurringItem) =>
             candidate.type !== "income" && !isCheckingRecurring(candidate) && matchesLedgerCard(creditCard, candidate.account, candidate.cardId)
           );
-          for (const item of matchingCreditItems) {
+          for (const rawItem of matchingCreditItems) {
+            const item = getEffectiveRecurringItemForPeriod(rawItem, targetPeriodKey);
             const monthOffset = getRecurringMonthOffset(item, m.year, m.monthIndex);
             const isScheduledForMonth = monthOffset >= 0 && (
               !item.installmentsCount ||
@@ -838,23 +887,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
               monthOffset < item.installmentsCount
             );
 
-            let matchesByInvoiceCycle = false;
-            for (let sourceOffset = -2; sourceOffset <= 0; sourceOffset += 1) {
-              const source = new Date(m.year, m.monthIndex + sourceOffset, 1);
-              const chargeDate = new Date(
-                source.getFullYear(),
-                source.getMonth(),
-                getEffectiveDueDay(item, source.getFullYear(), source.getMonth()),
-                12
-              );
-              const invoiceDueDate = getInvoiceDueDate(creditCard, chargeDate);
-              if (getPeriodKey(invoiceDueDate.getFullYear(), invoiceDueDate.getMonth()) === targetPeriodKey) {
-                matchesByInvoiceCycle = true;
-                break;
-              }
-            }
-
-            if (!item.active || (!isScheduledForMonth && !matchesByInvoiceCycle)) continue;
+            if (!item.active || !isScheduledForMonth) continue;
+            if (item.excludedPeriods?.includes(targetPeriodKey) || item.overrides?.[targetPeriodKey]?.isDeleted) continue;
 
             const isRealizedInPeriod = Boolean(item.realizedPeriods?.includes(targetPeriodKey));
             cardRecurringItems.push(item);
@@ -868,7 +902,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
               )
             );
 
-            if (!isRealizedInPeriod || !isAlreadyInTransactions) {
+            if (!isRealizedInPeriod && !isAlreadyInTransactions) {
               cardRecurringTotal += item.amount;
             }
           }
@@ -988,6 +1022,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         deleteTransaction,
         addRecurringItem,
         updateRecurringItem,
+        updateRecurringItemOccurrence,
+        deleteRecurringItemOccurrence,
         toggleRecurringItem,
         deleteRecurringItem,
         realizeRecurringItemNow,
