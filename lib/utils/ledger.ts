@@ -1,4 +1,9 @@
-import type { CardItem } from "@/types";
+import type { CardItem, RecurringItem } from "@/types";
+import {
+  getPeriodKey,
+  getRecurringMonthOffset,
+  getEffectiveRecurringItemForPeriod,
+} from "./dateUtils.ts";
 
 export interface LedgerEntry {
   id?: string;
@@ -57,15 +62,92 @@ export function calculateCheckingBalance(card: CardItem, entries: LedgerEntry[])
   );
 }
 
-/** Fatura = compras - estornos - baixas, nunca menor que zero. */
-export function calculateCreditInvoice(card: CardItem, entries: LedgerEntry[]): number {
-  const invoice = entries
-    .filter((entry) => isActualEntry(entry) && matchesLedgerCard(card, entry.account, entry.cardId))
-    .reduce(
-      (total, entry) => total + (entry.type === "despesa" ? entry.amount : -entry.amount),
-      0
+/**
+ * Fatura real aberta e comprometimento do cartão de crédito:
+ * - Se recurringItems for fornecido: calcula a fatura da competência aberta atual,
+ *   somando compras faturadas (via calculateInvoiceSchedule) e assinaturas/recorrências
+ *   ativas alocadas a este cartão (ex: Apple, Spotify, iCloud), abatendo baixas e pagamentos efetuados.
+ * - Caso contrário (ou fallback): calcula compras brutas menos estornos e baixas.
+ */
+export function calculateCreditInvoice(
+  card: CardItem,
+  entries: LedgerEntry[],
+  recurringItems: RecurringItem[] = [],
+  referenceDate: Date = new Date()
+): number {
+  if (card.type !== "credit") return 0;
+
+  // 1. Data de vencimento da fatura aberta do cartão
+  const openDueDate = getInvoiceDueDate(card, referenceDate);
+  const openPeriodKey = getPeriodKey(openDueDate.getFullYear(), openDueDate.getMonth());
+
+  // 2. Compras e parcelas faturadas para esta competência ou competências pendentes
+  const schedule = calculateInvoiceSchedule(card, entries, referenceDate);
+  let installmentsAmount = 0;
+  for (const [key, amount] of Object.entries(schedule)) {
+    if (key <= openPeriodKey) {
+      installmentsAmount += amount;
+    }
+  }
+
+  // 3. Assinaturas e cobranças recorrentes ativas que caem nesta fatura
+  let recurringAmount = 0;
+  if (recurringItems && recurringItems.length > 0) {
+    const matchingCreditItems = recurringItems.filter((candidate) =>
+      candidate.type !== "income" &&
+      matchesLedgerCard(card, candidate.account, candidate.cardId)
     );
-  return Math.max(0, invoice);
+
+    for (const rawItem of matchingCreditItems) {
+      const item = getEffectiveRecurringItemForPeriod(rawItem, openPeriodKey);
+      const monthOffset = getRecurringMonthOffset(item, openDueDate.getFullYear(), openDueDate.getMonth());
+      const isScheduledForMonth = monthOffset >= 0 && (
+        !item.installmentsCount ||
+        item.installmentsCount <= 0 ||
+        monthOffset < item.installmentsCount
+      );
+
+      if (!item.active || !isScheduledForMonth) continue;
+      if (item.excludedPeriods?.includes(openPeriodKey) || item.overrides?.[openPeriodKey]?.isDeleted) continue;
+
+      const isRealizedInPeriod = Boolean(item.realizedPeriods?.includes(openPeriodKey));
+      const isAlreadyInTransactions = entries.some((t: any) =>
+        t.recurringItemId === item.id && (
+          t.periodKey === openPeriodKey ||
+          (calculateInvoiceSchedule(card, [t], referenceDate)[openPeriodKey] || 0) > 0
+        )
+      );
+
+      if (!isRealizedInPeriod && !isAlreadyInTransactions) {
+        recurringAmount += item.amount;
+      }
+    }
+  }
+
+  // 4. Pagamentos de fatura da conta corrente já efetuados nesta competência
+  const paidAmount = entries
+    .filter((t: any) =>
+      t.type === "despesa" &&
+      t.kind === "invoice_payment" &&
+      (t.relatedCardId === card.id || matchesLedgerCard(card, t.account, t.cardId)) &&
+      (t.periodKey === openPeriodKey || (getLedgerEntryDate(t) && getPeriodKey(getLedgerEntryDate(t)!.getFullYear(), getLedgerEntryDate(t)!.getMonth()) === openPeriodKey))
+    )
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  const totalOwed = Math.max(0, installmentsAmount + recurringAmount - paidAmount);
+
+  // Fallback: se não houver faturas distribuídas mas houver despesas avulsas brutas
+  if (totalOwed === 0 && schedule[openPeriodKey] === undefined && recurringAmount === 0) {
+    const rawInvoice = entries
+      .filter((entry) => isActualEntry(entry) && matchesLedgerCard(card, entry.account, entry.cardId))
+      .reduce(
+        (total, entry) => total + (entry.type === "despesa" ? entry.amount : -entry.amount),
+        0
+      );
+    return Math.max(0, rawInvoice);
+  }
+
+  return totalOwed;
 }
 
 export function getLedgerEntryDate(entry: LedgerEntry): Date | null {

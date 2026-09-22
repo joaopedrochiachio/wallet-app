@@ -74,7 +74,7 @@ export function BankCard({
               Limite Disponível
             </span>
             <div className={`text-base font-semibold tracking-tight ${theme.textColor}`}>
-              R$ {((card.limit || 0) - (card.spent || 0)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+              R$ {Math.max(0, (card.limit || 0) - (card.spent || 0)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
             </div>
           </div>
         ) : null}

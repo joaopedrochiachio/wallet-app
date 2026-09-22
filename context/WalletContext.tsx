@@ -436,10 +436,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const cardInvoices = useMemo(() => {
     const invoiceMap: Record<string, number> = {};
     for (const card of cards.filter((item) => item.type === "credit")) {
-      invoiceMap[card.id] = calculateCreditInvoice(card, transactions);
+      invoiceMap[card.id] = calculateCreditInvoice(card, transactions, recurringItems);
     }
     return invoiceMap;
-  }, [transactions, cards]);
+  }, [transactions, cards, recurringItems]);
 
   const checkingBalances = useMemo(() => {
     const result: Record<string, number> = {};

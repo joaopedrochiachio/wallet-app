@@ -1170,6 +1170,20 @@ export default function PlanningPage() {
                             <span className="text-base sm:text-lg font-semibold text-[#1D1D1F] tracking-tight">
                               R$ {formatCurrency(ci.totalInvoice)}
                             </span>
+                            {(() => {
+                              const matchingCard = cards.find((c) => c.id === ci.cardId);
+                              const limit = matchingCard?.limit || 0;
+                              if (limit <= 0) return null;
+                              const available = Math.max(0, limit - ci.totalInvoice);
+                              return (
+                                <span className="text-[10px] text-[#86868B] block mt-0.5">
+                                  Limite: R$ {formatCurrency(limit)} · Disp:{" "}
+                                  <strong className="text-emerald-700 font-semibold">
+                                    R$ {formatCurrency(available)}
+                                  </strong>
+                                </span>
+                              );
+                            })()}
                           </div>
                           <button
                             type="button"

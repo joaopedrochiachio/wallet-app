@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   calculateCheckingBalance,
+  calculateCreditInvoice,
   calculateInvoiceSchedule,
   calculateMonthlyAccountFlow,
   calculateProjectedBalance,
@@ -1009,6 +1010,87 @@ test("agendamento parcelado flexível suporta qualquer número de parcelas (ex: 
   assert.equal(isRecurringActiveInMonth(purchase36x, 2029, 7), true);
   // Mês 36 (Setembro/2029) -> inativo (após término das 36 parcelas)
   assert.equal(isRecurringActiveInMonth(purchase36x, 2029, 8), false);
+});
+
+test("validação de limite e fatura aberta do cartão: compras faturadas + assinaturas resultam em fatura e limite disponível sincronizados", () => {
+  const nubankCard = {
+    id: "card-nubank",
+    name: "Nubank",
+    type: "credit",
+    limit: 800,
+    closingDay: 1,
+    dueDay: 10,
+  };
+
+  // Compras realizadas/parceladas na fatura aberta (fechamento 01/10, vencimento 10/10)
+  const transactions = [
+    {
+      id: "tx-1",
+      amount: 300.0,
+      type: "despesa",
+      account: "Nubank",
+      cardId: "card-nubank",
+      occurredAt: "2026-09-15T12:00:00.000Z",
+    },
+    {
+      id: "tx-2",
+      amount: 174.13,
+      type: "despesa",
+      account: "Nubank",
+      cardId: "card-nubank",
+      occurredAt: "2026-09-18T12:00:00.000Z",
+    },
+  ]; // Total compras = 474.13
+
+  // Assinaturas ativas no cartão Nubank
+  const recurringItems = [
+    {
+      id: "rec-spotify",
+      title: "Spotify",
+      amount: 31.9,
+      type: "expense",
+      account: "Nubank",
+      cardId: "card-nubank",
+      dayOfMonth: 5,
+      active: true,
+      startYear: 2026,
+      startMonth: 0,
+    },
+    {
+      id: "rec-apple",
+      title: "Apple Services",
+      amount: 19.9,
+      type: "expense",
+      account: "Nubank",
+      cardId: "card-nubank",
+      dayOfMonth: 12,
+      active: true,
+      startYear: 2026,
+      startMonth: 0,
+    },
+    {
+      id: "rec-icloud",
+      title: "iCloud Storage",
+      amount: 5.9,
+      type: "expense",
+      account: "Nubank",
+      cardId: "card-nubank",
+      dayOfMonth: 20,
+      active: true,
+      startYear: 2026,
+      startMonth: 0,
+    },
+  ]; // Total assinaturas = 57.70
+
+  const refDate = new Date("2026-09-22T12:00:00.000Z");
+  const invoice = calculateCreditInvoice(nubankCard, transactions, recurringItems, refDate);
+
+  // Fatura esperada: 474.13 + 57.70 = 531.83
+  assert.equal(Math.round(invoice * 100) / 100, 531.83);
+
+  // Limite disponível esperado: 800 - 531.83 = 268.17
+  const availableLimit = Math.max(0, (nubankCard.limit || 0) - invoice);
+  assert.equal(Math.round(availableLimit * 100) / 100, 268.17);
 });
 
 
