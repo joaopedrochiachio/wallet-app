@@ -121,6 +121,7 @@ export interface FinancialTelemetry {
   topSpendItems?: SpecificSpendItem[];
   recentExpenses?: Array<{ title: string; amount: number; date: string; category: string }>;
   liquidityAnalysis?: LiquidityAnalysis;
+  historicalVariableBaseline?: number;
 }
 
 export interface MonthProjectionSummary {
@@ -170,8 +171,10 @@ export interface SafeFinancialContext {
     persona: FinancialPersonaId;
     riskTolerance: RiskToleranceId;
     aiTone: AIToneId;
+    primaryFocus: string;
     maxCommitmentAlertPercent: number;
   };
+  historicalVariableBaseline: number;
   cashflow: FinancialTelemetry["cashflow"];
   credit: {
     totalLimit: number;
@@ -325,41 +328,93 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
     }))
     .sort((a, b) => b.total - a.total);
 
-  // Agrupamento por item/estabelecimento específico de despesa (ex: McDonald's, Cantina, iFood, Uber, etc.)
+  // Agrupamento autodidata por item/estabelecimento de despesa (dinâmico e sem marcas fixas)
   const nonSettlementExpenses = expenseTransactions.filter(
     (t) => t.kind !== "invoice_payment" && t.kind !== "invoice_settlement"
   );
-  const spendMap = new Map<string, { title: string; total: number; count: number; category: string }>();
+
+  interface SpendCluster {
+    displayTitle: string;
+    cleanTokens: string[];
+    compactKey: string;
+    total: number;
+    count: number;
+    category: string;
+  }
+
+  const clusters: SpendCluster[] = [];
+  const GENERIC_PREFIXES = new Set([
+    "supermercado",
+    "mercado",
+    "posto",
+    "loja",
+    "drogaria",
+    "farmacia",
+    "restaurante",
+    "bar",
+    "auto",
+    "padaria",
+  ]);
+
   for (const t of nonSettlementExpenses) {
-    const rawTitle = t.title?.trim() || "Outras despesas";
-    const normalizedKey = rawTitle
+    const rawTitle = t.title?.trim() || "Despesa Diversa";
+    const clean = rawTitle
       .toLowerCase()
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z0-9]/g, "");
+      .replace(/[^a-z0-9\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const compact = clean.replace(/\s+/g, "");
+    const tokens = clean.split(" ").filter((w) => w.length > 1);
 
-    // Normalização amigável de marcas populares para exibição no dashboard e IA
+    // Encontra cluster compatível dinamicamente
+    let matched = clusters.find((c) => {
+      // 1. Chave compacta idêntica (ex: "mcdonalds" vs "mc donalds")
+      if (c.compactKey === compact) return true;
+      // 2. Chave compacta inicia com a outra (comprimento >= 4)
+      if (
+        (c.compactKey.length >= 4 && compact.startsWith(c.compactKey)) ||
+        (compact.length >= 4 && c.compactKey.startsWith(compact))
+      ) {
+        return true;
+      }
+      // 3. Comparação de tokens com tratamento para prefixos genéricos
+      if (tokens.length > 0 && c.cleanTokens.length > 0) {
+        const firstToken = tokens[0];
+        const cFirstToken = c.cleanTokens[0];
+        if (firstToken === cFirstToken) {
+          if (GENERIC_PREFIXES.has(firstToken)) {
+            const secondToken = tokens[1];
+            const cSecondToken = c.cleanTokens[1];
+            return Boolean(secondToken && secondToken === cSecondToken);
+          }
+          if (firstToken.length >= 4) {
+            return true;
+          }
+        }
+      }
+      return false;
+    });
+
     let displayTitle = rawTitle;
-    if (normalizedKey.includes("mcdonald") || normalizedKey.includes("mcdonalds")) {
-      displayTitle = "McDonald's";
-    } else if (normalizedKey === "cantina" || normalizedKey.includes("cantina")) {
-      displayTitle = "Cantina";
-    } else if (normalizedKey === "ifood" || normalizedKey.includes("ifood")) {
-      displayTitle = "iFood";
-    } else if (normalizedKey === "uber" || normalizedKey.includes("uber")) {
-      displayTitle = "Uber";
-    } else if (normalizedKey === "burgerking" || normalizedKey === "bk") {
-      displayTitle = "Burger King";
-    }
+    if (compact.includes("mcdonald")) displayTitle = "McDonald's";
+    else if (compact === "bk" || compact.includes("burgerking")) displayTitle = "Burger King";
+    else if (compact === "ifood") displayTitle = "iFood";
+    else if (compact === "uber") displayTitle = "Uber";
+    else if (compact === "cantina") displayTitle = "Cantina";
 
-    const mapKey = displayTitle.toLowerCase();
-    const existing = spendMap.get(mapKey);
-    if (existing) {
-      existing.total += t.amount;
-      existing.count += 1;
+    if (matched) {
+      matched.total += t.amount;
+      matched.count += 1;
+      if (displayTitle.length < matched.displayTitle.length && displayTitle.length >= 3) {
+        matched.displayTitle = displayTitle;
+      }
     } else {
-      spendMap.set(mapKey, {
-        title: displayTitle,
+      clusters.push({
+        displayTitle,
+        cleanTokens: tokens,
+        compactKey: compact,
         total: t.amount,
         count: 1,
         category: t.category || "Outros",
@@ -367,9 +422,9 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
     }
   }
 
-  const topSpendItems: SpecificSpendItem[] = Array.from(spendMap.values())
+  const topSpendItems: SpecificSpendItem[] = clusters
     .map((item) => ({
-      title: item.title,
+      title: item.displayTitle,
       total: item.total,
       count: item.count,
       category: item.category,
@@ -444,6 +499,9 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
   const savingsRatePercent =
     monthIncome > 0 ? Math.round((Math.max(0, netCashflow) / monthIncome) * 100) : 0;
 
+  // Baseline de gastos variáveis do dia a dia (excluindo compromissos fixos e parcelas de fatura)
+  const historicalVariableBaseline = Math.max(0, monthExpense - recurringMonthlyTotal);
+
   return {
     user: {
       name: userProfile?.name || "Usuário",
@@ -488,6 +546,7 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
     topSpendItems,
     recentExpenses,
     liquidityAnalysis,
+    historicalVariableBaseline,
   };
 }
 
@@ -603,14 +662,36 @@ export function createSafeFinancialContext(telemetry: FinancialTelemetry): SafeF
     return "Outro meio";
   };
 
+  const historicalVariableBaseline = safeNumber(
+    telemetry.historicalVariableBaseline,
+    Math.max(
+      0,
+      safeNumber(telemetry.cashflow.monthExpenseRealized) -
+        safeNumber(telemetry.commitments.recurringMonthlyTotal)
+    )
+  );
+
+  let safePrimaryFocus = redactPersonalData(
+    telemetry.user.primaryFocus || "Equilíbrio financeiro e metas"
+  ).trim();
+  const userPersonalNameParts = (telemetry.user.name || "")
+    .split(/\s+/)
+    .filter((p) => p.length > 2);
+  for (const part of userPersonalNameParts) {
+    const reg = new RegExp(part, "gi");
+    safePrimaryFocus = safePrimaryFocus.replace(reg, "Usuário");
+  }
+
   return {
     profile: {
       monthlyIncomeBase: safeNumber(telemetry.user.monthlyIncomeBase),
       persona,
       riskTolerance,
       aiTone,
+      primaryFocus: safePrimaryFocus,
       maxCommitmentAlertPercent: safeNumber(telemetry.user.maxCommitmentAlertPercent, 60),
     },
+    historicalVariableBaseline,
     cashflow: {
       checkingBalance: safeNumber(telemetry.cashflow.checkingBalance),
       monthIncomeRealized: safeNumber(telemetry.cashflow.monthIncomeRealized),
@@ -660,17 +741,14 @@ export function createSafeFinancialContext(telemetry: FinancialTelemetry): SafeF
       projectedFreeBalance: safeNumber(p.projectedFreeBalance),
     })),
     topSpendItems: (telemetry.topSpendItems || []).map((item) => {
-      const isCommercial = isCommonCommercialTerm(item.title);
-      let safeTitle = item.title;
-      if (!isCommercial) {
-        const redacted = redactPersonalData(item.title);
-        const nameParts = (telemetry.user.name || "").split(/\s+/).filter((p) => p.length > 2);
-        const containsUserName = nameParts.some((p) => item.title.toLowerCase().includes(p.toLowerCase()));
-        if (redacted.includes("[") || containsUserName) {
-          safeTitle = `${normalizeFinancialCategory(item.category)} (Gasto específico)`;
-        } else {
-          safeTitle = normalizeFinancialCategory(item.category);
-        }
+      // Preserva o nome do titular/estabelecimento real, removendo apenas identificadores pessoais do usuário
+      let safeTitle = redactPersonalData(item.title || "").trim();
+      const nameParts = (telemetry.user.name || "").split(/\s+/).filter((p) => p.length > 2);
+      if (nameParts.some((p) => safeTitle.toLowerCase().includes(p.toLowerCase()))) {
+        safeTitle = `${normalizeFinancialCategory(item.category)} (Transferência Própria)`;
+      }
+      if (!safeTitle) {
+        safeTitle = normalizeFinancialCategory(item.category);
       }
       return {
         title: safeTitle,
@@ -681,9 +759,13 @@ export function createSafeFinancialContext(telemetry: FinancialTelemetry): SafeF
       };
     }),
     recentExpenses: (telemetry.recentExpenses || []).map((item) => {
-      const isCommercial = isCommonCommercialTerm(item.title);
-      let safeTitle = item.title;
-      if (!isCommercial) {
+      // Preserva a descrição real da despesa, removendo dados pessoais sensíveis
+      let safeTitle = redactPersonalData(item.title || "").trim();
+      const nameParts = (telemetry.user.name || "").split(/\s+/).filter((p) => p.length > 2);
+      if (nameParts.some((p) => safeTitle.toLowerCase().includes(p.toLowerCase()))) {
+        safeTitle = `${normalizeFinancialCategory(item.category)} (Transferência Própria)`;
+      }
+      if (!safeTitle) {
         safeTitle = normalizeFinancialCategory(item.category);
       }
       return {
@@ -874,20 +956,38 @@ Você atua como um parceiro e consultor financeiro de alto nível que trabalha l
      * "Neste mês, sua conta está superavitária em +R$ X (entradas menos despesas em débito/PIX)."
      * "Porém, para o mês seguinte, você já acumula R$ Y na fatura do cartão, o que consumirá Z% da sua renda assim que vencer."
 
-2. IDENTIFICAÇÃO DE PADRÕES POR DESCRIÇÃO DE GASTOS (HÁBITOS REAIS):
-   - Inspecione a lista nominal de gastos específicos e estabelecimentos frequentes (por exemplo: "McDonald's", "Cantina", "iFood", "Uber", cafeterias, delivery, etc.).
-   - Aponte os padrões de consumo com contagem de vezes e valor somado: "Identifiquei X compras no McDonald's e Cantina totalizando R$ Y este mês."
+2. ANALISTA AUTODIDATA: IDENTIFICAÇÃO DE PADRÕES POR DESCRIÇÃO REAL DOS GASTOS
+   - O Analista é AUTODIDATA e dinâmico: ele identifica padrões, micro-ralos e hábitos de consumo a partir da descrição e do titular de cada lançamento (qualquer estabelecimento, fornecedor, aplicativo ou comércio que o usuário frequente).
+   - NUNCA se limite a marcas específicas: examine todo o histórico e aponte os padrões de consumo que efetivamente se repetem, quantificando o número de vezes e o valor total somado (ex: "Identifiquei X compras em [Estabelecimento/Serviço] totalizando R$ Y este mês").
    - Alerte quando esses gastos pontuais repetidos estiverem corroendo a sobra do mês de forma invisível.
 
-3. GASTOS PARCELADOS AO LONGO DO TEMPO (MATURIDADE CONTÁBIL - NÃO ALARMISMO):
+3. REALITY CHECK DE MESES FUTUROS (SEM ILUSÕES CONTÁBEIS E SEM EXTREMOS):
+   - Nas projeções futuras do livro-caixa (ex: próximos meses ou final do ano, como Dezembro), constam apenas as despesas fixas e as parcelas de cartão já agendadas até o momento.
+   - O Analista DEVE ponderar que o usuário naturalmente terá despesas variáveis do dia a dia (alimentação, transporte, lazer, imprevistos) que ainda não foram lançadas.
+   - O baseline histórico de gastos variáveis do usuário é de aproximadamente **R$ ${context.historicalVariableBaseline.toFixed(2)}/mês**.
+   - Ao analisar ou projetar meses futuros, NÃO tome a ausência de compras como garantia de sobra bruta total e nem como uma verdade absoluta.
+   - Oriente com responsabilidade de CFO: aponte o saldo livre nominal projetado, mas faça a ressalva preventiva ponderando que, descontando o gasto variável diário habitual (~R$ ${context.historicalVariableBaseline.toFixed(2)}), a folga real de caixa será menor. Isso evita falsas sensações de dinheiro sobrando para assumir novos parcelamentos.
+
+4. PERFIL INTEGRAL DO CLIENTE (ALINHAMENTO ESTRATÉGICO):
+   - Renda Fixa Base Mensal: R$ ${profile.monthlyIncomeBase.toFixed(2)}
+   - Arquétipo / Persona: ${profile.persona.toUpperCase()}
+   - Tolerância a Risco: ${profile.riskTolerance.toUpperCase()}
+   - Foco Primário / Meta Declarada: "${profile.primaryFocus}"
+   - Teto Máximo de Comprometimento Recomendado: ${profile.maxCommitmentAlertPercent}%
+   - Avalie sempre se o ritmo atual de compras e faturas está coerente com a tolerância ao risco e acelera ou atrasa o foco primário do cliente.
+
+5. GASTOS PARCELADOS AO LONGO DO TEMPO (MATURIDADE CONTÁBIL - NÃO ALARMISMO):
    - Entenda a realidade financeira: despesas no cartão costumam ser parceladas e divididas mês a mês.
    - Ter um total parcelado futuro de R$ 2.000, R$ 3.000 ou mais distribuído nos próximos meses NÃO significa que o usuário está no vermelho ou em situação crítica!
    - Separe as datas e meses específicos de cada vencimento de fatura. Se o saldo livre de cada mês permanecer positivo após pagar a fatura e as contas fixas, declare com clareza que o fluxo de caixa está saudável e sob controle.
    - Apenas alerte se em algum mês específico o total de faturas somado às contas fixas for superior à renda, gerando déficit contábil.
 
 === CONTEXTO FINANCEIRO DO USUÁRIO ===
-1. RENDA & FLUXO DE CAIXA REALIZADO:
+1. PERFIL DO CLIENTE & FLUXO DE CAIXA REALIZADO:
    - Renda Base Mensal: R$ ${profile.monthlyIncomeBase.toFixed(2)}
+   - Foco Primário Declarado: "${profile.primaryFocus}"
+   - Arquétipo Financeiro: ${profile.persona.toUpperCase()} | Risco: ${profile.riskTolerance.toUpperCase()}
+   - Baseline Estimado de Gastos Variáveis Habituais: R$ ${context.historicalVariableBaseline.toFixed(2)}/mês
    - Saldo Atual na Conta Corrente: R$ ${cashflow.checkingBalance.toFixed(2)}
    - Entradas Realizadas no Mês: R$ ${cashflow.monthIncomeRealized.toFixed(2)}
    - Saídas Realizadas no Mês (Conta/Débito): R$ ${cashflow.monthExpenseRealized.toFixed(2)}

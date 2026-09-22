@@ -771,6 +771,102 @@ export default function AIAnalystPage() {
                   </div>
                 </section>
 
+                {/* PERFIL DO CLIENTE & ALINHAMENTO ESTRATÉGICO */}
+                {diagnosis?.clientProfileAssessment && (
+                  <section className="bg-white rounded-[28px] p-6 sm:p-7 border border-black/[0.04] shadow-[0_8px_30px_rgba(0,0,0,0.03)] space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
+                          <Sliders size={17} />
+                        </div>
+                        <div>
+                          <h2 className="text-sm font-semibold text-[#1D1D1F]">
+                            Perfil Estratégico & Metas
+                          </h2>
+                          <p className="text-[11px] text-[#86868B]">
+                            Alinhamento entre sua renda fixa base, arquétipo financeiro e metas
+                          </p>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full bg-purple-50 text-purple-700 border border-purple-200/50">
+                        {diagnosis.clientProfileAssessment.persona}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                      <div className="p-3.5 rounded-2xl bg-[#FAFAFC] border border-black/[0.03]">
+                        <span className="text-[10px] uppercase font-semibold text-[#86868B] tracking-wider block">
+                          Renda Fixa Mensal
+                        </span>
+                        <strong className="mt-1 block text-base font-semibold text-[#1D1D1F]">
+                          R$ {formatCurrency(diagnosis.clientProfileAssessment.monthlyIncomeBase)}
+                        </strong>
+                      </div>
+                      <div className="p-3.5 rounded-2xl bg-[#FAFAFC] border border-black/[0.03]">
+                        <span className="text-[10px] uppercase font-semibold text-[#86868B] tracking-wider block">
+                          Tolerância a Risco
+                        </span>
+                        <strong className="mt-1 block text-base font-semibold text-[#1D1D1F]">
+                          {diagnosis.clientProfileAssessment.riskTolerance}
+                        </strong>
+                      </div>
+                      <div className="p-3.5 rounded-2xl bg-[#FAFAFC] border border-black/[0.03]">
+                        <span className="text-[10px] uppercase font-semibold text-[#86868B] tracking-wider block">
+                          Foco Primário
+                        </span>
+                        <strong className="mt-1 block text-xs font-semibold text-[#1D1D1F] truncate" title={diagnosis.clientProfileAssessment.primaryFocus}>
+                          {diagnosis.clientProfileAssessment.primaryFocus}
+                        </strong>
+                      </div>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-[#FAFAFC] border border-black/[0.04] space-y-1.5 text-xs">
+                      <span className="font-semibold text-[#1D1D1F] flex items-center gap-1.5">
+                        <ShieldCheck size={14} className="text-purple-600" />
+                        <span>Diagnóstico de Alinhamento com o Perfil</span>
+                      </span>
+                      <p className="text-[#86868B] leading-relaxed">
+                        {diagnosis.clientProfileAssessment.profileAlignmentInsight}
+                      </p>
+                      {diagnosis.clientProfileAssessment.recommendedActionForGoal && (
+                        <p className="text-[#1D1D1F] font-medium pt-1 border-t border-black/5">
+                          🎯 <strong>Ação tática recomendada:</strong> {diagnosis.clientProfileAssessment.recommendedActionForGoal}
+                        </p>
+                      )}
+                    </div>
+                  </section>
+                )}
+
+                {/* REALITY CHECK PARA MESES FUTUROS (PREVENÇÃO CONTÁBIL) */}
+                {diagnosis?.futureMonthsRealityCheck && (
+                  <section className="bg-white rounded-[28px] p-6 sm:p-7 border border-black/[0.04] shadow-[0_8px_30px_rgba(0,0,0,0.03)] space-y-3.5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                          <CalendarClock size={17} />
+                        </div>
+                        <div>
+                          <h2 className="text-sm font-semibold text-[#1D1D1F]">
+                            Previsão Realista para Meses Futuros
+                          </h2>
+                          <p className="text-[11px] text-[#86868B]">
+                            Ponderação de gastos variáveis do dia a dia nas projeções futuras (ex: Dezembro)
+                          </p>
+                        </div>
+                      </div>
+                      {diagnosis.futureMonthsRealityCheck.historicalVariableBaseline > 0 && (
+                        <span className="text-[11px] font-semibold px-3 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200/60 self-start sm:self-auto">
+                          Gasto variável habitual: ~R$ {formatCurrency(diagnosis.futureMonthsRealityCheck.historicalVariableBaseline)}/mês
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-amber-50/50 border border-amber-200/50 text-xs text-[#1D1D1F] leading-relaxed">
+                      <p>{diagnosis.futureMonthsRealityCheck.realityNote}</p>
+                    </div>
+                  </section>
+                )}
+
                 {/* 2. LIQUIDEZ REAL: HOJE vs PRÓXIMO MÊS (APPLE CARD WIDGET) */}
                 <section className="bg-white rounded-[28px] p-6 sm:p-7 border border-black/[0.04] shadow-[0_8px_30px_rgba(0,0,0,0.03)] space-y-4">
                   <div className="flex items-center justify-between">

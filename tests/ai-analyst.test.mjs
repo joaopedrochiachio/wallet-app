@@ -757,4 +757,110 @@ test("buildFinancialAnalystSystemPrompt estabelece postura de CFO sem textinho e
   assert.ok(prompt.includes("Cantina"));
 });
 
+test("synthesizeFinancialTelemetry agrupa dinamicamente qualquer estabelecimento sem marcas fixas e calcula baseline de gastos variáveis", () => {
+  const mockTransactions = [
+    { id: "tx-1", title: "Padaria Central", amount: 25.0, type: "despesa", category: "Outros", account: "Conta corrente", date: "2026-09-02" },
+    { id: "tx-2", title: "padaria central paes", amount: 15.0, type: "despesa", category: "Outros", account: "Conta corrente", date: "2026-09-04" },
+    { id: "tx-3", title: "Posto Shell Centro", amount: 180.0, type: "despesa", category: "Transporte", account: "Cartão 1", date: "2026-09-08" },
+    { id: "tx-4", title: "posto shell combustivel", amount: 120.0, type: "despesa", category: "Transporte", account: "Cartão 1", date: "2026-09-15" },
+    { id: "tx-5", title: "Posto Ipiranga", amount: 90.0, type: "despesa", category: "Transporte", account: "Cartão 1", date: "2026-09-18" },
+  ];
+
+  const telemetry = synthesizeFinancialTelemetry({
+    cards: [],
+    transactions: mockTransactions,
+    recurringItems: [{ id: "rec-1", title: "Aluguel", amount: 1500, dueDay: 10, account: "Conta", category: "Moradia", active: true }],
+    goals: [],
+    mainBalance: 4000,
+    monthIncome: 7000,
+    monthExpense: 1930, // 1500 fixo + 430 variável
+  });
+
+  assert.ok(telemetry.topSpendItems);
+  // Padaria Central deve agrupar as duas compras
+  const padaria = telemetry.topSpendItems.find((i) => i.title.toLowerCase().includes("padaria central"));
+  assert.ok(padaria, "Deveria agrupar Padaria Central");
+  assert.equal(padaria.count, 2);
+  assert.equal(padaria.total, 40.0);
+
+  // Posto Shell deve agrupar as duas compras do Shell separadamente do Ipiranga
+  const shell = telemetry.topSpendItems.find((i) => i.title.toLowerCase().includes("shell"));
+  assert.ok(shell, "Deveria agrupar Posto Shell");
+  assert.equal(shell.count, 2);
+  assert.equal(shell.total, 300.0);
+
+  const ipiranga = telemetry.topSpendItems.find((i) => i.title.toLowerCase().includes("ipiranga"));
+  assert.ok(ipiranga, "Deveria manter Posto Ipiranga separado");
+  assert.equal(ipiranga.count, 1);
+  assert.equal(ipiranga.total, 90.0);
+
+  // Baseline de gastos variáveis: 1930 - 1500 = 430
+  assert.equal(telemetry.historicalVariableBaseline, 430);
+});
+
+test("createSafeFinancialContext preserva nomes reais de titulares e descrições sem substituir por Outros", () => {
+  const telemetry = synthesizeFinancialTelemetry({
+    userProfile: {
+      name: "Lucas Pereira",
+      monthlyIncomeBase: 8000,
+      persona: "optimizer",
+      riskTolerance: "moderate",
+      aiTone: "analytical",
+      primaryFocus: "Comprar Apartamento",
+      maxCommitmentAlertPercent: 60,
+    },
+    cards: [],
+    transactions: [
+      { id: "tx-1", title: "Livraria Cultura", amount: 120, type: "despesa", category: "Outros", account: "Conta corrente", date: "2026-09-02" },
+      { id: "tx-2", title: "Mecânico do Bairro", amount: 350, type: "despesa", category: "Outros", account: "Conta corrente", date: "2026-09-05" },
+    ],
+    recurringItems: [],
+    goals: [],
+    mainBalance: 5000,
+    monthIncome: 8000,
+    monthExpense: 470,
+  });
+
+  const safeContext = createSafeFinancialContext(telemetry);
+
+  // Titulares reais NÃO devem ser 'Outros'
+  assert.ok(safeContext.topSpendItems.some((i) => i.title === "Livraria Cultura"));
+  assert.ok(safeContext.topSpendItems.some((i) => i.title === "Mecânico do Bairro"));
+  assert.ok(safeContext.recentExpenses.some((i) => i.title === "Livraria Cultura"));
+  assert.ok(safeContext.recentExpenses.some((i) => i.title === "Mecânico do Bairro"));
+});
+
+test("buildFinancialAnalystSystemPrompt inclui Reality Check de meses futuros e perfil completo do cliente", () => {
+  const telemetry = synthesizeFinancialTelemetry({
+    userProfile: {
+      name: "Marina Lima",
+      monthlyIncomeBase: 9000,
+      persona: "scaler",
+      riskTolerance: "high",
+      aiTone: "direct",
+      primaryFocus: "Investir 30% da renda",
+      maxCommitmentAlertPercent: 55,
+    },
+    cards: [],
+    transactions: [
+      { id: "tx-1", title: "Restaurante Paris", amount: 300, type: "despesa", category: "Alimentação", account: "Cartão 1", date: "2026-09-02" },
+    ],
+    recurringItems: [{ id: "rec-1", title: "Internet Fibra", amount: 150, dueDay: 5, account: "Conta", category: "Assinaturas", active: true }],
+    goals: [],
+    mainBalance: 4000,
+    monthIncome: 9000,
+    monthExpense: 450,
+  });
+
+  const safeContext = createSafeFinancialContext(telemetry);
+  const prompt = buildFinancialAnalystSystemPrompt(safeContext);
+
+  assert.ok(prompt.includes("ANALISTA AUTODIDATA: IDENTIFICAÇÃO DE PADRÕES POR DESCRIÇÃO REAL DOS GASTOS"));
+  assert.ok(prompt.includes("REALITY CHECK DE MESES FUTUROS (SEM ILUSÕES CONTÁBEIS E SEM EXTREMOS)"));
+  assert.ok(prompt.includes("PERFIL INTEGRAL DO CLIENTE (ALINHAMENTO ESTRATÉGICO)"));
+  assert.ok(prompt.includes("Baseline Estimado de Gastos Variáveis Habituais: R$ 300.00/mês"));
+  assert.ok(prompt.includes("Investir 30% da renda"));
+  assert.ok(prompt.includes("SCALER"));
+});
+
 

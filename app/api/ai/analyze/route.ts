@@ -64,6 +64,21 @@ export interface InstallmentScheduleItem {
   explanation: string;
 }
 
+export interface ClientProfileAssessment {
+  persona: string;
+  riskTolerance: string;
+  monthlyIncomeBase: number;
+  primaryFocus: string;
+  commitmentLimitPercent: number;
+  profileAlignmentInsight: string;
+  recommendedActionForGoal?: string;
+}
+
+export interface FutureMonthsRealityCheck {
+  historicalVariableBaseline: number;
+  realityNote: string;
+}
+
 export interface FinancialDiagnosis {
   healthScore: number;
   healthStatus: "excellent" | "healthy" | "attention" | "critical";
@@ -74,6 +89,8 @@ export interface FinancialDiagnosis {
   specificExpensesAlerts?: SpecificExpenseAlert[];
   cashflowWindow?: CashflowWindowSummary;
   installmentSchedule?: InstallmentScheduleItem[];
+  clientProfileAssessment?: ClientProfileAssessment;
+  futureMonthsRealityCheck?: FutureMonthsRealityCheck;
 }
 
 function normalizeHealthStatus(
@@ -387,6 +404,54 @@ function safeParseFinancialDiagnosis(
     }
   }
 
+  // 10. Perfil Completo do Cliente & Alinhamento Estratégico
+  const personaLabels: Record<string, string> = {
+    optimizer: "Otimizador (Eficiência máxima)",
+    guardian: "Guardião (Proteção e liquidez)",
+    scaler: "Escalador (Crescimento e metas)",
+    minimalist: "Minimalista (Simplicidade e foco)",
+  };
+  const riskLabels: Record<string, string> = {
+    low: "Conservadora",
+    moderate: "Moderada",
+    high: "Arrojada",
+  };
+  const rawProfileAssessment = parsed?.clientProfileAssessment as Record<string, unknown> | undefined;
+  const clientProfileAssessment: ClientProfileAssessment = {
+    persona:
+      typeof rawProfileAssessment?.persona === "string" && rawProfileAssessment.persona.trim()
+        ? sanitizeText(rawProfileAssessment.persona)
+        : personaLabels[context.profile.persona] || "Otimizador",
+    riskTolerance:
+      typeof rawProfileAssessment?.riskTolerance === "string" && rawProfileAssessment.riskTolerance.trim()
+        ? sanitizeText(rawProfileAssessment.riskTolerance)
+        : riskLabels[context.profile.riskTolerance] || "Moderada",
+    monthlyIncomeBase: context.profile.monthlyIncomeBase,
+    primaryFocus: context.profile.primaryFocus || "Equilíbrio financeiro e metas",
+    commitmentLimitPercent: context.profile.maxCommitmentAlertPercent,
+    profileAlignmentInsight:
+      typeof rawProfileAssessment?.profileAlignmentInsight === "string" && rawProfileAssessment.profileAlignmentInsight.trim()
+        ? sanitizeText(rawProfileAssessment.profileAlignmentInsight)
+        : `Com renda base de R$ ${context.profile.monthlyIncomeBase.toFixed(2)} e foco em "${context.profile.primaryFocus}", seus compromissos fixos e faturas absorvem ${context.commitments.commitmentRatioPercent}% do seu orçamento mensal.`,
+    recommendedActionForGoal:
+      typeof rawProfileAssessment?.recommendedActionForGoal === "string" && rawProfileAssessment.recommendedActionForGoal.trim()
+        ? sanitizeText(rawProfileAssessment.recommendedActionForGoal)
+        : undefined,
+  };
+
+  // 11. Reality Check para Meses Futuros (Ponderação de Gastos Variáveis)
+  const rawReality = parsed?.futureMonthsRealityCheck as Record<string, unknown> | undefined;
+  const historicalBaseline = context.historicalVariableBaseline || 0;
+  const futureMonthsRealityCheck: FutureMonthsRealityCheck = {
+    historicalVariableBaseline: historicalBaseline,
+    realityNote:
+      typeof rawReality?.realityNote === "string" && rawReality.realityNote.trim()
+        ? sanitizeText(rawReality.realityNote)
+        : historicalBaseline > 0
+        ? `Lembrete contábil: meses futuros (como Dezembro) listam apenas parcelas e fixas agendadas. Ponderando seu baseline histórico de gastos variáveis (~R$ ${historicalBaseline.toFixed(2)}/mês), sua folga líquida real será mais moderada do que a sobra bruta indica.`
+        : "Meses futuros com faturas baixas abrem espaço para poupar, mas mantenha prudência com novas despesas do dia a dia.",
+  };
+
   return {
     healthScore,
     healthStatus,
@@ -397,6 +462,8 @@ function safeParseFinancialDiagnosis(
     specificExpensesAlerts,
     cashflowWindow,
     installmentSchedule,
+    clientProfileAssessment,
+    futureMonthsRealityCheck,
   };
 }
 
@@ -434,20 +501,28 @@ export async function POST(req: NextRequest) {
 
 POSTURA DO ANALISTA (CFO PESSOAL):
 - Atue como um ANALISTA FINANCEIRO PESSOAL trabalhando lado a lado com o usuário: objetivo, direto, cirúrgico e focado em números e hábitos reais.
-- MENOS TEXTINHO E SEM BLÁ BLÁ BLÁ: Elimine introduções vazias, saudações clichês e parágrafos longos de autoajuda. Vá direto aos números e às conclusões práticas.
+- MENOS TEXTINHO E SEM BLÁ BLÁ BLÁ: Elimine introduções vazias, saudações clichês e parágrafos longos de autoajuda. Vá direto aos números e às conclusões práticas com valores em negrito.
 - O "executiveSummary" deve ter no MÁXIMO 3 frases assertivas:
   1) Veredito da conta no mês atual: Entradas vs Saídas em conta e a sobra líquida real obtida.
   2) Impacto no mês seguinte: Fatura acumulada no cartão de crédito e quanto consumirá da renda no próximo vencimento.
   3) Principal padrão de atenção ou ralo financeiro identificado.
 
 DIRETRIZES FUNDAMENTAIS DO DIAGNÓSTICO:
-1. GASTOS ESPECÍFICOS & PADRÕES DE CONSUMO (ex: McDonald's, Cantina, iFood, Uber, delivery, etc.):
-   - Inspecione a lista de gastos específicos e estabelecimentos frequentes. Preencha 'specificExpensesAlerts' destacando os estabelecimentos reais com nome exato, valor total acumulado e contagem de compras.
+1. GASTOS ESPECÍFICOS & PADRÕES DE CONSUMO (ANALISTA AUTODIDATA):
+   - Inspecione a lista de estabelecimentos, fornecedores e lançamentos reais.
+   - Preencha 'specificExpensesAlerts' destacando os estabelecimentos e despesas frequentes com nome exato, valor total acumulado e contagem de compras.
+   - Não invente nem fique preso a marcas fixas: use os dados reais do extrato.
 2. REGRA CONTÁBIL DE CAIXA vs CARTÃO:
    - Mês atual: analise o fluxo de caixa em conta (entradas - saídas em débito/PIX = sobra real).
    - Cartão de crédito: trate como compromisso que impacta APENAS NO MÊS SEGUINTE (quando a fatura é paga).
    - Preencha 'cashflowWindow' com insights diretos e números claros.
-3. PARCELAS DILUÍDAS: Em 'installmentSchedule', mostre que parcelamentos futuros são normais se o saldo livre de cada mês se mantiver positivo.
+3. REALITY CHECK PARA MESES FUTUROS (Ex: Dezembro / Projeções):
+   - Considere que o livro-caixa registra apenas parcelas e fixas agendadas. O usuário naturalmente continuará tendo gastos variáveis do dia a dia (baseline de ~R$ ${safeContext.historicalVariableBaseline.toFixed(2)}/mês).
+   - Preencha 'futureMonthsRealityCheck' alertando de forma madura que a sobra real será menor que a sobra bruta nominal, sem tratar isso como verdade absoluta inflexível.
+4. PERFIL DO CLIENTE & ALINHAMENTO:
+   - Avalie o alinhamento entre a renda mensal base (R$ ${safeContext.profile.monthlyIncomeBase.toFixed(2)}), a persona (${safeContext.profile.persona}), o risco (${safeContext.profile.riskTolerance}) e a meta principal ("${safeContext.profile.primaryFocus}").
+   - Preencha 'clientProfileAssessment'.
+5. PARCELAS DILUÍDAS: Em 'installmentSchedule', mostre que parcelamentos futuros são normais se o saldo livre de cada mês se mantiver positivo.
 
 RESPONDA ESTRITAMENTE EM FORMATO JSON com a seguinte estrutura:
 {
@@ -463,11 +538,11 @@ RESPONDA ESTRITAMENTE EM FORMATO JSON com a seguinte estrutura:
   ],
   "specificExpensesAlerts": [
     {
-      "item": "nome do estabelecimento ou hábito (ex: McDonald's, Cantina, iFood)",
+      "item": "nome do estabelecimento ou hábito identificado",
       "totalAmount": 420.00,
       "count": 6,
       "alertType": "info" | "warning" | "alert",
-      "message": "ex: Foram identificadas 6 compras no McDonald's e Cantina totalizando R$ 420,00 este mês."
+      "message": "ex: Foram identificadas 6 compras em [Estabelecimento] totalizando R$ 420,00 este mês."
     }
   ],
   "cashflowWindow": {
@@ -487,6 +562,13 @@ RESPONDA ESTRITAMENTE EM FORMATO JSON com a seguinte estrutura:
       "explanation": "explicação de que a parcela está distribuída no mês sem aperto"
     }
   ],
+  "futureMonthsRealityCheck": {
+    "realityNote": "orientação realista preventiva sobre gastos variáveis do dia a dia em meses futuros como Dezembro"
+  },
+  "clientProfileAssessment": {
+    "profileAlignmentInsight": "como os gastos e fluxo atuais conversam com a renda base, arquétipo e meta do cliente",
+    "recommendedActionForGoal": "ação tática para acelerar a meta principal"
+  },
   "futureProjections": [
     {
       "period": "ex: Outubro/2026 ou Próximos 30 dias",

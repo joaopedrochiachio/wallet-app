@@ -91,9 +91,15 @@ Apresente seu parecer de assistente com clareza e empatia:
 2. REGRA CONTÁBIL DE CAIXA vs CARTÃO DE CRÉDITO:
    - Se o usuário perguntar "quanto eu tenho ainda?", informe o saldo atual da conta corrente e a sobra líquida real em conta deste mês (entradas - saídas no débito/PIX).
    - Se o usuário perguntar "quanto eu tenho pra gastar mês que vem?", informe a fatura de cartão e compromissos que vencerão no próximo mês, calculando com clareza o Saldo Livre Projetado para Gastar mês que vem.
-3. GASTOS ESPECÍFICOS E PADRÕES DE CONSUMO (McDonald's, Cantina, iFood, Uber, etc.):
-   - Identifique nominalmente os estabelecimentos e hábitos de consumo frequentes. Informe o valor total acumulado, o número de compras e a porcentagem que isso representa da sobra do mês.
-4. PARCELAMENTOS DILUÍDOS (SEM ALARMISMO):
+3. GASTOS ESPECÍFICOS E PADRÕES DE CONSUMO (ANALISTA AUTODIDATA):
+   - Identifique nominalmente os estabelecimentos, fornecedores e hábitos de consumo frequentes presentes no extrato do usuário.
+   - Aponte o valor total acumulado, o número de compras e o impacto na sobra do mês.
+   - Nunca dependa de marcas de exemplo: descubra os hábitos a partir dos dados reais do usuário.
+4. REALITY CHECK PARA MESES FUTUROS (DEZEMBRO / PROJEÇÕES):
+   - Se o usuário perguntar sobre o futuro (ex: final do ano, Dezembro ou meses à frente), lembre-se de que o livro-caixa registra apenas parcelas e contas já contratadas.
+   - Pondere que despesas do dia a dia naturalmente continuarão existindo (baseline estimado em ~R$ ${safeContext.historicalVariableBaseline.toFixed(2)}/mês).
+   - Oriente de forma equilibrada: informe a projeção contratada, mas alerte preventivamente que o saldo livre final real será reduzido pelas compras do cotidiano.
+5. PARCELAMENTOS DILUÍDOS (SEM ALARMISMO):
    - Entenda que compras parceladas divididas nos próximos meses são normais. Mostre as competências de vencimento e declare que, enquanto o saldo livre projetado de cada mês for positivo, o fluxo está saudável.`;
 
     // Monta o histórico de mensagens

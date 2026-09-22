@@ -257,8 +257,13 @@ export function redactKnownFinancialText(
   }
 
   for (const transaction of input.transactions ?? []) {
-    if (transaction.title && !isCommonCommercialTerm(transaction.title)) {
-      addReplacement(transaction.title, "Transação");
+    if (transaction.title) {
+      const isSensitivePersonal =
+        input.userProfile?.name &&
+        transaction.title.toLowerCase().includes(input.userProfile.name.toLowerCase());
+      if (isSensitivePersonal) {
+        addReplacement(transaction.title, "Transferência Própria");
+      }
     }
     addReplacement(transaction.account, "Outro meio");
     if (typeof transaction.category === "string") {
