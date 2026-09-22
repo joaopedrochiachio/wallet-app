@@ -84,14 +84,17 @@ Apresente seu parecer de assistente com clareza e empatia:
 4. Se o risco for alto ou alerta, sugira um plano alternativo (ex: esperar N meses, negociar desconto à vista, ou poupar R$ X antes).`;
     }
 
-    systemPrompt += `\n=== INSTRUÇÕES DE ATENDIMENTO NO CHAT SOLICITADAS PELO USUÁRIO ===
-1. RESPOSTAS DIRETAS SOBRE SALDO E LIQUIDEZ:
-   - Se o usuário perguntar "quanto eu tenho ainda?", informe o saldo atual da conta corrente e o saldo livre que resta após os compromissos deste mês.
-   - Se o usuário perguntar "quanto eu tenho pra gastar mês que vem?" ou "quanto tenho de gastos mês que vem?", responda com exatidão: informe as entradas previstas, o total já comprometido de despesas (destacando parcelas de cartão e contas fixas em débito) e o **Saldo Livre que ele tem para gastar** no mês que vem.
-2. GASTOS ESPECÍFICOS (iFood, Delivery, Estabelecimentos):
-   - Se o usuário perguntar se está gastando muito com iFood, comidas, delivery ou algum item específico, informe o total em R$, a quantidade de pedidos e a porcentagem das despesas. Se o valor for expressivo, aponte isso claramente com uma dica amigável de moderação.
-3. PARCELAMENTOS DILUÍDOS (SEM ALARMISMO):
-   - Entenda que ter R$ 3.000 ou mais de compras parceladas divididas ao longo dos meses não quer dizer que o usuário esteja mal. Mostre as datas de vencimento das faturas e explique que, desde que o saldo livre de cada mês permaneça positivo, o fluxo está sob controle.`;
+    systemPrompt += `\n=== INSTRUÇÕES DE ATENDIMENTO NO CHAT DO ANALISTA FINANCEIRO (CFO) ===
+1. RESPOSTAS DIRETAS, SEM ENROLAÇÃO E SEM TEXTINHO:
+   - Seja conciso, executivo e direto ao ponto. Use valores em negrito e listas com marcadores.
+   - Responda sem rodeios, sem introduções vazias.
+2. REGRA CONTÁBIL DE CAIXA vs CARTÃO DE CRÉDITO:
+   - Se o usuário perguntar "quanto eu tenho ainda?", informe o saldo atual da conta corrente e a sobra líquida real em conta deste mês (entradas - saídas no débito/PIX).
+   - Se o usuário perguntar "quanto eu tenho pra gastar mês que vem?", informe a fatura de cartão e compromissos que vencerão no próximo mês, calculando com clareza o Saldo Livre Projetado para Gastar mês que vem.
+3. GASTOS ESPECÍFICOS E PADRÕES DE CONSUMO (McDonald's, Cantina, iFood, Uber, etc.):
+   - Identifique nominalmente os estabelecimentos e hábitos de consumo frequentes. Informe o valor total acumulado, o número de compras e a porcentagem que isso representa da sobra do mês.
+4. PARCELAMENTOS DILUÍDOS (SEM ALARMISMO):
+   - Entenda que compras parceladas divididas nos próximos meses são normais. Mostre as competências de vencimento e declare que, enquanto o saldo livre projetado de cada mês for positivo, o fluxo está saudável.`;
 
     // Monta o histórico de mensagens
     const conversationMessages: GeminiChatMessage[] = [];

@@ -14,6 +14,10 @@ import {
   redactPersonalData,
   isCommonCommercialTerm,
 } from "../lib/services/privacyService.ts";
+import {
+  loadInitialDiagnosisSync,
+  savePersistentDiagnosis,
+} from "../lib/services/aiChatService.ts";
 
 test("MODEL_CASCADE contém exatamente os 8 modelos na ordem requisitada", () => {
   const expectedOrder = [
@@ -651,6 +655,106 @@ test("buildFinancialAnalystSystemPrompt inclui diretrizes de gastos específicos
   assert.ok(prompt.includes("R$ 350.00"));
   assert.ok(prompt.includes("GASTOS PARCELADOS AO LONGO DO TEMPO (MATURIDADE CONTÁBIL - NÃO ALARMISMO)"));
   assert.ok(prompt.includes("Ter um total parcelado futuro de R$ 2.000, R$ 3.000 ou mais distribuído nos próximos meses NÃO significa que o usuário está no vermelho"));
+});
+
+test("isCommonCommercialTerm reconhece McDonald's, Mc Donalds, Cantina e Burger King", () => {
+  assert.equal(isCommonCommercialTerm("McDonald's"), true);
+  assert.equal(isCommonCommercialTerm("mc donalds"), true);
+  assert.equal(isCommonCommercialTerm("Cantina"), true);
+  assert.equal(isCommonCommercialTerm("cantina faculdade"), true);
+  assert.equal(isCommonCommercialTerm("Burger King"), true);
+  assert.equal(isCommonCommercialTerm("bk"), true);
+});
+
+test("synthesizeFinancialTelemetry agrupa compras de McDonald's e Cantina e calcula contagem e total", () => {
+  const mockTransactions = [
+    { id: "tx-1", title: "McDonald's", amount: 45.0, type: "despesa", category: "Alimentação", account: "Cartão 1", date: "2026-09-02" },
+    { id: "tx-2", title: "mc donalds", amount: 35.0, type: "despesa", category: "Alimentação", account: "Cartão 1", date: "2026-09-05" },
+    { id: "tx-3", title: "Cantina", amount: 18.0, type: "despesa", category: "Alimentação", account: "Conta corrente", date: "2026-09-08" },
+    { id: "tx-4", title: "cantina faculdade", amount: 15.0, type: "despesa", category: "Alimentação", account: "Conta corrente", date: "2026-09-09" },
+  ];
+
+  const telemetry = synthesizeFinancialTelemetry({
+    cards: [],
+    transactions: mockTransactions,
+    recurringItems: [],
+    goals: [],
+    mainBalance: 2000,
+    monthIncome: 5000,
+    monthExpense: 113,
+  });
+
+  assert.ok(telemetry.topSpendItems);
+  const mcItem = telemetry.topSpendItems.find((item) => item.title === "McDonald's");
+  assert.ok(mcItem, "Deveria encontrar McDonald's agrupado");
+  assert.equal(mcItem.count, 2);
+  assert.equal(mcItem.total, 80.0);
+
+  const cantinaItem = telemetry.topSpendItems.find((item) => item.title === "Cantina");
+  assert.ok(cantinaItem, "Deveria encontrar Cantina agrupada");
+  assert.equal(cantinaItem.count, 2);
+  assert.equal(cantinaItem.total, 33.0);
+});
+
+test("buildFinancialAnalystSystemPrompt estabelece postura de CFO sem textinho e regra de caixa vs cartão no mês seguinte", () => {
+  const telemetry = synthesizeFinancialTelemetry({
+    cards: [
+      {
+        id: "card-1",
+        name: "Nubank",
+        brand: "Mastercard",
+        type: "credit",
+        limit: 2000,
+        spent: 600,
+        closingDay: 1,
+        dueDay: 10,
+        colorScheme: { gradient: "", border: "", accent: "", badgeText: "", chipGradient: "" },
+      },
+    ],
+    transactions: [
+      { id: "tx-1", title: "McDonald's", amount: 80, type: "despesa", category: "Alimentação", account: "Nubank", date: "2026-09-10" },
+      { id: "tx-2", title: "Cantina", amount: 40, type: "despesa", category: "Alimentação", account: "Nubank", date: "2026-09-11" },
+    ],
+    recurringItems: [],
+    goals: [],
+    mainBalance: 3500,
+    monthIncome: 6000,
+    monthExpense: 120,
+    monthlyProjections: [
+      {
+        monthName: "Out",
+        year: 2026,
+        openingBalance: 3500,
+        plannedIncomesTotal: 6000,
+        recurringDebitTotal: 1000,
+        recurringCreditTotal: 100,
+        cardInstallments: 500,
+        totalCommitted: 1600,
+        projectedFreeBalance: 7900,
+      },
+      {
+        monthName: "Nov",
+        year: 2026,
+        openingBalance: 7900,
+        plannedIncomesTotal: 6000,
+        recurringDebitTotal: 1000,
+        recurringCreditTotal: 100,
+        cardInstallments: 500,
+        totalCommitted: 1600,
+        projectedFreeBalance: 12300,
+      },
+    ],
+  });
+
+  const safeContext = createSafeFinancialContext(telemetry);
+  const prompt = buildFinancialAnalystSystemPrompt(safeContext);
+
+  assert.ok(prompt.includes("ANALISTA FINANCEIRO PESSOAL (Personal CFO)"));
+  assert.ok(prompt.includes("SEM TEXTINHO E SEM BLÁ BLÁ BLÁ"));
+  assert.ok(prompt.includes("CAIXA ATUAL vs CARTÃO NO MÊS SEGUINTE"));
+  assert.ok(prompt.includes("Compras no cartão NÃO tiram dinheiro da conta corrente no mês em que são feitas"));
+  assert.ok(prompt.includes("McDonald's"));
+  assert.ok(prompt.includes("Cantina"));
 });
 
 

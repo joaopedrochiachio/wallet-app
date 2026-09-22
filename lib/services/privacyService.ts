@@ -143,14 +143,37 @@ const COMMON_COMMERCIAL_TERMS = new Set([
   "99",
   "rappi",
   "delivery",
+  "mcdonalds",
+  "mc donalds",
+  "mcdonald's",
+  "mcdonald",
+  "cantina",
+  "burger king",
+  "bk",
+  "subway",
+  "starbucks",
+  "habibs",
+  "habib's",
+  "pizzaria",
+  "pizza",
+  "churrascaria",
+  "hamburgueria",
+  "bar",
+  "boteco",
   "mercado",
   "supermercado",
   "restaurante",
   "padaria",
   "lanchonete",
   "cafeteria",
+  "cafe",
+  "café",
+  "lanche",
+  "almoco",
+  "almoço",
   "farmacia",
   "farmácia",
+  "drogaria",
   "netflix",
   "spotify",
   "amazon",
@@ -167,14 +190,35 @@ const COMMON_COMMERCIAL_TERMS = new Set([
   "cinema",
   "shopping",
   "steam",
+  "magalu",
+  "shopee",
+  "mercado livre",
+  "shein",
+  "aliexpress",
+  "sem parar",
+  "veloe",
+  "conectcar",
+  "pedagio",
+  "pedágio",
 ]);
 
 export function isCommonCommercialTerm(title?: string): boolean {
   if (!title) return false;
-  const clean = title.trim().toLowerCase();
+  const clean = title
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, ""); // Remove acentos
+
   if (COMMON_COMMERCIAL_TERMS.has(clean)) return true;
+
+  // Verifica termos e palavras-chave comerciais
   for (const term of COMMON_COMMERCIAL_TERMS) {
-    if (clean.includes(term)) return true;
+    const cleanTerm = term
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+    if (clean.includes(cleanTerm)) return true;
   }
   return false;
 }

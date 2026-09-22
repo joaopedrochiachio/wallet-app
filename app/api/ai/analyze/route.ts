@@ -430,45 +430,52 @@ export async function POST(req: NextRequest) {
 
     const systemPrompt = buildFinancialAnalystSystemPrompt(safeContext);
 
-    const userPrompt = `Realize o DIAGNÓSTICO FINANCEIRO do usuário para apresentar no painel do aplicativo.
+    const userPrompt = `Realize o DIAGNÓSTICO FINANCEIRO EXECUTIVO do usuário para apresentar no painel do aplicativo.
 
-DIRETRIZES DE TOM:
-- Use padrão formal, porém INTUITIVO, NATURAL e CONVERSACIONAL, como um assistente financeiro pessoal de confiança.
-- Apresente conclusões simples e claras a partir dos dados cruzados, sem usar termos técnicos frios.
-- O "executiveSummary" deve conversar diretamente com o usuário em primeira pessoa ("Olá! Analisei suas contas..."), acolhendo os acertos e alertando sobre pontos de atenção com empatia.
+POSTURA DO ANALISTA (CFO PESSOAL):
+- Atue como um ANALISTA FINANCEIRO PESSOAL trabalhando lado a lado com o usuário: objetivo, direto, cirúrgico e focado em números e hábitos reais.
+- MENOS TEXTINHO E SEM BLÁ BLÁ BLÁ: Elimine introduções vazias, saudações clichês e parágrafos longos de autoajuda. Vá direto aos números e às conclusões práticas.
+- O "executiveSummary" deve ter no MÁXIMO 3 frases assertivas:
+  1) Veredito da conta no mês atual: Entradas vs Saídas em conta e a sobra líquida real obtida.
+  2) Impacto no mês seguinte: Fatura acumulada no cartão de crédito e quanto consumirá da renda no próximo vencimento.
+  3) Principal padrão de atenção ou ralo financeiro identificado.
 
 DIRETRIZES FUNDAMENTAIS DO DIAGNÓSTICO:
-1. GASTOS ESPECÍFICOS: Aponte com destaque na lista 'specificExpensesAlerts' os itens onde o usuário mais gasta (ex: iFood, comidas/delivery, Uber, etc.), mostrando o total em R$, frequência e um conselho claro de moderação.
-2. LIQUIDEZ AGORA vs MÊS QUE VEM: Preencha 'cashflowWindow' com clareza matemática e um insight simples para que o usuário saiba quanto tem livre hoje e quanto terá livre para gastar mês que vem.
-3. PARCELAS DILUÍDAS (NÃO ALARMISMO): Em 'installmentSchedule', mostre que compras parceladas divididas mês a mês (ex: 3k divididos em vários meses) são normais e saudáveis se o saldo livre de cada mês for positivo.
+1. GASTOS ESPECÍFICOS & PADRÕES DE CONSUMO (ex: McDonald's, Cantina, iFood, Uber, delivery, etc.):
+   - Inspecione a lista de gastos específicos e estabelecimentos frequentes. Preencha 'specificExpensesAlerts' destacando os estabelecimentos reais com nome exato, valor total acumulado e contagem de compras.
+2. REGRA CONTÁBIL DE CAIXA vs CARTÃO:
+   - Mês atual: analise o fluxo de caixa em conta (entradas - saídas em débito/PIX = sobra real).
+   - Cartão de crédito: trate como compromisso que impacta APENAS NO MÊS SEGUINTE (quando a fatura é paga).
+   - Preencha 'cashflowWindow' com insights diretos e números claros.
+3. PARCELAS DILUÍDAS: Em 'installmentSchedule', mostre que parcelamentos futuros são normais se o saldo livre de cada mês se mantiver positivo.
 
 RESPONDA ESTRITAMENTE EM FORMATO JSON com a seguinte estrutura:
 {
   "healthScore": number, // pontuação inteira de 0 a 100
   "healthStatus": "excellent" | "healthy" | "attention" | "critical",
-  "executiveSummary": "texto natural e acolhedor do assistente avaliando o momento atual e a realidade dos próximos meses",
+  "executiveSummary": "texto executivo direto do analista (máx 3 frases assertivas com valores)",
   "spendingPatterns": [
     {
       "title": "título curto do padrão",
-      "description": "explicação simples em linguagem natural",
+      "description": "análise direta do padrão em uma frase com valores",
       "type": "info" | "warning" | "alert"
     }
   ],
   "specificExpensesAlerts": [
     {
-      "item": "nome do item ou hábito (ex: iFood / Delivery)",
+      "item": "nome do estabelecimento ou hábito (ex: McDonald's, Cantina, iFood)",
       "totalAmount": 420.00,
       "count": 6,
       "alertType": "info" | "warning" | "alert",
-      "message": "ex: Você realizou 6 pedidos de delivery totalizando R$ 420,00 este mês."
+      "message": "ex: Foram identificadas 6 compras no McDonald's e Cantina totalizando R$ 420,00 este mês."
     }
   ],
   "cashflowWindow": {
     "currentMonth": {
-      "insight": "insight acolhedor sobre o saldo livre que resta neste mês"
+      "insight": "insight direto sobre a sobra líquida em conta deste mês"
     },
     "nextMonth": {
-      "insight": "insight claro sobre quanto terá livre para gastar mês que vem"
+      "insight": "insight claro sobre a fatura do cartão e o saldo livre projetado mês que vem"
     }
   },
   "installmentSchedule": [
@@ -490,7 +497,7 @@ RESPONDA ESTRITAMENTE EM FORMATO JSON com a seguinte estrutura:
   "actionableSuggestions": [
     {
       "title": "título da melhoria recomendada",
-      "action": "passo prático e objetivo explicado com clareza",
+      "action": "ação tática prática e sem rodeios com valor estimado",
       "potentialGain": "ganho ou economia estimada (ex: R$ 200/mês)",
       "targetGoal": "meta beneficiada se houver"
     }
@@ -508,10 +515,11 @@ IMPORTANTE: Responda APENAS o JSON válido. Não coloque texto antes ou depois. 
     });
 
     const parsedDiagnosis = safeParseFinancialDiagnosis(response.text, safeContext);
+    const sanitizedDiagnosis = JSON.parse(JSON.stringify(parsedDiagnosis));
 
     return NextResponse.json({
       success: true,
-      diagnosis: parsedDiagnosis,
+      diagnosis: sanitizedDiagnosis,
       modelUsed: response.modelUsed,
       durationMs: response.durationMs,
       attemptedModels: response.attemptedModels,

@@ -1,6 +1,6 @@
-import { db } from "@/lib/firebase";
+import { db } from "../firebase.ts";
 import { doc, getDoc, setDoc, deleteDoc } from "firebase/firestore";
-import type { PurchaseSimulationResult } from "./financialContextService";
+import type { PurchaseSimulationResult } from "./financialContextService.ts";
 
 export interface StoredChatMessage {
   id: string;
@@ -123,6 +123,47 @@ export async function clearChatHistory(userId?: string | null): Promise<void> {
   }
 }
 
+function getDiagnosisStorageKey(userId?: string | null): string {
+  return `${DIAGNOSIS_KEY}_${userId || "guest"}`;
+}
+
+/**
+ * Lê o diagnóstico salvo do localStorage de forma instantânea e síncrona
+ * Usado para inicializar o estado no primeiro render sem "piscar" tela vazia
+ */
+export function loadInitialDiagnosisSync(
+  userId?: string | null
+): { diagnosis: unknown; timestamp: string | null; modelUsed?: string } | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const userKey = getDiagnosisStorageKey(userId);
+    let raw = window.localStorage.getItem(userKey);
+    let timestamp = window.localStorage.getItem(`${userKey}_timestamp`);
+    let modelUsed = window.localStorage.getItem(`${userKey}_model`) || undefined;
+
+    // Fallback para chave geral caso não encontre por usuário
+    if (!raw) {
+      raw = window.localStorage.getItem(DIAGNOSIS_KEY);
+      timestamp = window.localStorage.getItem(DIAGNOSIS_TIMESTAMP_KEY);
+      modelUsed = window.localStorage.getItem(DIAGNOSIS_MODEL_KEY) || undefined;
+    }
+
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        diagnosis: parsed,
+        timestamp: timestamp || null,
+        modelUsed,
+      };
+    }
+  } catch (err) {
+    console.warn("Falha ao ler diagnóstico local síncrono:", err);
+  }
+
+  return null;
+}
+
 /**
  * Salva o diagnóstico financeiro persistente no storage local e Firestore
  */
@@ -131,21 +172,42 @@ export async function savePersistentDiagnosis(
   meta: { timestamp: string; modelUsed?: string },
   userId?: string | null
 ): Promise<void> {
+  // Sanitização profunda obrigatória: remove campos undefined que causam exceção no Firestore setDoc
+  let cleanDiagnosis: unknown = diagnosis;
   try {
-    window.localStorage.setItem(DIAGNOSIS_KEY, JSON.stringify(diagnosis));
-    window.localStorage.setItem(DIAGNOSIS_TIMESTAMP_KEY, meta.timestamp);
-    if (meta.modelUsed) {
-      window.localStorage.setItem(DIAGNOSIS_MODEL_KEY, meta.modelUsed);
-    }
-  } catch (err) {
-    console.warn("Falha ao salvar diagnóstico localmente:", err);
+    cleanDiagnosis = JSON.parse(JSON.stringify(diagnosis));
+  } catch {
+    cleanDiagnosis = diagnosis;
   }
 
+  // 1. Salva imediatamente no localStorage (chave com escopo de usuário + chave geral de fallback)
+  if (typeof window !== "undefined") {
+    try {
+      const userKey = getDiagnosisStorageKey(userId);
+      const jsonStr = JSON.stringify(cleanDiagnosis);
+
+      window.localStorage.setItem(userKey, jsonStr);
+      window.localStorage.setItem(`${userKey}_timestamp`, meta.timestamp);
+      if (meta.modelUsed) {
+        window.localStorage.setItem(`${userKey}_model`, meta.modelUsed);
+      }
+
+      window.localStorage.setItem(DIAGNOSIS_KEY, jsonStr);
+      window.localStorage.setItem(DIAGNOSIS_TIMESTAMP_KEY, meta.timestamp);
+      if (meta.modelUsed) {
+        window.localStorage.setItem(DIAGNOSIS_MODEL_KEY, meta.modelUsed);
+      }
+    } catch (err) {
+      console.warn("Falha ao salvar diagnóstico localmente:", err);
+    }
+  }
+
+  // 2. Persiste na nuvem do Cloud Firestore se logado
   if (userId) {
     try {
       const diagDocRef = doc(db, "users", userId, "ai_diagnosis", "latest");
       await setDoc(diagDocRef, {
-        diagnosis,
+        diagnosis: cleanDiagnosis,
         timestamp: meta.timestamp,
         modelUsed: meta.modelUsed || "gemini-3.6-flash",
       });
@@ -156,7 +218,7 @@ export async function savePersistentDiagnosis(
 }
 
 /**
- * Carrega o diagnóstico financeiro salvo
+ * Carrega o diagnóstico financeiro salvo (Firestore com fallback para localStorage)
  */
 export async function loadPersistentDiagnosis(
   userId?: string | null
@@ -169,13 +231,20 @@ export async function loadPersistentDiagnosis(
       if (snap.exists()) {
         const data = snap.data();
         if (data?.diagnosis) {
-          // Atualiza cache local
-          try {
-            window.localStorage.setItem(DIAGNOSIS_KEY, JSON.stringify(data.diagnosis));
-            if (data.timestamp) window.localStorage.setItem(DIAGNOSIS_TIMESTAMP_KEY, data.timestamp);
-            if (data.modelUsed) window.localStorage.setItem(DIAGNOSIS_MODEL_KEY, data.modelUsed);
-          } catch {
-            // Silencioso
+          // Atualiza cache local sincronizado
+          if (typeof window !== "undefined") {
+            try {
+              const userKey = getDiagnosisStorageKey(userId);
+              const jsonStr = JSON.stringify(data.diagnosis);
+              window.localStorage.setItem(userKey, jsonStr);
+              if (data.timestamp) window.localStorage.setItem(`${userKey}_timestamp`, data.timestamp);
+              if (data.modelUsed) window.localStorage.setItem(`${userKey}_model`, data.modelUsed);
+              window.localStorage.setItem(DIAGNOSIS_KEY, jsonStr);
+              if (data.timestamp) window.localStorage.setItem(DIAGNOSIS_TIMESTAMP_KEY, data.timestamp);
+              if (data.modelUsed) window.localStorage.setItem(DIAGNOSIS_MODEL_KEY, data.modelUsed);
+            } catch {
+              // Silencioso
+            }
           }
           return {
             diagnosis: data.diagnosis,
@@ -189,23 +258,6 @@ export async function loadPersistentDiagnosis(
     }
   }
 
-  // 2. Fallback para localStorage
-  try {
-    const raw = window.localStorage.getItem(DIAGNOSIS_KEY);
-    const timestamp = window.localStorage.getItem(DIAGNOSIS_TIMESTAMP_KEY);
-    const modelUsed = window.localStorage.getItem(DIAGNOSIS_MODEL_KEY) || undefined;
-
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return {
-        diagnosis: parsed,
-        timestamp: timestamp || null,
-        modelUsed,
-      };
-    }
-  } catch (err) {
-    console.warn("Falha ao ler diagnóstico local:", err);
-  }
-
-  return null;
+  // 2. Fallback para cache local instantâneo
+  return loadInitialDiagnosisSync(userId);
 }

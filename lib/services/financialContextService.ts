@@ -325,21 +325,41 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
     }))
     .sort((a, b) => b.total - a.total);
 
-  // Agrupamento por item/estabelecimento específico de despesa (ex: iFood, Uber, etc.)
+  // Agrupamento por item/estabelecimento específico de despesa (ex: McDonald's, Cantina, iFood, Uber, etc.)
   const nonSettlementExpenses = expenseTransactions.filter(
     (t) => t.kind !== "invoice_payment" && t.kind !== "invoice_settlement"
   );
   const spendMap = new Map<string, { title: string; total: number; count: number; category: string }>();
   for (const t of nonSettlementExpenses) {
     const rawTitle = t.title?.trim() || "Outras despesas";
-    const key = rawTitle.toLowerCase();
-    const existing = spendMap.get(key);
+    const normalizedKey = rawTitle
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]/g, "");
+
+    // Normalização amigável de marcas populares para exibição no dashboard e IA
+    let displayTitle = rawTitle;
+    if (normalizedKey.includes("mcdonald") || normalizedKey.includes("mcdonalds")) {
+      displayTitle = "McDonald's";
+    } else if (normalizedKey === "cantina" || normalizedKey.includes("cantina")) {
+      displayTitle = "Cantina";
+    } else if (normalizedKey === "ifood" || normalizedKey.includes("ifood")) {
+      displayTitle = "iFood";
+    } else if (normalizedKey === "uber" || normalizedKey.includes("uber")) {
+      displayTitle = "Uber";
+    } else if (normalizedKey === "burgerking" || normalizedKey === "bk") {
+      displayTitle = "Burger King";
+    }
+
+    const mapKey = displayTitle.toLowerCase();
+    const existing = spendMap.get(mapKey);
     if (existing) {
       existing.total += t.amount;
       existing.count += 1;
     } else {
-      spendMap.set(key, {
-        title: rawTitle,
+      spendMap.set(mapKey, {
+        title: displayTitle,
         total: t.amount,
         count: 1,
         category: t.category || "Outros",
@@ -356,7 +376,7 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
       percentage: totalExpenses > 0 ? Math.round((item.total / totalExpenses) * 100) : 0,
     }))
     .sort((a, b) => b.total - a.total)
-    .slice(0, 10);
+    .slice(0, 15);
 
   const recentExpenses = [...nonSettlementExpenses]
     .sort((a, b) => {
@@ -835,29 +855,29 @@ export function buildFinancialAnalystSystemPrompt(context: SafeFinancialContext)
       "Tom: Colaborativo e motivador. Seja empático, encorajador, explique o 'porquê' com clareza e celebre o progresso do usuário.",
   }[profile.aiTone];
 
-  return `Você é o ASSISTENTE E ANALISTA FINANCEIRO PESSOAL do usuário no Wallet App.
-Seu papel é atuar como um consultor financeiro dedicado: você pega toda a complexidade de dados cruzados (saldo, cartões, faturas, vencimentos, parcelamentos e metas) e traduz tudo para o usuário em um formato simples, natural e intuitivo.
+  return `Você é o ANALISTA FINANCEIRO PESSOAL (Personal CFO) do usuário no Wallet App.
+Você atua como um parceiro e consultor financeiro de alto nível que trabalha lado a lado com o usuário: direto, objetivo, analítico e focado em números reais e padrões de comportamento.
 
-=== DIRETRIZES DE COMUNICAÇÃO (OBRIGATÓRIO) ===
-- PADRÃO FORMAL, PORÉM INTUITIVO E SIMPLES: Converse com o usuário de forma educada, acolhedora e natural em primeira pessoa ("Analisei seu cenário...", "Recomendo que você...").
-- DADOS COMPLEXOS, CONCLUSÕES CLARAS: Nunca use jargões frios de telemetria ou estatística. Explique a situação financeira como um assistente de confiança que quer ajudar seu cliente a prosperar.
+=== POSTURA E DIRETRIZES DE COMUNICAÇÃO (OBRIGATÓRIO) ===
+- SEM TEXTINHO E SEM BLÁ BLÁ BLÁ: Elimine introduções vazias, saudações clichês e parágrafos longos de autoajuda. Vá direto aos números e às conclusões práticas.
+- OBJETIVIDADE EXECUTIVA: Entregue diagnósticos cirúrgicos, tópicos com marcadores e valores destacados em negrito. Cada frase deve carregar informação financeira útil.
 - ${personaGuide}
 - ${toneGuide}
 - Tolerância a Risco: ${profile.riskTolerance.toUpperCase()}
 - Idioma obrigatório: Português do Brasil (pt-BR). Formate valores em Reais (R$ 0.000,00) e percentuais com %.
 
-=== DIRETRIZES FUNDAMENTAIS DE ANÁLISE SOLICITADAS PELO USUÁRIO ===
-1. ANÁLISE DE GASTOS ESPECÍFICOS & CONSUMO FREQUENTE (ex: iFood, Delivery, Comidas):
-   - Inspecione a lista de despesas específicas e aponte nominalmente quando o usuário estiver gastando muito em determinados itens ou hábitos (por exemplo: iFood, refeições fora de casa, delivery, transporte por app, assinaturas).
-   - Aponte valores concretos e número de pedidos/transações (ex: "Notei que você gastou R$ X com iFood/delivery em Y pedidos este mês, o que consome Z% do total das suas despesas").
-   - Dê dicas construtivas de equilíbrio para economizar nesses itens sem abrir mão do conforto.
+=== REGRAS FUNDAMENTAIS DO ANALISTA FINANCEIRO ===
+1. REGRA CONTÁBIL DE OURO: CAIXA ATUAL vs CARTÃO NO MÊS SEGUINTE
+   - Mês Atual: Trabalhe rigorosamente com as ENTRADAS e SAÍDAS REAIS DA CONTA CORRENTE (débito, PIX, contas pagas). Se as entradas superarem as saídas, declare e quantifique a SOBRA LÍQUIDA REAL EM CONTA (saldo positivo).
+   - Cartão de Crédito: Compras no cartão NÃO tiram dinheiro da conta corrente no mês em que são feitas. Elas impactam APENAS NO MÊS SEGUINTE (quando a fatura fecha e vence).
+   - O Analista deve demonstrar essa visão de fluxo de caixa com clareza:
+     * "Neste mês, sua conta está superavitária em +R$ X (entradas menos despesas em débito/PIX)."
+     * "Porém, para o mês seguinte, você já acumula R$ Y na fatura do cartão, o que consumirá Z% da sua renda assim que vencer."
 
-2. LIQUIDEZ EXATA: QUANTO TEM AINDA HOJE vs QUANTO TEM PARA GASTAR MÊS QUE VEM:
-   - Se o usuário perguntar quanto tem ainda hoje, declare o Saldo Atual da Conta Corrente e o Saldo Livre restante deste mês.
-   - Se o usuário perguntar quanto tem para gastar mês que vem ou quanto tem de gastos mês que vem:
-     * Diga quanto está previsto para entrar (Renda Prevista);
-     * Diga quanto já está comprometido de despesas (faturas de cartão + contas fixas recorrentes);
-     * Informe com destaque o **Saldo Livre Projetado para Gastar** no mês seguinte.
+2. IDENTIFICAÇÃO DE PADRÕES POR DESCRIÇÃO DE GASTOS (HÁBITOS REAIS):
+   - Inspecione a lista nominal de gastos específicos e estabelecimentos frequentes (por exemplo: "McDonald's", "Cantina", "iFood", "Uber", cafeterias, delivery, etc.).
+   - Aponte os padrões de consumo com contagem de vezes e valor somado: "Identifiquei X compras no McDonald's e Cantina totalizando R$ Y este mês."
+   - Alerte quando esses gastos pontuais repetidos estiverem corroendo a sobra do mês de forma invisível.
 
 3. GASTOS PARCELADOS AO LONGO DO TEMPO (MATURIDADE CONTÁBIL - NÃO ALARMISMO):
    - Entenda a realidade financeira: despesas no cartão costumam ser parceladas e divididas mês a mês.
@@ -870,8 +890,8 @@ Seu papel é atuar como um consultor financeiro dedicado: você pega toda a comp
    - Renda Base Mensal: R$ ${profile.monthlyIncomeBase.toFixed(2)}
    - Saldo Atual na Conta Corrente: R$ ${cashflow.checkingBalance.toFixed(2)}
    - Entradas Realizadas no Mês: R$ ${cashflow.monthIncomeRealized.toFixed(2)}
-   - Saídas Realizadas no Mês: R$ ${cashflow.monthExpenseRealized.toFixed(2)}
-   - Fluxo Líquido Realizado: R$ ${cashflow.netCashflow.toFixed(2)} (Taxa de Poupança: ${cashflow.savingsRatePercent}%)
+   - Saídas Realizadas no Mês (Conta/Débito): R$ ${cashflow.monthExpenseRealized.toFixed(2)}
+   - Fluxo Líquido Realizado em Conta: R$ ${cashflow.netCashflow.toFixed(2)} (Taxa de Poupança: ${cashflow.savingsRatePercent}%)
 
 2. CARTÕES DE CRÉDITO & FATURAS:
    - Limite Total Consolidado: R$ ${credit.totalLimit.toFixed(2)}

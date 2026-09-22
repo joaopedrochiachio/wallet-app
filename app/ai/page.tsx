@@ -32,6 +32,7 @@ import {
   clearChatHistory,
   loadPersistentDiagnosis,
   savePersistentDiagnosis,
+  loadInitialDiagnosisSync,
 } from "@/lib/services/aiChatService";
 
 interface ChatMessage {
@@ -59,12 +60,21 @@ export default function AIAnalystPage() {
 
   const [activeTab, setActiveTab] = useState<"diagnosis" | "chat">("diagnosis");
 
-  // Estados do Diagnóstico
-  const [diagnosis, setDiagnosis] = useState<FinancialDiagnosis | null>(null);
-  const [lastAnalyzedAt, setLastAnalyzedAt] = useState<string | null>(null);
+  // Estados do Diagnóstico (Inicializados de forma síncrona do cache local para nunca sumir no F5)
+  const [diagnosis, setDiagnosis] = useState<FinancialDiagnosis | null>(() => {
+    const cached = loadInitialDiagnosisSync();
+    return (cached?.diagnosis as FinancialDiagnosis) || null;
+  });
+  const [lastAnalyzedAt, setLastAnalyzedAt] = useState<string | null>(() => {
+    const cached = loadInitialDiagnosisSync();
+    return cached?.timestamp || null;
+  });
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
-  const [analysisModel, setAnalysisModel] = useState<string>("gemini-3.6-flash");
+  const [analysisModel, setAnalysisModel] = useState<string>(() => {
+    const cached = loadInitialDiagnosisSync();
+    return cached?.modelUsed || "gemini-3.6-flash";
+  });
 
   // Estados do Chat
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -94,8 +104,18 @@ export default function AIAnalystPage() {
   useEffect(() => {
     let isMounted = true;
 
+    // Se já tiver cache local para o user específico, aplica de imediato
+    if (user?.uid) {
+      const userCached = loadInitialDiagnosisSync(user.uid);
+      if (userCached?.diagnosis) {
+        setDiagnosis(userCached.diagnosis as FinancialDiagnosis);
+        if (userCached.timestamp) setLastAnalyzedAt(userCached.timestamp);
+        if (userCached.modelUsed) setAnalysisModel(userCached.modelUsed);
+      }
+    }
+
     loadPersistentDiagnosis(user?.uid).then((saved) => {
-      if (isMounted && saved) {
+      if (isMounted && saved?.diagnosis) {
         setDiagnosis(saved.diagnosis as FinancialDiagnosis);
         if (saved.timestamp) setLastAnalyzedAt(saved.timestamp);
         if (saved.modelUsed) setAnalysisModel(saved.modelUsed);
@@ -163,7 +183,7 @@ export default function AIAnalystPage() {
         setLastAnalyzedAt(timestamp);
         if (data.modelUsed) setAnalysisModel(data.modelUsed);
 
-        void savePersistentDiagnosis(
+        await savePersistentDiagnosis(
           data.diagnosis,
           { timestamp, modelUsed: data.modelUsed },
           user?.uid
@@ -528,8 +548,20 @@ export default function AIAnalystPage() {
               </div>
             )}
 
-            {/* ESTADO 1: ANALISANDO (SKELETON ELEGANTE COM EFEITO SHIMMER) */}
-            {isAnalyzing ? (
+            {/* Banner delicado ao recalcular mantendo o dashboard visível */}
+            {isAnalyzing && diagnosis && (
+              <div className="p-3.5 rounded-2xl bg-white/90 backdrop-blur-md border border-purple-500/20 shadow-xs flex items-center justify-between gap-3 text-xs text-[#1D1D1F] animate-in fade-in duration-200">
+                <div className="flex items-center gap-2">
+                  <RefreshCw size={14} className="animate-spin text-purple-600 shrink-0" />
+                  <span className="font-medium text-[#1D1D1F]">
+                    O Analista está recalculando seu diagnóstico com as informações mais recentes...
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* ESTADO 1: ANALISANDO DO ZERO (SKELETON ELEGANTE COM EFEITO SHIMMER) */}
+            {isAnalyzing && !diagnosis ? (
               <section className="bg-white rounded-[28px] p-8 sm:p-12 border border-black/[0.04] shadow-[0_8px_30px_rgba(0,0,0,0.03)] text-center space-y-4">
                 <div className="relative w-16 h-16 mx-auto flex items-center justify-center">
                   <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-violet-500/20 via-sky-400/20 to-amber-300/20 blur-md animate-pulse" />
