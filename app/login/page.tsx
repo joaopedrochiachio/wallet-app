@@ -92,20 +92,23 @@ export default function LoginPage() {
       if (loggedUser) {
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
         await navigateToAuthenticatedApp(loggedUser.uid);
+      } else {
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        setGoogleLoading(false);
       }
-      // Se loggedUser for null, foi disparado o redirecionamento nativo do PWA / navegador
     } catch (err: unknown) {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       console.error("Erro no login Google:", err);
       const code = typeof err === "object" && err && "code" in err ? String(err.code) : "";
+      const currentHost = typeof window !== "undefined" ? window.location.hostname : "seu-dominio.vercel.app";
       if (code === "auth/unauthorized-domain") {
         setError(
-          "Domínio não autorizado no Firebase. Adicione o seu link em 'Domínios Autorizados' no Firebase Console."
+          `O domínio '${currentHost}' não está autorizado no Firebase. Adicione este domínio no Firebase Console em Authentication > Configurações > Domínios Autorizados.`
         );
       } else if (code === "auth/popup-closed-by-user") {
         setError("A janela de autenticação foi fechada antes de concluir o login. Tente novamente.");
       } else {
-        setError("Não foi possível autenticar com o Google. Tente novamente.");
+        setError("Não foi possível autenticar com o Google. Verifique as configurações e domínios autorizados no Firebase Console.");
       }
       setGoogleLoading(false);
     }

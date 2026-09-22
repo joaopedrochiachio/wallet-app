@@ -93,8 +93,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const code =
             typeof err === "object" && err && "code" in err ? String(err.code) : "";
           if (code === "auth/unauthorized-domain") {
+            const currentHost = typeof window !== "undefined" ? window.location.hostname : "seu-dominio.vercel.app";
             setAuthError(
-              "Domínio não autorizado no Firebase. Adicione o link em 'Domínios Autorizados' no Firebase Console."
+              `O domínio '${currentHost}' não está autorizado no Firebase. Adicione-o no Firebase Console em Authentication > Configurações > Domínios Autorizados.`
             );
           } else if (code === "auth/missing-or-invalid-nonce") {
             setAuthError("A sessão de autenticação expirou. Por favor, tente novamente.");
@@ -139,16 +140,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithGoogle = async (): Promise<User | null> => {
     setAuthError(null);
+    await configureBestPersistence();
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: "select_account" });
 
-    // Em modo PWA standalone ou em dispositivos móveis (onde popups abrem nova aba e perdem window.opener)
-    if (isStandalone() || isMobile()) {
-      await signInWithRedirect(auth, provider);
-      return null;
-    }
-
-    // Em navegadores Desktop convencionais, tentamos popup com fallback automático para redirect
+    // Priorizamos signInWithPopup em todos os ambientes (inclusive PWA e Mobile)
+    // porque o popup troca o token via postMessage em memória, evitando perdas de cookies
+    // entre o domínio da Vercel e o domínio do Firebase (wallet-ia-c8e77.firebaseapp.com)
     try {
       const cred = await signInWithPopup(auth, provider);
       if (cred?.user) {
@@ -160,16 +158,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         typeof popupError === "object" && popupError && "code" in popupError
           ? String(popupError.code)
           : "";
-      // Se popup foi bloqueado, cancelado ou fechado sem comunicação, aciona redirect seguro
+
+      // Se for domínio não autorizado no Firebase Console, informa o hostname exato
+      if (code === "auth/unauthorized-domain") {
+        const currentHost = typeof window !== "undefined" ? window.location.hostname : "seu-dominio.vercel.app";
+        const message = `O domínio '${currentHost}' não está autorizado no Firebase. Adicione este domínio no Firebase Console em Authentication > Configurações > Domínios Autorizados.`;
+        setAuthError(message);
+        throw popupError;
+      }
+
+      // Se o usuário simplesmente fechou a janela ou cancelou, não faz redirect indesejado
+      if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
+        return null;
+      }
+
+      // Apenas se o navegador bloqueou estritamente o popup fazemos fallback para redirect
       if (
         code === "auth/popup-blocked" ||
-        code === "auth/cancelled-popup-request" ||
-        code === "auth/operation-not-supported-in-this-environment" ||
-        code === "auth/popup-closed-by-user"
+        code === "auth/operation-not-supported-in-this-environment"
       ) {
         await signInWithRedirect(auth, provider);
         return null;
       }
+
       throw popupError;
     }
   };
