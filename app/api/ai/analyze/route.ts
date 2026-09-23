@@ -14,608 +14,19 @@ import { checkRateLimit } from "@/lib/utils/rateLimiter";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-export interface SpendingPatternItem {
-  title: string;
-  description: string;
-  type: "info" | "warning" | "alert";
-}
-
-export interface FutureProjectionItem {
-  period: string;
-  description: string;
-  severity: "info" | "warning" | "alert";
-}
-
-export interface ActionableSuggestionItem {
-  title: string;
-  action: string;
-  potentialGain?: string;
-  targetGoal?: string;
-}
-
-export interface SpecificExpenseAlert {
-  item: string;
-  totalAmount: number;
-  count?: number;
-  creditAmount?: number;
-  debitAmount?: number;
-  paymentBreakdown?: string;
-  habitCategory?: string;
-  alertType: "info" | "warning" | "alert";
-  message: string;
-}
-
-export interface CashflowWindowSummary {
-  currentMonth: {
-    monthName: string;
-    checkingBalance: number;
-    pendingBills: number;
-    projectedFreeBalance: number;
-    insight: string;
-  };
-  nextMonth: {
-    monthName: string;
-    projectedIncome: number;
-    committedExpenses: number;
-    cardInstallments: number;
-    recurringDebit: number;
-    projectedFreeBalance: number;
-    insight: string;
-  };
-}
-
-export interface InstallmentScheduleItem {
-  period: string;
-  dueDateHint?: string;
-  cardInstallmentsAmount: number;
-  status: "safe" | "warning" | "alert";
-  explanation: string;
-}
-
-export interface ClientProfileAssessment {
-  persona: string;
-  riskTolerance: string;
-  monthlyIncomeBase: number;
-  primaryFocus: string;
-  commitmentLimitPercent: number;
-  profileAlignmentInsight: string;
-  recommendedActionForGoal?: string;
-}
-
-export interface FutureMonthsRealityCheck {
-  historicalVariableBaseline: number;
-  realityNote: string;
-}
-
-export interface FinancialDiagnosis {
-  healthScore: number;
-  healthStatus: "excellent" | "healthy" | "attention" | "critical";
-  executiveSummary: string;
-  spendingPatterns: SpendingPatternItem[];
-  futureProjections: FutureProjectionItem[];
-  actionableSuggestions: ActionableSuggestionItem[];
-  specificExpensesAlerts?: SpecificExpenseAlert[];
-  cashflowWindow?: CashflowWindowSummary;
-  installmentSchedule?: InstallmentScheduleItem[];
-  clientProfileAssessment?: ClientProfileAssessment;
-  futureMonthsRealityCheck?: FutureMonthsRealityCheck;
-}
-
-function normalizeHealthStatus(
-  statusStr: unknown,
-  score: number
-): "excellent" | "healthy" | "attention" | "critical" {
-  const s = String(statusStr || "").toLowerCase();
-  if (s.includes("excel") || s.includes("ótimo") || s.includes("otimo")) return "excellent";
-  if (s.includes("saud") || s.includes("bom") || s.includes("healthy")) return "healthy";
-  if (s.includes("aten") || s.includes("alerta") || s.includes("warning") || s.includes("moderado")) {
-    return "attention";
-  }
-  if (s.includes("crit") || s.includes("grave") || s.includes("danger")) return "critical";
-
-  // Inferência por pontuação
-  if (score >= 80) return "excellent";
-  if (score >= 65) return "healthy";
-  if (score >= 45) return "attention";
-  return "critical";
-}
-
-function sanitizeText(str: unknown): string {
-  if (typeof str !== "string") return "";
-  let clean = str.trim();
-  // Remove sobras de JSON caso o texto contenha chaves cruas
-  if (clean.startsWith("{") && clean.includes('"executiveSummary"')) {
-    const match = clean.match(/"executiveSummary"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/i);
-    if (match) {
-      clean = match[1].replace(/\\"/g, '"').replace(/\\n/g, " ");
-    }
-  }
-  return clean.replace(/\\"/g, '"').replace(/\\n/g, "\n");
-}
-
-export function safeParseFinancialDiagnosis(
-  rawText: string,
-  context: SafeFinancialContext,
-  dismissedPatterns: string[] = []
-): FinancialDiagnosis {
-  let candidate = rawText.trim();
-
-  // Remove blocos de código markdown se existirem
-  if (candidate.startsWith("```json")) {
-    candidate = candidate.replace(/^```json\s*/i, "").replace(/```\s*$/i, "");
-  } else if (candidate.startsWith("```")) {
-    candidate = candidate.replace(/^```\s*/i, "").replace(/```\s*$/i, "");
-  }
-
-  // Encontra o trecho JSON delimitado por { e }
-  const firstBrace = candidate.indexOf("{");
-  const lastBrace = candidate.lastIndexOf("}");
-  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-    candidate = candidate.slice(firstBrace, lastBrace + 1);
-  }
-
-  let parsed: Record<string, unknown> | null = null;
-  try {
-    parsed = JSON.parse(candidate);
-  } catch {
-    console.warn("[AI_ANALYZE_PARSE_FAILED]", { errorCode: "INVALID_MODEL_JSON" });
-  }
-
-  // 1. Extração do Score
-  let healthScore = 75;
-  if (parsed && typeof parsed.healthScore === "number") {
-    healthScore = Math.max(0, Math.min(100, Math.round(parsed.healthScore)));
-  } else {
-    const matchScore = rawText.match(/"healthScore"\s*:\s*(\d+)/i);
-    if (matchScore) {
-      healthScore = Math.max(0, Math.min(100, parseInt(matchScore[1], 10)));
-    } else {
-      // Cálculo heurístico baseado na telemetria
-      const savingsBonus = Math.min(25, context.cashflow.savingsRatePercent * 0.5);
-      const commitmentPenalty = context.commitments.isOverLimit ? 35 : 10;
-      healthScore = Math.max(25, Math.min(95, Math.round(75 + savingsBonus - commitmentPenalty)));
-    }
-  }
-
-  // 2. Extração do Status
-  const healthStatus = normalizeHealthStatus(parsed?.healthStatus, healthScore);
-
-  // 3. Extração do Parecer Executivo
-  let executiveSummary = "";
-  if (parsed && typeof parsed.executiveSummary === "string") {
-    executiveSummary = sanitizeText(parsed.executiveSummary);
-  }
-  if (!executiveSummary) {
-    const matchSummary = rawText.match(/"executiveSummary"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/i);
-    if (matchSummary) {
-      executiveSummary = sanitizeText(matchSummary[1]);
-    }
-  }
-  if (!executiveSummary || executiveSummary.startsWith("{")) {
-    const netFormatted = context.cashflow.netCashflow >= 0 ? "positivo" : "negativo";
-    const statusWord = healthStatus === "critical" ? "requer atenção prioritária" : "está equilibrado";
-
-    executiveSummary = `Olá! Analisei todo o seu fluxo deste mês. Seu saldo em conta fechou ${netFormatted}, mas o comprometimento total com cartões e despesas fixas ${statusWord}. Estou acompanhando cada movimentação de perto para sugerir passos simples que mantenham sua estabilidade e acelerem suas metas.`;
-  }
-
-  // 4. Normalização de Padrões de Consumo
-  const spendingPatterns: SpendingPatternItem[] = [];
-  const rawPatterns = parsed?.spendingPatterns;
-  if (Array.isArray(rawPatterns)) {
-    for (const p of rawPatterns) {
-      if (typeof p === "string") {
-        spendingPatterns.push({
-          title: "Padrão Identificado",
-          description: sanitizeText(p),
-          type: "info",
-        });
-      } else if (p && typeof p === "object") {
-        const item = p as Record<string, unknown>;
-        spendingPatterns.push({
-          title: String(item.title || "Comportamento de Consumo"),
-          description: sanitizeText(item.description || item.detalhe || ""),
-          type: (item.type as "info" | "warning" | "alert") || "info",
-        });
-      }
-    }
-  } else if (typeof rawPatterns === "string" && rawPatterns.trim()) {
-    spendingPatterns.push({
-      title: "Análise de Gastos",
-      description: sanitizeText(rawPatterns),
-      type: "info",
-    });
-  }
-
-  if (spendingPatterns.length === 0) {
-    spendingPatterns.push({
-      title: "Concentração por Categoria",
-      description:
-        context.categories.length > 0
-          ? `A maior fatia das suas despesas esteve concentrada em ${context.categories[0].category} (${context.categories[0].percentage}% do total gasto).`
-          : "Seus lançamentos estão distribuídos entre as despesas essenciais do dia a dia.",
-      type: "info",
-    });
-  }
-
-  // 5. Normalização de Projeções Futuras
-  const futureProjections: FutureProjectionItem[] = [];
-  const rawProjections = parsed?.futureProjections;
-  if (Array.isArray(rawProjections)) {
-    for (const proj of rawProjections) {
-      if (typeof proj === "string") {
-        futureProjections.push({
-          period: "Próximas Faturas",
-          description: sanitizeText(proj),
-          severity: "info",
-        });
-      } else if (proj && typeof proj === "object") {
-        const item = proj as Record<string, unknown>;
-        futureProjections.push({
-          period: String(item.period || item.prazo || "Próximo Ciclo"),
-          description: sanitizeText(item.description || item.detalhe || ""),
-          severity: (item.severity as "info" | "warning" | "alert") || "info",
-        });
-      }
-    }
-  } else if (typeof rawProjections === "string" && rawProjections.trim()) {
-    futureProjections.push({
-      period: "Próximos 30 dias",
-      description: sanitizeText(rawProjections),
-      severity: "info",
-    });
-  }
-
-  if (futureProjections.length === 0) {
-    const totalInvoices = context.credit.totalSpent;
-    futureProjections.push({
-      period: "Próximas Faturas",
-      description:
-        totalInvoices > 0
-          ? `Você tem um total acumulado de faturas de R$ ${totalInvoices.toFixed(
-              2
-            )} programado para vencer nas próximas semanas.`
-          : "Nenhuma fatura pesada acumulada para o próximo vencimento.",
-      severity: totalInvoices > context.profile.monthlyIncomeBase * 0.5 ? "warning" : "info",
-    });
-  }
-
-  // 6. Normalização de Recomendações Práticas
-  const actionableSuggestions: ActionableSuggestionItem[] = [];
-  const rawSuggestions = parsed?.actionableSuggestions;
-  if (Array.isArray(rawSuggestions)) {
-    for (const sug of rawSuggestions) {
-      if (typeof sug === "string") {
-        actionableSuggestions.push({
-          title: "Orientação do Assistente",
-          action: sanitizeText(sug),
-          potentialGain: "Mais folga no orçamento",
-        });
-      } else if (sug && typeof sug === "object") {
-        const item = sug as Record<string, unknown>;
-        actionableSuggestions.push({
-          title: String(item.title || "Sugestão Prática"),
-          action: sanitizeText(item.action || item.descricao || ""),
-          potentialGain: item.potentialGain ? String(item.potentialGain) : undefined,
-          targetGoal: item.targetGoal ? String(item.targetGoal) : undefined,
-        });
-      }
-    }
-  }
-
-  if (actionableSuggestions.length === 0) {
-    actionableSuggestions.push({
-      title: "Reserva e Equilíbrio",
-      action:
-        "Separe uma quantia fixa logo no início do mês antes de comprometer o limite com novas compras parceladas.",
-      potentialGain: "Segurança de liquidez",
-    });
-  }
-
-  // 7. Normalização de Alertas de Gastos Específicos & Hábitos (com Débito vs Crédito)
-  // 7. Normalização de Alertas de Gastos Específicos & Hábitos (com Débito vs Crédito)
-  const specificExpensesAlerts: SpecificExpenseAlert[] = [];
-  const rawSpecific =
-    parsed?.specificExpensesAlerts ||
-    parsed?.specificExpenseAlerts ||
-    parsed?.gastosEspecificos ||
-    parsed?.alertasGastos;
-
-function isDismissedPattern(
-  itemName: string,
-  habitCategory: string | undefined,
-  dismissedPatterns: string[] = []
-): boolean {
-  if (!dismissedPatterns || dismissedPatterns.length === 0) return false;
-  const nameNorm = (itemName || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim();
-  const catNorm = (habitCategory || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim();
-
-  return dismissedPatterns.some((d) => {
-    const dNorm = (d || "")
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .trim();
-    if (!dNorm) return false;
-    return (
-      nameNorm === dNorm ||
-      nameNorm.includes(dNorm) ||
-      dNorm.includes(nameNorm) ||
-      (catNorm && (catNorm === dNorm || catNorm.includes(dNorm) || dNorm.includes(catNorm)))
-    );
-  });
-}
-
-  if (Array.isArray(rawSpecific) && rawSpecific.length > 0) {
-    for (const item of rawSpecific) {
-      if (item && typeof item === "object") {
-        const obj = item as Record<string, unknown>;
-        const rawItemName = String(obj.item || "Gasto Frequente");
-
-        // Ignora imediatamente transações operacionais, faturas de cartão, notas manuais e rifas
-        if (isExcludedFromHabitAnalysis(rawItemName)) {
-          continue;
-        }
-
-        const count = typeof obj.count === "number" ? obj.count : undefined;
-        // Padrão de consumo exige repetição real (mínimo de 2 compras). NUNCA aceita count === 1
-        if (count !== undefined && count < 2) {
-          continue;
-        }
-
-        // Descarta se o título denotar compra isolada (ex: "(1 compra)")
-        if (/\(1\s*compra\)/i.test(rawItemName)) {
-          continue;
-        }
-
-        const totalAmount = typeof obj.totalAmount === "number" ? obj.totalAmount : 0;
-        const creditAmount = typeof obj.creditAmount === "number" ? obj.creditAmount : undefined;
-        const debitAmount = typeof obj.debitAmount === "number" ? obj.debitAmount : undefined;
-
-        // Reclassifica com precisão para evitar que "Vivo Easy" ou itens aleatórios virem Delivery
-        const refinedHabit = inferHabitCategory(rawItemName, String(obj.habitCategory || ""));
-        const habitCategory =
-          refinedHabit && refinedHabit !== "Outros Hábitos" && refinedHabit !== "Alimentação Geral"
-            ? refinedHabit
-            : typeof obj.habitCategory === "string" && obj.habitCategory.trim()
-            ? sanitizeText(obj.habitCategory)
-            : undefined;
-
-        // Ignora se o usuário descartou este padrão
-        if (isDismissedPattern(rawItemName, habitCategory, dismissedPatterns)) {
-          continue;
-        }
-
-        let paymentBreakdown =
-          typeof obj.paymentBreakdown === "string" && obj.paymentBreakdown.trim()
-            ? sanitizeText(obj.paymentBreakdown)
-            : undefined;
-
-        if (!paymentBreakdown && (creditAmount !== undefined || debitAmount !== undefined)) {
-          const c = creditAmount ?? 0;
-          const d = debitAmount ?? 0;
-          if (c > 0 && d > 0) {
-            paymentBreakdown = `Crédito: R$ ${c.toFixed(2)} | Débito: R$ ${d.toFixed(2)}`;
-          } else if (c > 0) {
-            paymentBreakdown = `100% no Crédito (R$ ${c.toFixed(2)})`;
-          } else if (d > 0) {
-            paymentBreakdown = `100% no Débito/PIX (R$ ${d.toFixed(2)})`;
-          }
-        }
-
-        specificExpensesAlerts.push({
-          item: rawItemName,
-          totalAmount,
-          count: typeof obj.count === "number" ? obj.count : undefined,
-          creditAmount,
-          debitAmount,
-          paymentBreakdown,
-          habitCategory,
-          alertType: (obj.alertType as "info" | "warning" | "alert") || "info",
-          message: sanitizeText(obj.message || ""),
-        });
-      }
-    }
-  }
-
-  // Fallback 1: se a IA não gerou alertas válidos, prioriza estabelecimentos recorrentes reais em topSpendItems (estritamente count >= 2)
-  const validTopSpends = (context.topSpendItems || []).filter(
-    (item) =>
-      !isExcludedFromHabitAnalysis(item.title, item.category) &&
-      item.count >= 2 &&
-      !isDismissedPattern(item.title, item.habitCategory, dismissedPatterns)
-  );
-
-  if (specificExpensesAlerts.length === 0 && validTopSpends.length > 0) {
-    for (const item of validTopSpends.slice(0, 4)) {
-      const isHigh = item.percentage >= 10 || item.total > 150;
-      specificExpensesAlerts.push({
-        item: item.title,
-        totalAmount: item.total,
-        count: item.count,
-        creditAmount: item.creditAmount,
-        debitAmount: item.debitAmount,
-        paymentBreakdown: item.paymentBreakdown,
-        habitCategory: item.habitCategory,
-        alertType: isHigh ? "warning" : "info",
-        message: `Identificamos ${item.count} compra(s) em ${item.title} totalizando R$ ${item.total.toFixed(2)} (${item.paymentBreakdown || "À vista"}).`,
-      });
-    }
-  }
-
-  // Fallback 2: grupos consolidados (lifestyleHabits) com repetição real (estritamente count >= 2)
-  if (specificExpensesAlerts.length === 0 && context.lifestyleHabits && context.lifestyleHabits.length > 0) {
-    const validHabits = context.lifestyleHabits.filter(
-      (h) =>
-        !isExcludedFromHabitAnalysis(h.habitName) &&
-        h.habitName !== "Alimentação Geral" &&
-        h.habitName !== "Outros Hábitos" &&
-        h.count >= 2 &&
-        !isDismissedPattern(h.habitName, undefined, dismissedPatterns)
-    );
-
-    for (const habit of validHabits.slice(0, 3)) {
-      const isHigh = habit.total > 200 || habit.count >= 4;
-      const breakdown =
-        habit.creditAmount > 0 && habit.debitAmount > 0
-          ? `Crédito: R$ ${habit.creditAmount.toFixed(2)} | Débito: R$ ${habit.debitAmount.toFixed(2)}`
-          : habit.creditAmount > 0
-          ? `100% no Crédito (R$ ${habit.creditAmount.toFixed(2)})`
-          : `100% no Débito/PIX (R$ ${habit.debitAmount.toFixed(2)})`;
-
-      specificExpensesAlerts.push({
-        item: habit.habitName,
-        totalAmount: habit.total,
-        count: habit.count,
-        creditAmount: habit.creditAmount,
-        debitAmount: habit.debitAmount,
-        paymentBreakdown: breakdown,
-        habitCategory: habit.habitName,
-        alertType: isHigh ? "warning" : "info",
-        message: `Identificados ${habit.count} gastos com ${habit.habitName} somando R$ ${habit.total.toFixed(2)} (${breakdown}${habit.examples.length ? ` — ex: ${habit.examples.join(", ")}` : ""}).`,
-      });
-    }
-  }
-
-  // 8. Normalização da Janela de Liquidez (Hoje vs Mês Que Vem)
-  const liq = context.liquidityAnalysis;
-  const rawCashflow = parsed?.cashflowWindow as Record<string, unknown> | undefined;
-  const rawCurrent = rawCashflow?.currentMonth as Record<string, unknown> | undefined;
-  const rawNext = rawCashflow?.nextMonth as Record<string, unknown> | undefined;
-
-  const cashflowWindow: CashflowWindowSummary = {
-    currentMonth: {
-      monthName: liq.currentMonth.monthName,
-      checkingBalance: liq.currentMonth.checkingBalance,
-      pendingBills: liq.currentMonth.pendingBills,
-      projectedFreeBalance: liq.currentMonth.projectedFreeBalance,
-      insight:
-        typeof rawCurrent?.insight === "string" && rawCurrent.insight.trim()
-          ? sanitizeText(rawCurrent.insight)
-          : liq.currentMonth.projectedFreeBalance >= 0
-          ? `Você tem R$ ${liq.currentMonth.projectedFreeBalance.toFixed(2)} livres na conta para terminar o mês atual com tranquilidade.`
-          : `Atenção: as saídas deste mês superam o saldo em conta em R$ ${Math.abs(liq.currentMonth.projectedFreeBalance).toFixed(2)}.`,
-    },
-    nextMonth: {
-      monthName: liq.nextMonth.monthName,
-      projectedIncome: liq.nextMonth.projectedIncome,
-      committedExpenses: liq.nextMonth.committedExpenses,
-      cardInstallments: liq.nextMonth.cardInstallments,
-      recurringDebit: liq.nextMonth.recurringDebit,
-      projectedFreeBalance: liq.nextMonth.projectedFreeBalance,
-      insight:
-        typeof rawNext?.insight === "string" && rawNext.insight.trim()
-          ? sanitizeText(rawNext.insight)
-          : liq.nextMonth.projectedFreeBalance >= 0
-          ? `Mês que vem você terá R$ ${liq.nextMonth.projectedFreeBalance.toFixed(2)} livres para gastar após quitar despesas fixas e parcelas.`
-          : `Mês que vem exigirá cautela: os compromissos previstos superam a renda projetada em R$ ${Math.abs(liq.nextMonth.projectedFreeBalance).toFixed(2)}.`,
-    },
-  };
-
-  // 9. Normalização do Cronograma de Parcelamentos
-  const installmentSchedule: InstallmentScheduleItem[] = [];
-  const rawSchedule = parsed?.installmentSchedule;
-  if (Array.isArray(rawSchedule) && rawSchedule.length > 0) {
-    for (const item of rawSchedule) {
-      if (item && typeof item === "object") {
-        const obj = item as Record<string, unknown>;
-        installmentSchedule.push({
-          period: String(obj.period || "Próximo Ciclo"),
-          dueDateHint: obj.dueDateHint ? String(obj.dueDateHint) : undefined,
-          cardInstallmentsAmount: typeof obj.cardInstallmentsAmount === "number" ? obj.cardInstallmentsAmount : 0,
-          status: (obj.status as "safe" | "warning" | "alert") || "safe",
-          explanation: sanitizeText(obj.explanation || ""),
-        });
-      }
-    }
-  }
-
-  if (installmentSchedule.length === 0 && context.monthlyProjections?.length) {
-    for (const p of context.monthlyProjections.slice(1, 4)) {
-      if (p.cardInstallments > 0) {
-        installmentSchedule.push({
-          period: `${p.monthName}/${p.year}`,
-          dueDateHint: "Fatura programada",
-          cardInstallmentsAmount: p.cardInstallments,
-          status: p.projectedFreeBalance >= 0 ? "safe" : "alert",
-          explanation:
-            p.projectedFreeBalance >= 0
-              ? `Parcelas de cartão de R$ ${p.cardInstallments.toFixed(2)} distribuídas de forma equilibrada, com saldo livre final de R$ ${p.projectedFreeBalance.toFixed(2)}.`
-              : `Parcelas de cartão somam R$ ${p.cardInstallments.toFixed(2)}, exigindo atenção para cobrir o mês.`,
-        });
-      }
-    }
-  }
-
-  // 10. Perfil Completo do Cliente & Alinhamento Estratégico
-  const personaLabels: Record<string, string> = {
-    optimizer: "Otimizador (Eficiência máxima)",
-    guardian: "Guardião (Proteção e liquidez)",
-    scaler: "Escalador (Crescimento e metas)",
-    minimalist: "Minimalista (Simplicidade e foco)",
-  };
-  const riskLabels: Record<string, string> = {
-    low: "Conservadora",
-    moderate: "Moderada",
-    high: "Arrojada",
-  };
-  const rawProfileAssessment = parsed?.clientProfileAssessment as Record<string, unknown> | undefined;
-  const clientProfileAssessment: ClientProfileAssessment = {
-    persona:
-      typeof rawProfileAssessment?.persona === "string" && rawProfileAssessment.persona.trim()
-        ? sanitizeText(rawProfileAssessment.persona)
-        : personaLabels[context.profile.persona] || "Otimizador",
-    riskTolerance:
-      typeof rawProfileAssessment?.riskTolerance === "string" && rawProfileAssessment.riskTolerance.trim()
-        ? sanitizeText(rawProfileAssessment.riskTolerance)
-        : riskLabels[context.profile.riskTolerance] || "Moderada",
-    monthlyIncomeBase: context.profile.monthlyIncomeBase,
-    primaryFocus: context.profile.primaryFocus || "Equilíbrio financeiro e metas",
-    commitmentLimitPercent: context.profile.maxCommitmentAlertPercent,
-    profileAlignmentInsight:
-      typeof rawProfileAssessment?.profileAlignmentInsight === "string" && rawProfileAssessment.profileAlignmentInsight.trim()
-        ? sanitizeText(rawProfileAssessment.profileAlignmentInsight)
-        : `Com renda base de R$ ${context.profile.monthlyIncomeBase.toFixed(2)} e foco em "${context.profile.primaryFocus}", seus compromissos fixos e faturas absorvem ${context.commitments.commitmentRatioPercent}% do seu orçamento mensal.`,
-    recommendedActionForGoal:
-      typeof rawProfileAssessment?.recommendedActionForGoal === "string" && rawProfileAssessment.recommendedActionForGoal.trim()
-        ? sanitizeText(rawProfileAssessment.recommendedActionForGoal)
-        : undefined,
-  };
-
-  // 11. Reality Check para Meses Futuros (Ponderação de Gastos Variáveis)
-  const rawReality = parsed?.futureMonthsRealityCheck as Record<string, unknown> | undefined;
-  const historicalBaseline = context.historicalVariableBaseline || 0;
-  const futureMonthsRealityCheck: FutureMonthsRealityCheck = {
-    historicalVariableBaseline: historicalBaseline,
-    realityNote:
-      typeof rawReality?.realityNote === "string" && rawReality.realityNote.trim()
-        ? sanitizeText(rawReality.realityNote)
-        : historicalBaseline > 0
-        ? `Lembrete contábil: meses futuros (como Dezembro) listam apenas parcelas e fixas agendadas. Ponderando seu baseline histórico de gastos variáveis (~R$ ${historicalBaseline.toFixed(2)}/mês), sua folga líquida real será mais moderada do que a sobra bruta indica.`
-        : "Meses futuros com faturas baixas abrem espaço para poupar, mas mantenha prudência com novas despesas do dia a dia.",
-  };
-
-  return {
-    healthScore,
-    healthStatus,
-    executiveSummary,
-    spendingPatterns,
-    futureProjections,
-    actionableSuggestions,
-    specificExpensesAlerts,
-    cashflowWindow,
-    installmentSchedule,
-    clientProfileAssessment,
-    futureMonthsRealityCheck,
-  };
-}
+export * from "@/lib/services/financialDiagnosisService";
+import {
+  safeParseFinancialDiagnosis,
+  type FinancialDiagnosis,
+  type SpecificExpenseAlert,
+  type SpendingPatternItem,
+  type FutureProjectionItem,
+  type ActionableSuggestionItem,
+  type CashflowWindowSummary,
+  type InstallmentScheduleItem,
+  type ClientProfileAssessment,
+  type FutureMonthsRealityCheck,
+} from "@/lib/services/financialDiagnosisService";
 
 export async function POST(req: NextRequest) {
   try {
@@ -694,7 +105,10 @@ POSTURA DO ANALISTA (CFO PESSOAL):
 
 DIRETRIZES FUNDAMENTAIS DO DIAGNÓSTICO:
 1. GASTOS ESPECÍFICOS & HÁBITOS DE CONSUMO (CRÉDITO vs DÉBITO):
-   - Inspecione as descrições nominais de gastos tanto no CARTÃO DE CRÉDITO quanto no DÉBITO/PIX.
+   - Inspecione detalhadamente a Seção 9 (GRUPOS MACRO DE ESTILO DE VIDA) e a Seção 8 (ESTABELECIMENTOS MAIS FREQUENTES).
+   - Para CADA grupo de hábitos na Seção 9 com repetição real (count >= 2, ex: "Lanches & Fast Food", "Sobremesas & Doces", "Cafés, Padarias & Cantinas") e estabelecimentos frequentes da Seção 8 (ex: "Gasolina", "McDonald's", "Chiquinho"):
+     * Crie uma entrada em 'specificExpensesAlerts' com o total acumulado, contagem de compras (>= 2) e a divisão exata entre Crédito e Débito/PIX.
+     * Crie também uma entrada correspondente em 'spendingPatterns' destacando o comportamento e seu impacto no orçamento (ex: "Consumo Recorrente de Sobremesas", "Foco em Fast Food", "Despesas com Combustível").
    - ZERO ALUCINAÇÃO & RIGOR DE REPETIÇÃO:
      * Um padrão de consumo EXIGE no MÍNIMO 2 compras reais no mesmo estabelecimento ou mesmo tipo de gasto (count >= 2).
      * NUNCA crie alertas para compras isoladas (1 compra), cursos/mensalidades esporádicas (ex: Inglês), notas manuais com múltiplas despesas somadas (ex: "Gastos (Inatel...)"), ajustes na conta ou faturas de cartão.
@@ -706,7 +120,7 @@ DIRETRIZES FUNDAMENTAIS DO DIAGNÓSTICO:
      * 'Vivo Easy' ou outras operadoras de celular pertencem a 'Telefonia & Internet', NUNCA delivery nem restaurantes.
      * Pipoca / Pipoquinha é lanche/snack.
      * 'Restaurantes & Delivery' deve ser utilizado estritamente para estabelecimentos reais de refeição ou entrega de comida (ex: iFood, restaurantes, pizzarias).
-   - Padronize hábitos em categorias comportamentais (ex: "Sobremesas & Doces", "Lanches & Fast Food", "Cafés & Cantinas", "Restaurantes & Delivery", "Telefonia & Internet", etc.) ou estabelecimentos específicos frequentes (ex: Chiquinho, sorveterias, McDonald's, padarias).
+   - Padronize hábitos em categorias comportamentais (ex: "Sobremesas & Doces", "Lanches & Fast Food", "Cafés, Padarias & Cantinas", "Restaurantes & Delivery", "Telefonia & Internet", etc.) ou estabelecimentos específicos frequentes (ex: Chiquinho, sorveterias, McDonald's, padarias).
    - Preencha 'specificExpensesAlerts' informando obrigatoriamente:
      * 'item': nome do hábito ou estabelecimento
      * 'habitCategory': categoria comportamental padronizada
@@ -735,22 +149,54 @@ RESPONDA ESTRITAMENTE EM FORMATO JSON com a seguinte estrutura:
   "executiveSummary": "texto executivo direto do analista (máx 3 frases assertivas com valores)",
   "spendingPatterns": [
     {
-      "title": "título curto do padrão",
-      "description": "análise direta do padrão em uma frase com valores",
-      "type": "info" | "warning" | "alert"
+      "title": "Sobremesas & Confeitarias",
+      "description": "2 compras em docerias somando R$ 92,73 (100% no cartão de crédito).",
+      "type": "info"
+    },
+    {
+      "title": "Lanches & Fast Food",
+      "description": "4 pedidos acumulando R$ 167,50 no crédito, aumentando a fatura seguinte.",
+      "type": "warning"
+    },
+    {
+      "title": "Abastecimento Frequente",
+      "description": "2 abastecimentos somando R$ 90,20 pagos no débito/PIX com impacto direto no caixa.",
+      "type": "info"
     }
   ],
   "specificExpensesAlerts": [
     {
+      "item": "Lanches & Fast Food",
+      "habitCategory": "Lanches & Fast Food",
+      "totalAmount": 167.50,
+      "count": 4,
+      "creditAmount": 167.50,
+      "debitAmount": 0.00,
+      "paymentBreakdown": "100% no Crédito (R$ 167,50)",
+      "alertType": "warning",
+      "message": "Identificamos 4 compras com fast food somando R$ 167,50 totalmente no cartão de crédito."
+    },
+    {
       "item": "Sobremesas & Doces (ex: Chiquinho / Sorvete)",
       "habitCategory": "Sobremesas & Doces",
-      "totalAmount": 120.00,
-      "count": 4,
-      "creditAmount": 80.00,
-      "debitAmount": 40.00,
-      "paymentBreakdown": "Crédito: R$ 80,00 | Débito: R$ 40,00",
-      "alertType": "info" | "warning" | "alert",
-      "message": "Você teve 4 gastos com sobremesas somando R$ 120,00 (sendo R$ 80,00 no crédito e R$ 40,00 no débito)."
+      "totalAmount": 92.73,
+      "count": 2,
+      "creditAmount": 92.73,
+      "debitAmount": 0.00,
+      "paymentBreakdown": "100% no Crédito (R$ 92,73)",
+      "alertType": "info",
+      "message": "Você teve 2 gastos com sobremesas e doces somando R$ 92,73 100% no crédito."
+    },
+    {
+      "item": "Gasolina",
+      "habitCategory": "Transporte & Mobilidade",
+      "totalAmount": 90.20,
+      "count": 2,
+      "creditAmount": 0.00,
+      "debitAmount": 90.20,
+      "paymentBreakdown": "100% no Débito/PIX (R$ 90,20)",
+      "alertType": "info",
+      "message": "Foram 2 abastecimentos somando R$ 90,20 pagos diretamente no débito em conta."
     }
   ],
   "cashflowWindow": {

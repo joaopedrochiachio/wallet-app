@@ -276,10 +276,48 @@ IMPORTANTE: Apenas JSON válido sem texto adicional. Se não houver padrões com
       }
     }
 
-    // Se o modelo não encontrou novos padrões além do que já calculamos no motor determinístico,
-    // aproveitamos os topSpends recorrentes disponíveis como complemento
-    if (patterns.length === 0 && availableSpends.length > 0) {
-      for (const item of availableSpends.slice(0, 3)) {
+    // Complementa com hábitos consolidados elegíveis (lifestyleHabits) e estabelecimentos recorrentes (topSpendItems)
+    const isPatternAlreadyCovered = (name: string, cat?: string) => {
+      const norm = (name || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+      const catNorm = (cat || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+      return patterns.some((p) => {
+        const pName = (p.item || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+        const pCat = (p.habitCategory || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+        return (
+          pName === norm ||
+          pName.includes(norm) ||
+          norm.includes(pName) ||
+          (catNorm && (pCat === catNorm || pCat.includes(catNorm) || catNorm.includes(pCat)))
+        );
+      });
+    };
+
+    for (const habit of availableHabits) {
+      if (!isPatternAlreadyCovered(habit.habitName, habit.habitName)) {
+        const isHigh = habit.total > 200 || habit.count >= 4;
+        const breakdown =
+          habit.creditAmount > 0 && habit.debitAmount > 0
+            ? `Crédito: R$ ${habit.creditAmount.toFixed(2)} | Débito: R$ ${habit.debitAmount.toFixed(2)}`
+            : habit.creditAmount > 0
+            ? `100% no Crédito (R$ ${habit.creditAmount.toFixed(2)})`
+            : `100% no Débito/PIX (R$ ${habit.debitAmount.toFixed(2)})`;
+
+        patterns.push({
+          item: habit.habitName,
+          totalAmount: habit.total,
+          count: habit.count,
+          creditAmount: habit.creditAmount,
+          debitAmount: habit.debitAmount,
+          paymentBreakdown: breakdown,
+          habitCategory: habit.habitName,
+          alertType: isHigh ? "warning" : "info",
+          message: `Identificados ${habit.count} gastos com ${habit.habitName} somando R$ ${habit.total.toFixed(2)} (${breakdown}${habit.examples.length ? ` — ex: ${habit.examples.join(", ")}` : ""}).`,
+        });
+      }
+    }
+
+    for (const item of availableSpends) {
+      if (!isPatternAlreadyCovered(item.title, item.habitCategory)) {
         const isHigh = item.percentage >= 10 || item.total > 150;
         patterns.push({
           item: item.title,

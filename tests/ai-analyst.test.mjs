@@ -24,6 +24,7 @@ import {
   restorePattern,
   clearDismissedPatterns,
 } from "../lib/services/aiChatService.ts";
+import { safeParseFinancialDiagnosis } from "../lib/services/financialDiagnosisService.ts";
 
 test("MODEL_CASCADE contém exatamente os 8 modelos na ordem requisitada", () => {
   const expectedOrder = [
@@ -1150,6 +1151,117 @@ test("gestão de padrões descartados (loadDismissedPatterns, dismissPattern, re
   } finally {
     globalThis.window = originalWindow;
   }
+});
+
+test("safeParseFinancialDiagnosis enriquece spendingPatterns e specificExpensesAlerts com hábitos de estilo de vida consolidados e estabelecimentos frequentes", () => {
+  const telemetry = synthesizeFinancialTelemetry({
+    cards: [
+      { id: "c1", name: "Nubank", brand: "mastercard", type: "credit", limit: 3000, spent: 329.95 },
+    ],
+    transactions: [
+      { id: "t1", title: "McDonald's", amount: 100, type: "despesa", category: "Alimentação", paymentMethod: "Cartão", cardId: "c1", date: "2026-09-05" },
+      { id: "t2", title: "McDonald's", amount: 67.5, type: "despesa", category: "Alimentação", paymentMethod: "Cartão", cardId: "c1", date: "2026-09-12" },
+      { id: "t3", title: "Chiquinho Sorvetes", amount: 52.73, type: "despesa", category: "Alimentação", paymentMethod: "Cartão", cardId: "c1", date: "2026-09-08" },
+      { id: "t4", title: "Sorvetinho Lolla", amount: 40, type: "despesa", category: "Alimentação", paymentMethod: "Cartão", cardId: "c1", date: "2026-09-15" },
+      { id: "t5", title: "Gasolina", amount: 50.2, type: "despesa", category: "Transporte", paymentMethod: "Débito", date: "2026-09-02" },
+      { id: "t6", title: "Gasolina", amount: 40, type: "despesa", category: "Transporte", paymentMethod: "Débito", date: "2026-09-18" },
+      { id: "t7", title: "Cantina Inatel", amount: 35, type: "despesa", category: "Alimentação", paymentMethod: "Cartão", cardId: "c1", date: "2026-09-10" },
+      { id: "t8", title: "Cantina Inatel", amount: 34.72, type: "despesa", category: "Alimentação", paymentMethod: "Cartão", cardId: "c1", date: "2026-09-16" },
+      // Lançamentos isolados ou operacionais que NÃO devem virar padrão
+      { id: "t9", title: "Inglês", amount: 300, type: "despesa", category: "Educação", paymentMethod: "PIX", date: "2026-09-01" },
+      { id: "t10", title: "Ajuste na conta", amount: 10, type: "despesa", category: "Outros", paymentMethod: "Conta", date: "2026-09-02" },
+    ],
+    recurringItems: [],
+    goals: [],
+    mainBalance: 2000,
+    monthIncome: 5000,
+    monthExpense: 680.15,
+  });
+
+  const safeContext = createSafeFinancialContext(telemetry);
+
+  // Simula modelo retornando apenas 1 alerta genérico ou vazio
+  const rawModelResponse = JSON.stringify({
+    healthScore: 78,
+    healthStatus: "healthy",
+    executiveSummary: "Fluxo sob controle com boa sobra em conta.",
+    spendingPatterns: [
+      { title: "Observação Inicial", description: "Gastos com lazer moderados.", type: "info" }
+    ],
+    specificExpensesAlerts: [
+      {
+        item: "Gasolina",
+        habitCategory: "Transporte & Mobilidade",
+        totalAmount: 90.20,
+        count: 2,
+        creditAmount: 0,
+        debitAmount: 90.20,
+        paymentBreakdown: "100% no Débito/PIX (R$ 90,20)",
+        alertType: "info",
+        message: "2 abastecimentos no débito."
+      }
+    ]
+  });
+
+  const diagnosis = safeParseFinancialDiagnosis(rawModelResponse, safeContext, []);
+
+  // 1. specificExpensesAlerts deve conter Gasolina E os outros grupos com repetição (count >= 2)
+  assert.ok(diagnosis.specificExpensesAlerts);
+  const alertItems = diagnosis.specificExpensesAlerts.map((a) => a.item);
+  assert.ok(alertItems.includes("Gasolina"), "Gasolina deve estar presente");
+  assert.ok(
+    alertItems.some((name) => name.toLowerCase().includes("lanche") || name.toLowerCase().includes("fast food")),
+    "Lanches & Fast Food deve estar presente"
+  );
+  assert.ok(
+    alertItems.some((name) => name.toLowerCase().includes("sobremesa") || name.toLowerCase().includes("doce")),
+    "Sobremesas & Doces deve estar presente"
+  );
+  assert.ok(
+    alertItems.some((name) => name.toLowerCase().includes("cantina") || name.toLowerCase().includes("cafe")),
+    "Cafés, Padarias & Cantinas deve estar presente"
+  );
+
+  // 2. Não deve incluir compras isoladas nem ajustes
+  assert.ok(!alertItems.includes("Inglês"), "Inglês (1 compra) NÃO pode virar alerta de padrão");
+  assert.ok(!alertItems.includes("Ajuste na conta"), "Ajuste na conta NÃO pode virar alerta de padrão");
+
+  // 3. spendingPatterns deve conter múltiplos padrões observados refletindo os hábitos
+  assert.ok(diagnosis.spendingPatterns.length >= 3, "spendingPatterns deve ter pelo menos 3 padrões observados");
+  const patternTitles = diagnosis.spendingPatterns.map((p) => p.title);
+  assert.ok(
+    patternTitles.some((t) => t.toLowerCase().includes("sobremesa") || t.toLowerCase().includes("lanche") || t.toLowerCase().includes("habito")),
+    "spendingPatterns deve conter hábitos identificados"
+  );
+});
+
+test("safeParseFinancialDiagnosis respeita dismissedPatterns e exclui padrões descartados", () => {
+  const telemetry = synthesizeFinancialTelemetry({
+    cards: [],
+    transactions: [
+      { id: "t1", title: "Gasolina", amount: 50, type: "despesa", category: "Transporte", paymentMethod: "Débito", date: "2026-09-02" },
+      { id: "t2", title: "Gasolina", amount: 40, type: "despesa", category: "Transporte", paymentMethod: "Débito", date: "2026-09-18" },
+      { id: "t3", title: "McDonald's", amount: 50, type: "despesa", category: "Alimentação", paymentMethod: "Cartão", date: "2026-09-05" },
+      { id: "t4", title: "McDonald's", amount: 40, type: "despesa", category: "Alimentação", paymentMethod: "Cartão", date: "2026-09-12" },
+    ],
+    recurringItems: [],
+    goals: [],
+    mainBalance: 1000,
+    monthIncome: 3000,
+    monthExpense: 180,
+  });
+
+  const safeContext = createSafeFinancialContext(telemetry);
+
+  // Usuário descartou "Gasolina"
+  const dismissed = ["gasolina"];
+  const diagnosis = safeParseFinancialDiagnosis("{}", safeContext, dismissed);
+
+  const alertItems = (diagnosis.specificExpensesAlerts || []).map((a) => a.item.toLowerCase());
+  assert.ok(!alertItems.includes("gasolina"), "Gasolina descartada não deve aparecer em specificExpensesAlerts");
+
+  const patternTitles = diagnosis.spendingPatterns.map((p) => p.title.toLowerCase());
+  assert.ok(!patternTitles.some((t) => t.includes("gasolina")), "Gasolina descartada não deve aparecer em spendingPatterns");
 });
 
 
