@@ -7,6 +7,9 @@ import { useWallet, FinancialPersonaId, RiskToleranceId, AIToneId } from "@/cont
 import { useAuth } from "@/context/AuthContext";
 import { AppleConfirmModal } from "@/components/ui/AppleConfirmModal";
 import { AppleArchetypeModal } from "@/components/ui/AppleArchetypeModal";
+import { LgpdTermsModal } from "@/components/legal/LgpdTermsModal";
+import { exportUserDataJson } from "@/lib/services/userService";
+import { sanitizeTextInput, validateCurrency, validateEmail } from "@/lib/utils/security";
 import {
   ChevronLeft,
   Check,
@@ -14,6 +17,10 @@ import {
   Award,
   LogOut,
   Trash2,
+  Download,
+  ShieldCheck,
+  FileText,
+  Loader2,
 } from "lucide-react";
 
 interface PersonaConfig {
@@ -95,6 +102,8 @@ export default function ProfilePage() {
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [isArchetypeModalOpen, setIsArchetypeModalOpen] = useState(false);
   const [initialSelectedPersona, setInitialSelectedPersona] = useState<FinancialPersonaId | null>(null);
+  const [isLgpdModalOpen, setIsLgpdModalOpen] = useState(false);
+  const [isExportingData, setIsExportingData] = useState(false);
 
   // Sincronizar inputs locais quando o perfil for carregado do Firestore
   useEffect(() => {
@@ -144,6 +153,35 @@ export default function ProfilePage() {
     }
   };
 
+  const handleExportData = async () => {
+    if (!user?.uid) {
+      showToast("Você precisa estar autenticado para exportar seus dados.");
+      return;
+    }
+
+    setIsExportingData(true);
+    try {
+      const data = await exportUserDataJson(user.uid);
+      const jsonStr = JSON.stringify(data, null, 2);
+      const blob = new Blob([jsonStr], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const dateStr = new Date().toISOString().split("T")[0];
+      link.href = url;
+      link.download = `wallet-lgpd-dados-${dateStr}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      showToast("Relatório de dados pessoais baixado com sucesso!");
+    } catch (err: unknown) {
+      console.error("Erro ao exportar dados:", err);
+      showToast("Falha ao exportar seus dados. Tente novamente.");
+    } finally {
+      setIsExportingData(false);
+    }
+  };
+
   const formatCurrency = (val: number) =>
     val.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -173,16 +211,28 @@ export default function ProfilePage() {
 
   const handleSaveProfileData = (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanIncome = parseFloat(incomeInput.replace(/\./g, "").replace(",", "."));
-    const finalIncome = isNaN(cleanIncome) || cleanIncome <= 0 ? userProfile.monthlyIncomeBase : cleanIncome;
+
+    const sanitizedName = sanitizeTextInput(name, 100);
+    const sanitizedRole = sanitizeTextInput(role, 80);
+    const sanitizedFocus = sanitizeTextInput(primaryFocus, 150);
+
+    if (email && !validateEmail(email)) {
+      showToast("E-mail em formato inválido.");
+      return;
+    }
+
+    const incomeVal = validateCurrency(incomeInput, { min: 100, max: 10_000_000 });
+    const finalIncome = incomeVal.isValid ? incomeVal.value : userProfile.monthlyIncomeBase;
+
+    const clampedCommitment = Math.max(5, Math.min(100, maxCommitment));
 
     updateUserProfile({
-      name: name.trim() || userProfile.name,
+      name: sanitizedName || userProfile.name,
       email: email.trim() || userProfile.email,
-      role: role.trim() || userProfile.role,
+      role: sanitizedRole || userProfile.role,
       monthlyIncomeBase: finalIncome,
-      primaryFocus: primaryFocus.trim() || userProfile.primaryFocus,
-      maxCommitmentAlertPercent: maxCommitment,
+      primaryFocus: sanitizedFocus || userProfile.primaryFocus,
+      maxCommitmentAlertPercent: clampedCommitment,
     });
 
     showToast("Perfil atualizado com sucesso!");
@@ -686,13 +736,59 @@ export default function ProfilePage() {
           </button>
         </div>
 
+        {/* Conformidade LGPD e Portabilidade de Dados */}
+        <div className="pt-4 border-t border-black/[0.05] space-y-3">
+          <div className="flex items-start justify-between flex-wrap gap-2">
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="text-xs font-semibold text-[#1D1D1F] flex items-center gap-1.5">
+                  <ShieldCheck size={14} className="text-emerald-600" />
+                  <span>Proteção de Dados & Conformidade LGPD</span>
+                </h4>
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/50">
+                  Lei 13.709/2018
+                </span>
+              </div>
+              <p className="text-[11px] text-[#86868B] mt-0.5 max-w-lg">
+                Seus dados financeiros são criptografados e higienizados contra identificadores pessoais. Você pode exportar uma cópia completa das suas informações ou consultar os termos aceitos a qualquer momento.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setIsLgpdModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-[#1D1D1F] bg-[#F2F2F7] hover:bg-[#E5E5EA] transition-all cursor-pointer"
+              >
+                <FileText size={13} />
+                <span>Ver Termos LGPD</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExportData}
+                disabled={isExportingData}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white bg-[#1D1D1F] hover:bg-black active:scale-95 transition-all shadow-2xs cursor-pointer disabled:opacity-60"
+              >
+                {isExportingData ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  <Download size={13} />
+                )}
+                <span>Exportar Dados (JSON)</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Exclusão Definitiva */}
         <div className="pt-4 border-t border-black/[0.05] flex items-center justify-between flex-wrap gap-3">
           <div>
             <h4 className="text-xs font-semibold text-rose-600">
-              Privacidade e Exclusão de Dados (LGPD)
+              Exclusão Definitiva de Dados (LGPD Art. 18, VI)
             </h4>
             <p className="text-[11px] text-[#86868B] mt-0.5 max-w-md">
-              Apaga permanentemente seu histórico de transações, faturas, contas, metas e credenciais. Esta ação não poderá ser desfeita.
+              Apaga permanentemente todo o seu histórico de transações, faturas, cartões, metas, diagnósticos e conversas de IA no Firestore. Esta ação é irreversível.
             </p>
           </div>
 
@@ -738,6 +834,13 @@ export default function ProfilePage() {
         currentPersonaId={userProfile.persona}
         onClose={() => setIsArchetypeModalOpen(false)}
         onConfirm={handleUpdatePersona}
+      />
+
+      {/* Modal de Consulta aos Termos LGPD */}
+      <LgpdTermsModal
+        isOpen={isLgpdModalOpen}
+        onClose={() => setIsLgpdModalOpen(false)}
+        hasAccepted={true}
       />
 
     </div>

@@ -6,6 +6,7 @@ import Image from "next/image";
 import { useAuth } from "@/context/AuthContext";
 import { saveUserProfile } from "@/lib/services/userService";
 import { saveCardToFirestore } from "@/lib/services/cardsService";
+import { sanitizeTextInput, validateCurrency } from "@/lib/utils/security";
 import { FinancialPersonaId, CardItem } from "@/types";
 import {
   ShieldCheck,
@@ -97,20 +98,38 @@ export default function OnboardingPage() {
     setSubmitting(true);
 
     try {
-      const cleanIncome = parseNumber(monthlyIncome);
-      const cleanAmount = parseNumber(initialAmount);
+      const sanitizedName = sanitizeTextInput(name, 100);
+      const sanitizedRole = sanitizeTextInput(role, 80);
+      const sanitizedCardName = sanitizeTextInput(cardName, 80);
 
-      const parts = name.trim().split(" ");
+      const incomeVal = validateCurrency(monthlyIncome);
+      if (!incomeVal.isValid) {
+        setErrorMessage(incomeVal.error || "Renda mensal informada é inválida.");
+        setSubmitting(false);
+        return;
+      }
+
+      const amountVal = validateCurrency(initialAmount);
+      if (!amountVal.isValid) {
+        setErrorMessage(amountVal.error || "Saldo inicial informado é inválido.");
+        setSubmitting(false);
+        return;
+      }
+
+      const cleanIncome = incomeVal.value;
+      const cleanAmount = amountVal.value;
+
+      const parts = sanitizedName.trim().split(" ");
       const initials =
         parts.length >= 2
           ? `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
-          : name.slice(0, 2).toUpperCase() || "WI";
+          : sanitizedName.slice(0, 2).toUpperCase() || "WI";
 
       // 1. Salvar Perfil do Usuário
       await saveUserProfile(user.uid, {
-        name: name.trim() || "Usuário",
+        name: sanitizedName.trim() || "Usuário",
         email: user.email || "",
-        role: role.trim() || "Membro",
+        role: sanitizedRole.trim() || "Membro",
         avatarInitials: initials,
         monthlyIncomeBase: cleanIncome,
         currency: "BRL",
@@ -132,7 +151,7 @@ export default function OnboardingPage() {
       // 2. Criar Primeiro Cartão no Firestore
       const firstCard: CardItem = {
         id: `card-${Date.now()}`,
-        name: cardName.trim() || "Conta Principal",
+        name: sanitizedCardName.trim() || "Conta Principal",
         brand: "Conta",
         type: "checking",
         balance: cleanAmount,

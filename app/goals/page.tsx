@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { GoalItem } from "@/types";
 import { AppleConfirmModal } from "@/components/ui/AppleConfirmModal";
+import { sanitizeTextInput, validateCurrency } from "@/lib/utils/security";
 
 export default function GoalsPage() {
   const { goals, addGoal, updateGoalProgress, deleteGoal } = useWallet();
@@ -40,17 +41,20 @@ export default function GoalsPage() {
 
   const handleCreateGoal = (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanTarget = parseFloat(targetAmount.replace(/\./g, "").replace(",", "."));
-    const cleanInitial = parseFloat(initialAmount.replace(/\./g, "").replace(",", ".")) || 0;
+    const targetValidation = validateCurrency(targetAmount, { min: 10, max: 100_000_000 });
+    const initialValidation = validateCurrency(initialAmount, { min: 0, max: 100_000_000, fallback: 0 });
+    const sanitizedTitle = sanitizeTextInput(title, 80);
+    const sanitizedCategory = sanitizeTextInput(category, 60) || "Objetivo Geral";
+    const sanitizedDeadline = sanitizeTextInput(deadline, 50) || "Em andamento";
 
-    if (isNaN(cleanTarget) || cleanTarget <= 0 || !title.trim()) return;
+    if (!targetValidation.isValid || !sanitizedTitle) return;
 
     addGoal({
-      title: title.trim(),
-      category: category.trim() || "Objetivo Geral",
-      current: cleanInitial,
-      target: cleanTarget,
-      deadline: deadline.trim() || "Em andamento",
+      title: sanitizedTitle,
+      category: sanitizedCategory,
+      current: initialValidation.value,
+      target: targetValidation.value,
+      deadline: sanitizedDeadline,
     });
 
     setTitle("");
@@ -87,10 +91,10 @@ export default function GoalsPage() {
   const handleContributeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!contributeGoalId) return;
-    const cleanAmount = parseFloat(contributeAmount.replace(/\./g, "").replace(",", "."));
-    if (isNaN(cleanAmount) || cleanAmount <= 0) return;
+    const contributeValidation = validateCurrency(contributeAmount, { min: 0.01, max: 50_000_000 });
+    if (!contributeValidation.isValid) return;
 
-    updateGoalProgress(contributeGoalId, cleanAmount);
+    updateGoalProgress(contributeGoalId, contributeValidation.value);
     setContributeGoalId(null);
     setContributeAmount("");
   };

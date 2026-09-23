@@ -13,6 +13,12 @@ import { useWallet } from "@/context/WalletContext";
 import { get5thBusinessDay, MONTH_NAMES_PT } from "@/lib/utils/dateUtils";
 import { formatAccountLabel } from "@/lib/utils/ledger";
 import { RecurrenceType } from "@/types";
+import {
+  sanitizeTextInput,
+  validateCurrency,
+  validateDayOfMonth,
+  validateInstallmentsCount,
+} from "@/lib/utils/security";
 
 export interface AddTransactionSheetProps {
   isOpen: boolean;
@@ -131,11 +137,20 @@ export function AddTransactionSheet({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
-    if (parsedAmount <= 0) return;
+
+    const currencyCheck = validateCurrency(amountInput, { min: 0.01, max: 50_000_000 });
+    if (!currencyCheck.isValid) {
+      setErrorMessage(currencyCheck.error || "Informe um valor monetário válido.");
+      return;
+    }
+
+    const safeAmount = currencyCheck.value;
+    const sanitizedTitle = sanitizeTextInput(title, 100);
+    const sanitizedCategory = sanitizeTextInput(category, 60) || "Outros";
 
     setLoading(true);
     try {
-      const txDescription = title.trim() || category;
+      const txDescription = sanitizedTitle || sanitizedCategory;
       const formattedDate = `${now.toLocaleDateString("pt-BR", {
         day: "2-digit",
         month: "short",
@@ -144,18 +159,20 @@ export function AddTransactionSheet({
       if (!onAdd) throw new Error("Fluxo de lançamento indisponível.");
       await onAdd({
         title: txDescription,
-        amount: parsedAmount,
+        amount: safeAmount,
         type,
-        category,
+        category: sanitizedCategory,
         account: effectiveAccount,
         cardId: cards.find((card) => card.name === effectiveAccount)?.id || null,
         date: formattedDate,
         occurredAt: now,
         isRecurring,
         recurrenceType: isRecurring ? recurrenceType : undefined,
-        recurrenceDay: isRecurring ? effectiveDueDay : undefined,
+        recurrenceDay: isRecurring ? validateDayOfMonth(effectiveDueDay).value : undefined,
         installmentsCount:
-          isRecurring && durationMode === "limited" ? installmentsCount : undefined,
+          isRecurring && durationMode === "limited"
+            ? validateInstallmentsCount(installmentsCount).value
+            : undefined,
       });
 
       setAmountInput("");

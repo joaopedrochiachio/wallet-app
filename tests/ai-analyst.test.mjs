@@ -8,6 +8,7 @@ import {
   normalizeFinancialCategory,
   simulatePurchaseImpact,
   buildFinancialAnalystSystemPrompt,
+  inferHabitCategory,
 } from "../lib/services/financialContextService.ts";
 import {
   redactKnownFinancialText,
@@ -862,5 +863,112 @@ test("buildFinancialAnalystSystemPrompt inclui Reality Check de meses futuros e 
   assert.ok(prompt.includes("Investir 30% da renda"));
   assert.ok(prompt.includes("SCALER"));
 });
+
+test("inferHabitCategory padroniza hábitos e estabelecimentos para grupos de estilo de vida", () => {
+  assert.equal(inferHabitCategory("Chiquinho Sorvetes", "Alimentação"), "Sobremesas & Doces");
+  assert.equal(inferHabitCategory("Sorveteria Beijo Frio", "Outros"), "Sobremesas & Doces");
+  assert.equal(inferHabitCategory("Açaí no Copo", "Alimentação"), "Sobremesas & Doces");
+  assert.equal(inferHabitCategory("McDonald's Drive Thru", "Lanches"), "Lanches & Fast Food");
+  assert.equal(inferHabitCategory("Burger King Shopping", "Alimentação"), "Lanches & Fast Food");
+  assert.equal(inferHabitCategory("Subway", "Alimentação"), "Lanches & Fast Food");
+  assert.equal(inferHabitCategory("Cantina Universitária", "Alimentação"), "Cafés, Padarias & Cantinas");
+  assert.equal(inferHabitCategory("Padaria Rainha", "Café"), "Cafés, Padarias & Cantinas");
+  assert.equal(inferHabitCategory("iFood Refeição", "Delivery"), "Restaurantes & Delivery");
+  assert.equal(inferHabitCategory("Uber Corrida", "Transporte"), "Transporte & Mobilidade");
+  assert.equal(inferHabitCategory("Droga Raia", "Saúde"), "Farmácia & Saúde");
+  assert.equal(inferHabitCategory("Netflix Mensalidade", "Assinatura"), "Lazer & Assinaturas");
+  assert.equal(inferHabitCategory("Papelaria Brasil", "Educação"), "Outros Hábitos");
+});
+
+test("synthesizeFinancialTelemetry calcula crédito vs débito em topSpendItems e lifestyleHabits", () => {
+  const cards = [
+    {
+      id: "card-xp",
+      name: "Cartão XP Visa",
+      brand: "Visa",
+      type: "credit",
+      limit: 5000,
+      spent: 800,
+      closingDay: 5,
+      dueDay: 15,
+      colorScheme: { gradient: "", border: "", accent: "", badgeText: "", chipGradient: "" },
+    },
+  ];
+
+  const transactions = [
+    // Sobremesas: Chiquinho (1 no débito R$ 30, 1 no crédito R$ 50), Sorveteria (1 no crédito R$ 20)
+    { id: "tx-1", title: "Chiquinho Sorvetes", amount: 30, type: "despesa", category: "Alimentação", account: "Conta Corrente", date: "2026-09-02" },
+    { id: "tx-2", title: "Chiquinho Sorvetes", amount: 50, type: "despesa", category: "Alimentação", cardId: "card-xp", account: "Cartão XP Visa", date: "2026-09-05" },
+    { id: "tx-3", title: "Sorveteria Tropical", amount: 20, type: "despesa", category: "Lazer", cardId: "card-xp", account: "Cartão XP Visa", date: "2026-09-10" },
+    // Lanches: McDonald's (1 no crédito R$ 60, 1 no débito R$ 40)
+    { id: "tx-4", title: "McDonald's", amount: 60, type: "despesa", category: "Alimentação", cardId: "card-xp", account: "Cartão XP Visa", date: "2026-09-12" },
+    { id: "tx-5", title: "McDonald's", amount: 40, type: "despesa", category: "Alimentação", account: "Conta Corrente", date: "2026-09-14" },
+  ];
+
+  const telemetry = synthesizeFinancialTelemetry({
+    userProfile: {
+      name: "Lucas",
+      monthlyIncomeBase: 6000,
+      persona: "optimizer",
+      riskTolerance: "moderate",
+      aiTone: "direct",
+      primaryFocus: "Reserva",
+      maxCommitmentAlertPercent: 60,
+    },
+    cards,
+    transactions,
+    recurringItems: [],
+    goals: [],
+    mainBalance: 3000,
+    monthIncome: 6000,
+    monthExpense: 200,
+  });
+
+  // Validação em topSpendItems
+  const chiquinho = telemetry.topSpendItems.find((i) => i.title === "Chiquinho Sorvetes");
+  assert.ok(chiquinho, "Chiquinho deve estar nos topSpendItems");
+  assert.equal(chiquinho.total, 80);
+  assert.equal(chiquinho.count, 2);
+  assert.equal(chiquinho.creditAmount, 50);
+  assert.equal(chiquinho.debitAmount, 30);
+  assert.equal(chiquinho.habitCategory, "Sobremesas & Doces");
+  assert.ok(chiquinho.paymentBreakdown.includes("Crédito: R$ 50.00"));
+  assert.ok(chiquinho.paymentBreakdown.includes("Débito: R$ 30.00"));
+
+  const mcdonalds = telemetry.topSpendItems.find((i) => i.title === "McDonald's");
+  assert.ok(mcdonalds, "McDonald's deve estar nos topSpendItems");
+  assert.equal(mcdonalds.total, 100);
+  assert.equal(mcdonalds.count, 2);
+  assert.equal(mcdonalds.creditAmount, 60);
+  assert.equal(mcdonalds.debitAmount, 40);
+  assert.equal(mcdonalds.habitCategory, "Lanches & Fast Food");
+
+  // Validação em lifestyleHabits
+  assert.ok(telemetry.lifestyleHabits && telemetry.lifestyleHabits.length > 0);
+  const sobremesas = telemetry.lifestyleHabits.find((h) => h.habitName === "Sobremesas & Doces");
+  assert.ok(sobremesas, "Grupo Sobremesas & Doces deve existir");
+  assert.equal(sobremesas.total, 100); // 80 Chiquinho + 20 Sorveteria
+  assert.equal(sobremesas.count, 3);
+  assert.equal(sobremesas.creditAmount, 70); // 50 + 20
+  assert.equal(sobremesas.debitAmount, 30); // 30
+
+  const lanches = telemetry.lifestyleHabits.find((h) => h.habitName === "Lanches & Fast Food");
+  assert.ok(lanches, "Grupo Lanches & Fast Food deve existir");
+  assert.equal(lanches.total, 100);
+  assert.equal(lanches.count, 2);
+  assert.equal(lanches.creditAmount, 60);
+  assert.equal(lanches.debitAmount, 40);
+
+  // Safe Financial Context e Prompt
+  const safeContext = createSafeFinancialContext(telemetry);
+  assert.ok(safeContext.lifestyleHabits && safeContext.lifestyleHabits.length >= 2);
+  const prompt = buildFinancialAnalystSystemPrompt(safeContext);
+
+  assert.ok(prompt.includes("GRUPOS MACRO DE ESTILO DE VIDA & HÁBITOS DE CONSUMO (CRÉDITO vs DÉBITO)"));
+  assert.ok(prompt.includes("Sobremesas & Doces"));
+  assert.ok(prompt.includes("Lanches & Fast Food"));
+  assert.ok(prompt.includes("Crédito: R$ 70.00 | Débito: R$ 30.00"));
+});
+
 
 

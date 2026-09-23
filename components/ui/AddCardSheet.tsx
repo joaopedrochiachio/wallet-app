@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { X, Wifi, Sparkles, Check } from "lucide-react";
 import { NewCardInput } from "@/context/WalletContext";
+import { sanitizeTextInput, validateCurrency, validateDayOfMonth } from "@/lib/utils/security";
 
 export interface AddCardSheetProps {
   isOpen: boolean;
@@ -103,14 +104,18 @@ export function AddCardSheet({ isOpen, onClose, onAddCard }: AddCardSheetProps) 
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const finalName = name.trim() || "Meu Cartão";
-    const finalLimit = parsedLimit > 0 ? parsedLimit : 5000;
-    const finalClosing = parseInt(closingDay) || 10;
-    const finalDue = parseInt(dueDay) || 17;
+    const finalName = sanitizeTextInput(name, 40) || "Meu Cartão";
+    const finalBrand = sanitizeTextInput(brand, 40) || "Crédito";
+
+    const limitValidation = validateCurrency(limitInput, { min: 10, max: 20_000_000, fallback: 5000 });
+    const finalLimit = limitValidation.value;
+
+    const finalClosing = validateDayOfMonth(closingDay).value;
+    const finalDue = validateDayOfMonth(dueDay).value;
 
     onAddCard({
       name: finalName,
-      brand: brand.trim() || "Crédito",
+      brand: finalBrand,
       type: "credit",
       limit: finalLimit,
       balance: 0,

@@ -111,9 +111,7 @@ export async function callGeminiCascade(
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(
-        apiKey
-      )}`;
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
       const response = await fetch(endpoint, {
         method: "POST",

@@ -2,6 +2,13 @@ export type FinancialPersonaId = "optimizer" | "guardian" | "scaler" | "minimali
 export type RiskToleranceId = "low" | "moderate" | "high";
 export type AIToneId = "analytical" | "direct" | "collaborative";
 
+export interface LgpdConsentRecord {
+  accepted: boolean;
+  acceptedAt: string;
+  version: string;
+  documentTitle: string;
+}
+
 export interface UserProfile {
   name: string;
   email: string;
@@ -15,6 +22,7 @@ export interface UserProfile {
   maxCommitmentAlertPercent: number;
   primaryFocus: string;
   isOnboarded?: boolean;
+  lgpdConsent?: LgpdConsentRecord;
 }
 
 export interface CardItem {

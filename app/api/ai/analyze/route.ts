@@ -6,6 +6,8 @@ import {
   buildFinancialAnalystSystemPrompt,
   SafeFinancialContext,
 } from "@/lib/services/financialContextService";
+import { verifyServerAuth } from "@/lib/auth/serverAuth";
+import { checkRateLimit } from "@/lib/utils/rateLimiter";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -33,6 +35,10 @@ export interface SpecificExpenseAlert {
   item: string;
   totalAmount: number;
   count?: number;
+  creditAmount?: number;
+  debitAmount?: number;
+  paymentBreakdown?: string;
+  habitCategory?: string;
   alertType: "info" | "warning" | "alert";
   message: string;
 }
@@ -302,17 +308,45 @@ function safeParseFinancialDiagnosis(
     });
   }
 
-  // 7. Normalização de Alertas de Gastos Específicos (ex: iFood, Uber, etc.)
+  // 7. Normalização de Alertas de Gastos Específicos & Hábitos (com Débito vs Crédito)
   const specificExpensesAlerts: SpecificExpenseAlert[] = [];
   const rawSpecific = parsed?.specificExpensesAlerts;
   if (Array.isArray(rawSpecific) && rawSpecific.length > 0) {
     for (const item of rawSpecific) {
       if (item && typeof item === "object") {
         const obj = item as Record<string, unknown>;
+        const totalAmount = typeof obj.totalAmount === "number" ? obj.totalAmount : 0;
+        const creditAmount = typeof obj.creditAmount === "number" ? obj.creditAmount : undefined;
+        const debitAmount = typeof obj.debitAmount === "number" ? obj.debitAmount : undefined;
+        const habitCategory =
+          typeof obj.habitCategory === "string" && obj.habitCategory.trim()
+            ? sanitizeText(obj.habitCategory)
+            : undefined;
+        let paymentBreakdown =
+          typeof obj.paymentBreakdown === "string" && obj.paymentBreakdown.trim()
+            ? sanitizeText(obj.paymentBreakdown)
+            : undefined;
+
+        if (!paymentBreakdown && (creditAmount !== undefined || debitAmount !== undefined)) {
+          const c = creditAmount ?? 0;
+          const d = debitAmount ?? 0;
+          if (c > 0 && d > 0) {
+            paymentBreakdown = `Crédito: R$ ${c.toFixed(2)} | Débito: R$ ${d.toFixed(2)}`;
+          } else if (c > 0) {
+            paymentBreakdown = `100% no Crédito (R$ ${c.toFixed(2)})`;
+          } else if (d > 0) {
+            paymentBreakdown = `100% no Débito/PIX (R$ ${d.toFixed(2)})`;
+          }
+        }
+
         specificExpensesAlerts.push({
           item: String(obj.item || "Gasto Frequente"),
-          totalAmount: typeof obj.totalAmount === "number" ? obj.totalAmount : 0,
+          totalAmount,
           count: typeof obj.count === "number" ? obj.count : undefined,
+          creditAmount,
+          debitAmount,
+          paymentBreakdown,
+          habitCategory,
           alertType: (obj.alertType as "info" | "warning" | "alert") || "info",
           message: sanitizeText(obj.message || ""),
         });
@@ -320,7 +354,32 @@ function safeParseFinancialDiagnosis(
     }
   }
 
-  // Se a IA não preencheu, deriva deterministicamente dos topSpendItems
+  // Se a IA não preencheu, deriva deterministicamente dos hábitos consolidados (lifestyleHabits)
+  if (specificExpensesAlerts.length === 0 && context.lifestyleHabits && context.lifestyleHabits.length > 0) {
+    for (const habit of context.lifestyleHabits.slice(0, 3)) {
+      const isHigh = habit.total > 200 || habit.count >= 4;
+      const breakdown =
+        habit.creditAmount > 0 && habit.debitAmount > 0
+          ? `Crédito: R$ ${habit.creditAmount.toFixed(2)} | Débito: R$ ${habit.debitAmount.toFixed(2)}`
+          : habit.creditAmount > 0
+          ? `100% no Crédito (R$ ${habit.creditAmount.toFixed(2)})`
+          : `100% no Débito/PIX (R$ ${habit.debitAmount.toFixed(2)})`;
+
+      specificExpensesAlerts.push({
+        item: habit.habitName,
+        totalAmount: habit.total,
+        count: habit.count,
+        creditAmount: habit.creditAmount,
+        debitAmount: habit.debitAmount,
+        paymentBreakdown: breakdown,
+        habitCategory: habit.habitName,
+        alertType: isHigh ? "warning" : "info",
+        message: `Identificados ${habit.count} gastos com ${habit.habitName} somando R$ ${habit.total.toFixed(2)} (${breakdown}${habit.examples.length ? ` — ex: ${habit.examples.join(", ")}` : ""}).`,
+      });
+    }
+  }
+
+  // Fallback secundário: deriva dos topSpendItems
   if (specificExpensesAlerts.length === 0 && context.topSpendItems?.length) {
     for (const item of context.topSpendItems.slice(0, 4)) {
       const isHigh = item.percentage >= 10 || item.total > 200;
@@ -328,8 +387,12 @@ function safeParseFinancialDiagnosis(
         item: item.title,
         totalAmount: item.total,
         count: item.count,
+        creditAmount: item.creditAmount,
+        debitAmount: item.debitAmount,
+        paymentBreakdown: item.paymentBreakdown,
+        habitCategory: item.habitCategory,
         alertType: isHigh ? "warning" : "info",
-        message: `Você gastou R$ ${item.total.toFixed(2)} em ${item.count} compra(s) (${item.percentage}% do total gasto em ${item.category}).`,
+        message: `Você gastou R$ ${item.total.toFixed(2)} em ${item.count} compra(s) (${item.paymentBreakdown || "À vista"} — ${item.percentage}% do total gasto em ${item.category}).`,
       });
     }
   }
@@ -469,6 +532,30 @@ function safeParseFinancialDiagnosis(
 
 export async function POST(req: NextRequest) {
   try {
+    const authResult = await verifyServerAuth(req);
+    if ("errorResponse" in authResult) {
+      return authResult.errorResponse;
+    }
+
+    // Rate Limiting anti-abuso e anti-Denial-of-Wallet (máx 5 análises profundas por minuto por usuário)
+    const rateLimit = checkRateLimit(`ai-analyze:${authResult.user.uid}`, 5, 60000);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Muitas solicitações de diagnóstico financeiro em sequência. Aguarde ${rateLimit.retryAfterSec} segundos antes de solicitar uma nova análise.`,
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(rateLimit.retryAfterSec),
+            "X-RateLimit-Limit": String(rateLimit.limit),
+            "X-RateLimit-Remaining": "0",
+          },
+        }
+      );
+    }
+
     const body = await req.json();
     const {
       userProfile,
@@ -482,12 +569,18 @@ export async function POST(req: NextRequest) {
       monthlyProjections = [],
     } = body;
 
+    // Proteção de sobrecarga: limita o tamanho dos arrays processados pela IA
+    const safeCards = Array.isArray(cards) ? cards.slice(0, 30) : [];
+    const safeTransactions = Array.isArray(transactions) ? transactions.slice(0, 300) : [];
+    const safeRecurring = Array.isArray(recurringItems) ? recurringItems.slice(0, 50) : [];
+    const safeGoals = Array.isArray(goals) ? goals.slice(0, 30) : [];
+
     const telemetry = synthesizeFinancialTelemetry({
       userProfile,
-      cards,
-      transactions,
-      recurringItems,
-      goals,
+      cards: safeCards,
+      transactions: safeTransactions,
+      recurringItems: safeRecurring,
+      goals: safeGoals,
       mainBalance,
       monthIncome,
       monthExpense,
@@ -508,10 +601,18 @@ POSTURA DO ANALISTA (CFO PESSOAL):
   3) Principal padrão de atenção ou ralo financeiro identificado.
 
 DIRETRIZES FUNDAMENTAIS DO DIAGNÓSTICO:
-1. GASTOS ESPECÍFICOS & PADRÕES DE CONSUMO (ANALISTA AUTODIDATA):
-   - Inspecione a lista de estabelecimentos, fornecedores e lançamentos reais.
-   - Preencha 'specificExpensesAlerts' destacando os estabelecimentos e despesas frequentes com nome exato, valor total acumulado e contagem de compras.
-   - Não invente nem fique preso a marcas fixas: use os dados reais do extrato.
+1. GASTOS ESPECÍFICOS & HÁBITOS DE CONSUMO (CRÉDITO vs DÉBITO):
+   - Inspecione as descrições nominais de gastos tanto no CARTÃO DE CRÉDITO quanto no DÉBITO/PIX.
+   - Padronize hábitos em categorias comportamentais (ex: "Sobremesas & Doces", "Lanches & Fast Food", "Cafés & Cantinas", "Restaurantes & Delivery", etc.) ou estabelecimentos específicos frequentes (ex: Chiquinho, sorveterias, McDonald's, padarias).
+   - Preencha 'specificExpensesAlerts' informando obrigatoriamente:
+     * 'item': nome do hábito ou estabelecimento
+     * 'habitCategory': categoria comportamental padronizada
+     * 'totalAmount': valor total acumulado
+     * 'count': quantidade de transações
+     * 'creditAmount': total no cartão de crédito
+     * 'debitAmount': total no débito/PIX
+     * 'paymentBreakdown': resumo textual (ex: "Crédito: R$ 80,00 | Débito: R$ 40,00")
+     * 'message': frase assertiva apontando a soma e a divisão crédito vs débito
 2. REGRA CONTÁBIL DE CAIXA vs CARTÃO:
    - Mês atual: analise o fluxo de caixa em conta (entradas - saídas em débito/PIX = sobra real).
    - Cartão de crédito: trate como compromisso que impacta APENAS NO MÊS SEGUINTE (quando a fatura é paga).
@@ -538,11 +639,15 @@ RESPONDA ESTRITAMENTE EM FORMATO JSON com a seguinte estrutura:
   ],
   "specificExpensesAlerts": [
     {
-      "item": "nome do estabelecimento ou hábito identificado",
-      "totalAmount": 420.00,
-      "count": 6,
+      "item": "Sobremesas & Doces (ex: Chiquinho / Sorvete)",
+      "habitCategory": "Sobremesas & Doces",
+      "totalAmount": 120.00,
+      "count": 4,
+      "creditAmount": 80.00,
+      "debitAmount": 40.00,
+      "paymentBreakdown": "Crédito: R$ 80,00 | Débito: R$ 40,00",
       "alertType": "info" | "warning" | "alert",
-      "message": "ex: Foram identificadas 6 compras em [Estabelecimento] totalizando R$ 420,00 este mês."
+      "message": "Você teve 4 gastos com sobremesas somando R$ 120,00 (sendo R$ 80,00 no crédito e R$ 40,00 no débito)."
     }
   ],
   "cashflowWindow": {

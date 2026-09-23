@@ -61,6 +61,24 @@ function hasValidCpfChecksum(value: string): boolean {
   return calculateDigit(9) === Number(value[9]) && calculateDigit(10) === Number(value[10]);
 }
 
+function hasValidCnpjChecksum(value: string): boolean {
+  if (!/^\d{14}$/.test(value) || /^(\d)\1{13}$/.test(value)) return false;
+
+  const weights1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  const weights2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+
+  const calcDigit = (weights: number[]): number => {
+    let sum = 0;
+    for (let i = 0; i < weights.length; i += 1) {
+      sum += Number(value[i]) * weights[i];
+    }
+    const remainder = sum % 11;
+    return remainder < 2 ? 0 : 11 - remainder;
+  };
+
+  return calcDigit(weights1) === Number(value[12]) && calcDigit(weights2) === Number(value[13]);
+}
+
 function redactCardNumbers(text: string): string {
   let redacted = text.replace(
     /\b(?:\d{4}[ -]){3}\d{4}\b|\b\d{4}[ -]\d{6}[ -]\d{5}\b/g,
@@ -77,17 +95,19 @@ function redactCardNumbers(text: string): string {
   );
 }
 
-/** Remove identificadores pessoais sem apagar valores, datas ou quantidades comuns. */
+/** Remove identificadores pessoais (PII) sem apagar valores, datas ou quantidades comuns (LGPD). */
 export function redactPersonalData(text: string): string {
   if (typeof text !== "string") return "";
 
   let redacted = text;
 
+  // 1. E-mails
   redacted = redacted.replace(
     /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,
     "[E-MAIL REMOVIDO]"
   );
 
+  // 2. CPF (Formatado e Não-formatado com Checksum)
   redacted = redacted.replace(
     /\b\d{3}[.]\d{3}[.]\d{3}-\d{2}\b/g,
     "[CPF REMOVIDO]"
@@ -100,6 +120,26 @@ export function redactPersonalData(text: string): string {
     hasValidCpfChecksum(candidate) ? "[CPF REMOVIDO]" : candidate
   );
 
+  // 3. CNPJ (Formatado e Não-formatado com Checksum)
+  redacted = redacted.replace(
+    /\b\d{2}[.]\d{3}[.]\d{3}\/\d{4}-\d{2}\b/g,
+    "[CNPJ REMOVIDO]"
+  );
+  redacted = redacted.replace(
+    /\bcnpj\s*(?:é\s*)?[:#-]?\s*\d{14}\b/gi,
+    "[CNPJ REMOVIDO]"
+  );
+  redacted = redacted.replace(/\b\d{14}\b/g, (candidate) =>
+    hasValidCnpjChecksum(candidate) ? "[CNPJ REMOVIDO]" : candidate
+  );
+
+  // 4. Chaves PIX Aleatórias (Formato UUID v4 / EVP do Banco Central)
+  redacted = redacted.replace(
+    /\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b/g,
+    "[CHAVE PIX REMOVIDA]"
+  );
+
+  // 5. Telefones
   redacted = redacted.replace(
     /(?:\+?55[\s.-]*)?\([1-9]\d\)[\s.-]*(?:9\d{4}|[2-8]\d{3})[\s.-]*\d{4}\b/g,
     "[TELEFONE REMOVIDO]"
@@ -117,17 +157,47 @@ export function redactPersonalData(text: string): string {
     "[TELEFONE REMOVIDO]"
   );
 
+  // 6. CEP
   redacted = redacted.replace(/\b\d{5}-\d{3}\b/g, "[CEP REMOVIDO]");
   redacted = redacted.replace(
     /\bcep\s*(?:é\s*)?[:#-]?\s*\d{8}\b/gi,
     "[CEP REMOVIDO]"
   );
 
+  // 7. Dados Bancários (Agência e Conta)
+  redacted = redacted.replace(
+    /\b(?:ag[eê]ncia|ag\.?)\s*[:#-]?\s*\d{3,5}(?:-\d)?\b/gi,
+    "[AGÊNCIA REMOVIDA]"
+  );
+  redacted = redacted.replace(
+    /\b(?:conta(?:\s*corrente)?|c\/c|cc)\s*[:#-]?\s*\d{4,12}(?:-[\da-zA-Z])?\b/gi,
+    "[CONTA REMOVIDA]"
+  );
+
+  // 8. Documentos Pessoais (RG / CNH)
+  redacted = redacted.replace(
+    /\b(?:rg|cnh)\s*[:#-]?\s*\d{1,2}\.?\d{3}\.?\d{3}-?[\dxX]\b/gi,
+    "[DOCUMENTO REMOVIDO]"
+  );
+
+  // 9. Nomes de Terceiros em Lançamentos PIX / Transferências
+  redacted = redacted.replace(
+    /\b(pix\s+(?:enviado\s+|recebido\s+|p\/|para\s+|de\s+)|transf(?:er[eê]ncia)?\s+(?:p\/|para\s+|de\s+)|ted\s+(?:p\/|para\s+|de\s+)|doc\s+(?:p\/|para\s+|de\s+))([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+)+)\b/giu,
+    "$1[DESTINATÁRIO REDIGIDO]"
+  );
+
+  // 10. Cartões e CVV
   redacted = redactCardNumbers(redacted);
 
   redacted = redacted.replace(
     /\b(?:cvv|cvc|c[oó]digo de seguran[cç]a)\s*(?:é\s*)?[:#-]?\s*\d{3,4}\b/gi,
     "[DADO REMOVIDO]"
+  );
+
+  // 11. Dados Sensíveis de Saúde (LGPD Art. 5º, II)
+  redacted = redacted.replace(
+    /\b(?:bi[oó]psia|quimioterapia|radioterapia|psiquiatria|psic[oó]log[ao]|antidepressivo|ansiol[ií]tico|cirurgia\s+de\s+[a-zà-ú]+)\b/giu,
+    "[SAÚDE]"
   );
 
   return redacted.replace(/\s+/g, " ").trim();

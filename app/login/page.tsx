@@ -3,7 +3,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { getUserProfile } from "@/lib/services/userService";
+import { getUserProfile, recordLgpdConsent } from "@/lib/services/userService";
+import { validateEmail, validatePassword } from "@/lib/utils/security";
+import { LgpdTermsModal } from "@/components/legal/LgpdTermsModal";
 import { Lock, Mail, ArrowRight, ShieldCheck, Loader2, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -29,7 +31,33 @@ export default function LoginPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [acceptedLgpdTerms, setAcceptedLgpdTerms] = useState(false);
+  const [isLgpdModalOpen, setIsLgpdModalOpen] = useState(false);
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
+  const [failedAttempts, setFailedAttempts] = useState(0);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = parseInt(sessionStorage.getItem("wallet_login_failed_attempts") || "0", 10);
+      if (!isNaN(saved)) setFailedAttempts(saved);
+    }
+  }, []);
+
+  // Timer de resfriamento regressivo para mitigar ataques de força bruta
+  useEffect(() => {
+    if (cooldownSeconds <= 0) return;
+    const timer = setInterval(() => {
+      setCooldownSeconds((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [cooldownSeconds]);
 
   useEffect(() => {
     return () => {
@@ -91,6 +119,12 @@ export default function LoginPage() {
       const loggedUser = await signInWithGoogle();
       if (loggedUser) {
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        // Registra consentimento LGPD para a conta Google caso seja novo cadastro
+        try {
+          await recordLgpdConsent(loggedUser.uid);
+        } catch {
+          // Continua navegação se gravação falhar
+        }
         await navigateToAuthenticatedApp(loggedUser.uid);
       } else {
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -119,9 +153,19 @@ export default function LoginPage() {
     setError(null);
     setSuccessMessage(null);
 
+    if (cooldownSeconds > 0) {
+      setError(`Acesso temporariamente bloqueado para prevenir ataques de força bruta. Aguarde ${cooldownSeconds} segundos.`);
+      return;
+    }
+
     const trimmedEmail = email.trim();
     if (!trimmedEmail) {
       setError("Por favor, informe seu e-mail.");
+      return;
+    }
+
+    if (!validateEmail(trimmedEmail)) {
+      setError("Por favor, informe um endereço de e-mail válido.");
       return;
     }
 
@@ -152,12 +196,17 @@ export default function LoginPage() {
     }
 
     if (mode === "register") {
-      if (password.length < 6) {
-        setError("A senha deve conter no mínimo 6 caracteres.");
+      const passValidation = validatePassword(password);
+      if (!passValidation.isValid) {
+        setError(passValidation.error || "A senha deve conter no mínimo 6 caracteres.");
         return;
       }
       if (password !== confirmPassword) {
         setError("As senhas digitadas não coincidem.");
+        return;
+      }
+      if (!acceptedLgpdTerms) {
+        setError("Você deve ler e aceitar os Termos de Uso e Política de Privacidade (LGPD) para criar sua conta.");
         return;
       }
     }
@@ -167,9 +216,16 @@ export default function LoginPage() {
     try {
       if (mode === "login") {
         const loggedUser = await signIn(trimmedEmail, password);
+        // Sucesso: remove contador de tentativas
+        if (typeof window !== "undefined") {
+          sessionStorage.removeItem("wallet_login_failed_attempts");
+        }
+        setFailedAttempts(0);
         await navigateToAuthenticatedApp(loggedUser.uid);
       } else {
-        await signUp(trimmedEmail, password);
+        const newUser = await signUp(trimmedEmail, password);
+        // Grava o consentimento expresso da LGPD com timestamp no Firestore
+        await recordLgpdConsent(newUser.uid);
         router.replace("/onboarding");
         setTimeout(() => {
           if (window.location.pathname === "/login") {
@@ -180,7 +236,34 @@ export default function LoginPage() {
     } catch (err: unknown) {
       console.error("Erro na autenticação:", err);
       const code = typeof err === "object" && err && "code" in err ? String(err.code) : "";
-      if (code === "auth/invalid-credential" || code === "auth/wrong-password" || code === "auth/user-not-found") {
+
+      if (mode === "login") {
+        const nextAttempts = failedAttempts + 1;
+        setFailedAttempts(nextAttempts);
+        if (typeof window !== "undefined") {
+          sessionStorage.setItem("wallet_login_failed_attempts", String(nextAttempts));
+        }
+
+        // Backoff exponencial anti-força bruta
+        if (code === "auth/too-many-requests" || nextAttempts >= 8) {
+          setCooldownSeconds(60);
+          setError("Múltiplas tentativas malsucedidas detectadas. O formulário foi bloqueado por 60 segundos por medidas de segurança.");
+          return;
+        } else if (nextAttempts >= 5) {
+          setCooldownSeconds(30);
+          setError("Múltiplas tentativas incorretas. Por segurança contra força bruta, aguarde 30 segundos antes de tentar novamente.");
+          return;
+        } else if (nextAttempts >= 3) {
+          setCooldownSeconds(10);
+          setError("Credenciais incorretas. Aguarde 10 segundos antes da próxima tentativa.");
+          return;
+        }
+      }
+
+      if (code === "auth/too-many-requests") {
+        setCooldownSeconds(60);
+        setError("Muitas tentativas em sequência. Aguarde 60 segundos antes de tentar novamente.");
+      } else if (code === "auth/invalid-credential" || code === "auth/wrong-password" || code === "auth/user-not-found") {
         setError("E-mail ou senha incorretos.");
       } else if (code === "auth/email-already-in-use") {
         setError("Este e-mail já está cadastrado. Tente entrar.");
@@ -259,7 +342,7 @@ export default function LoginPage() {
             <button
               type="button"
               onClick={handleGoogleSignIn}
-              disabled={googleLoading || loading}
+              disabled={googleLoading || loading || cooldownSeconds > 0}
               className="w-full bg-white hover:bg-gray-50 active:scale-[0.99] text-[#1D1D1F] border border-black/10 font-semibold text-xs py-3 px-4 rounded-2xl shadow-2xs transition-all flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {googleLoading ? (
@@ -378,7 +461,8 @@ export default function LoginPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="seu@email.com"
                 required
-                className="w-full bg-[#F2F2F7] rounded-xl pl-10 pr-4 py-2.5 text-sm text-[#1D1D1F] placeholder:text-[#86868B] focus:outline-none border border-transparent focus:border-black/10 transition-all"
+                disabled={loading || cooldownSeconds > 0}
+                className="w-full bg-[#F2F2F7] rounded-xl pl-10 pr-4 py-2.5 text-sm text-[#1D1D1F] placeholder:text-[#86868B] focus:outline-none border border-transparent focus:border-black/10 transition-all disabled:opacity-60"
               />
             </div>
           </div>
@@ -415,7 +499,8 @@ export default function LoginPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   required
-                  className="w-full bg-[#F2F2F7] rounded-xl pl-10 pr-4 py-2.5 text-sm text-[#1D1D1F] placeholder:text-[#86868B] focus:outline-none border border-transparent focus:border-black/10 transition-all"
+                  disabled={loading || cooldownSeconds > 0}
+                  className="w-full bg-[#F2F2F7] rounded-xl pl-10 pr-4 py-2.5 text-sm text-[#1D1D1F] placeholder:text-[#86868B] focus:outline-none border border-transparent focus:border-black/10 transition-all disabled:opacity-60"
                 />
               </div>
             </div>
@@ -438,23 +523,53 @@ export default function LoginPage() {
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="••••••••"
                   required
-                  className="w-full bg-[#F2F2F7] rounded-xl pl-10 pr-4 py-2.5 text-sm text-[#1D1D1F] placeholder:text-[#86868B] focus:outline-none border border-transparent focus:border-black/10 transition-all"
+                  disabled={loading || cooldownSeconds > 0}
+                  className="w-full bg-[#F2F2F7] rounded-xl pl-10 pr-4 py-2.5 text-sm text-[#1D1D1F] placeholder:text-[#86868B] focus:outline-none border border-transparent focus:border-black/10 transition-all disabled:opacity-60"
                 />
               </div>
+            </div>
+          )}
+
+          {mode === "register" && (
+            <div className="pt-1 animate-in fade-in duration-200">
+              <label className="flex items-start gap-2.5 cursor-pointer select-none group bg-[#F2F2F7]/60 p-3 rounded-xl border border-black/[0.04]">
+                <input
+                  type="checkbox"
+                  checked={acceptedLgpdTerms}
+                  onChange={(e) => setAcceptedLgpdTerms(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded border-gray-300 text-[#1D1D1F] focus:ring-[#1D1D1F] cursor-pointer shrink-0"
+                />
+                <span className="text-[11px] text-[#636366] leading-tight">
+                  Li e concordo com os{" "}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setIsLgpdModalOpen(true);
+                    }}
+                    className="text-[#1D1D1F] font-semibold underline hover:text-black transition-colors cursor-pointer"
+                  >
+                    Termos de Uso e Política de Privacidade (LGPD)
+                  </button>
+                  .
+                </span>
+              </label>
             </div>
           )}
 
           <div className="pt-1.5">
             <button
               type="submit"
-              disabled={loading || googleLoading}
-              className="w-full bg-[#1D1D1F] hover:bg-black active:scale-[0.99] text-white font-semibold text-sm py-3 rounded-2xl shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
+              disabled={loading || googleLoading || cooldownSeconds > 0 || (mode === "register" && !acceptedLgpdTerms)}
+              className="w-full bg-[#1D1D1F] hover:bg-black active:scale-[0.99] text-white font-semibold text-sm py-3 rounded-2xl shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {loading ? (
                 <>
                   <Loader2 size={16} className="animate-spin" />
                   <span>Processando...</span>
                 </>
+              ) : cooldownSeconds > 0 ? (
+                <span>Aguarde {cooldownSeconds}s para tentar novamente</span>
               ) : (
                 <>
                   <span>
@@ -484,8 +599,16 @@ export default function LoginPage() {
       {/* Footer Segurança */}
       <div className="flex items-center gap-2 text-xs text-[#86868B]">
         <ShieldCheck size={14} strokeWidth={1.5} />
-        <span>Criptografia de ponta a ponta e isolamento biométrico</span>
+        <span>Criptografia de ponta a ponta e conformidade com a LGPD</span>
       </div>
+
+      {/* Modal Completo dos Termos LGPD */}
+      <LgpdTermsModal
+        isOpen={isLgpdModalOpen}
+        onClose={() => setIsLgpdModalOpen(false)}
+        onAccept={() => setAcceptedLgpdTerms(true)}
+        hasAccepted={acceptedLgpdTerms}
+      />
     </div>
   );
 }

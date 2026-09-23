@@ -11,6 +11,8 @@ import {
   redactKnownFinancialText,
   type FinancialTextPrivacyInput,
 } from "@/lib/services/privacyService";
+import { verifyServerAuth } from "@/lib/auth/serverAuth";
+import { checkRateLimit } from "@/lib/utils/rateLimiter";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -28,6 +30,30 @@ function sanitizeChatMessage(
 
 export async function POST(req: NextRequest) {
   try {
+    const authResult = await verifyServerAuth(req);
+    if ("errorResponse" in authResult) {
+      return authResult.errorResponse;
+    }
+
+    // Rate Limiting anti-abuso e anti-Denial-of-Wallet (máx 15 mensagens por minuto por usuário)
+    const rateLimit = checkRateLimit(`ai-chat:${authResult.user.uid}`, 15, 60000);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Muitas mensagens em sequência. Aguarde ${rateLimit.retryAfterSec} segundos antes de enviar outra pergunta.`,
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(rateLimit.retryAfterSec),
+            "X-RateLimit-Limit": String(rateLimit.limit),
+            "X-RateLimit-Remaining": "0",
+          },
+        }
+      );
+    }
+
     const body = await req.json();
     const {
       messages = [],
@@ -44,12 +70,17 @@ export async function POST(req: NextRequest) {
       monthlyProjections = [],
     } = body;
 
+    const safeCards = Array.isArray(cards) ? cards.slice(0, 30) : [];
+    const safeTransactions = Array.isArray(transactions) ? transactions.slice(0, 300) : [];
+    const safeRecurring = Array.isArray(recurringItems) ? recurringItems.slice(0, 50) : [];
+    const safeGoals = Array.isArray(goals) ? goals.slice(0, 30) : [];
+
     const telemetry = synthesizeFinancialTelemetry({
       userProfile,
-      cards,
-      transactions,
-      recurringItems,
-      goals,
+      cards: safeCards,
+      transactions: safeTransactions,
+      recurringItems: safeRecurring,
+      goals: safeGoals,
       mainBalance,
       monthIncome,
       monthExpense,
@@ -91,10 +122,12 @@ Apresente seu parecer de assistente com clareza e empatia:
 2. REGRA CONTÁBIL DE CAIXA vs CARTÃO DE CRÉDITO:
    - Se o usuário perguntar "quanto eu tenho ainda?", informe o saldo atual da conta corrente e a sobra líquida real em conta deste mês (entradas - saídas no débito/PIX).
    - Se o usuário perguntar "quanto eu tenho pra gastar mês que vem?", informe a fatura de cartão e compromissos que vencerão no próximo mês, calculando com clareza o Saldo Livre Projetado para Gastar mês que vem.
-3. GASTOS ESPECÍFICOS E PADRÕES DE CONSUMO (ANALISTA AUTODIDATA):
-   - Identifique nominalmente os estabelecimentos, fornecedores e hábitos de consumo frequentes presentes no extrato do usuário.
-   - Aponte o valor total acumulado, o número de compras e o impacto na sobra do mês.
-   - Nunca dependa de marcas de exemplo: descubra os hábitos a partir dos dados reais do usuário.
+3. GASTOS ESPECÍFICOS, HÁBITOS DE CONSUMO E SEGREGAÇÃO CRÉDITO vs DÉBITO:
+   - Inspecione tanto os gastos no CARTÃO DE CRÉDITO quanto no DÉBITO/PIX, identificando nominalmente os estabelecimentos e hábitos de consumo frequentes.
+   - Agrupe e padronize por itens específicos (ex: Chiquinho, sorveterias, McDonald's, padarias) ou por categorias comportamentais (ex: Sobremesas & Doces, Lanches & Fast Food, Cafés & Cantinas, Restaurantes & Delivery).
+   - Sempre quantifique o número de compras, o valor total e o detalhamento do meio de pagamento:
+     * "Você teve X gastos com [Hábito/Item] totalizando R$ Y (sendo R$ A no cartão de crédito e R$ B no débito/PIX)."
+   - Descubra os hábitos reais a partir do extrato do usuário.
 4. REALITY CHECK PARA MESES FUTUROS (DEZEMBRO / PROJEÇÕES):
    - Se o usuário perguntar sobre o futuro (ex: final do ano, Dezembro ou meses à frente), lembre-se de que o livro-caixa registra apenas parcelas e contas já contratadas.
    - Pondere que despesas do dia a dia naturalmente continuarão existindo (baseline estimado em ~R$ ${safeContext.historicalVariableBaseline.toFixed(2)}/mês).

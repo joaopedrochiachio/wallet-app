@@ -41,6 +41,19 @@ export interface SpecificSpendItem {
   count: number;
   category: string;
   percentage: number;
+  creditAmount?: number;
+  debitAmount?: number;
+  paymentBreakdown?: string;
+  habitCategory?: string;
+}
+
+export interface LifestyleHabitSummary {
+  habitName: string;
+  total: number;
+  count: number;
+  creditAmount: number;
+  debitAmount: number;
+  examples: string[];
 }
 
 export interface LiquidityAnalysis {
@@ -119,9 +132,16 @@ export interface FinancialTelemetry {
   }>;
   monthlyProjections?: MonthProjectionSummary[];
   topSpendItems?: SpecificSpendItem[];
-  recentExpenses?: Array<{ title: string; amount: number; date: string; category: string }>;
+  recentExpenses?: Array<{
+    title: string;
+    amount: number;
+    date: string;
+    category: string;
+    paymentMethod?: string;
+  }>;
   liquidityAnalysis?: LiquidityAnalysis;
   historicalVariableBaseline?: number;
+  lifestyleHabits?: LifestyleHabitSummary[];
 }
 
 export interface MonthProjectionSummary {
@@ -220,8 +240,15 @@ export interface SafeFinancialContext {
   }>;
   monthlyProjections: MonthProjectionSummary[];
   topSpendItems: SpecificSpendItem[];
-  recentExpenses: Array<{ title: string; amount: number; date: string; category: string }>;
+  recentExpenses: Array<{
+    title: string;
+    amount: number;
+    date: string;
+    category: string;
+    paymentMethod?: string;
+  }>;
   liquidityAnalysis: LiquidityAnalysis;
+  lifestyleHabits?: LifestyleHabitSummary[];
 }
 
 export interface PurchaseSimulationInput {
@@ -253,6 +280,60 @@ export interface PurchaseSimulationResult {
   verdict: "safe" | "warning" | "critical";
   verdictMessage: string;
   impactSummary: string;
+}
+
+export function inferHabitCategory(title: string, category: string): string {
+  const clean = (title + " " + category)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  if (
+    /sorvet|chiquinho|acai|açaí|doceria|confeitaria|bolo|cacau show|kopenhagen|gelato|bacio di latte|brownie|sobremesa|milkshake/.test(
+      clean
+    )
+  ) {
+    return "Sobremesas & Doces";
+  }
+  if (
+    /mcdonald|burger king|\bbk\b|habib|bobs|subway|lanche|hamburg|pastel|pizza|pizzaria|esfiha|hot dog|snack/.test(
+      clean
+    )
+  ) {
+    return "Lanches & Fast Food";
+  }
+  if (
+    /cantina|padaria|cafeteria|\bcafe\b|\bcafé\b|starbucks|pao de queijo|panificadora/.test(
+      clean
+    )
+  ) {
+    return "Cafés, Padarias & Cantinas";
+  }
+  if (
+    /ifood|rappi|ubereats|delivery|restaurante|almoco|jantar|churrasc|sushi|comida/.test(
+      clean
+    )
+  ) {
+    return "Restaurantes & Delivery";
+  }
+  if (
+    /uber|99pop|\b99\b|taxi|combust|posto\b|gasolina|etanol|estacionamento/.test(
+      clean
+    )
+  ) {
+    return "Transporte & Mobilidade";
+  }
+  if (/farmacia|drogaria|drogasil|raia|medicamento|remedio/.test(clean)) {
+    return "Farmácia & Saúde";
+  }
+  if (
+    /cinema|netflix|spotify|prime video|disney|hbo|show|ingresso|jogos|game/.test(
+      clean
+    )
+  ) {
+    return "Lazer & Assinaturas";
+  }
+  return "Outros Hábitos";
 }
 
 /**
@@ -333,13 +414,28 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
     (t) => t.kind !== "invoice_payment" && t.kind !== "invoice_settlement"
   );
 
+  const creditCardNames = new Set(
+    creditCards.map((c) => (c.name || "").toLowerCase().trim()).filter(Boolean)
+  );
+
+  const isCreditTx = (t: TransactionContextItem): boolean => {
+    if (t.cardId) return true;
+    const acc = (t.account || "").toLowerCase().trim();
+    if (creditCardNames.has(acc)) return true;
+    if (/(cartao|cartão|credito|crédito)/i.test(acc)) return true;
+    return false;
+  };
+
   interface SpendCluster {
     displayTitle: string;
     cleanTokens: string[];
     compactKey: string;
     total: number;
     count: number;
+    creditAmount: number;
+    debitAmount: number;
     category: string;
+    habitCategory: string;
   }
 
   const clusters: SpendCluster[] = [];
@@ -367,6 +463,11 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
       .trim();
     const compact = clean.replace(/\s+/g, "");
     const tokens = clean.split(" ").filter((w) => w.length > 1);
+
+    const isCredit = isCreditTx(t);
+    const amount = safeNumber(t.amount);
+    const creditAdd = isCredit ? amount : 0;
+    const debitAdd = isCredit ? 0 : amount;
 
     // Encontra cluster compatível dinamicamente
     let matched = clusters.find((c) => {
@@ -405,33 +506,91 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
     else if (compact === "cantina") displayTitle = "Cantina";
 
     if (matched) {
-      matched.total += t.amount;
+      matched.total += amount;
       matched.count += 1;
+      matched.creditAmount += creditAdd;
+      matched.debitAmount += debitAdd;
       if (displayTitle.length < matched.displayTitle.length && displayTitle.length >= 3) {
         matched.displayTitle = displayTitle;
       }
     } else {
+      const habitCategory = inferHabitCategory(rawTitle, t.category || "");
       clusters.push({
         displayTitle,
         cleanTokens: tokens,
         compactKey: compact,
-        total: t.amount,
+        total: amount,
         count: 1,
+        creditAmount: creditAdd,
+        debitAmount: debitAdd,
         category: t.category || "Outros",
+        habitCategory,
       });
     }
   }
 
   const topSpendItems: SpecificSpendItem[] = clusters
-    .map((item) => ({
-      title: item.displayTitle,
-      total: item.total,
-      count: item.count,
-      category: item.category,
-      percentage: totalExpenses > 0 ? Math.round((item.total / totalExpenses) * 100) : 0,
-    }))
+    .map((item) => {
+      const parts: string[] = [];
+      if (item.creditAmount > 0) parts.push(`Crédito: R$ ${item.creditAmount.toFixed(2)}`);
+      if (item.debitAmount > 0) parts.push(`Débito: R$ ${item.debitAmount.toFixed(2)}`);
+      const paymentBreakdown = parts.join(" | ") || "À vista";
+
+      return {
+        title: item.displayTitle,
+        total: item.total,
+        count: item.count,
+        creditAmount: item.creditAmount,
+        debitAmount: item.debitAmount,
+        paymentBreakdown,
+        habitCategory: item.habitCategory,
+        category: item.category,
+        percentage: totalExpenses > 0 ? Math.round((item.total / totalExpenses) * 100) : 0,
+      };
+    })
     .sort((a, b) => b.total - a.total)
     .slice(0, 15);
+
+  // Agrupamento macro por estilo de vida & hábitos de consumo
+  const habitMap = new Map<
+    string,
+    {
+      total: number;
+      count: number;
+      creditAmount: number;
+      debitAmount: number;
+      examples: Set<string>;
+    }
+  >();
+
+  for (const c of clusters) {
+    const habit = c.habitCategory;
+    if (habit === "Outros Hábitos" && c.count <= 1) continue;
+    const current = habitMap.get(habit) || {
+      total: 0,
+      count: 0,
+      creditAmount: 0,
+      debitAmount: 0,
+      examples: new Set<string>(),
+    };
+    current.total += c.total;
+    current.count += c.count;
+    current.creditAmount += c.creditAmount;
+    current.debitAmount += c.debitAmount;
+    current.examples.add(c.displayTitle);
+    habitMap.set(habit, current);
+  }
+
+  const lifestyleHabits: LifestyleHabitSummary[] = Array.from(habitMap.entries())
+    .map(([habitName, data]) => ({
+      habitName,
+      total: data.total,
+      count: data.count,
+      creditAmount: data.creditAmount,
+      debitAmount: data.debitAmount,
+      examples: Array.from(data.examples).slice(0, 4),
+    }))
+    .sort((a, b) => b.total - a.total);
 
   const recentExpenses = [...nonSettlementExpenses]
     .sort((a, b) => {
@@ -445,6 +604,7 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
       amount: t.amount,
       date: typeof t.date === "string" ? t.date : new Date(t.date).toLocaleDateString("pt-BR"),
       category: t.category || "Outros",
+      paymentMethod: isCreditTx(t) ? "Crédito" : "Débito",
     }));
 
   // Análise de Liquidez: Mês Atual vs Mês Que Vem
@@ -547,6 +707,7 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
     recentExpenses,
     liquidityAnalysis,
     historicalVariableBaseline,
+    lifestyleHabits,
   };
 }
 
@@ -754,6 +915,10 @@ export function createSafeFinancialContext(telemetry: FinancialTelemetry): SafeF
         title: safeTitle,
         total: safeNumber(item.total),
         count: safeNumber(item.count, 1),
+        creditAmount: safeNumber(item.creditAmount),
+        debitAmount: safeNumber(item.debitAmount),
+        paymentBreakdown: item.paymentBreakdown || "À vista",
+        habitCategory: item.habitCategory,
         category: normalizeFinancialCategory(item.category),
         percentage: safeNumber(item.percentage),
       };
@@ -773,6 +938,7 @@ export function createSafeFinancialContext(telemetry: FinancialTelemetry): SafeF
         amount: safeNumber(item.amount),
         date: String(item.date || ""),
         category: normalizeFinancialCategory(item.category),
+        paymentMethod: item.paymentMethod || "Conta",
       };
     }),
     liquidityAnalysis: telemetry.liquidityAnalysis || {
@@ -795,6 +961,14 @@ export function createSafeFinancialContext(telemetry: FinancialTelemetry): SafeF
         ),
       },
     },
+    lifestyleHabits: (telemetry.lifestyleHabits || []).map((h) => ({
+      habitName: h.habitName,
+      total: safeNumber(h.total),
+      count: safeNumber(h.count),
+      creditAmount: safeNumber(h.creditAmount),
+      debitAmount: safeNumber(h.debitAmount),
+      examples: (h.examples || []).map((ex) => redactPersonalData(ex).trim()).filter(Boolean),
+    })),
   };
 }
 
@@ -956,10 +1130,12 @@ Você atua como um parceiro e consultor financeiro de alto nível que trabalha l
      * "Neste mês, sua conta está superavitária em +R$ X (entradas menos despesas em débito/PIX)."
      * "Porém, para o mês seguinte, você já acumula R$ Y na fatura do cartão, o que consumirá Z% da sua renda assim que vencer."
 
-2. ANALISTA AUTODIDATA: IDENTIFICAÇÃO DE PADRÕES POR DESCRIÇÃO REAL DOS GASTOS
-   - O Analista é AUTODIDATA e dinâmico: ele identifica padrões, micro-ralos e hábitos de consumo a partir da descrição e do titular de cada lançamento (qualquer estabelecimento, fornecedor, aplicativo ou comércio que o usuário frequente).
-   - NUNCA se limite a marcas específicas: examine todo o histórico e aponte os padrões de consumo que efetivamente se repetem, quantificando o número de vezes e o valor total somado (ex: "Identifiquei X compras em [Estabelecimento/Serviço] totalizando R$ Y este mês").
-   - Alerte quando esses gastos pontuais repetidos estiverem corroendo a sobra do mês de forma invisível.
+2. ANALISTA AUTODIDATA: IDENTIFICAÇÃO DE PADRÕES POR DESCRIÇÃO REAL DOS GASTOS & MEIOS DE PAGAMENTO (CRÉDITO vs DÉBITO)
+   - O Analista DEVE inspecionar e padronizar tanto os gastos no CARTÃO DE CRÉDITO quanto no DÉBITO/PIX, considerando as descrições nominais de cada despesa.
+   - Identifique e padronize os hábitos de consumo por estabelecimentos/itens específicos (ex: Chiquinho, sorveterias, McDonald's, padarias) E por grupos comportamentais de estilo de vida (ex: "Sobremesas & Doces", "Lanches & Fast Food", "Cafés & Cantinas", "Restaurantes & Delivery", etc.).
+   - Sempre quantifique a contagem de compras, o valor total e a segregação clara por meio de pagamento:
+     * "Você teve X gastos com [Hábito/Sobremesas/Lanches] totalizando R$ Y (sendo R$ A no cartão de crédito e R$ B no débito/PIX)."
+   - Alerte sobre micro-ralos: gastos recorrentes em sobremesas, lanches ou delivery divididos entre crédito e débito muitas vezes somam centenas de reais de forma invisível.
 
 3. REALITY CHECK DE MESES FUTUROS (SEM ILUSÕES CONTÁBEIS E SEM EXTREMOS):
    - Nas projeções futuras do livro-caixa (ex: próximos meses ou final do ano, como Dezembro), constam apenas as despesas fixas e as parcelas de cartão já agendadas até o momento.
@@ -1075,13 +1251,13 @@ ${
        (Sendo R$ ${liquidityAnalysis.nextMonth.cardInstallments.toFixed(2)} em parcelas de faturas de cartão e R$ ${liquidityAnalysis.nextMonth.recurringDebit.toFixed(2)} em despesas fixas em débito)
      - Saldo Livre Projetado para Gastar Mês que Vem: R$ ${liquidityAnalysis.nextMonth.projectedFreeBalance.toFixed(2)}
 
-8. GASTOS ESPECÍFICOS & ESTABELECIMENTOS MAIS FREQUENTES:
+8. GASTOS ESPECÍFICOS & ESTABELECIMENTOS MAIS FREQUENTES (COM CRÉDITO / DÉBITO):
 ${
   topSpendItems && topSpendItems.length > 0
     ? topSpendItems
         .map(
           (item) =>
-            `   • ${item.title}: R$ ${item.total.toFixed(2)} (${item.count} compra(s), ${item.percentage}% dos gastos - Categoria: ${item.category})`
+            `   • ${item.title}: R$ ${item.total.toFixed(2)} (${item.count} compra(s) | ${item.paymentBreakdown || `Crédito: R$ ${(item.creditAmount ?? 0).toFixed(2)} / Débito: R$ ${(item.debitAmount ?? 0).toFixed(2)}`} | ${item.percentage}% dos gastos - Grupo: ${item.habitCategory || item.category})`
         )
         .join("\n")
     : "   • Sem concentração específica individual detectada."
@@ -1091,9 +1267,21 @@ ${
     ? `\n   Lançamentos Recentes:\n` +
       recentExpenses
         .slice(0, 8)
-        .map((r) => `     - ${r.date}: ${r.title} — R$ ${r.amount.toFixed(2)} (${r.category})`)
+        .map((r) => `     - ${r.date}: ${r.title} — R$ ${r.amount.toFixed(2)} (${r.paymentMethod || "Conta"} - ${r.category})`)
         .join("\n")
     : ""
+}
+
+9. GRUPOS MACRO DE ESTILO DE VIDA & HÁBITOS DE CONSUMO (CRÉDITO vs DÉBITO):
+${
+  context.lifestyleHabits && context.lifestyleHabits.length > 0
+    ? context.lifestyleHabits
+        .map(
+          (h) =>
+            `   • ${h.habitName}: R$ ${h.total.toFixed(2)} (${h.count} compra(s) | Crédito: R$ ${h.creditAmount.toFixed(2)} | Débito: R$ ${h.debitAmount.toFixed(2)} - Lançamentos: ${h.examples.join(", ")})`
+        )
+        .join("\n")
+    : "   • Sem agrupamento macro identificado."
 }
 `;
 }

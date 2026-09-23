@@ -15,6 +15,7 @@ import type { TransactionUpdateInput } from "@/lib/services/transactionsService"
 import { formatAccountLabel, matchesLedgerCard } from "@/lib/utils/ledger";
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "./AddTransactionSheet";
 import { AppleConfirmModal } from "./AppleConfirmModal";
+import { sanitizeTextInput, validateCurrency } from "@/lib/utils/security";
 
 interface TransactionDetailsSheetProps {
   transaction: TransactionItem;
@@ -111,22 +112,30 @@ export function TransactionDetailsSheet({
     event.preventDefault();
     if (!fieldsAreEditable) return;
 
-    const amount = parseFloat(amountInput.replace(/\./g, "").replace(",", "."));
-    if (!title.trim() || !Number.isFinite(amount) || amount <= 0 || !dateInput) {
-      setError("Preencha descrição, valor e data corretamente.");
+    const currencyCheck = validateCurrency(amountInput, { min: 0.01, max: 50_000_000 });
+    const sanitizedTitle = sanitizeTextInput(title, 100);
+    const sanitizedCategory = sanitizeTextInput(category, 60);
+
+    if (!sanitizedTitle || !currencyCheck.isValid || !dateInput) {
+      setError(currencyCheck.error || "Preencha descrição, valor e data corretamente.");
       return;
     }
 
     const occurredAt = new Date(`${dateInput}T12:00:00`);
+    if (Number.isNaN(occurredAt.getTime())) {
+      setError("Data inválida informada.");
+      return;
+    }
+
     const selectedCard = cards.find(
       (card) => card.name === account || card.id === account
     );
 
     setPendingUpdates({
-      title: title.trim(),
-      amount,
+      title: sanitizedTitle,
+      amount: currencyCheck.value,
       type,
-      category,
+      category: sanitizedCategory,
       account,
       cardId: selectedCard?.id || null,
       date: occurredAt.toLocaleDateString("pt-BR"),

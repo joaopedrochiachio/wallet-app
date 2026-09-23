@@ -30,6 +30,12 @@ import {
   getEffectiveRecurringItemForPeriod,
 } from "@/lib/utils/dateUtils";
 import { formatAccountLabel, getLedgerEntryDate } from "@/lib/utils/ledger";
+import {
+  sanitizeTextInput,
+  validateCurrency,
+  validateDayOfMonth,
+  validateInstallmentsCount,
+} from "@/lib/utils/security";
 import { RecurrenceType, RecurringItem } from "@/types";
 
 export default function PlanningPage() {
@@ -257,21 +263,33 @@ export default function PlanningPage() {
 
   const handleCreatePlannedItem = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanAmount = parseFloat(newAmount.replace(/\./g, "").replace(",", "."));
-    if (isNaN(cleanAmount) || cleanAmount <= 0 || !newTitle.trim()) return;
+    const sanitizedTitle = sanitizeTextInput(newTitle, 80);
+    if (!sanitizedTitle) {
+      alert("Por favor, informe uma descrição válida para o planejamento.");
+      return;
+    }
+
+    const amountValidation = validateCurrency(newAmount);
+    if (!amountValidation.isValid) {
+      alert(amountValidation.error || "Valor informado é inválido.");
+      return;
+    }
+    const cleanAmount = amountValidation.value;
 
     let computedDay = 10;
     if (recurrenceSelection === "business_day_5") {
       computedDay = currentMonth5thBusinessDay;
     } else if (isCustomDayActive) {
-      computedDay = parseInt(customDayInput) || 10;
+      const dayVal = validateDayOfMonth(customDayInput);
+      computedDay = dayVal.isValid ? dayVal.value : 10;
     } else {
-      computedDay = parseInt(fixedDayValue) || 10;
+      const dayVal = validateDayOfMonth(fixedDayValue);
+      computedDay = dayVal.isValid ? dayVal.value : 10;
     }
 
     const effectiveInstallments =
       durationMode === "installments"
-        ? Math.max(2, parseInt(installmentsInput, 10) || installmentsCount || 2)
+        ? validateInstallmentsCount(installmentsInput || installmentsCount || 2).value
         : durationMode === "one-time"
           ? 1
           : undefined;
@@ -283,7 +301,7 @@ export default function PlanningPage() {
 
     try {
       await addRecurringItem({
-        title: newTitle.trim(),
+        title: sanitizedTitle,
         amount: finalAmount,
         type: modalType,
         account: newAccount,
@@ -349,21 +367,34 @@ export default function PlanningPage() {
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingItem) return;
-    const cleanAmount = parseFloat(editAmount.replace(/\./g, "").replace(",", "."));
-    if (isNaN(cleanAmount) || cleanAmount <= 0 || !editTitle.trim()) return;
+
+    const sanitizedTitle = sanitizeTextInput(editTitle, 80);
+    if (!sanitizedTitle) {
+      alert("Por favor, informe uma descrição válida para a edição.");
+      return;
+    }
+
+    const amountValidation = validateCurrency(editAmount);
+    if (!amountValidation.isValid) {
+      alert(amountValidation.error || "Valor informado é inválido.");
+      return;
+    }
+    const cleanAmount = amountValidation.value;
 
     let computedDay = 10;
     if (editRecurrence === "business_day_5") {
       computedDay = currentMonth5thBusinessDay;
     } else if (editIsCustomDay) {
-      computedDay = parseInt(editCustomDay) || 10;
+      const dayVal = validateDayOfMonth(editCustomDay);
+      computedDay = dayVal.isValid ? dayVal.value : 10;
     } else {
-      computedDay = parseInt(editFixedDay) || 10;
+      const dayVal = validateDayOfMonth(editFixedDay);
+      computedDay = dayVal.isValid ? dayVal.value : 10;
     }
 
     const effectiveEditInstallments =
       editDurationMode === "installments"
-        ? Math.max(2, parseInt(editInstallmentsInput, 10) || editInstallmentsCount || 2)
+        ? validateInstallmentsCount(editInstallmentsInput || editInstallmentsCount || 2).value
         : editDurationMode === "one-time"
           ? 1
           : undefined;
@@ -374,7 +405,7 @@ export default function PlanningPage() {
         : cleanAmount;
 
     const updates: Partial<RecurringItem> = {
-      title: editTitle.trim(),
+      title: sanitizedTitle,
       amount: finalEditAmount,
       type: editType,
       account: editAccount,

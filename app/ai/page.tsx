@@ -160,9 +160,13 @@ export default function AIAnalystPage() {
         };
       });
 
+      const idToken = user ? await user.getIdToken() : "";
       const res = await fetch("/api/ai/analyze", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+        },
         body: JSON.stringify({
           userProfile,
           cards,
@@ -233,9 +237,13 @@ export default function AIAnalystPage() {
         };
       });
 
+      const idToken = user ? await user.getIdToken() : "";
       const res = await fetch("/api/ai/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+        },
         body: JSON.stringify({
           messages: messages.map((m) => ({ role: m.role, content: m.content })),
           userMessage: text,
@@ -993,12 +1001,19 @@ export default function AIAnalystPage() {
                           className="bg-white rounded-[24px] p-5 border border-black/[0.04] shadow-[0_4px_20px_rgba(0,0,0,0.025)] hover:border-black/15 transition-all flex flex-col justify-between space-y-3"
                         >
                           <div className="space-y-1.5">
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-sm font-semibold text-[#1D1D1F]">
-                                {item.item}
-                              </span>
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex flex-col gap-1">
+                                <span className="text-sm font-semibold text-[#1D1D1F]">
+                                  {item.item}
+                                </span>
+                                {item.habitCategory && item.habitCategory !== item.item && (
+                                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[#F2F2F7] text-[#1D1D1F] self-start">
+                                    {item.habitCategory}
+                                  </span>
+                                )}
+                              </div>
                               <span
-                                className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                                className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border shrink-0 ${
                                   item.alertType === "alert"
                                     ? "bg-rose-50 text-rose-700 border-rose-200/60"
                                     : item.alertType === "warning"
@@ -1022,6 +1037,27 @@ export default function AIAnalystPage() {
                                 </span>
                               )}
                             </div>
+
+                            {/* Detalhamento Crédito vs Débito */}
+                            {(item.creditAmount !== undefined || item.debitAmount !== undefined || item.paymentBreakdown) && (
+                              <div className="flex items-center gap-1.5 flex-wrap pt-0.5 pb-1">
+                                {typeof item.creditAmount === "number" && item.creditAmount > 0 && (
+                                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200/60">
+                                    Crédito: R$ {formatCurrency(item.creditAmount)}
+                                  </span>
+                                )}
+                                {typeof item.debitAmount === "number" && item.debitAmount > 0 && (
+                                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+                                    Débito/PIX: R$ {formatCurrency(item.debitAmount)}
+                                  </span>
+                                )}
+                                {!item.creditAmount && !item.debitAmount && item.paymentBreakdown && (
+                                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-[#F2F2F7] text-[#86868B]">
+                                    {item.paymentBreakdown}
+                                  </span>
+                                )}
+                              </div>
+                            )}
 
                             <p className="text-xs text-[#86868B] leading-relaxed">
                               {item.message}
