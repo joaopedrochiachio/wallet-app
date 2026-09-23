@@ -261,3 +261,76 @@ export async function loadPersistentDiagnosis(
   // 2. Fallback para cache local instantâneo
   return loadInitialDiagnosisSync(userId);
 }
+
+const DISMISSED_PATTERNS_PREFIX = "wallet_ai_dismissed_patterns_";
+
+function getDismissedPatternsKey(userId?: string | null): string {
+  return `${DISMISSED_PATTERNS_PREFIX}${userId || "guest"}`;
+}
+
+/**
+ * Carrega a lista de padrões e hábitos descartados pelo usuário
+ */
+export function loadDismissedPatterns(userId?: string | null): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(getDismissedPatternsKey(userId));
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.map((s) => String(s).trim().toLowerCase()).filter(Boolean);
+      }
+    }
+  } catch {
+    // Silencioso
+  }
+  return [];
+}
+
+/**
+ * Descarta um padrão pelo seu título/identificador para nunca mais ser sugerido
+ */
+export function dismissPattern(patternKey: string, userId?: string | null): string[] {
+  if (typeof window === "undefined" || !patternKey) return [];
+  const current = loadDismissedPatterns(userId);
+  const normalized = patternKey.trim().toLowerCase();
+  if (!current.includes(normalized)) {
+    const updated = [...current, normalized];
+    try {
+      window.localStorage.setItem(getDismissedPatternsKey(userId), JSON.stringify(updated));
+    } catch {
+      // Silencioso
+    }
+    return updated;
+  }
+  return current;
+}
+
+/**
+ * Remove da lista de descartados, permitindo que volte a ser analisado
+ */
+export function restorePattern(patternKey: string, userId?: string | null): string[] {
+  if (typeof window === "undefined") return [];
+  const current = loadDismissedPatterns(userId);
+  const normalized = patternKey.trim().toLowerCase();
+  const updated = current.filter((k) => k !== normalized);
+  try {
+    window.localStorage.setItem(getDismissedPatternsKey(userId), JSON.stringify(updated));
+  } catch {
+    // Silencioso
+  }
+  return updated;
+}
+
+/**
+ * Limpa todos os padrões descartados
+ */
+export function clearDismissedPatterns(userId?: string | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(getDismissedPatternsKey(userId));
+  } catch {
+    // Silencioso
+  }
+}
+

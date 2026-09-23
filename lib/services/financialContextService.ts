@@ -313,11 +313,19 @@ export function isExcludedFromHabitAnalysis(title: string, category?: string): b
     return true;
   }
 
-  // 3. Pagamento de fatura, transferências internas e tarifas bancárias puras
+  // 3. Pagamento de fatura, faturas de cartão consolidadas, transferências internas e tarifas bancárias puras
   if (
-    /pagamento de fatura|pagto fatura|fatura cartao|fatura do cartao|entre contas|^ted\b|^doc\b|transferencia entre|iof\b|tarifa bancaria|anuidade cartao/i.test(
+    /^fatura\b|fatura do cartao|fatura cartao|fatura nubank|fatura santander|fatura itau|fatura bradesco|fatura inter|pagamento de fatura|pagto fatura|entre contas|^ted\b|^doc\b|transferencia entre|iof\b|tarifa bancaria|anuidade cartao/i.test(
       cleanTitle
     )
+  ) {
+    return true;
+  }
+
+  // 4. Lançamentos agrupados manuais ou notas compostas (ex: "Gastos (Inatel + Coffe...)")
+  if (
+    /^gastos\s*\(|^despesas\s*\(|^compras\s*\(/i.test(title || "") ||
+    /^gastos\s+(?:inatel|diversos|gerais|variados|semana|mes)|despesas diversas/i.test(cleanTitle)
   ) {
     return true;
   }
@@ -641,6 +649,7 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
   }
 
   const topSpendItems: SpecificSpendItem[] = clusters
+    .filter((item) => item.count >= 2)
     .map((item) => {
       const parts: string[] = [];
       if (item.creditAmount > 0) parts.push(`Crédito: R$ ${item.creditAmount.toFixed(2)}`);
@@ -692,9 +701,9 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
     habitMap.set(habit, current);
   }
 
-  // Só vira agrupamento macro de estilo de vida se houver repetição (count >= 2) ou valor relevante (total >= 100)
+  // Só vira agrupamento macro de estilo de vida se houver repetição real (count >= 2)
   const lifestyleHabits: LifestyleHabitSummary[] = Array.from(habitMap.entries())
-    .filter(([_, data]) => data.count >= 2 || data.total >= 100)
+    .filter(([_, data]) => data.count >= 2)
     .map(([habitName, data]) => ({
       habitName,
       total: data.total,

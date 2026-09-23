@@ -19,6 +19,10 @@ import {
 import {
   loadInitialDiagnosisSync,
   savePersistentDiagnosis,
+  loadDismissedPatterns,
+  dismissPattern,
+  restorePattern,
+  clearDismissedPatterns,
 } from "../lib/services/aiChatService.ts";
 
 test("MODEL_CASCADE contém exatamente os 8 modelos na ordem requisitada", () => {
@@ -520,6 +524,7 @@ test("synthesizeFinancialTelemetry detecta e agrega gastos específicos como iFo
     { id: "tx-2", title: "iFood", amount: 48.0, type: "despesa", category: "Alimentação", account: "Cartão 1", date: "2026-09-05" },
     { id: "tx-3", title: "iFood", amount: 55.0, type: "despesa", category: "Alimentação", account: "Cartão 1", date: "2026-09-12" },
     { id: "tx-4", title: "Uber", amount: 28.5, type: "despesa", category: "Transporte", account: "Cartão 1", date: "2026-09-08" },
+    { id: "tx-4b", title: "Uber", amount: 31.5, type: "despesa", category: "Transporte", account: "Cartão 1", date: "2026-09-09" },
     { id: "tx-5", title: "Supermercado", amount: 400.0, type: "despesa", category: "Alimentação", account: "Conta corrente", date: "2026-09-10" },
   ];
 
@@ -530,7 +535,7 @@ test("synthesizeFinancialTelemetry detecta e agrega gastos específicos como iFo
     goals: [],
     mainBalance: 2500,
     monthIncome: 6000,
-    monthExpense: 597,
+    monthExpense: 628.5,
   });
 
   assert.ok(telemetry.topSpendItems);
@@ -542,8 +547,8 @@ test("synthesizeFinancialTelemetry detecta e agrega gastos específicos como iFo
 
   const uberItem = telemetry.topSpendItems.find((item) => item.title.toLowerCase() === "uber");
   assert.ok(uberItem, "Deveria encontrar Uber nos maiores gastos");
-  assert.equal(uberItem.count, 1);
-  assert.equal(uberItem.total, 28.5);
+  assert.equal(uberItem.count, 2);
+  assert.equal(uberItem.total, 60.0);
 });
 
 test("liquidityAnalysis calcula saldo livre hoje e saldo livre projetado mês que vem", () => {
@@ -766,6 +771,7 @@ test("synthesizeFinancialTelemetry agrupa dinamicamente qualquer estabelecimento
     { id: "tx-3", title: "Posto Shell Centro", amount: 180.0, type: "despesa", category: "Transporte", account: "Cartão 1", date: "2026-09-08" },
     { id: "tx-4", title: "posto shell combustivel", amount: 120.0, type: "despesa", category: "Transporte", account: "Cartão 1", date: "2026-09-15" },
     { id: "tx-5", title: "Posto Ipiranga", amount: 90.0, type: "despesa", category: "Transporte", account: "Cartão 1", date: "2026-09-18" },
+    { id: "tx-5b", title: "posto ipiranga gasolina", amount: 80.0, type: "despesa", category: "Transporte", account: "Cartão 1", date: "2026-09-20" },
   ];
 
   const telemetry = synthesizeFinancialTelemetry({
@@ -775,7 +781,7 @@ test("synthesizeFinancialTelemetry agrupa dinamicamente qualquer estabelecimento
     goals: [],
     mainBalance: 4000,
     monthIncome: 7000,
-    monthExpense: 1930, // 1500 fixo + 430 variável
+    monthExpense: 2010, // 1500 fixo + 510 variável
   });
 
   assert.ok(telemetry.topSpendItems);
@@ -793,11 +799,11 @@ test("synthesizeFinancialTelemetry agrupa dinamicamente qualquer estabelecimento
 
   const ipiranga = telemetry.topSpendItems.find((i) => i.title.toLowerCase().includes("ipiranga"));
   assert.ok(ipiranga, "Deveria manter Posto Ipiranga separado");
-  assert.equal(ipiranga.count, 1);
-  assert.equal(ipiranga.total, 90.0);
+  assert.equal(ipiranga.count, 2);
+  assert.equal(ipiranga.total, 170.0);
 
-  // Baseline de gastos variáveis: 1930 - 1500 = 430
-  assert.equal(telemetry.historicalVariableBaseline, 430);
+  // Baseline de gastos variáveis: 2010 - 1500 = 510
+  assert.equal(telemetry.historicalVariableBaseline, 510);
 });
 
 test("createSafeFinancialContext preserva nomes reais de titulares e descrições sem substituir por Outros", () => {
@@ -813,8 +819,10 @@ test("createSafeFinancialContext preserva nomes reais de titulares e descriçõe
     },
     cards: [],
     transactions: [
-      { id: "tx-1", title: "Livraria Cultura", amount: 120, type: "despesa", category: "Outros", account: "Conta corrente", date: "2026-09-02" },
-      { id: "tx-2", title: "Mecânico do Bairro", amount: 350, type: "despesa", category: "Outros", account: "Conta corrente", date: "2026-09-05" },
+      { id: "tx-1", title: "Livraria Cultura", amount: 60, type: "despesa", category: "Outros", account: "Conta corrente", date: "2026-09-02" },
+      { id: "tx-1b", title: "Livraria Cultura Livros", amount: 60, type: "despesa", category: "Outros", account: "Conta corrente", date: "2026-09-03" },
+      { id: "tx-2", title: "Mecânico do Bairro", amount: 175, type: "despesa", category: "Outros", account: "Conta corrente", date: "2026-09-05" },
+      { id: "tx-2b", title: "Mecânico do Bairro Peças", amount: 175, type: "despesa", category: "Outros", account: "Conta corrente", date: "2026-09-06" },
     ],
     recurringItems: [],
     goals: [],
@@ -826,10 +834,10 @@ test("createSafeFinancialContext preserva nomes reais de titulares e descriçõe
   const safeContext = createSafeFinancialContext(telemetry);
 
   // Titulares reais NÃO devem ser 'Outros'
-  assert.ok(safeContext.topSpendItems.some((i) => i.title === "Livraria Cultura"));
-  assert.ok(safeContext.topSpendItems.some((i) => i.title === "Mecânico do Bairro"));
-  assert.ok(safeContext.recentExpenses.some((i) => i.title === "Livraria Cultura"));
-  assert.ok(safeContext.recentExpenses.some((i) => i.title === "Mecânico do Bairro"));
+  assert.ok(safeContext.topSpendItems.some((i) => i.title.toLowerCase().includes("livraria cultura")));
+  assert.ok(safeContext.topSpendItems.some((i) => i.title.toLowerCase().includes("mecânico do bairro")));
+  assert.ok(safeContext.recentExpenses.some((i) => i.title.toLowerCase().includes("livraria cultura")));
+  assert.ok(safeContext.recentExpenses.some((i) => i.title.toLowerCase().includes("mecânico do bairro")));
 });
 
 test("buildFinancialAnalystSystemPrompt inclui Reality Check de meses futuros e perfil completo do cliente", () => {
@@ -1017,12 +1025,16 @@ test("synthesizeFinancialTelemetry exclui Ajuste na conta e Rifa, e não classif
     },
   ];
 
-  // Exato cenário do screenshot do usuário: todas as despesas no crédito, categoria padrão 'Alimentação & Delivery'
+  // Cenário com compras repetidas (count >= 2) e compras únicas (count === 1)
   const transactions = [
     { id: "tx-1", title: "Vivo Easy", amount: 35.00, type: "despesa", category: "Alimentação & Delivery", cardId: "card-itau", date: "2026-09-02" },
+    { id: "tx-1b", title: "Vivo Easy", amount: 35.00, type: "despesa", category: "Alimentação & Delivery", cardId: "card-itau", date: "2026-09-03" },
     { id: "tx-2", title: "Rifa Mattheus", amount: 20.00, type: "despesa", category: "Alimentação & Delivery", cardId: "card-itau", date: "2026-09-05" },
     { id: "tx-3", title: "Pipoquinhha", amount: 20.00, type: "despesa", category: "Alimentação & Delivery", cardId: "card-itau", date: "2026-09-08" },
+    { id: "tx-3b", title: "Pipoquinhha", amount: 20.00, type: "despesa", category: "Alimentação & Delivery", cardId: "card-itau", date: "2026-09-10" },
     { id: "tx-4", title: "Ajuste na conta", amount: 49.99, type: "despesa", category: "Alimentação & Delivery", cardId: "card-itau", date: "2026-09-12" },
+    { id: "tx-5", title: "Ingles", amount: 195.00, type: "despesa", category: "Outros", cardId: "card-itau", date: "2026-09-14" },
+    { id: "tx-6", title: "Gastos ( Inatel + Coffe + Ticket Bus + Gas + Ice Cream)", amount: 166.00, type: "despesa", category: "Outros", cardId: "card-itau", date: "2026-09-16" },
   ];
 
   const telemetry = synthesizeFinancialTelemetry({
@@ -1041,28 +1053,103 @@ test("synthesizeFinancialTelemetry exclui Ajuste na conta e Rifa, e não classif
     goals: [],
     mainBalance: 2000,
     monthIncome: 5000,
-    monthExpense: 124.99,
+    monthExpense: 540.99,
   });
 
   // 1. "Ajuste na conta" e "Rifa Mattheus" NÃO devem constar em topSpendItems
   assert.ok(!telemetry.topSpendItems.some((i) => i.title.toLowerCase().includes("ajuste")));
   assert.ok(!telemetry.topSpendItems.some((i) => i.title.toLowerCase().includes("rifa")));
 
-  // 2. "Vivo Easy" deve estar categorizado como Telefonia & Internet, NUNCA Delivery
+  // 2. Compras únicas (count = 1) como "Ingles" e nota composta "Gastos (Inatel...)" NÃO devem formar padrão
+  assert.ok(!telemetry.topSpendItems.some((i) => i.title.toLowerCase().includes("ingles")));
+  assert.ok(!telemetry.topSpendItems.some((i) => i.title.toLowerCase().includes("inatel")));
+  for (const item of telemetry.topSpendItems) {
+    assert.ok(item.count >= 2, `Item ${item.title} deveria ter repetição real count >= 2, mas tem ${item.count}`);
+  }
+
+  // 3. "Vivo Easy" deve estar categorizado como Telefonia & Internet, NUNCA Delivery
   const vivoItem = telemetry.topSpendItems.find((i) => i.title === "Vivo Easy");
-  assert.ok(vivoItem, "Vivo Easy deve constar nos topSpendItems elegíveis");
+  assert.ok(vivoItem, "Vivo Easy deve constar nos topSpendItems elegíveis com count >= 2");
   assert.equal(vivoItem.habitCategory, "Telefonia & Internet");
   assert.notEqual(vivoItem.habitCategory, "Restaurantes & Delivery");
 
-  // 3. "Pipoquinhha" deve estar como Lanches & Fast Food, NUNCA Delivery
+  // 4. "Pipoquinhha" deve estar como Lanches & Fast Food, NUNCA Delivery
   const pipocaItem = telemetry.topSpendItems.find((i) => i.title === "Pipoquinhha");
-  assert.ok(pipocaItem, "Pipoquinhha deve constar nos topSpendItems");
+  assert.ok(pipocaItem, "Pipoquinhha deve constar nos topSpendItems com count >= 2");
   assert.equal(pipocaItem.habitCategory, "Lanches & Fast Food");
   assert.notEqual(pipocaItem.habitCategory, "Restaurantes & Delivery");
 
-  // 4. Em lifestyleHabits, NÃO deve existir um grupo "Restaurantes & Delivery" agrupando Vivo Easy, Rifa e Ajuste
+  // 5. Em lifestyleHabits, NÃO deve existir um grupo "Restaurantes & Delivery" agrupando Vivo Easy, Rifa e Ajuste
   const deliveryHabit = (telemetry.lifestyleHabits || []).find((h) => h.habitName === "Restaurantes & Delivery");
   assert.equal(deliveryHabit, undefined, "Não deve haver grupo de Restaurantes & Delivery");
+});
+
+test("isExcludedFromHabitAnalysis exclui faturas de cartão consolidadas e notas manuais agrupadas", () => {
+  // Faturas de cartão
+  assert.equal(isExcludedFromHabitAnalysis("Fatura Santander"), true);
+  assert.equal(isExcludedFromHabitAnalysis("Fatura Nubank"), true);
+  assert.equal(isExcludedFromHabitAnalysis("fatura cartao itau"), true);
+  assert.equal(isExcludedFromHabitAnalysis("Pagamento de fatura"), true);
+
+  // Notas manuais agrupadas
+  assert.equal(isExcludedFromHabitAnalysis("Gastos ( Inatel + Coffe + Ticket Bus + Gas + Ice Cream)"), true);
+  assert.equal(isExcludedFromHabitAnalysis("Gastos diversos da semana"), true);
+  assert.equal(isExcludedFromHabitAnalysis("Despesas diversas"), true);
+
+  // Ajustes de conta
+  assert.equal(isExcludedFromHabitAnalysis("Ajuste na conta"), true);
+  assert.equal(isExcludedFromHabitAnalysis("Ajuste de saldo"), true);
+
+  // Estabelecimentos reais de consumo NÃO devem ser excluídos
+  assert.equal(isExcludedFromHabitAnalysis("Chiquinho Sorvetes"), false);
+  assert.equal(isExcludedFromHabitAnalysis("McDonald's"), false);
+  assert.equal(isExcludedFromHabitAnalysis("Vivo Easy"), false);
+});
+
+test("gestão de padrões descartados (loadDismissedPatterns, dismissPattern, restorePattern, clearDismissedPatterns)", () => {
+  const mockStorage = new Map();
+  const fakeWindow = {
+    localStorage: {
+      getItem: (key) => mockStorage.get(key) || null,
+      setItem: (key, val) => mockStorage.set(key, String(val)),
+      removeItem: (key) => mockStorage.delete(key),
+    },
+  };
+
+  // Mock seguro para o escopo do teste
+  const originalWindow = globalThis.window;
+  globalThis.window = fakeWindow;
+
+  try {
+    const userId = "test_user_patterns_123";
+
+    // 1. Inicialmente vazio
+    assert.deepEqual(loadDismissedPatterns(userId), []);
+
+    // 2. Descarta um padrão
+    const afterFirst = dismissPattern("Vivo Easy", userId);
+    assert.deepEqual(afterFirst, ["vivo easy"]);
+    assert.deepEqual(loadDismissedPatterns(userId), ["vivo easy"]);
+
+    // 3. Descarta um segundo padrão
+    const afterSecond = dismissPattern("Chiquinho Sorvetes", userId);
+    assert.deepEqual(afterSecond, ["vivo easy", "chiquinho sorvetes"]);
+
+    // 4. Descarta o mesmo padrão repetido (idempotência)
+    const afterDup = dismissPattern("vivo easy", userId);
+    assert.deepEqual(afterDup, ["vivo easy", "chiquinho sorvetes"]);
+
+    // 5. Restaura um padrão
+    const afterRestore = restorePattern("vivo easy", userId);
+    assert.deepEqual(afterRestore, ["chiquinho sorvetes"]);
+    assert.deepEqual(loadDismissedPatterns(userId), ["chiquinho sorvetes"]);
+
+    // 6. Limpa todos
+    clearDismissedPatterns(userId);
+    assert.deepEqual(loadDismissedPatterns(userId), []);
+  } finally {
+    globalThis.window = originalWindow;
+  }
 });
 
 

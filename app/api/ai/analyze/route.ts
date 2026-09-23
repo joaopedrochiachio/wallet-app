@@ -133,9 +133,10 @@ function sanitizeText(str: unknown): string {
   return clean.replace(/\\"/g, '"').replace(/\\n/g, "\n");
 }
 
-function safeParseFinancialDiagnosis(
+export function safeParseFinancialDiagnosis(
   rawText: string,
-  context: SafeFinancialContext
+  context: SafeFinancialContext,
+  dismissedPatterns: string[] = []
 ): FinancialDiagnosis {
   let candidate = rawText.trim();
 
@@ -319,14 +320,58 @@ function safeParseFinancialDiagnosis(
     parsed?.gastosEspecificos ||
     parsed?.alertasGastos;
 
+function isDismissedPattern(
+  itemName: string,
+  habitCategory: string | undefined,
+  dismissedPatterns: string[] = []
+): boolean {
+  if (!dismissedPatterns || dismissedPatterns.length === 0) return false;
+  const nameNorm = (itemName || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+  const catNorm = (habitCategory || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+
+  return dismissedPatterns.some((d) => {
+    const dNorm = (d || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim();
+    if (!dNorm) return false;
+    return (
+      nameNorm === dNorm ||
+      nameNorm.includes(dNorm) ||
+      dNorm.includes(nameNorm) ||
+      (catNorm && (catNorm === dNorm || catNorm.includes(dNorm) || dNorm.includes(catNorm)))
+    );
+  });
+}
+
   if (Array.isArray(rawSpecific) && rawSpecific.length > 0) {
     for (const item of rawSpecific) {
       if (item && typeof item === "object") {
         const obj = item as Record<string, unknown>;
         const rawItemName = String(obj.item || "Gasto Frequente");
 
-        // Ignora imediatamente transações operacionais, ajustes contábeis e rifas
+        // Ignora imediatamente transações operacionais, faturas de cartão, notas manuais e rifas
         if (isExcludedFromHabitAnalysis(rawItemName)) {
+          continue;
+        }
+
+        const count = typeof obj.count === "number" ? obj.count : undefined;
+        // Padrão de consumo exige repetição real (mínimo de 2 compras). NUNCA aceita count === 1
+        if (count !== undefined && count < 2) {
+          continue;
+        }
+
+        // Descarta se o título denotar compra isolada (ex: "(1 compra)")
+        if (/\(1\s*compra\)/i.test(rawItemName)) {
           continue;
         }
 
@@ -342,6 +387,11 @@ function safeParseFinancialDiagnosis(
             : typeof obj.habitCategory === "string" && obj.habitCategory.trim()
             ? sanitizeText(obj.habitCategory)
             : undefined;
+
+        // Ignora se o usuário descartou este padrão
+        if (isDismissedPattern(rawItemName, habitCategory, dismissedPatterns)) {
+          continue;
+        }
 
         let paymentBreakdown =
           typeof obj.paymentBreakdown === "string" && obj.paymentBreakdown.trim()
@@ -375,9 +425,12 @@ function safeParseFinancialDiagnosis(
     }
   }
 
-  // Fallback 1: se a IA não gerou alertas válidos, prioriza estabelecimentos recorrentes reais em topSpendItems
+  // Fallback 1: se a IA não gerou alertas válidos, prioriza estabelecimentos recorrentes reais em topSpendItems (estritamente count >= 2)
   const validTopSpends = (context.topSpendItems || []).filter(
-    (item) => !isExcludedFromHabitAnalysis(item.title, item.category) && (item.count >= 2 || item.total >= 80)
+    (item) =>
+      !isExcludedFromHabitAnalysis(item.title, item.category) &&
+      item.count >= 2 &&
+      !isDismissedPattern(item.title, item.habitCategory, dismissedPatterns)
   );
 
   if (specificExpensesAlerts.length === 0 && validTopSpends.length > 0) {
@@ -397,14 +450,15 @@ function safeParseFinancialDiagnosis(
     }
   }
 
-  // Fallback 2: grupos consolidados (lifestyleHabits) com repetição real (count >= 2 ou total >= 100)
+  // Fallback 2: grupos consolidados (lifestyleHabits) com repetição real (estritamente count >= 2)
   if (specificExpensesAlerts.length === 0 && context.lifestyleHabits && context.lifestyleHabits.length > 0) {
     const validHabits = context.lifestyleHabits.filter(
       (h) =>
         !isExcludedFromHabitAnalysis(h.habitName) &&
         h.habitName !== "Alimentação Geral" &&
         h.habitName !== "Outros Hábitos" &&
-        (h.count >= 2 || h.total >= 100)
+        h.count >= 2 &&
+        !isDismissedPattern(h.habitName, undefined, dismissedPatterns)
     );
 
     for (const habit of validHabits.slice(0, 3)) {
@@ -600,6 +654,7 @@ export async function POST(req: NextRequest) {
       monthIncome = 0,
       monthExpense = 0,
       monthlyProjections = [],
+      dismissedPatterns = [],
     } = body;
 
     // Proteção de sobrecarga: limita o tamanho dos arrays processados pela IA
@@ -623,6 +678,10 @@ export async function POST(req: NextRequest) {
 
     const systemPrompt = buildFinancialAnalystSystemPrompt(safeContext);
 
+    const safeDismissed = Array.isArray(dismissedPatterns)
+      ? dismissedPatterns.map((s) => String(s).trim()).filter(Boolean)
+      : [];
+
     const userPrompt = `Realize o DIAGNÓSTICO FINANCEIRO EXECUTIVO do usuário para apresentar no painel do aplicativo.
 
 POSTURA DO ANALISTA (CFO PESSOAL):
@@ -636,8 +695,13 @@ POSTURA DO ANALISTA (CFO PESSOAL):
 DIRETRIZES FUNDAMENTAIS DO DIAGNÓSTICO:
 1. GASTOS ESPECÍFICOS & HÁBITOS DE CONSUMO (CRÉDITO vs DÉBITO):
    - Inspecione as descrições nominais de gastos tanto no CARTÃO DE CRÉDITO quanto no DÉBITO/PIX.
+   - ZERO ALUCINAÇÃO & RIGOR DE REPETIÇÃO:
+     * Um padrão de consumo EXIGE no MÍNIMO 2 compras reais no mesmo estabelecimento ou mesmo tipo de gasto (count >= 2).
+     * NUNCA crie alertas para compras isoladas (1 compra), cursos/mensalidades esporádicas (ex: Inglês), notas manuais com múltiplas despesas somadas (ex: "Gastos (Inatel...)"), ajustes na conta ou faturas de cartão.
+     * Se houver poucos ou nenhum padrão com repetição real, retorne a lista 'specificExpensesAlerts' VAZIA ([]). NÃO invente padrões.
+     ${safeDismissed.length > 0 ? `* O usuário descartou os seguintes padrões no passado: ${JSON.stringify(safeDismissed)}. É PROIBIDO sugerir qualquer um deles novamente.` : ""}
    - EXCLUSÃO RIGOROSA DE TRANSAÇÕES OPERACIONAIS / AJUSTES:
-     * 'Ajuste na conta', 'Ajuste de saldo', rifas, sorteios ou doações informais NÃO SÃO HÁBITOS DE CONSUMO DE ESTILO DE VIDA. É PROIBIDO incluí-los em 'specificExpensesAlerts'.
+     * 'Ajuste na conta', 'Ajuste de saldo', faturas de cartão consolidadas (ex: "Fatura Santander", "Fatura Nubank"), rifas, sorteios ou doações informais NÃO SÃO HÁBITOS DE CONSUMO DE ESTILO DE VIDA. É PROIBIDO incluí-los em 'specificExpensesAlerts'.
    - PRECISÃO NOMINAL DO TITULAR:
      * 'Vivo Easy' ou outras operadoras de celular pertencem a 'Telefonia & Internet', NUNCA delivery nem restaurantes.
      * Pipoca / Pipoquinha é lanche/snack.
@@ -647,7 +711,7 @@ DIRETRIZES FUNDAMENTAIS DO DIAGNÓSTICO:
      * 'item': nome do hábito ou estabelecimento
      * 'habitCategory': categoria comportamental padronizada
      * 'totalAmount': valor total acumulado
-     * 'count': quantidade de transações
+     * 'count': quantidade de transações (>= 2)
      * 'creditAmount': total no cartão de crédito
      * 'debitAmount': total no débito/PIX
      * 'paymentBreakdown': resumo textual (ex: "Crédito: R$ 80,00 | Débito: R$ 40,00")
@@ -740,7 +804,7 @@ IMPORTANTE: Responda APENAS o JSON válido. Não coloque texto antes ou depois. 
       maxOutputTokens: 3500,
     });
 
-    const parsedDiagnosis = safeParseFinancialDiagnosis(response.text, safeContext);
+    const parsedDiagnosis = safeParseFinancialDiagnosis(response.text, safeContext, safeDismissed);
     const sanitizedDiagnosis = JSON.parse(JSON.stringify(parsedDiagnosis));
 
     return NextResponse.json({

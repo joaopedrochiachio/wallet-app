@@ -29,6 +29,7 @@ export interface GeminiCascadeOptions {
   maxOutputTokens?: number;
   jsonMode?: boolean;
   timeoutMs?: number;
+  models?: readonly string[];
 }
 
 export interface GeminiCascadeResponse {
@@ -102,8 +103,9 @@ export async function callGeminiCascade(
   const attemptedModels: string[] = [];
   let lastError: unknown = null;
   const timeoutMs = options.timeoutMs ?? 30000;
+  const cascade = options.models && options.models.length > 0 ? options.models : MODEL_CASCADE;
 
-  for (const model of MODEL_CASCADE) {
+  for (const model of cascade) {
     attemptedModels.push(model);
     const start = Date.now();
 

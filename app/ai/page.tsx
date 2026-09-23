@@ -24,7 +24,7 @@ import {
   Sliders,
   Compass,
 } from "lucide-react";
-import { FinancialDiagnosis } from "@/app/api/ai/analyze/route";
+import { FinancialDiagnosis, SpecificExpenseAlert } from "@/app/api/ai/analyze/route";
 import { PurchaseSimulationResult } from "@/lib/services/financialContextService";
 import {
   loadChatHistory,
@@ -33,6 +33,8 @@ import {
   loadPersistentDiagnosis,
   savePersistentDiagnosis,
   loadInitialDiagnosisSync,
+  loadDismissedPatterns,
+  dismissPattern,
 } from "@/lib/services/aiChatService";
 
 interface ChatMessage {
@@ -75,6 +77,9 @@ export default function AIAnalystPage() {
     const cached = loadInitialDiagnosisSync();
     return cached?.modelUsed || "gemini-3.6-flash";
   });
+  const [dismissedPatterns, setDismissedPatterns] = useState<string[]>(() => loadDismissedPatterns(user?.uid));
+  const [isSearchingPatterns, setIsSearchingPatterns] = useState<boolean>(false);
+  const [patternsFeedback, setPatternsFeedback] = useState<string | null>(null);
 
   // Estados do Chat
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -103,6 +108,9 @@ export default function AIAnalystPage() {
   // Carrega diagnóstico persistido e histórico salvo de mensagens do chat (Firestore / localStorage)
   useEffect(() => {
     let isMounted = true;
+
+    // Sincroniza padrões descartados do usuário
+    setDismissedPatterns(loadDismissedPatterns(user?.uid));
 
     // Se já tiver cache local para o user específico, aplica de imediato
     if (user?.uid) {
@@ -177,6 +185,7 @@ export default function AIAnalystPage() {
           monthIncome,
           monthExpense,
           monthlyProjections,
+          dismissedPatterns,
         }),
       });
 
@@ -200,6 +209,84 @@ export default function AIAnalystPage() {
       setAnalysisError(msg);
     } finally {
       setIsAnalyzing(false);
+    }
+  };
+
+  const handleDismissPattern = (patternKey: string) => {
+    const updated = dismissPattern(patternKey, user?.uid);
+    setDismissedPatterns(updated);
+  };
+
+  const handleFetchMorePatterns = async () => {
+    setIsSearchingPatterns(true);
+    setPatternsFeedback(null);
+    try {
+      const idToken = user ? await user.getIdToken() : "";
+      const res = await fetch("/api/ai/patterns", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+        },
+        body: JSON.stringify({
+          userProfile,
+          cards,
+          transactions,
+          recurringItems,
+          dismissedPatterns,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success && Array.isArray(data.patterns)) {
+        if (data.patterns.length === 0) {
+          setPatternsFeedback("Nenhum novo padrão recorrente identificado no momento.");
+          setTimeout(() => setPatternsFeedback(null), 4000);
+          return;
+        }
+
+        setDiagnosis((prev) => {
+          if (!prev) return prev;
+          const existing = prev.specificExpensesAlerts || [];
+          const existingNames = new Set(
+            existing.map((e) => e.item.toLowerCase().trim())
+          );
+          const newAlerts = data.patterns.filter(
+            (p: SpecificExpenseAlert) => !existingNames.has(p.item.toLowerCase().trim())
+          );
+
+          if (newAlerts.length === 0) {
+            setPatternsFeedback("Todos os padrões identificados já estão exibidos.");
+            setTimeout(() => setPatternsFeedback(null), 4000);
+            return prev;
+          }
+
+          const updatedDiagnosis: FinancialDiagnosis = {
+            ...prev,
+            specificExpensesAlerts: [...existing, ...newAlerts],
+          };
+
+          if (lastAnalyzedAt) {
+            void savePersistentDiagnosis(
+              updatedDiagnosis,
+              { timestamp: lastAnalyzedAt, modelUsed: analysisModel },
+              user?.uid
+            );
+          }
+
+          setPatternsFeedback(`${newAlerts.length} novo(s) padrão(ões) mapeado(s)!`);
+          setTimeout(() => setPatternsFeedback(null), 4000);
+          return updatedDiagnosis;
+        });
+      } else {
+        throw new Error(data.error || "Falha ao buscar novos padrões.");
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Erro ao buscar padrões.";
+      setPatternsFeedback(msg);
+      setTimeout(() => setPatternsFeedback(null), 4000);
+    } finally {
+      setIsSearchingPatterns(false);
     }
   };
 
@@ -442,6 +529,21 @@ export default function AIAnalystPage() {
 
   const parsedSimAmount = parseFloat(simAmount.replace(/\./g, "").replace(",", ".")) || 0;
   const installmentValue = simInstallments > 0 ? parsedSimAmount / simInstallments : 0;
+
+  const visibleSpecificAlerts = (diagnosis?.specificExpensesAlerts || []).filter((item) => {
+    const itemName = (item.item || "").toLowerCase().trim();
+    const habitCat = (item.habitCategory || "").toLowerCase().trim();
+    return !dismissedPatterns.some((d) => {
+      const norm = d.toLowerCase().trim();
+      if (!norm) return false;
+      return (
+        itemName === norm ||
+        itemName.includes(norm) ||
+        norm.includes(itemName) ||
+        (habitCat && (habitCat === norm || habitCat.includes(norm) || norm.includes(habitCat)))
+      );
+    });
+  });
 
   return (
     <div className="min-h-full bg-[#F2F2F7] text-[#1D1D1F] font-sans selection:bg-[#1D1D1F] selection:text-white">
@@ -980,106 +1082,173 @@ export default function AIAnalystPage() {
                 </section>
 
                 {/* 3. GASTOS ESPECÍFICOS & HÁBITOS DE CONSUMO (SCREEN TIME STYLE) */}
-                {diagnosis?.specificExpensesAlerts && diagnosis.specificExpensesAlerts.length > 0 && (
+                {diagnosis && (
                   <section className="space-y-3">
-                    <div className="flex items-center justify-between px-1">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
                       <div className="flex items-center gap-2">
                         <UtensilsCrossed size={14} className="text-[#86868B]" />
                         <h2 className="text-xs uppercase tracking-wider font-semibold text-[#86868B]">
                           Gastos Específicos & Hábitos de Consumo
                         </h2>
                       </div>
-                      <span className="text-xs text-[#86868B]">
-                        {diagnosis.specificExpensesAlerts.length} itens mapeados
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {diagnosis.specificExpensesAlerts.map((item, idx) => (
-                        <div
-                          key={idx}
-                          className="bg-white rounded-[24px] p-5 border border-black/[0.04] shadow-[0_4px_20px_rgba(0,0,0,0.025)] hover:border-black/15 transition-all flex flex-col justify-between space-y-3"
+                      <div className="flex items-center gap-2 self-start sm:self-auto">
+                        <span className="text-xs text-[#86868B]">
+                          {visibleSpecificAlerts.length} {visibleSpecificAlerts.length === 1 ? "padrão mapeado" : "padrões mapeados"}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleFetchMorePatterns}
+                          disabled={isSearchingPatterns}
+                          className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-200/60 px-2.5 py-1 rounded-full transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-sm active:scale-95"
+                          title="Buscar novos padrões com modelo rápido e econômico"
                         >
-                          <div className="space-y-1.5">
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex flex-col gap-1">
-                                <span className="text-sm font-semibold text-[#1D1D1F]">
-                                  {item.item}
-                                </span>
-                                {item.habitCategory && item.habitCategory !== item.item && (
-                                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[#F2F2F7] text-[#1D1D1F] self-start">
-                                    {item.habitCategory}
-                                  </span>
-                                )}
-                              </div>
-                              <span
-                                className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border shrink-0 ${
-                                  item.alertType === "alert"
-                                    ? "bg-rose-50 text-rose-700 border-rose-200/60"
-                                    : item.alertType === "warning"
-                                    ? "bg-amber-50 text-amber-700 border-amber-200/60"
-                                    : "bg-blue-50 text-blue-700 border-blue-200/60"
-                                }`}
-                              >
-                                {item.alertType === "alert"
-                                  ? "Gasto Alto"
-                                  : item.alertType === "warning"
-                                  ? "Atenção"
-                                  : "Frequente"}
-                              </span>
-                            </div>
-
-                            <div className="text-lg font-bold text-[#1D1D1F]">
-                              R$ {formatCurrency(item.totalAmount)}
-                              {item.count && (
-                                <span className="text-xs font-normal text-[#86868B] ml-2">
-                                  ({item.count} compra{item.count > 1 ? "s" : ""})
-                                </span>
-                              )}
-                            </div>
-
-                            {/* Detalhamento Crédito vs Débito */}
-                            {(item.creditAmount !== undefined || item.debitAmount !== undefined || item.paymentBreakdown) && (
-                              <div className="flex items-center gap-1.5 flex-wrap pt-0.5 pb-1">
-                                {typeof item.creditAmount === "number" && item.creditAmount > 0 && (
-                                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200/60">
-                                    Crédito: R$ {formatCurrency(item.creditAmount)}
-                                  </span>
-                                )}
-                                {typeof item.debitAmount === "number" && item.debitAmount > 0 && (
-                                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200/60">
-                                    Débito/PIX: R$ {formatCurrency(item.debitAmount)}
-                                  </span>
-                                )}
-                                {!item.creditAmount && !item.debitAmount && item.paymentBreakdown && (
-                                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-[#F2F2F7] text-[#86868B]">
-                                    {item.paymentBreakdown}
-                                  </span>
-                                )}
-                              </div>
-                            )}
-
-                            <p className="text-xs text-[#86868B] leading-relaxed">
-                              {item.message}
-                            </p>
-                          </div>
-
-                          <div className="pt-2.5 border-t border-black/[0.04] flex items-center justify-end">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveTab("chat");
-                                handleSendMessage(`Como posso otimizar meus gastos com ${item.item}?`);
-                              }}
-                              className="text-xs font-semibold text-[#1D1D1F] hover:underline flex items-center gap-1 cursor-pointer"
-                            >
-                              <span>Conversar sobre esse gasto</span>
-                              <ChevronRight size={12} />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+                          <Sparkles size={11} className={isSearchingPatterns ? "animate-spin text-emerald-600" : "text-emerald-600"} />
+                          <span>{isSearchingPatterns ? "Buscando..." : "Buscar Mais Padrões"}</span>
+                        </button>
+                      </div>
                     </div>
+
+                    {patternsFeedback && (
+                      <div className="px-3.5 py-2 rounded-xl bg-white/80 backdrop-blur-md border border-black/5 text-xs text-[#1D1D1F] flex items-center justify-between shadow-sm animate-in fade-in duration-200">
+                        <span className="font-medium">{patternsFeedback}</span>
+                        <button
+                          type="button"
+                          onClick={() => setPatternsFeedback(null)}
+                          className="text-[#86868B] hover:text-[#1D1D1F] text-xs font-bold px-1 cursor-pointer"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    )}
+
+                    {visibleSpecificAlerts.length === 0 ? (
+                      <div className="bg-white rounded-[24px] p-6 border border-black/[0.04] text-center space-y-2.5 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
+                        <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 mx-auto flex items-center justify-center">
+                          <CheckCircle2 size={20} />
+                        </div>
+                        <h3 className="text-sm font-semibold text-[#1D1D1F]">
+                          Nenhum padrão repetitivo acumulado
+                        </h3>
+                        <p className="text-xs text-[#86868B] max-w-md mx-auto leading-relaxed">
+                          Não detectamos compras repetidas de estilo de vida no momento (mínimo de 2 lançamentos). Conforme novos gastos forem registrados ou ao buscar novos padrões, eles aparecerão aqui.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={handleFetchMorePatterns}
+                          disabled={isSearchingPatterns}
+                          className="mt-1 inline-flex items-center gap-1.5 text-xs font-semibold text-[#1D1D1F] bg-[#F2F2F7] hover:bg-[#E5E5EA] px-3.5 py-1.5 rounded-full transition-colors disabled:opacity-50 cursor-pointer"
+                        >
+                          <Sparkles size={12} className={isSearchingPatterns ? "animate-spin text-amber-500" : "text-amber-500"} />
+                          <span>{isSearchingPatterns ? "Analisando lançamentos..." : "Buscar Padrões"}</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {visibleSpecificAlerts.map((item, idx) => (
+                          <div
+                            key={idx}
+                            className="bg-white rounded-[24px] p-5 border border-black/[0.04] shadow-[0_4px_20px_rgba(0,0,0,0.025)] hover:border-black/15 transition-all flex flex-col justify-between space-y-3"
+                          >
+                            <div className="space-y-1.5">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex flex-col gap-1">
+                                  <span className="text-sm font-semibold text-[#1D1D1F]">
+                                    {item.item}
+                                  </span>
+                                  {item.habitCategory && item.habitCategory !== item.item && (
+                                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[#F2F2F7] text-[#1D1D1F] self-start">
+                                      {item.habitCategory}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <span
+                                    className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border shrink-0 ${
+                                      item.alertType === "alert"
+                                        ? "bg-rose-50 text-rose-700 border-rose-200/60"
+                                        : item.alertType === "warning"
+                                        ? "bg-amber-50 text-amber-700 border-amber-200/60"
+                                        : "bg-blue-50 text-blue-700 border-blue-200/60"
+                                    }`}
+                                  >
+                                    {item.alertType === "alert"
+                                      ? "Gasto Alto"
+                                      : item.alertType === "warning"
+                                      ? "Atenção"
+                                      : "Frequente"}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDismissPattern(item.item)}
+                                    title="Descartar este padrão (não sugerir mais)"
+                                    className="p-1 rounded-md text-[#86868B] hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="text-lg font-bold text-[#1D1D1F]">
+                                R$ {formatCurrency(item.totalAmount)}
+                                {item.count && (
+                                  <span className="text-xs font-normal text-[#86868B] ml-2">
+                                    ({item.count} compra{item.count > 1 ? "s" : ""})
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Detalhamento Crédito vs Débito */}
+                              {(item.creditAmount !== undefined || item.debitAmount !== undefined || item.paymentBreakdown) && (
+                                <div className="flex items-center gap-1.5 flex-wrap pt-0.5 pb-1">
+                                  {typeof item.creditAmount === "number" && item.creditAmount > 0 && (
+                                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200/60">
+                                      Crédito: R$ {formatCurrency(item.creditAmount)}
+                                    </span>
+                                  )}
+                                  {typeof item.debitAmount === "number" && item.debitAmount > 0 && (
+                                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+                                      Débito/PIX: R$ {formatCurrency(item.debitAmount)}
+                                    </span>
+                                  )}
+                                  {!item.creditAmount && !item.debitAmount && item.paymentBreakdown && (
+                                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-[#F2F2F7] text-[#86868B]">
+                                      {item.paymentBreakdown}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+
+                              <p className="text-xs text-[#86868B] leading-relaxed">
+                                {item.message}
+                              </p>
+                            </div>
+
+                            <div className="pt-2.5 border-t border-black/[0.04] flex items-center justify-between">
+                              <button
+                                type="button"
+                                onClick={() => handleDismissPattern(item.item)}
+                                className="text-[11px] text-[#86868B] hover:text-rose-600 flex items-center gap-1 cursor-pointer transition-colors"
+                                title="Descartar este padrão"
+                              >
+                                <Trash2 size={11} />
+                                <span>Descartar</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveTab("chat");
+                                  handleSendMessage(`Como posso otimizar meus gastos com ${item.item}?`);
+                                }}
+                                className="text-xs font-semibold text-[#1D1D1F] hover:underline flex items-center gap-1 cursor-pointer"
+                              >
+                                <span>Conversar sobre</span>
+                                <ChevronRight size={12} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </section>
                 )}
 
