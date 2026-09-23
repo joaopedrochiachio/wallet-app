@@ -124,7 +124,9 @@ Apresente seu parecer de assistente com clareza e empatia:
    - Se o usuário perguntar "quanto eu tenho pra gastar mês que vem?", informe a fatura de cartão e compromissos que vencerão no próximo mês, calculando com clareza o Saldo Livre Projetado para Gastar mês que vem.
 3. GASTOS ESPECÍFICOS, HÁBITOS DE CONSUMO E SEGREGAÇÃO CRÉDITO vs DÉBITO:
    - Inspecione tanto os gastos no CARTÃO DE CRÉDITO quanto no DÉBITO/PIX, identificando nominalmente os estabelecimentos e hábitos de consumo frequentes.
-   - Agrupe e padronize por itens específicos (ex: Chiquinho, sorveterias, McDonald's, padarias) ou por categorias comportamentais (ex: Sobremesas & Doces, Lanches & Fast Food, Cafés & Cantinas, Restaurantes & Delivery).
+   - EXCLUSÃO DE AJUSTES E RIFAS: 'Ajuste na conta', 'Ajuste de saldo', rifas, sorteios ou doações informais NÃO SÃO HÁBITOS DE CONSUMO. Nunca os classifique como hábitos de estilo de vida.
+   - PRECISÃO NOMINAL: 'Vivo Easy' ou planos de celular são telefonia/internet, NUNCA delivery nem restaurantes. Pipoca é lanche/snack. Só use 'Restaurantes & Delivery' para locais reais de refeição/comida.
+   - Agrupe e padronize por itens específicos (ex: Chiquinho, sorveterias, McDonald's, padarias) ou por categorias comportamentais (ex: Sobremesas & Doces, Lanches & Fast Food, Cafés & Cantinas, Restaurantes & Delivery, Telefonia & Internet).
    - Sempre quantifique o número de compras, o valor total e o detalhamento do meio de pagamento:
      * "Você teve X gastos com [Hábito/Item] totalizando R$ Y (sendo R$ A no cartão de crédito e R$ B no débito/PIX)."
    - Descubra os hábitos reais a partir do extrato do usuário.

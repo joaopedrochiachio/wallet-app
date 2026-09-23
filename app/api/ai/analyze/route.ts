@@ -5,6 +5,8 @@ import {
   createSafeFinancialContext,
   buildFinancialAnalystSystemPrompt,
   SafeFinancialContext,
+  isExcludedFromHabitAnalysis,
+  inferHabitCategory,
 } from "@/lib/services/financialContextService";
 import { verifyServerAuth } from "@/lib/auth/serverAuth";
 import { checkRateLimit } from "@/lib/utils/rateLimiter";
@@ -309,19 +311,38 @@ function safeParseFinancialDiagnosis(
   }
 
   // 7. Normalização de Alertas de Gastos Específicos & Hábitos (com Débito vs Crédito)
+  // 7. Normalização de Alertas de Gastos Específicos & Hábitos (com Débito vs Crédito)
   const specificExpensesAlerts: SpecificExpenseAlert[] = [];
-  const rawSpecific = parsed?.specificExpensesAlerts;
+  const rawSpecific =
+    parsed?.specificExpensesAlerts ||
+    parsed?.specificExpenseAlerts ||
+    parsed?.gastosEspecificos ||
+    parsed?.alertasGastos;
+
   if (Array.isArray(rawSpecific) && rawSpecific.length > 0) {
     for (const item of rawSpecific) {
       if (item && typeof item === "object") {
         const obj = item as Record<string, unknown>;
+        const rawItemName = String(obj.item || "Gasto Frequente");
+
+        // Ignora imediatamente transações operacionais, ajustes contábeis e rifas
+        if (isExcludedFromHabitAnalysis(rawItemName)) {
+          continue;
+        }
+
         const totalAmount = typeof obj.totalAmount === "number" ? obj.totalAmount : 0;
         const creditAmount = typeof obj.creditAmount === "number" ? obj.creditAmount : undefined;
         const debitAmount = typeof obj.debitAmount === "number" ? obj.debitAmount : undefined;
+
+        // Reclassifica com precisão para evitar que "Vivo Easy" ou itens aleatórios virem Delivery
+        const refinedHabit = inferHabitCategory(rawItemName, String(obj.habitCategory || ""));
         const habitCategory =
-          typeof obj.habitCategory === "string" && obj.habitCategory.trim()
+          refinedHabit && refinedHabit !== "Outros Hábitos" && refinedHabit !== "Alimentação Geral"
+            ? refinedHabit
+            : typeof obj.habitCategory === "string" && obj.habitCategory.trim()
             ? sanitizeText(obj.habitCategory)
             : undefined;
+
         let paymentBreakdown =
           typeof obj.paymentBreakdown === "string" && obj.paymentBreakdown.trim()
             ? sanitizeText(obj.paymentBreakdown)
@@ -340,7 +361,7 @@ function safeParseFinancialDiagnosis(
         }
 
         specificExpensesAlerts.push({
-          item: String(obj.item || "Gasto Frequente"),
+          item: rawItemName,
           totalAmount,
           count: typeof obj.count === "number" ? obj.count : undefined,
           creditAmount,
@@ -354,9 +375,39 @@ function safeParseFinancialDiagnosis(
     }
   }
 
-  // Se a IA não preencheu, deriva deterministicamente dos hábitos consolidados (lifestyleHabits)
+  // Fallback 1: se a IA não gerou alertas válidos, prioriza estabelecimentos recorrentes reais em topSpendItems
+  const validTopSpends = (context.topSpendItems || []).filter(
+    (item) => !isExcludedFromHabitAnalysis(item.title, item.category) && (item.count >= 2 || item.total >= 80)
+  );
+
+  if (specificExpensesAlerts.length === 0 && validTopSpends.length > 0) {
+    for (const item of validTopSpends.slice(0, 4)) {
+      const isHigh = item.percentage >= 10 || item.total > 150;
+      specificExpensesAlerts.push({
+        item: item.title,
+        totalAmount: item.total,
+        count: item.count,
+        creditAmount: item.creditAmount,
+        debitAmount: item.debitAmount,
+        paymentBreakdown: item.paymentBreakdown,
+        habitCategory: item.habitCategory,
+        alertType: isHigh ? "warning" : "info",
+        message: `Identificamos ${item.count} compra(s) em ${item.title} totalizando R$ ${item.total.toFixed(2)} (${item.paymentBreakdown || "À vista"}).`,
+      });
+    }
+  }
+
+  // Fallback 2: grupos consolidados (lifestyleHabits) com repetição real (count >= 2 ou total >= 100)
   if (specificExpensesAlerts.length === 0 && context.lifestyleHabits && context.lifestyleHabits.length > 0) {
-    for (const habit of context.lifestyleHabits.slice(0, 3)) {
+    const validHabits = context.lifestyleHabits.filter(
+      (h) =>
+        !isExcludedFromHabitAnalysis(h.habitName) &&
+        h.habitName !== "Alimentação Geral" &&
+        h.habitName !== "Outros Hábitos" &&
+        (h.count >= 2 || h.total >= 100)
+    );
+
+    for (const habit of validHabits.slice(0, 3)) {
       const isHigh = habit.total > 200 || habit.count >= 4;
       const breakdown =
         habit.creditAmount > 0 && habit.debitAmount > 0
@@ -375,24 +426,6 @@ function safeParseFinancialDiagnosis(
         habitCategory: habit.habitName,
         alertType: isHigh ? "warning" : "info",
         message: `Identificados ${habit.count} gastos com ${habit.habitName} somando R$ ${habit.total.toFixed(2)} (${breakdown}${habit.examples.length ? ` — ex: ${habit.examples.join(", ")}` : ""}).`,
-      });
-    }
-  }
-
-  // Fallback secundário: deriva dos topSpendItems
-  if (specificExpensesAlerts.length === 0 && context.topSpendItems?.length) {
-    for (const item of context.topSpendItems.slice(0, 4)) {
-      const isHigh = item.percentage >= 10 || item.total > 200;
-      specificExpensesAlerts.push({
-        item: item.title,
-        totalAmount: item.total,
-        count: item.count,
-        creditAmount: item.creditAmount,
-        debitAmount: item.debitAmount,
-        paymentBreakdown: item.paymentBreakdown,
-        habitCategory: item.habitCategory,
-        alertType: isHigh ? "warning" : "info",
-        message: `Você gastou R$ ${item.total.toFixed(2)} em ${item.count} compra(s) (${item.paymentBreakdown || "À vista"} — ${item.percentage}% do total gasto em ${item.category}).`,
       });
     }
   }
@@ -603,7 +636,13 @@ POSTURA DO ANALISTA (CFO PESSOAL):
 DIRETRIZES FUNDAMENTAIS DO DIAGNÓSTICO:
 1. GASTOS ESPECÍFICOS & HÁBITOS DE CONSUMO (CRÉDITO vs DÉBITO):
    - Inspecione as descrições nominais de gastos tanto no CARTÃO DE CRÉDITO quanto no DÉBITO/PIX.
-   - Padronize hábitos em categorias comportamentais (ex: "Sobremesas & Doces", "Lanches & Fast Food", "Cafés & Cantinas", "Restaurantes & Delivery", etc.) ou estabelecimentos específicos frequentes (ex: Chiquinho, sorveterias, McDonald's, padarias).
+   - EXCLUSÃO RIGOROSA DE TRANSAÇÕES OPERACIONAIS / AJUSTES:
+     * 'Ajuste na conta', 'Ajuste de saldo', rifas, sorteios ou doações informais NÃO SÃO HÁBITOS DE CONSUMO DE ESTILO DE VIDA. É PROIBIDO incluí-los em 'specificExpensesAlerts'.
+   - PRECISÃO NOMINAL DO TITULAR:
+     * 'Vivo Easy' ou outras operadoras de celular pertencem a 'Telefonia & Internet', NUNCA delivery nem restaurantes.
+     * Pipoca / Pipoquinha é lanche/snack.
+     * 'Restaurantes & Delivery' deve ser utilizado estritamente para estabelecimentos reais de refeição ou entrega de comida (ex: iFood, restaurantes, pizzarias).
+   - Padronize hábitos em categorias comportamentais (ex: "Sobremesas & Doces", "Lanches & Fast Food", "Cafés & Cantinas", "Restaurantes & Delivery", "Telefonia & Internet", etc.) ou estabelecimentos específicos frequentes (ex: Chiquinho, sorveterias, McDonald's, padarias).
    - Preencha 'specificExpensesAlerts' informando obrigatoriamente:
      * 'item': nome do hábito ou estabelecimento
      * 'habitCategory': categoria comportamental padronizada

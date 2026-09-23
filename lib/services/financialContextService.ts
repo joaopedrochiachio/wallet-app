@@ -282,57 +282,164 @@ export interface PurchaseSimulationResult {
   impactSummary: string;
 }
 
-export function inferHabitCategory(title: string, category: string): string {
-  const clean = (title + " " + category)
+/**
+ * Determina se uma transação é operacional, ajuste contábil ou não-hábito de consumo pessoal.
+ * Transações que combinam com este filtro NÃO devem entrar no agrupamento de hábitos de estilo de vida.
+ */
+export function isExcludedFromHabitAnalysis(title: string, category?: string): boolean {
+  const cleanTitle = (title || "")
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 
+  // 1. Ajustes de saldo, reconciliações e correções contábeis
   if (
-    /sorvet|chiquinho|acai|açaí|doceria|confeitaria|bolo|cacau show|kopenhagen|gelato|bacio di latte|brownie|sobremesa|milkshake/.test(
-      clean
+    /^ajuste\b|ajuste na conta|ajuste de saldo|ajuste saldo|acerto de conta|acerto saldo|correcao de saldo|correcao saldo|^estorno\b|saldo inicial|reconcilia/i.test(
+      cleanTitle
+    )
+  ) {
+    return true;
+  }
+
+  // 2. Rifas, sorteios, bolões e doações informais
+  if (
+    /^rifa\b|rifa\s|sorteio|bolao\b|doacao|vaquinha|bingo\b/i.test(
+      cleanTitle
+    )
+  ) {
+    return true;
+  }
+
+  // 3. Pagamento de fatura, transferências internas e tarifas bancárias puras
+  if (
+    /pagamento de fatura|pagto fatura|fatura cartao|fatura do cartao|entre contas|^ted\b|^doc\b|transferencia entre|iof\b|tarifa bancaria|anuidade cartao/i.test(
+      cleanTitle
+    )
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+export function inferHabitCategory(title: string, category: string = ""): string {
+  if (isExcludedFromHabitAnalysis(title, category)) {
+    return "";
+  }
+
+  const cleanTitle = (title || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const cleanCat = (category || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  // 1. Telefonia, Internet & Conectividade (Ex: Vivo Easy, Claro, Tim, Recargas)
+  if (
+    /vivo|vivo easy|claro|tim cel|\btim\b|oi cel|recarga cel|starlink|telecom|provedor internet|net virtua|fibra otica|internet movel/i.test(
+      cleanTitle
+    )
+  ) {
+    return "Telefonia & Internet";
+  }
+
+  // 2. Sobremesas & Doces (Ex: Chiquinho, sorveterias, docerias, açaí, chocolates)
+  if (
+    /sorvet|chiquinho|acai|açaí|doceria|confeitaria|bolo|cacau show|kopenhagen|gelato|bacio di latte|brownie|sobremesa|milkshake|chocolate|balas|doces\b/i.test(
+      cleanTitle
     )
   ) {
     return "Sobremesas & Doces";
   }
+
+  // 3. Lanches & Fast Food (Ex: McDonald's, Burger King, lanches, pipocas, salgados, pizzas)
   if (
-    /mcdonald|burger king|\bbk\b|habib|bobs|subway|lanche|hamburg|pastel|pizza|pizzaria|esfiha|hot dog|snack/.test(
-      clean
+    /mcdonald|mc donald|burger king|\bbk\b|habib|bobs|subway|lanche|hamburg|pastel|pizza|pizzaria|esfiha|hot dog|snack|pipoca|pipoquinha|pipoquinhha|pipocao|salgado|coxinha|churros|tapioca/i.test(
+      cleanTitle
     )
   ) {
     return "Lanches & Fast Food";
   }
+
+  // 4. Cafés, Padarias & Cantinas (Ex: cantinas, padarias locais, cafeterias, pão de queijo)
   if (
-    /cantina|padaria|cafeteria|\bcafe\b|\bcafé\b|starbucks|pao de queijo|panificadora/.test(
-      clean
+    /cantina|padaria|cafeteria|\bcafe\b|\bcafé\b|starbucks|pao de queijo|panificadora|conveniencia/i.test(
+      cleanTitle
     )
   ) {
     return "Cafés, Padarias & Cantinas";
   }
+
+  // 5. Restaurantes & Delivery:
+  // IMPORTANTE: Só classifica como Restaurantes & Delivery se o TÍTULO contiver palavras reais de restaurante/comida/delivery.
   if (
-    /ifood|rappi|ubereats|delivery|restaurante|almoco|jantar|churrasc|sushi|comida/.test(
-      clean
+    /ifood|rappi|ubereats|aiqfome|delivery|restaurante|\brest\b|churrasc|sushi|comida|marmita|picanha|grill|fogao a lenha|buffet|trattoria|bistro|galeteria|bar e lanches|restaurante e bar|almoco|jantar/i.test(
+      cleanTitle
     )
   ) {
     return "Restaurantes & Delivery";
   }
+
+  // 6. Supermercado & Compras Alimentícias (Ex: mercados, atacados, hortifrúti)
   if (
-    /uber|99pop|\b99\b|taxi|combust|posto\b|gasolina|etanol|estacionamento/.test(
-      clean
-    )
+    /supermercado|mercado|hipermercado|atacad|assai|carrefour|pao de acucar|extra\b|hortifruti|sacolao|mercearia/i.test(
+      cleanTitle
+    ) ||
+    cleanCat.includes("supermercado")
+  ) {
+    return "Supermercado & Compras";
+  }
+
+  // 7. Transporte & Mobilidade (Ex: Uber, 99, postos, combustíveis, pedágios)
+  if (
+    /uber|99pop|\b99\b|taxi|combust|posto\b|gasolina|etanol|estacionamento|pedagio|auto posto|shell|ipiranga|br distribuidora|sem parar|conectcar|veloe/i.test(
+      cleanTitle
+    ) ||
+    cleanCat.includes("transporte") ||
+    cleanCat.includes("combustivel")
   ) {
     return "Transporte & Mobilidade";
   }
-  if (/farmacia|drogaria|drogasil|raia|medicamento|remedio/.test(clean)) {
+
+  // 8. Farmácia & Saúde (Ex: farmácias, drogarias, medicamentos, exames)
+  if (
+    /farmacia|drogaria|drogasil|raia|pague menos|panvel|medicamento|remedio|laboratorio|clinica|dentista|hospital|medico/i.test(
+      cleanTitle
+    ) ||
+    cleanCat.includes("farmacia") ||
+    cleanCat.includes("saude")
+  ) {
     return "Farmácia & Saúde";
   }
+
+  // 9. Lazer, Streaming & Assinaturas (Ex: cinemas, Netflix, Spotify, jogos)
   if (
-    /cinema|netflix|spotify|prime video|disney|hbo|show|ingresso|jogos|game/.test(
-      clean
-    )
+    /cinema|cinemark|cinepolis|netflix|spotify|prime video|disney|hbo|\bmax\b|apple\b|youtube|deezer|show|ingresso|teatro|steam|playstation|xbox|nintendo/i.test(
+      cleanTitle
+    ) ||
+    cleanCat.includes("lazer") ||
+    cleanCat.includes("assinatura")
   ) {
     return "Lazer & Assinaturas";
   }
+
+  // 10. Se a categoria era Alimentação/Delivery, mas o título não especificou restaurante/lanche/doce
+  if (cleanCat.includes("alimentacao") || cleanCat.includes("delivery")) {
+    return "Alimentação Geral";
+  }
+
   return "Outros Hábitos";
 }
 
@@ -410,8 +517,12 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
     .sort((a, b) => b.total - a.total);
 
   // Agrupamento autodidata por item/estabelecimento de despesa (dinâmico e sem marcas fixas)
+  // Filtra pagamentos de fatura e transações operacionais/ajustes/rifas que não são hábitos de estilo de vida
   const nonSettlementExpenses = expenseTransactions.filter(
-    (t) => t.kind !== "invoice_payment" && t.kind !== "invoice_settlement"
+    (t) =>
+      t.kind !== "invoice_payment" &&
+      t.kind !== "invoice_settlement" &&
+      !isExcludedFromHabitAnalysis(t.title || "", t.category || "")
   );
 
   const creditCardNames = new Set(
@@ -565,7 +676,7 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
 
   for (const c of clusters) {
     const habit = c.habitCategory;
-    if (habit === "Outros Hábitos" && c.count <= 1) continue;
+    if (!habit || habit === "Outros Hábitos" || habit === "Alimentação Geral") continue;
     const current = habitMap.get(habit) || {
       total: 0,
       count: 0,
@@ -581,7 +692,9 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
     habitMap.set(habit, current);
   }
 
+  // Só vira agrupamento macro de estilo de vida se houver repetição (count >= 2) ou valor relevante (total >= 100)
   const lifestyleHabits: LifestyleHabitSummary[] = Array.from(habitMap.entries())
+    .filter(([_, data]) => data.count >= 2 || data.total >= 100)
     .map(([habitName, data]) => ({
       habitName,
       total: data.total,
@@ -1132,7 +1245,13 @@ Você atua como um parceiro e consultor financeiro de alto nível que trabalha l
 
 2. ANALISTA AUTODIDATA: IDENTIFICAÇÃO DE PADRÕES POR DESCRIÇÃO REAL DOS GASTOS & MEIOS DE PAGAMENTO (CRÉDITO vs DÉBITO)
    - O Analista DEVE inspecionar e padronizar tanto os gastos no CARTÃO DE CRÉDITO quanto no DÉBITO/PIX, considerando as descrições nominais de cada despesa.
-   - Identifique e padronize os hábitos de consumo por estabelecimentos/itens específicos (ex: Chiquinho, sorveterias, McDonald's, padarias) E por grupos comportamentais de estilo de vida (ex: "Sobremesas & Doces", "Lanches & Fast Food", "Cafés & Cantinas", "Restaurantes & Delivery", etc.).
+   - EXCLUSÃO RIGOROSA DE TRANSAÇÕES OPERACIONAIS / AJUSTES:
+     * Transações de ajuste de saldo ('Ajuste na conta', 'Ajuste de saldo'), rifas, sorteios, bolões, doações informais, transferências e estornos NÃO SÃO HÁBITOS DE CONSUMO DE ESTILO DE VIDA. NUNCA as classifique como hábitos nem as coloque em 'specificExpensesAlerts'.
+   - PRECISÃO NOMINAL DO TITULAR:
+     * A descrição nominal do titular tem prioridade absoluta: 'Vivo Easy', 'Claro' ou 'Tim' são serviços de telefonia/conectividade, NUNCA delivery nem restaurantes.
+     * Pipoca / Pipoquinha é lanche/snack, NUNCA restaurante & delivery.
+     * 'Restaurantes & Delivery' deve ser reservado estritamente para estabelecimentos reais de refeição e entrega de comida (ex: iFood, restaurantes, churrascarias).
+   - Identifique e padronize os hábitos de consumo por estabelecimentos/itens específicos (ex: Chiquinho, sorveterias, McDonald's, padarias) E por grupos comportamentais de estilo de vida (ex: "Sobremesas & Doces", "Lanches & Fast Food", "Cafés & Cantinas", "Restaurantes & Delivery", "Telefonia & Internet", etc.).
    - Sempre quantifique a contagem de compras, o valor total e a segregação clara por meio de pagamento:
      * "Você teve X gastos com [Hábito/Sobremesas/Lanches] totalizando R$ Y (sendo R$ A no cartão de crédito e R$ B no débito/PIX)."
    - Alerte sobre micro-ralos: gastos recorrentes em sobremesas, lanches ou delivery divididos entre crédito e débito muitas vezes somam centenas de reais de forma invisível.

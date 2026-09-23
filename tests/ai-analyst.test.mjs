@@ -9,6 +9,7 @@ import {
   simulatePurchaseImpact,
   buildFinancialAnalystSystemPrompt,
   inferHabitCategory,
+  isExcludedFromHabitAnalysis,
 } from "../lib/services/financialContextService.ts";
 import {
   redactKnownFinancialText,
@@ -969,6 +970,101 @@ test("synthesizeFinancialTelemetry calcula crédito vs débito em topSpendItems 
   assert.ok(prompt.includes("Lanches & Fast Food"));
   assert.ok(prompt.includes("Crédito: R$ 70.00 | Débito: R$ 30.00"));
 });
+
+test("isExcludedFromHabitAnalysis detecta ajustes de conta, rifas e operações internas", () => {
+  assert.equal(isExcludedFromHabitAnalysis("Ajuste na conta"), true);
+  assert.equal(isExcludedFromHabitAnalysis("Ajuste de saldo"), true);
+  assert.equal(isExcludedFromHabitAnalysis("Ajuste"), true);
+  assert.equal(isExcludedFromHabitAnalysis("Rifa Mattheus"), true);
+  assert.equal(isExcludedFromHabitAnalysis("Rifa beneficente"), true);
+  assert.equal(isExcludedFromHabitAnalysis("Sorteio do PIX"), true);
+  assert.equal(isExcludedFromHabitAnalysis("Correção de saldo"), true);
+  assert.equal(isExcludedFromHabitAnalysis("Saldo inicial"), true);
+
+  // Não devem ser excluídos
+  assert.equal(isExcludedFromHabitAnalysis("Vivo Easy"), false);
+  assert.equal(isExcludedFromHabitAnalysis("Pipoquinhha"), false);
+  assert.equal(isExcludedFromHabitAnalysis("McDonald's"), false);
+  assert.equal(isExcludedFromHabitAnalysis("Chiquinho Sorvetes"), false);
+  assert.equal(isExcludedFromHabitAnalysis("Uber"), false);
+});
+
+test("inferHabitCategory não é enganado por categoria padrão e prioriza titular real", () => {
+  // Mesmo que a categoria seja 'Alimentação & Delivery' (primeira do dropdown)
+  assert.equal(inferHabitCategory("Vivo Easy", "Alimentação & Delivery"), "Telefonia & Internet");
+  assert.equal(inferHabitCategory("Pipoquinhha", "Alimentação & Delivery"), "Lanches & Fast Food");
+  assert.equal(inferHabitCategory("Ajuste na conta", "Alimentação & Delivery"), "");
+  assert.equal(inferHabitCategory("Rifa Mattheus", "Alimentação & Delivery"), "");
+
+  // Outros casos com titular expressivo
+  assert.equal(inferHabitCategory("Claro Celular", "Outros"), "Telefonia & Internet");
+  assert.equal(inferHabitCategory("Recarga Cel", "Outros"), "Telefonia & Internet");
+  assert.equal(inferHabitCategory("Churrascaria Fogo de Chão", "Alimentação"), "Restaurantes & Delivery");
+});
+
+test("synthesizeFinancialTelemetry exclui Ajuste na conta e Rifa, e não classifica Vivo Easy como delivery", () => {
+  const cards = [
+    {
+      id: "card-itau",
+      name: "Itaú Click",
+      brand: "Mastercard",
+      type: "credit",
+      limit: 3000,
+      spent: 124.99,
+      closingDay: 1,
+      dueDay: 10,
+      colorScheme: { gradient: "", border: "", accent: "", badgeText: "", chipGradient: "" },
+    },
+  ];
+
+  // Exato cenário do screenshot do usuário: todas as despesas no crédito, categoria padrão 'Alimentação & Delivery'
+  const transactions = [
+    { id: "tx-1", title: "Vivo Easy", amount: 35.00, type: "despesa", category: "Alimentação & Delivery", cardId: "card-itau", date: "2026-09-02" },
+    { id: "tx-2", title: "Rifa Mattheus", amount: 20.00, type: "despesa", category: "Alimentação & Delivery", cardId: "card-itau", date: "2026-09-05" },
+    { id: "tx-3", title: "Pipoquinhha", amount: 20.00, type: "despesa", category: "Alimentação & Delivery", cardId: "card-itau", date: "2026-09-08" },
+    { id: "tx-4", title: "Ajuste na conta", amount: 49.99, type: "despesa", category: "Alimentação & Delivery", cardId: "card-itau", date: "2026-09-12" },
+  ];
+
+  const telemetry = synthesizeFinancialTelemetry({
+    userProfile: {
+      name: "Usuário",
+      monthlyIncomeBase: 5000,
+      persona: "optimizer",
+      riskTolerance: "moderate",
+      aiTone: "direct",
+      primaryFocus: "Economizar",
+      maxCommitmentAlertPercent: 60,
+    },
+    cards,
+    transactions,
+    recurringItems: [],
+    goals: [],
+    mainBalance: 2000,
+    monthIncome: 5000,
+    monthExpense: 124.99,
+  });
+
+  // 1. "Ajuste na conta" e "Rifa Mattheus" NÃO devem constar em topSpendItems
+  assert.ok(!telemetry.topSpendItems.some((i) => i.title.toLowerCase().includes("ajuste")));
+  assert.ok(!telemetry.topSpendItems.some((i) => i.title.toLowerCase().includes("rifa")));
+
+  // 2. "Vivo Easy" deve estar categorizado como Telefonia & Internet, NUNCA Delivery
+  const vivoItem = telemetry.topSpendItems.find((i) => i.title === "Vivo Easy");
+  assert.ok(vivoItem, "Vivo Easy deve constar nos topSpendItems elegíveis");
+  assert.equal(vivoItem.habitCategory, "Telefonia & Internet");
+  assert.notEqual(vivoItem.habitCategory, "Restaurantes & Delivery");
+
+  // 3. "Pipoquinhha" deve estar como Lanches & Fast Food, NUNCA Delivery
+  const pipocaItem = telemetry.topSpendItems.find((i) => i.title === "Pipoquinhha");
+  assert.ok(pipocaItem, "Pipoquinhha deve constar nos topSpendItems");
+  assert.equal(pipocaItem.habitCategory, "Lanches & Fast Food");
+  assert.notEqual(pipocaItem.habitCategory, "Restaurantes & Delivery");
+
+  // 4. Em lifestyleHabits, NÃO deve existir um grupo "Restaurantes & Delivery" agrupando Vivo Easy, Rifa e Ajuste
+  const deliveryHabit = (telemetry.lifestyleHabits || []).find((h) => h.habitName === "Restaurantes & Delivery");
+  assert.equal(deliveryHabit, undefined, "Não deve haver grupo de Restaurantes & Delivery");
+});
+
 
 
 
