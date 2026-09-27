@@ -13,11 +13,14 @@ let testFirestoreMock: Firestore | null = null;
 
 function getServiceAccount(): ServiceAccount | null {
   const saEnv = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
-  if (!saEnv) return null;
+  if (!saEnv) {
+    console.warn("[FIREBASE_ADMIN] Variável de ambiente FIREBASE_SERVICE_ACCOUNT_KEY não configurada.");
+    return null;
+  }
 
   try {
     let clean = saEnv.trim();
-    // Remove qualquer aspa simples ou dupla residual nas pontas (comum ao colar na Vercel)
+    // Remove qualquer aspa simples ou dupla residual nas pontas (comum ao colar no painel da Vercel)
     while (
       clean.startsWith('"') ||
       clean.startsWith("'") ||
@@ -40,15 +43,18 @@ function getServiceAccount(): ServiceAccount | null {
       const anySA = sa as any;
       if (anySA.private_key && typeof anySA.private_key === "string") {
         anySA.private_key = anySA.private_key.replace(/\\n/g, "\n");
+        if (!sa.privateKey) {
+          sa.privateKey = anySA.private_key;
+        }
+      }
+      if (anySA.client_email && !sa.clientEmail) {
+        sa.clientEmail = anySA.client_email;
+      }
+      if (anySA.project_id && !sa.projectId) {
+        sa.projectId = anySA.project_id;
       }
       return sa;
     };
-
-    // Suporte direto para caminho de arquivo no disco
-    if (fs.existsSync(clean)) {
-      const fileContent = fs.readFileSync(clean, "utf-8");
-      return sanitizeSA(JSON.parse(fileContent) as ServiceAccount);
-    }
 
     // Auto-recuperação caso falte { inicial ou } final
     if (!clean.startsWith("{") && clean.includes('"type"')) {
@@ -58,16 +64,38 @@ function getServiceAccount(): ServiceAccount | null {
       clean = clean + "}";
     }
 
+    // 1. Prioridade absoluta para JSON direto (evita ENAMETOOLONG no Linux/Vercel)
     if (clean.startsWith("{")) {
-      return sanitizeSA(JSON.parse(clean) as ServiceAccount);
+      try {
+        return sanitizeSA(JSON.parse(clean) as ServiceAccount);
+      } catch (jsonErr) {
+        // Tenta sanitizar quebras de linha literais caso coladas desformatadas no dashboard da Vercel
+        try {
+          const normalized = clean.replace(/\r\n/g, "\\n").replace(/\n/g, "\\n");
+          return sanitizeSA(JSON.parse(normalized) as ServiceAccount);
+        } catch {
+          console.error("[FIREBASE_ADMIN] Erro ao parsear JSON do Service Account:", jsonErr);
+        }
+      }
     }
 
-    // Suporte a base64
-    const decoded = Buffer.from(clean, "base64").toString("utf-8");
-    if (decoded.trim().startsWith("{")) {
-      return sanitizeSA(JSON.parse(decoded) as ServiceAccount);
+    // 2. Suporte a Base64 (muito comum em deploys Vercel para contornar problemas de quebra de linha)
+    try {
+      const decoded = Buffer.from(clean, "base64").toString("utf-8");
+      if (decoded.trim().startsWith("{")) {
+        return sanitizeSA(JSON.parse(decoded) as ServiceAccount);
+      }
+    } catch {
+      // Não é base64, segue para caminho de arquivo
     }
 
+    // 3. Suporte a caminho de arquivo no disco (SOMENTE se for string curta, nunca JSON)
+    if (clean.length < 500 && !clean.includes("\n") && fs.existsSync(/*turbopackIgnore: true*/ clean)) {
+      const fileContent = fs.readFileSync(/*turbopackIgnore: true*/ clean, "utf-8");
+      return sanitizeSA(JSON.parse(fileContent) as ServiceAccount);
+    }
+
+    console.warn("[FIREBASE_ADMIN] Formato não reconhecido para FIREBASE_SERVICE_ACCOUNT_KEY.");
     return null;
   } catch (err) {
     console.error("[FIREBASE_ADMIN] Erro ao carregar FIREBASE_SERVICE_ACCOUNT_KEY:", err);

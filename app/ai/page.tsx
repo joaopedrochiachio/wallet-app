@@ -238,8 +238,27 @@ export default function AIAnalystPage() {
         }),
       });
 
-      const data = await res.json();
-      if (data.success && data.diagnosis) {
+      const resText = await res.text();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let data: any = null;
+      try {
+        data = resText ? JSON.parse(resText) : null;
+      } catch {
+        data = null;
+      }
+
+      if (!res.ok) {
+        const errorMsg =
+          data?.error ||
+          (res.status === 408 || res.status === 504
+            ? "Tempo limite esgotado no servidor da Vercel. Tente novamente."
+            : res.status === 500
+            ? "Erro no servidor (500). Verifique as variáveis de ambiente na Vercel."
+            : `Erro ao gerar diagnóstico (${res.status}).`);
+        throw new Error(errorMsg);
+      }
+
+      if (data && data.success && data.diagnosis) {
         const timestamp = new Date().toISOString();
         setDiagnosis(data.diagnosis);
         setLastAnalyzedAt(timestamp);
@@ -251,7 +270,7 @@ export default function AIAnalystPage() {
           user?.uid
         );
       } else {
-        throw new Error(data.error || "Não foi possível carregar a análise no momento.");
+        throw new Error(data?.error || "Não foi possível carregar a análise no momento.");
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Erro ao conectar com o assistente.";
@@ -286,8 +305,20 @@ export default function AIAnalystPage() {
         }),
       });
 
-      const data = await res.json();
-      if (data.success && Array.isArray(data.patterns)) {
+      const resText = await res.text();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let data: any = null;
+      try {
+        data = resText ? JSON.parse(resText) : null;
+      } catch {
+        data = null;
+      }
+
+      if (!res.ok) {
+        throw new Error(data?.error || `Falha ao buscar novos padrões (${res.status}).`);
+      }
+
+      if (data && data.success && Array.isArray(data.patterns)) {
         if (data.patterns.length === 0) {
           setPatternsFeedback("Nenhum novo padrão recorrente identificado no momento.");
           setTimeout(() => setPatternsFeedback(null), 4000);
@@ -429,9 +460,30 @@ export default function AIAnalystPage() {
         }),
       });
 
-      const data = await res.json();
+      // Leitura resiliente da resposta (previne crash de 'Unexpected end of JSON input' da Vercel)
+      const resText = await res.text();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let data: any = null;
+      try {
+        data = resText ? JSON.parse(resText) : null;
+      } catch {
+        data = null;
+      }
 
-      if (data.success && data.message) {
+      if (!res.ok) {
+        const errorMsg =
+          data?.error ||
+          (res.status === 408 || res.status === 504
+            ? "Tempo limite de resposta esgotado (Timeout da Vercel). Tente novamente com uma consulta mais direta."
+            : res.status === 500
+            ? "Erro no servidor (500). Verifique se as variáveis FIREBASE_SERVICE_ACCOUNT_KEY e OPENAI_API_KEY estão cadastradas na Vercel."
+            : res.status === 401
+            ? "Sessão expirada. Faça login novamente no aplicativo."
+            : `Erro de comunicação com o servidor (${res.status}).`);
+        throw new Error(errorMsg);
+      }
+
+      if (data && data.success && data.message) {
         const assistantMsg: ChatMessage = {
           id: (Date.now() + 1).toString(),
           role: "assistant",

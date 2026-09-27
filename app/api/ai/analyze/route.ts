@@ -161,18 +161,27 @@ DIRETRIZES FUNDAMENTAIS DO DIAGNÓSTICO:
         attemptedModels: response.attemptedModels,
         aiSynthesis: response.aiSynthesis,
       });
-    } catch (analysisErr) {
+    } catch (analysisErr: unknown) {
       if (!quotaReconciled) {
         await reconcileAIQuota({ reservation, success: false });
         quotaReconciled = true;
       }
       console.error("[AI_ANALYZE_ORCHESTRATION_ERROR]", analysisErr);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const anyErr = analysisErr as any;
+      let errorMsg = "Não foi possível concluir a análise financeira no momento.";
+      if (anyErr?.code === "MISSING_OPENAI_API_KEY") {
+        errorMsg = "A chave OPENAI_API_KEY não está configurada no painel da Vercel.";
+      } else if (anyErr?.message) {
+        errorMsg = anyErr.message;
+      }
       return NextResponse.json(
         {
           success: false,
-          error: "Não foi possível concluir a análise financeira no momento.",
+          error: errorMsg,
+          code: anyErr?.code || "ANALYZE_ERROR",
         },
-        { status: 500 }
+        { status: anyErr?.status || 500 }
       );
     } finally {
       if (!quotaReconciled) {
@@ -181,10 +190,11 @@ DIRETRIZES FUNDAMENTAIS DO DIAGNÓSTICO:
     }
   } catch (err: unknown) {
     console.error("[AI_ANALYZE_CRITICAL_ERROR]", err);
+    const msg = err instanceof Error ? err.message : "Erro inesperado ao gerar análise financeira.";
     return NextResponse.json(
       {
         success: false,
-        error: "Erro inesperado ao gerar análise financeira.",
+        error: msg,
       },
       { status: 500 }
     );

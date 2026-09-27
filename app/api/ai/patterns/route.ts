@@ -349,19 +349,29 @@ ${JSON.stringify(
         modelUsed: openAIResult.modelUsed,
         durationMs: openAIResult.durationMs,
       });
-    } catch (patternsErr) {
+    } catch (patternsErr: unknown) {
       if (!quotaReconciled) {
         await reconcileAIQuota({ reservation, success: false });
         quotaReconciled = true;
       }
 
       console.error("[AI_PATTERNS_ERROR]", patternsErr);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const anyErr = patternsErr as any;
+      let errorMsg = "Não foi possível buscar padrões adicionais no momento.";
+      if (anyErr?.code === "MISSING_OPENAI_API_KEY") {
+        errorMsg = "A chave OPENAI_API_KEY não está configurada na Vercel.";
+      } else if (anyErr?.message) {
+        errorMsg = anyErr.message;
+      }
+
       return NextResponse.json(
         {
           success: false,
-          error: "Não foi possível buscar padrões adicionais no momento.",
+          error: errorMsg,
+          code: anyErr?.code || "PATTERNS_ERROR",
         },
-        { status: 500 }
+        { status: anyErr?.status || 500 }
       );
     } finally {
       if (!quotaReconciled) {
@@ -370,10 +380,11 @@ ${JSON.stringify(
     }
   } catch (err: unknown) {
     console.error("[AI_PATTERNS_CRITICAL_ERROR]", err);
+    const msg = err instanceof Error ? err.message : "Erro inesperado ao buscar padrões recorrentes.";
     return NextResponse.json(
       {
         success: false,
-        error: "Erro inesperado ao buscar padrões recorrentes.",
+        error: msg,
       },
       { status: 500 }
     );

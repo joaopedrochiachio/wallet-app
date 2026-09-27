@@ -239,18 +239,32 @@ Oriente o usuário com base estritamente nesses números simulados calculados pe
         attemptedModels: response.attemptedModels,
         simulationResult,
       });
-    } catch (chatErr) {
+    } catch (chatErr: unknown) {
       if (!quotaReconciled) {
         await reconcileAIQuota({ reservation, success: false });
         quotaReconciled = true;
       }
       console.error("[AI_CHAT_ERROR]", chatErr);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const anyErr = chatErr as any;
+      let errorMsg = "Não foi possível processar a conversa no momento.";
+      if (anyErr?.code === "MISSING_OPENAI_API_KEY") {
+        errorMsg = "A chave OPENAI_API_KEY não está configurada no painel da Vercel (Project Settings -> Environment Variables).";
+      } else if (anyErr?.code === "AUTHENTICATION_FAILED") {
+        errorMsg = "Chave da OpenAI inválida ou não autorizada. Verifique OPENAI_API_KEY na Vercel.";
+      } else if (anyErr?.code === "INSUFFICIENT_QUOTA") {
+        errorMsg = "Saldo ou cota da conta OpenAI esgotada. Adicione créditos no painel da OpenAI.";
+      } else if (anyErr?.message) {
+        errorMsg = anyErr.message;
+      }
+
       return NextResponse.json(
         {
           success: false,
-          error: "Não foi possível processar a conversa no momento.",
+          error: errorMsg,
+          code: anyErr?.code || "CHAT_ERROR",
         },
-        { status: 500 }
+        { status: anyErr?.status || 500 }
       );
     } finally {
       if (!quotaReconciled) {
@@ -259,10 +273,11 @@ Oriente o usuário com base estritamente nesses números simulados calculados pe
     }
   } catch (err: unknown) {
     console.error("[AI_CHAT_CRITICAL_ERROR]", err);
+    const msg = err instanceof Error ? err.message : "Erro inesperado ao processar o chat com IA.";
     return NextResponse.json(
       {
         success: false,
-        error: "Erro inesperado ao processar o chat com IA.",
+        error: msg,
       },
       { status: 500 }
     );
