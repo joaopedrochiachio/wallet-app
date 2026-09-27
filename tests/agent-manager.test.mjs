@@ -32,8 +32,10 @@ test("Configuração de modelos OpenAI define Luna como principal e Sol como opc
 test("Tabela de preços está documentada e calcula custos corretamente para Luna e Sol", () => {
   assert.ok(MODEL_PRICING["gpt-6-luna"]);
   assert.ok(MODEL_PRICING["gpt-6-sol"]);
-  assert.equal(MODEL_PRICING["gpt-6-luna"].inputPerMillion, 0.15);
-  assert.equal(MODEL_PRICING["gpt-6-luna"].outputPerMillion, 0.60);
+  assert.equal(MODEL_PRICING["gpt-6-luna"].inputPerMillion, 0.10);
+  assert.equal(MODEL_PRICING["gpt-6-luna"].outputPerMillion, 0.50);
+  assert.equal(MODEL_PRICING["gpt-6-sol"].inputPerMillion, 2.00);
+  assert.equal(MODEL_PRICING["gpt-6-sol"].outputPerMillion, 10.00);
 
   // Exemplo de cálculo: 1000 tokens de entrada e 500 de saída no gpt-6-luna
   const costResult = calculateEstimatedCostUsd("gpt-6-luna", {
@@ -42,10 +44,10 @@ test("Tabela de preços está documentada e calcula custos corretamente para Lun
     reasoningTokens: 0,
   });
 
-  // (1000 / 1M) * 0.15 = 0.00015
-  // (500 / 1M) * 0.60 = 0.00030
-  // Total = 0.00045 USD
-  assert.equal(costResult.costUsd, 0.00045);
+  // (1000 / 1M) * 0.10 = 0.00010
+  // (500 / 1M) * 0.50 = 0.00025
+  // Total = 0.00035 USD
+  assert.equal(costResult.costUsd, 0.00035);
   assert.equal(costResult.isEstimated, false);
 });
 

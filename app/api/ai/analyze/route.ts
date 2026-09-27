@@ -1,55 +1,32 @@
-import { NextRequest, NextResponse } from "next/server";
-import { orchestrateFinancialDiagnosis } from "@/lib/services/agentManagerService";
+import { NextRequest, NextResponse } from "next/server.js";
+import { orchestrateFinancialDiagnosis } from "../../../../lib/services/agentManagerService.ts";
 import {
   synthesizeFinancialTelemetry,
   createSafeFinancialContext,
   buildFinancialAnalystSystemPrompt,
-} from "@/lib/services/financialContextService";
-import { verifyServerAuth } from "@/lib/auth/serverAuth";
+} from "../../../../lib/services/financialContextService.ts";
+import { verifyServerAuth } from "../../../../lib/auth/serverAuth.ts";
 import {
   reserveAIQuota,
   reconcileAIQuota,
   recordAICallLog,
-} from "@/lib/services/aiUsageService";
+} from "../../../../lib/services/aiUsageService.ts";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-export * from "@/lib/services/financialDiagnosisService";
+export * from "../../../../lib/services/financialDiagnosisService.ts";
 
 export async function POST(req: NextRequest) {
   try {
-    // 1. Autenticação estrita do servidor: identifica o usuário exclusivamente pelo token
+    // 1. Autenticação estrita do servidor: identifica o usuário exclusivamente pelo token assinado
     const authResult = await verifyServerAuth(req);
     if ("errorResponse" in authResult) {
       return authResult.errorResponse;
     }
     const userId = authResult.user.uid;
 
-    // 2. Reserva Atômica de Cota Persistente (máx 2 diagnósticos/dia e 10/mês por usuário)
-    const quotaReservation = await reserveAIQuota({
-      uid: userId,
-      route: "analyze",
-    });
-
-    if (!quotaReservation.allowed || !quotaReservation.reservation) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: quotaReservation.error || "Limite de análises financeiras com IA atingido.",
-          code: quotaReservation.errorCode || "AI_QUOTA_EXCEEDED",
-        },
-        {
-          status: 429,
-          headers: quotaReservation.retryAfterSec
-            ? { "Retry-After": String(quotaReservation.retryAfterSec) }
-            : {},
-        }
-      );
-    }
-
-    const { reservation } = quotaReservation;
-
+    // 2. Extração e validação do corpo da requisição ANTES de criar reserva de cota
     const body = await req.json();
     const {
       userProfile,
@@ -114,6 +91,31 @@ DIRETRIZES FUNDAMENTAIS DO DIAGNÓSTICO:
    - Avalie o alinhamento entre a renda mensal base (R$ ${safeContext.profile.monthlyIncomeBase.toFixed(2)}), a persona (${safeContext.profile.persona}), o risco (${safeContext.profile.riskTolerance}) e a meta principal ("${safeContext.profile.primaryFocus}").
 5. PARCELAS DILUÍDAS: Em 'installmentSchedule', mostre que parcelamentos futuros são normais se o saldo livre de cada mês se mantiver positivo.`;
 
+    // 4. Reserva Atômica de Cota Persistente (máx 2 diagnósticos/dia e 10/mês por usuário)
+    const quotaReservation = await reserveAIQuota({
+      uid: userId,
+      route: "analyze",
+    });
+
+    if (!quotaReservation.allowed || !quotaReservation.reservation) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: quotaReservation.error || "Limite de análises financeiras com IA atingido.",
+          code: quotaReservation.errorCode || "AI_QUOTA_EXCEEDED",
+        },
+        {
+          status: 429,
+          headers: quotaReservation.retryAfterSec
+            ? { "Retry-After": String(quotaReservation.retryAfterSec) }
+            : {},
+        }
+      );
+    }
+
+    const { reservation } = quotaReservation;
+    let quotaReconciled = false;
+
     try {
       const response = await orchestrateFinancialDiagnosis({
         context: safeContext,
@@ -122,15 +124,16 @@ DIRETRIZES FUNDAMENTAIS DO DIAGNÓSTICO:
         dismissedPatterns: safeDismissed,
       });
 
-      // 4. Reconciliação atômica da cota
+      // 5. Reconciliação atômica da cota
       const actualCostUsd = response.openAIResponse?.estimatedCostUsd ?? (response.aiSynthesis ? 0.0015 : 0);
       await reconcileAIQuota({
         reservation,
         success: response.aiSynthesis,
         actualCostUsd,
       });
+      quotaReconciled = true;
 
-      // 5. Registro de observabilidade técnica
+      // 6. Registro de observabilidade técnica
       if (response.openAIResponse) {
         void recordAICallLog({
           requestId: response.openAIResponse.requestId,
@@ -139,7 +142,7 @@ DIRETRIZES FUNDAMENTAIS DO DIAGNÓSTICO:
           model: response.modelUsed,
           timestamp: new Date().toISOString(),
           durationMs: response.durationMs,
-          success: true,
+          success: response.aiSynthesis,
           inputTokens: response.openAIResponse.inputTokens,
           outputTokens: response.openAIResponse.outputTokens,
           reasoningTokens: response.openAIResponse.reasoningTokens,
@@ -158,11 +161,12 @@ DIRETRIZES FUNDAMENTAIS DO DIAGNÓSTICO:
         attemptedModels: response.attemptedModels,
         aiSynthesis: response.aiSynthesis,
       });
-    } catch {
-      // Libera cota em caso de falha crítica
-      await reconcileAIQuota({ reservation, success: false });
-
-      console.error("[AI_ANALYZE_ERROR]", { errorCode: "AI_ANALYZE_FAILED" });
+    } catch (analysisErr) {
+      if (!quotaReconciled) {
+        await reconcileAIQuota({ reservation, success: false });
+        quotaReconciled = true;
+      }
+      console.error("[AI_ANALYZE_ORCHESTRATION_ERROR]", analysisErr);
       return NextResponse.json(
         {
           success: false,
@@ -170,6 +174,10 @@ DIRETRIZES FUNDAMENTAIS DO DIAGNÓSTICO:
         },
         { status: 500 }
       );
+    } finally {
+      if (!quotaReconciled) {
+        await reconcileAIQuota({ reservation, success: false });
+      }
     }
   } catch (err: unknown) {
     console.error("[AI_ANALYZE_CRITICAL_ERROR]", err);

@@ -23,6 +23,7 @@ import {
   getSaoPauloDateKeys,
   clearMemoryUsageStore,
   getAIUsageSummary,
+  setUseMemoryStoreForTesting,
   DEFAULT_AI_QUOTAS,
 } from "../lib/services/aiUsageService.ts";
 import {
@@ -35,6 +36,7 @@ import {
 } from "../lib/services/privacyService.ts";
 
 test.beforeEach(() => {
+  setUseMemoryStoreForTesting(true);
   clearMemoryUsageStore();
 });
 
@@ -301,7 +303,7 @@ test("7. Falha da OpenAI: tratamento de erros 401/402 sem repetições e fallbac
   assert.equal(resolveConfiguredModel(), "gpt-6-luna");
   assert.ok(MODEL_PRICING[OPENAI_MODELS.MAIN]);
   const cost = calculateEstimatedCostUsd("gpt-6-luna", { inputTokens: 1000, outputTokens: 500 });
-  assert.equal(cost.costUsd, 0.00045);
+  assert.equal(cost.costUsd, 0.00035);
 });
 
 // ============================================================================

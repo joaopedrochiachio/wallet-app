@@ -7,12 +7,14 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --experimental-strip-types --test --test-isolation=none tests/finance.test.mjs tests/ai-analyst.test.mjs tests/security-privacy.test.mjs tests/agent-manager.test.mjs tests/openai-migration.test.mjs",
+    "test": "node --experimental-strip-types --test --test-isolation=none tests/finance.test.mjs tests/ai-analyst.test.mjs tests/security-privacy.test.mjs tests/agent-manager.test.mjs tests/openai-migration.test.mjs tests/openai-review-fixes.test.mjs",
     "test:finance": "node --experimental-strip-types --test tests/finance.test.mjs"
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
     "clsx": "^2.1.1",
     "firebase": "^12.19.0",
+    "firebase-admin": "^14.5.0",
     "lucide-react": "^1.45.0",
     "next": "16.3.5",
     "openai": "^7.23.0",

@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
-import { verifyServerAuth } from "@/lib/auth/serverAuth";
-import { getAIUsageSummary } from "@/lib/services/aiUsageService";
+import { NextRequest, NextResponse } from "next/server.js";
+import { verifyServerAuth } from "../../../../lib/auth/serverAuth.ts";
+import { getAIUsageSummary } from "../../../../lib/services/aiUsageService.ts";
 
 export const dynamic = "force-dynamic";
 

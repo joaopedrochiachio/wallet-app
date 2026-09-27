@@ -1,10 +1,10 @@
-import { db } from "../firebase.ts";
-import { doc, runTransaction } from "firebase/firestore";
+import { getAdminFirestore } from "../firebaseAdmin.ts";
 import { checkRateLimit } from "../utils/rateLimiter.ts";
 
 /**
  * Serviço de Controle de Quotas, Reservas Atômicas e Observabilidade de Custo
- * Implementa limites persistentes e transacionais (Firestore) com proteção de concorrência.
+ * Implementa limites persistentes e transacionais (Firebase Admin SDK Firestore)
+ * com proteção estrita de concorrência e fail-closed por segurança orçamentária.
  * 
  * Fuso horário de referência para virada de dia e mês: America/Sao_Paulo.
  */
@@ -43,7 +43,7 @@ export const DEFAULT_AI_QUOTAS: AIQuotaConfig = {
     patterns: 20,
   },
   userMonthlyCostCeilingUsd: 0.75, // US$ 0,75 por usuário por mês
-  globalMonthlyCostCeilingUsd: 4.50, // US$ 4,50 compartilhado entre todos os usuários
+  globalMonthlyCostCeilingUsd: 4.50, // US$ 4,50 compartilhado globalmente entre todos os usuários
   perMinuteRateLimit: {
     chat: 15,
     analyze: 5,
@@ -75,6 +75,9 @@ const RESERVED_COST_ESTIMATE_PER_REQUEST: Record<AIRouteName, number> = {
   patterns: 0.0015, // ~US$ 0,0015
 };
 
+// Tempo de expiração de reservas pendentes abandonadas (5 minutos)
+const ABANDONED_RESERVATION_TIMEOUT_MS = 5 * 60 * 1000;
+
 export interface QuotaReservation {
   reservationId: string;
   uid: string;
@@ -99,6 +102,18 @@ export interface ReservationResult {
   };
 }
 
+export interface PendingReservationRecord {
+  route: AIRouteName;
+  reservedCostUsd: number;
+  timestamp: number;
+}
+
+export interface ReconciledReservationRecord {
+  reconciledAt: string;
+  success: boolean;
+  actualCostUsd?: number;
+}
+
 export interface UserUsageData {
   days: Record<
     string,
@@ -114,13 +129,8 @@ export interface UserUsageData {
     patternsCount: number;
     estimatedCostUsd: number;
   };
-  pendingReservations: Record<
-    string,
-    {
-      route: AIRouteName;
-      reservedCostUsd: number;
-    }
-  >;
+  pendingReservations: Record<string, PendingReservationRecord>;
+  reconciledReservations?: Record<string, ReconciledReservationRecord>;
   updatedAt: string;
 }
 
@@ -147,25 +157,76 @@ export interface AICallLogEntry {
   errorCode?: string;
 }
 
-// Armazém em memória com controle de concorrência para testes unitários ou fallback
+// Controle de modo de teste para injeção explícita
+let useMemoryStoreForTesting = false;
+
+export function setUseMemoryStoreForTesting(enabled: boolean): void {
+  useMemoryStoreForTesting = enabled;
+}
+
+export function isUsingMemoryStoreForTesting(): boolean {
+  return useMemoryStoreForTesting;
+}
+
+// Armazém em memória exclusivo para testes unitários com injeção explícita
 const memoryStore = {
   userUsage: new Map<string, UserUsageData>(),
   globalUsage: new Map<string, GlobalUsageData>(),
   logs: [] as AICallLogEntry[],
-  // Mutex simples para simular transações no ambiente de teste
-  locks: new Set<string>(),
 };
 
 export function clearMemoryUsageStore(): void {
   memoryStore.userUsage.clear();
   memoryStore.globalUsage.clear();
   memoryStore.logs = [];
-  memoryStore.locks.clear();
+}
+
+/**
+ * Remove reservas pendentes antigas que foram abandonadas (ex: timeout de rede ou crash de processo)
+ * e devolve o montante ao teto global pendente.
+ */
+function cleanupExpiredReservations(
+  userData: UserUsageData,
+  globalData: GlobalUsageData,
+  now: number
+): void {
+  if (!userData.pendingReservations) return;
+
+  let expiredCostTotal = 0;
+  for (const [resId, res] of Object.entries(userData.pendingReservations)) {
+    if (res.timestamp && now - res.timestamp > ABANDONED_RESERVATION_TIMEOUT_MS) {
+      expiredCostTotal += res.reservedCostUsd || 0;
+      delete userData.pendingReservations[resId];
+    }
+  }
+
+  if (expiredCostTotal > 0) {
+    globalData.pendingReservedCostUsd = Math.max(
+      0,
+      Number(((globalData.pendingReservedCostUsd || 0) - expiredCostTotal).toFixed(6))
+    );
+  }
+}
+
+/**
+ * Limita o histórico de reservas reconciliadas para evitar crescimento indefinido do documento.
+ */
+function pruneReconciledReservations(userData: UserUsageData, maxKeep = 100): void {
+  if (!userData.reconciledReservations) return;
+  const entries = Object.entries(userData.reconciledReservations);
+  if (entries.length > maxKeep) {
+    // Mantém as mais recentes
+    const pruned = Object.fromEntries(entries.slice(entries.length - maxKeep));
+    userData.reconciledReservations = pruned;
+  }
 }
 
 /**
  * Reserva atômica de cota antes de enviar a requisição à OpenAI.
  * Bloqueia se atingir o limite diário, mensal, teto do usuário ou teto global.
+ * 
+ * Regra de Segurança: Falha de forma FECHADA em produção. Se o Firestore Admin SDK
+ * não puder concluir a transação, a chamada à OpenAI é imediatamente bloqueada.
  */
 export async function reserveAIQuota(params: {
   uid: string;
@@ -191,16 +252,16 @@ export async function reserveAIQuota(params: {
 
   const reservationId = `res_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
   const reservedCost = RESERVED_COST_ESTIMATE_PER_REQUEST[route];
+  const now = Date.now();
 
-  // 2. Transação atômica (tenta Firestore se disponível, caso contrário utiliza o motor transacional seguro em memória)
-  const isTestOrLocal = process.env.NODE_ENV === "test" || !process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
-
-  if (!isTestOrLocal && db) {
+  // 2. Transação Persistente via Firebase Admin SDK no servidor (Produção padrão)
+  if (!useMemoryStoreForTesting) {
     try {
-      const userDocRef = doc(db, "users", uid, "ai_usage", monthKey);
-      const globalDocRef = doc(db, "app_limits", `ai_global_monthly_${monthKey}`);
+      const adminFirestore = getAdminFirestore();
+      const userDocRef = adminFirestore.collection("users").doc(uid).collection("ai_usage").doc(monthKey);
+      const globalDocRef = adminFirestore.collection("app_limits").doc(`ai_global_monthly_${monthKey}`);
 
-      return await runTransaction(db, async (tx) => {
+      return await adminFirestore.runTransaction(async (tx) => {
         const userSnap = await tx.get(userDocRef);
         const globalSnap = await tx.get(globalDocRef);
 
@@ -208,6 +269,7 @@ export async function reserveAIQuota(params: {
           days: {},
           monthly: { chatCount: 0, analyzeCount: 0, patternsCount: 0, estimatedCostUsd: 0 },
           pendingReservations: {},
+          reconciledReservations: {},
           updatedAt: new Date().toISOString(),
         };
 
@@ -217,6 +279,9 @@ export async function reserveAIQuota(params: {
           totalRequests: 0,
           updatedAt: new Date().toISOString(),
         };
+
+        // Recupera reservas abandonadas por timeout antes de calcular cotas
+        cleanupExpiredReservations(userData, globalData, now);
 
         // Calcula pendências atuais do usuário
         let userPendingChat = 0;
@@ -234,7 +299,8 @@ export async function reserveAIQuota(params: {
         const dayRecord = userData.days[dayKey] || { chatCount: 0, analyzeCount: 0, patternsCount: 0 };
 
         // Verifica Limite Diário
-        const dailyCurrent = (dayRecord[`${route}Count` as keyof typeof dayRecord] || 0) +
+        const dailyCurrent =
+          (dayRecord[`${route}Count` as keyof typeof dayRecord] || 0) +
           (route === "chat" ? userPendingChat : route === "analyze" ? userPendingAnalyze : userPendingPatterns);
         const dailyLimit = config.daily[route];
 
@@ -247,7 +313,8 @@ export async function reserveAIQuota(params: {
         }
 
         // Verifica Limite Mensal do Usuário
-        const monthlyCurrent = (userData.monthly[`${route}Count` as keyof typeof userData.monthly] || 0) +
+        const monthlyCurrent =
+          (userData.monthly[`${route}Count` as keyof typeof userData.monthly] || 0) +
           (route === "chat" ? userPendingChat : route === "analyze" ? userPendingAnalyze : userPendingPatterns);
         const monthlyLimit = config.monthly[route];
 
@@ -284,6 +351,7 @@ export async function reserveAIQuota(params: {
         userData.pendingReservations[reservationId] = {
           route,
           reservedCostUsd: reservedCost,
+          timestamp: now,
         };
         userData.updatedAt = new Date().toISOString();
 
@@ -302,7 +370,7 @@ export async function reserveAIQuota(params: {
             dayKey,
             monthKey,
             reservedCostUsd: reservedCost,
-            timestamp: Date.now(),
+            timestamp: now,
           },
           limits: {
             dailyRemaining: Math.max(0, dailyLimit - dailyCurrent - 1),
@@ -312,12 +380,18 @@ export async function reserveAIQuota(params: {
           },
         };
       });
-    } catch (err) {
-      console.warn("[FIRESTORE_QUOTA_TRANSACTION_FAILED] Recorrendo ao motor atômico em memória:", err);
+    } catch (err: unknown) {
+      console.error("[FIRESTORE_ADMIN_QUOTA_TRANSACTION_FAILED] Bloqueando requisição por falha fechada:", err);
+      // FAIL-CLOSED: NUNCA cai silenciosamente para memória em produção!
+      return {
+        allowed: false,
+        errorCode: "QUOTA_SERVICE_UNAVAILABLE",
+        error: "Serviço de controle de cotas temporariamente indisponível. Acesso bloqueado por segurança orçamentária.",
+      };
     }
   }
 
-  // Motor Atômico Seguro em Memória (Garante consistência concorrente mesmo sem Firestore ativo)
+  // 3. Motor Atômico em Memória (EXCLUSIVO para testes automatizados com injeção explícita)
   const userKey = `${uid}:${monthKey}`;
   let userData = memoryStore.userUsage.get(userKey);
   if (!userData) {
@@ -325,6 +399,7 @@ export async function reserveAIQuota(params: {
       days: {},
       monthly: { chatCount: 0, analyzeCount: 0, patternsCount: 0, estimatedCostUsd: 0 },
       pendingReservations: {},
+      reconciledReservations: {},
       updatedAt: new Date().toISOString(),
     };
     memoryStore.userUsage.set(userKey, userData);
@@ -341,7 +416,8 @@ export async function reserveAIQuota(params: {
     memoryStore.globalUsage.set(monthKey, globalData);
   }
 
-  // Calcula contagens pendentes
+  cleanupExpiredReservations(userData, globalData, now);
+
   let userPendingChat = 0;
   let userPendingAnalyze = 0;
   let userPendingPatterns = 0;
@@ -355,7 +431,8 @@ export async function reserveAIQuota(params: {
   }
 
   const dayRecord = userData.days[dayKey] || { chatCount: 0, analyzeCount: 0, patternsCount: 0 };
-  const dailyCurrent = (dayRecord[`${route}Count` as keyof typeof dayRecord] || 0) +
+  const dailyCurrent =
+    (dayRecord[`${route}Count` as keyof typeof dayRecord] || 0) +
     (route === "chat" ? userPendingChat : route === "analyze" ? userPendingAnalyze : userPendingPatterns);
   const dailyLimit = config.daily[route];
 
@@ -367,7 +444,8 @@ export async function reserveAIQuota(params: {
     };
   }
 
-  const monthlyCurrent = (userData.monthly[`${route}Count` as keyof typeof userData.monthly] || 0) +
+  const monthlyCurrent =
+    (userData.monthly[`${route}Count` as keyof typeof userData.monthly] || 0) +
     (route === "chat" ? userPendingChat : route === "analyze" ? userPendingAnalyze : userPendingPatterns);
   const monthlyLimit = config.monthly[route];
 
@@ -397,12 +475,16 @@ export async function reserveAIQuota(params: {
     };
   }
 
-  // Registra a reserva atômica em memória
+  if (!userData.pendingReservations) userData.pendingReservations = {};
   userData.pendingReservations[reservationId] = {
     route,
     reservedCostUsd: reservedCost,
+    timestamp: now,
   };
+  userData.updatedAt = new Date().toISOString();
+
   globalData.pendingReservedCostUsd = Number(((globalData.pendingReservedCostUsd || 0) + reservedCost).toFixed(6));
+  globalData.updatedAt = new Date().toISOString();
 
   return {
     allowed: true,
@@ -413,7 +495,7 @@ export async function reserveAIQuota(params: {
       dayKey,
       monthKey,
       reservedCostUsd: reservedCost,
-      timestamp: Date.now(),
+      timestamp: now,
     },
     limits: {
       dailyRemaining: Math.max(0, dailyLimit - dailyCurrent - 1),
@@ -425,8 +507,9 @@ export async function reserveAIQuota(params: {
 }
 
 /**
- * Reconciliação atômica da cota após o retorno da resposta da OpenAI.
+ * Reconciliação atômica e IDEMPOTENTE da cota após o retorno da resposta da OpenAI.
  * Libera a reserva e efetiva o consumo com base nos tokens reais apurados.
+ * Uma segunda chamada com a mesma reserva NÃO incrementa contadores nem subtrai a reserva novamente.
  */
 export async function reconcileAIQuota(params: {
   reservation: QuotaReservation;
@@ -436,14 +519,13 @@ export async function reconcileAIQuota(params: {
   const { reservation, success, actualCostUsd = 0 } = params;
   const { uid, route, dayKey, monthKey, reservationId, reservedCostUsd } = reservation;
 
-  const isTestOrLocal = process.env.NODE_ENV === "test" || !process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
-
-  if (!isTestOrLocal && db) {
+  if (!useMemoryStoreForTesting) {
     try {
-      const userDocRef = doc(db, "users", uid, "ai_usage", monthKey);
-      const globalDocRef = doc(db, "app_limits", `ai_global_monthly_${monthKey}`);
+      const adminFirestore = getAdminFirestore();
+      const userDocRef = adminFirestore.collection("users").doc(uid).collection("ai_usage").doc(monthKey);
+      const globalDocRef = adminFirestore.collection("app_limits").doc(`ai_global_monthly_${monthKey}`);
 
-      await runTransaction(db, async (tx) => {
+      await adminFirestore.runTransaction(async (tx) => {
         const userSnap = await tx.get(userDocRef);
         const globalSnap = await tx.get(globalDocRef);
 
@@ -451,6 +533,7 @@ export async function reconcileAIQuota(params: {
           days: {},
           monthly: { chatCount: 0, analyzeCount: 0, patternsCount: 0, estimatedCostUsd: 0 },
           pendingReservations: {},
+          reconciledReservations: {},
           updatedAt: new Date().toISOString(),
         };
 
@@ -461,8 +544,14 @@ export async function reconcileAIQuota(params: {
           updatedAt: new Date().toISOString(),
         };
 
-        // Libera a reserva pendente
-        if (userData.pendingReservations && userData.pendingReservations[reservationId]) {
+        // 1. IDEMPOTÊNCIA: Se a reserva já foi reconciliada anteriormente, encerra sem alterações
+        if (userData.reconciledReservations && userData.reconciledReservations[reservationId]) {
+          return;
+        }
+
+        // 2. Libera a reserva pendente
+        const wasPending = userData.pendingReservations && userData.pendingReservations[reservationId];
+        if (wasPending) {
           delete userData.pendingReservations[reservationId];
         }
 
@@ -471,8 +560,17 @@ export async function reconcileAIQuota(params: {
           Number(((globalData.pendingReservedCostUsd || 0) - reservedCostUsd).toFixed(6))
         );
 
+        // 3. Marca a reserva como reconciliada
+        if (!userData.reconciledReservations) userData.reconciledReservations = {};
+        userData.reconciledReservations[reservationId] = {
+          reconciledAt: new Date().toISOString(),
+          success,
+          actualCostUsd,
+        };
+        pruneReconciledReservations(userData);
+
+        // 4. Se a chamada foi bem sucedida, incrementa contadores definitivos
         if (success) {
-          // Incrementa as contagens efetivas
           if (!userData.days[dayKey]) {
             userData.days[dayKey] = { chatCount: 0, analyzeCount: 0, patternsCount: 0 };
           }
@@ -496,28 +594,42 @@ export async function reconcileAIQuota(params: {
       });
 
       return;
-    } catch (err) {
-      console.warn("[FIRESTORE_RECONCILIATION_FAILED] Recorrendo à reconciliação em memória:", err);
+    } catch (err: unknown) {
+      console.error("[FIRESTORE_ADMIN_RECONCILIATION_FAILED]", err);
+      return;
     }
   }
 
-  // Reconciliação no motor em memória
+  // Reconciliação no motor em memória (testes)
   const userKey = `${uid}:${monthKey}`;
   const userData = memoryStore.userUsage.get(userKey);
   const globalData = memoryStore.globalUsage.get(monthKey);
 
-  if (userData?.pendingReservations?.[reservationId]) {
+  if (!userData || !globalData) return;
+
+  // Idempotência
+  if (userData.reconciledReservations && userData.reconciledReservations[reservationId]) {
+    return;
+  }
+
+  if (userData.pendingReservations && userData.pendingReservations[reservationId]) {
     delete userData.pendingReservations[reservationId];
   }
 
-  if (globalData) {
-    globalData.pendingReservedCostUsd = Math.max(
-      0,
-      Number(((globalData.pendingReservedCostUsd || 0) - reservedCostUsd).toFixed(6))
-    );
-  }
+  globalData.pendingReservedCostUsd = Math.max(
+    0,
+    Number(((globalData.pendingReservedCostUsd || 0) - reservedCostUsd).toFixed(6))
+  );
 
-  if (success && userData && globalData) {
+  if (!userData.reconciledReservations) userData.reconciledReservations = {};
+  userData.reconciledReservations[reservationId] = {
+    reconciledAt: new Date().toISOString(),
+    success,
+    actualCostUsd,
+  };
+  pruneReconciledReservations(userData);
+
+  if (success) {
     if (!userData.days[dayKey]) {
       userData.days[dayKey] = { chatCount: 0, analyzeCount: 0, patternsCount: 0 };
     }
@@ -539,19 +651,23 @@ export async function reconcileAIQuota(params: {
  * NUNCA armazena conteúdo financeiro, dados do usuário ou prompts.
  */
 export async function recordAICallLog(logEntry: AICallLogEntry): Promise<void> {
-  memoryStore.logs.push(logEntry);
+  if (useMemoryStoreForTesting) {
+    memoryStore.logs.push(logEntry);
+    return;
+  }
 
-  const isTestOrLocal = process.env.NODE_ENV === "test" || !process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
-  if (!isTestOrLocal && db) {
-    try {
-      const monthKey = logEntry.timestamp.slice(0, 7);
-      const logDocRef = doc(db, "users", logEntry.uid, "ai_logs", `${monthKey}_${logEntry.requestId}`);
-      const cleanLog = { ...logEntry } as unknown as Record<string, unknown>;
-      const { setDoc } = await import("firebase/firestore");
-      await setDoc(logDocRef, cleanLog, { merge: true });
-    } catch (err) {
-      console.warn("[RECORD_AI_LOG_WARNING] Falha ao persistir log no Firestore:", err);
-    }
+  try {
+    const adminFirestore = getAdminFirestore();
+    const monthKey = logEntry.timestamp.slice(0, 7);
+    const logDocRef = adminFirestore
+      .collection("users")
+      .doc(logEntry.uid)
+      .collection("ai_logs")
+      .doc(`${monthKey}_${logEntry.requestId}`);
+
+    await logDocRef.set({ ...logEntry }, { merge: true });
+  } catch (err: unknown) {
+    console.warn("[RECORD_AI_LOG_WARNING] Falha ao persistir log no Firestore Admin:", err);
   }
 }
 
@@ -575,59 +691,74 @@ export async function getAIUsageSummary(params: {
   let userUsage: UserUsageData | undefined = undefined;
   let globalUsage: GlobalUsageData | undefined = undefined;
 
-  // Busca dados de usuário se targetUid foi fornecido
-  if (targetUid) {
-    const userKey = `${targetUid}:${monthKey}`;
-    const memUser = memoryStore.userUsage.get(userKey);
-    if (memUser) {
-      userUsage = memUser;
-    } else if (db && process.env.NODE_ENV !== "test") {
-      try {
-        const { getDoc } = await import("firebase/firestore");
-        const snap = await getDoc(doc(db, "users", targetUid, "ai_usage", monthKey));
-        if (snap.exists()) {
-          userUsage = snap.data() as UserUsageData;
-        }
-      } catch {
-        // Silencioso
-      }
-    }
-
-    if (!userUsage) {
-      userUsage = {
+  if (useMemoryStoreForTesting) {
+    if (targetUid) {
+      userUsage = memoryStore.userUsage.get(`${targetUid}:${monthKey}`) || {
         days: {},
         monthly: { chatCount: 0, analyzeCount: 0, patternsCount: 0, estimatedCostUsd: 0 },
         pendingReservations: {},
         updatedAt: new Date().toISOString(),
       };
     }
-  }
-
-  // Busca dados globais APENAS se for administrador
-  if (isAdmin) {
-    const memGlobal = memoryStore.globalUsage.get(monthKey);
-    if (memGlobal) {
-      globalUsage = memGlobal;
-    } else if (db && process.env.NODE_ENV !== "test") {
-      try {
-        const { getDoc } = await import("firebase/firestore");
-        const snap = await getDoc(doc(db, "app_limits", `ai_global_monthly_${monthKey}`));
-        if (snap.exists()) {
-          globalUsage = snap.data() as GlobalUsageData;
-        }
-      } catch {
-        // Silencioso
-      }
-    }
-
-    if (!globalUsage) {
-      globalUsage = {
+    if (isAdmin) {
+      globalUsage = memoryStore.globalUsage.get(monthKey) || {
         estimatedCostUsd: 0,
         pendingReservedCostUsd: 0,
         totalRequests: 0,
         updatedAt: new Date().toISOString(),
       };
     }
+    return {
+      monthKey,
+      userUsage,
+      globalUsage,
+      limits: DEFAULT_AI_QUOTAS,
+    };
+  }
+
+  // Modo Persistente com Firebase Admin SDK
+  try {
+    const adminFirestore = getAdminFirestore();
+
+    if (targetUid) {
+      const userSnap = await adminFirestore
+        .collection("users")
+        .doc(targetUid)
+        .collection("ai_usage")
+        .doc(monthKey)
+        .get();
+
+      if (userSnap.exists) {
+        userUsage = userSnap.data() as UserUsageData;
+      } else {
+        userUsage = {
+          days: {},
+          monthly: { chatCount: 0, analyzeCount: 0, patternsCount: 0, estimatedCostUsd: 0 },
+          pendingReservations: {},
+          updatedAt: new Date().toISOString(),
+        };
+      }
+    }
+
+    if (isAdmin) {
+      const globalSnap = await adminFirestore
+        .collection("app_limits")
+        .doc(`ai_global_monthly_${monthKey}`)
+        .get();
+
+      if (globalSnap.exists) {
+        globalUsage = globalSnap.data() as GlobalUsageData;
+      } else {
+        globalUsage = {
+          estimatedCostUsd: 0,
+          pendingReservedCostUsd: 0,
+          totalRequests: 0,
+          updatedAt: new Date().toISOString(),
+        };
+      }
+    }
+  } catch (err: unknown) {
+    console.error("[GET_AI_USAGE_SUMMARY_ERROR]", err);
   }
 
   return {

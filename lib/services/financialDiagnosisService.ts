@@ -2,6 +2,7 @@ import type { SafeFinancialContext } from "./financialContextService.ts";
 import {
   isExcludedFromHabitAnalysis,
   inferHabitCategory,
+  validateNumbersInText,
 } from "./financialContextService.ts";
 
 export interface SpendingPatternItem {
@@ -209,10 +210,32 @@ export function safeParseFinancialDiagnosis(
   // 2. Normalização do HealthStatus
   const healthStatus = normalizeHealthStatus(parsed?.healthStatus, healthScore);
 
-  // 3. Normalização do Resumo Executivo
+  // 3. Normalização do Resumo Executivo com verificação contra alucinações numéricas
   let executiveSummary = "";
   if (typeof parsed?.executiveSummary === "string" && parsed.executiveSummary.trim()) {
-    executiveSummary = sanitizeText(parsed.executiveSummary);
+    const rawSummary = sanitizeText(parsed.executiveSummary);
+    const allowedTelemetryNumbers = [
+      context?.cashflow?.checkingBalance ?? 0,
+      Math.abs(context?.cashflow?.checkingBalance ?? 0),
+      context?.cashflow?.monthIncomeRealized ?? 0,
+      context?.cashflow?.monthExpenseRealized ?? 0,
+      context?.cashflow?.netCashflow ?? 0,
+      Math.abs(context?.cashflow?.netCashflow ?? 0),
+      context?.commitments?.commitmentRatioPercent ?? 0,
+      context?.commitments?.recurringMonthlyTotal ?? 0,
+      context?.credit?.totalSpent ?? 0,
+      context?.profile?.monthlyIncomeBase ?? 0,
+      context?.profile?.maxCommitmentAlertPercent ?? 70,
+      context?.historicalVariableBaseline ?? 0,
+      context?.liquidityAnalysis?.currentMonth.projectedFreeBalance ?? 0,
+      Math.abs(context?.liquidityAnalysis?.currentMonth.projectedFreeBalance ?? 0),
+      context?.liquidityAnalysis?.nextMonth.projectedFreeBalance ?? 0,
+      Math.abs(context?.liquidityAnalysis?.nextMonth.projectedFreeBalance ?? 0),
+      context?.liquidityAnalysis?.nextMonth.cardInstallments ?? 0,
+    ];
+    if (validateNumbersInText(rawSummary, allowedTelemetryNumbers, 1.0)) {
+      executiveSummary = rawSummary;
+    }
   }
 
   if (!executiveSummary) {
@@ -420,6 +443,13 @@ export function safeParseFinancialDiagnosis(
     parsed?.gastosEspecificos ||
     parsed?.alertasGastos;
 
+  const realHabitsLookup = new Map(
+    (context.lifestyleHabits || []).map((h) => [h.habitName.toLowerCase().trim(), h])
+  );
+  const realSpendsLookup = new Map(
+    (context.topSpendItems || []).map((s) => [s.title.toLowerCase().trim(), s])
+  );
+
   if (Array.isArray(rawSpecific) && rawSpecific.length > 0) {
     for (const item of rawSpecific) {
       if (item && typeof item === "object") {
@@ -431,23 +461,32 @@ export function safeParseFinancialDiagnosis(
           continue;
         }
 
-        const count = typeof obj.count === "number" ? obj.count : undefined;
-        // Padrão de consumo exige repetição real (mínimo de 2 compras). NUNCA aceita count === 1
-        if (count !== undefined && count < 2) {
-          continue;
-        }
-
         // Descarta se o título denotar compra isolada (ex: "(1 compra)")
         if (/\(1\s*compra\)/i.test(rawItemName)) {
           continue;
         }
 
-        const totalAmount = typeof obj.totalAmount === "number" ? obj.totalAmount : 0;
-        const creditAmount = typeof obj.creditAmount === "number" ? obj.creditAmount : undefined;
-        const debitAmount = typeof obj.debitAmount === "number" ? obj.debitAmount : undefined;
+        // Busca correspondência nos dados reais para garantir zero alucinação
+        const normName = rawItemName.toLowerCase().trim();
+        const matchedSpend = realSpendsLookup.get(normName) ||
+          Array.from(realSpendsLookup.values()).find((s) => s.title.toLowerCase().includes(normName) || normName.includes(s.title.toLowerCase()));
+        const matchedHabit = realHabitsLookup.get(normName) ||
+          Array.from(realHabitsLookup.values()).find((h) => h.habitName.toLowerCase().includes(normName) || normName.includes(h.habitName.toLowerCase()));
 
-        // Reclassifica com precisão para evitar que "Vivo Easy" ou itens aleatórios virem Delivery
-        const refinedHabit = inferHabitCategory(rawItemName, String(obj.habitCategory || ""));
+        // Se o modelo inventou um padrão que não existe na telemetria real, descarta imediatamente
+        if (!matchedSpend && !matchedHabit) {
+          continue;
+        }
+
+        const realCount = matchedSpend ? matchedSpend.count : matchedHabit!.count;
+        if (realCount < 2) continue;
+
+        const realTotal = matchedSpend ? matchedSpend.total : matchedHabit!.total;
+        const realCredit = matchedSpend ? (matchedSpend.creditAmount ?? 0) : matchedHabit!.creditAmount;
+        const realDebit = matchedSpend ? (matchedSpend.debitAmount ?? 0) : matchedHabit!.debitAmount;
+
+        // Reclassifica com precisão
+        const refinedHabit = inferHabitCategory(rawItemName, String(obj.habitCategory || (matchedSpend ? matchedSpend.habitCategory : matchedHabit!.habitName)));
         const habitCategory =
           refinedHabit && refinedHabit !== "Outros Hábitos" && refinedHabit !== "Alimentação Geral"
             ? refinedHabit
@@ -460,33 +499,32 @@ export function safeParseFinancialDiagnosis(
           continue;
         }
 
-        let paymentBreakdown =
-          typeof obj.paymentBreakdown === "string" && obj.paymentBreakdown.trim()
-            ? sanitizeText(obj.paymentBreakdown)
-            : undefined;
+        // paymentBreakdown gerado de forma 100% determinística da base real
+        const paymentBreakdown =
+          realCredit > 0 && realDebit > 0
+            ? `Crédito: R$ ${realCredit.toFixed(2)} | Débito: R$ ${realDebit.toFixed(2)}`
+            : realCredit > 0
+            ? `100% no Crédito (R$ ${realCredit.toFixed(2)})`
+            : `100% no Débito/PIX (R$ ${realDebit.toFixed(2)})`;
 
-        if (!paymentBreakdown && (creditAmount !== undefined || debitAmount !== undefined)) {
-          const c = creditAmount ?? 0;
-          const d = debitAmount ?? 0;
-          if (c > 0 && d > 0) {
-            paymentBreakdown = `Crédito: R$ ${c.toFixed(2)} | Débito: R$ ${d.toFixed(2)}`;
-          } else if (c > 0) {
-            paymentBreakdown = `100% no Crédito (R$ ${c.toFixed(2)})`;
-          } else if (d > 0) {
-            paymentBreakdown = `100% no Débito/PIX (R$ ${d.toFixed(2)})`;
-          }
-        }
+        // Validação estrita de números no texto da mensagem
+        const rawMsg = sanitizeText(String(obj.message || ""));
+        const numbersValid = validateNumbersInText(rawMsg, [realCount, realTotal]);
+        const finalMessage =
+          numbersValid && rawMsg
+            ? rawMsg
+            : `Identificamos ${realCount} compras em ${matchedSpend ? matchedSpend.title : matchedHabit!.habitName} totalizando R$ ${realTotal.toFixed(2)} (${paymentBreakdown}).`;
 
         specificExpensesAlerts.push({
-          item: rawItemName,
-          totalAmount,
-          count: typeof obj.count === "number" ? obj.count : undefined,
-          creditAmount,
-          debitAmount,
+          item: matchedSpend ? matchedSpend.title : matchedHabit!.habitName,
+          totalAmount: realTotal,
+          count: realCount,
+          creditAmount: realCredit,
+          debitAmount: realDebit,
           paymentBreakdown,
           habitCategory,
           alertType: (obj.alertType as "info" | "warning" | "alert") || "info",
-          message: sanitizeText(obj.message || ""),
+          message: finalMessage,
         });
       }
     }
@@ -585,18 +623,36 @@ export function safeParseFinancialDiagnosis(
   const nextCommitted = liq ? liq.nextMonth.committedExpenses : (nextCard + nextDebit);
   const nextFree = liq ? liq.nextMonth.projectedFreeBalance : (nextIncome - nextCommitted);
 
+  const rawCurrentInsight = typeof rawCurrent?.insight === "string" ? sanitizeText(rawCurrent.insight) : "";
+  const currentInsightValid = rawCurrentInsight && validateNumbersInText(rawCurrentInsight, [
+    currentChecking,
+    Math.abs(currentChecking),
+    currentBills,
+    currentFree,
+    Math.abs(currentFree),
+  ]);
+
+  const rawNextInsight = typeof rawNext?.insight === "string" ? sanitizeText(rawNext.insight) : "";
+  const nextInsightValid = rawNextInsight && validateNumbersInText(rawNextInsight, [
+    nextIncome,
+    nextCommitted,
+    nextCard,
+    nextDebit,
+    nextFree,
+    Math.abs(nextFree),
+  ]);
+
   const cashflowWindow: CashflowWindowSummary = {
     currentMonth: {
       monthName: liq?.currentMonth.monthName || "Mês Atual",
       checkingBalance: currentChecking,
       pendingBills: currentBills,
       projectedFreeBalance: currentFree,
-      insight:
-        typeof rawCurrent?.insight === "string" && rawCurrent.insight.trim()
-          ? sanitizeText(rawCurrent.insight)
-          : currentFree >= 0
-          ? `Mês positivo: R$ ${currentFree.toFixed(2)} livres em conta após descontar todas as saídas e contas fixas previstas.`
-          : `Alerta de fluxo: déficit previsto de R$ ${Math.abs(currentFree).toFixed(2)} na conta este mês.`,
+      insight: currentInsightValid
+        ? rawCurrentInsight
+        : currentFree >= 0
+        ? `Mês positivo: R$ ${currentFree.toFixed(2)} livres em conta após descontar todas as saídas e contas fixas previstas.`
+        : `Alerta de fluxo: déficit previsto de R$ ${Math.abs(currentFree).toFixed(2)} na conta este mês.`,
     },
     nextMonth: {
       monthName: liq?.nextMonth.monthName || "Próximo Mês",
@@ -605,10 +661,9 @@ export function safeParseFinancialDiagnosis(
       cardInstallments: nextCard,
       recurringDebit: nextDebit,
       projectedFreeBalance: nextFree,
-      insight:
-        typeof rawNext?.insight === "string" && rawNext.insight.trim()
-          ? sanitizeText(rawNext.insight)
-          : `Fatura de cartão de R$ ${nextCard.toFixed(2)} e despesas fixas em débito de R$ ${nextDebit.toFixed(2)}. Saldo livre projetado de R$ ${nextFree.toFixed(2)}.`,
+      insight: nextInsightValid
+        ? rawNextInsight
+        : `Fatura de cartão de R$ ${nextCard.toFixed(2)} e despesas fixas em débito de R$ ${nextDebit.toFixed(2)}. Saldo livre projetado de R$ ${nextFree.toFixed(2)}.`,
     },
   };
 
@@ -701,14 +756,19 @@ export function safeParseFinancialDiagnosis(
   // 11. Reality Check para Meses Futuros (Ponderação de Gastos Variáveis)
   const rawReality = parsed?.futureMonthsRealityCheck as Record<string, unknown> | undefined;
   const historicalBaseline = context.historicalVariableBaseline || 0;
+  const rawRealityNote = typeof rawReality?.realityNote === "string" ? sanitizeText(rawReality.realityNote) : "";
+  const realityNoteValid = rawRealityNote && validateNumbersInText(rawRealityNote, [
+    historicalBaseline,
+    Math.round(historicalBaseline),
+  ]);
+
   const futureMonthsRealityCheck: FutureMonthsRealityCheck = {
     historicalVariableBaseline: historicalBaseline,
-    realityNote:
-      typeof rawReality?.realityNote === "string" && rawReality.realityNote.trim()
-        ? sanitizeText(rawReality.realityNote)
-        : historicalBaseline > 0
-        ? `Lembrete contábil: meses futuros (como Dezembro) listam apenas parcelas e fixas agendadas. Ponderando seu baseline histórico de gastos variáveis (~R$ ${historicalBaseline.toFixed(2)}/mês), sua folga líquida real será mais moderada do que a sobra bruta indica.`
-        : "Meses futuros com faturas baixas abrem espaço para poupar, mas mantenha prudência com novas despesas do dia a dia.",
+    realityNote: realityNoteValid
+      ? rawRealityNote
+      : historicalBaseline > 0
+      ? `Lembrete contábil: meses futuros (como Dezembro) listam apenas parcelas e fixas agendadas. Ponderando seu baseline histórico de gastos variáveis (~R$ ${historicalBaseline.toFixed(2)}/mês), sua folga líquida real será mais moderada do que a sobra bruta indica.`
+      : "Meses futuros com faturas baixas abrem espaço para poupar, mas mantenha prudência com novas despesas do dia a dia.",
   };
 
   return {

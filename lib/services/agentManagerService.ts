@@ -490,7 +490,23 @@ export async function orchestrateFinancialDiagnosis(params: {
     rawModelText = openAIResult.text;
     modelUsed = openAIResult.modelUsed;
     attemptedModels = [modelUsed];
-    aiSynthesis = true;
+
+    // Diferencia resposta válida de falha de parsing ou recusa
+    try {
+      const parsed = JSON.parse(rawModelText);
+      if (parsed && typeof parsed === "object") {
+        aiSynthesis = true;
+      } else {
+        throw new Error("JSON da OpenAI não gerou um objeto.");
+      }
+    } catch {
+      console.warn(
+        "[DIAGNOSIS_PARSE_FAIL] JSON da OpenAI inválido ou inaproveitável. Revertendo para motor contábil local com aiSynthesis: false."
+      );
+      aiSynthesis = false;
+      modelUsed = "motor-contabil-local";
+      rawModelText = "";
+    }
   } catch (err) {
     console.warn(
       "[DIAGNOSIS_OPENAI_FALLBACK] Provedor de IA indisponível. Utilizando diagnóstico determinístico local:",

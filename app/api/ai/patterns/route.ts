@@ -1,19 +1,20 @@
-import { NextRequest, NextResponse } from "next/server";
-import { callOpenAIResponses } from "@/lib/services/openaiService";
-import { SPENDING_PATTERNS_JSON_SCHEMA } from "@/lib/services/agentManagerService";
+import { NextRequest, NextResponse } from "next/server.js";
+import { callOpenAIResponses } from "../../../../lib/services/openaiService.ts";
+import { SPENDING_PATTERNS_JSON_SCHEMA } from "../../../../lib/services/agentManagerService.ts";
 import {
   synthesizeFinancialTelemetry,
   createSafeFinancialContext,
   isExcludedFromHabitAnalysis,
   inferHabitCategory,
-} from "@/lib/services/financialContextService";
-import { SpecificExpenseAlert } from "@/app/api/ai/analyze/route";
-import { verifyServerAuth } from "@/lib/auth/serverAuth";
+  validateNumbersInText,
+} from "../../../../lib/services/financialContextService.ts";
+import type { SpecificExpenseAlert } from "../../../../lib/services/financialDiagnosisService.ts";
+import { verifyServerAuth } from "../../../../lib/auth/serverAuth.ts";
 import {
   reserveAIQuota,
   reconcileAIQuota,
   recordAICallLog,
-} from "@/lib/services/aiUsageService";
+} from "../../../../lib/services/aiUsageService.ts";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -145,6 +146,7 @@ export async function POST(req: NextRequest) {
     }
 
     const { reservation } = quotaReservation;
+    let quotaReconciled = false;
 
     const systemPrompt = `Você é um Analista de Inteligência Financeira e Detecção de Hábitos de Consumo.
 Sua responsabilidade é redigir explicações claras e empáticas sobre os padrões pré-computados fornecidos.
@@ -185,6 +187,7 @@ ${JSON.stringify(
         success: true,
         actualCostUsd: openAIResult.estimatedCostUsd,
       });
+      quotaReconciled = true;
 
       // Registro de observabilidade
       void recordAICallLog({
@@ -261,20 +264,21 @@ ${JSON.stringify(
 
             if (isDismissedPattern(rawItemName, habitCategory, safeDismissed)) continue;
 
-            let paymentBreakdown =
-              typeof obj.paymentBreakdown === "string" && obj.paymentBreakdown.trim()
-                ? sanitizeText(obj.paymentBreakdown)
-                : undefined;
+            // paymentBreakdown gerado ESTRITAMENTE a partir dos valores apurados no banco (zero alucinação)
+            const paymentBreakdown =
+              realCredit > 0 && realDebit > 0
+                ? `Crédito: R$ ${realCredit.toFixed(2)} | Débito: R$ ${realDebit.toFixed(2)}`
+                : realCredit > 0
+                ? `100% no Crédito (R$ ${realCredit.toFixed(2)})`
+                : `100% no Débito/PIX (R$ ${realDebit.toFixed(2)})`;
 
-            if (!paymentBreakdown) {
-              if (realCredit > 0 && realDebit > 0) {
-                paymentBreakdown = `Crédito: R$ ${realCredit.toFixed(2)} | Débito: R$ ${realDebit.toFixed(2)}`;
-              } else if (realCredit > 0) {
-                paymentBreakdown = `100% no Crédito (R$ ${realCredit.toFixed(2)})`;
-              } else {
-                paymentBreakdown = `100% no Débito/PIX (R$ ${realDebit.toFixed(2)})`;
-              }
-            }
+            // Validação estrita de números no texto da mensagem
+            const rawMsg = sanitizeText(String(obj.message || ""));
+            const numbersValid = validateNumbersInText(rawMsg, [realCount, realTotal]);
+            const finalMessage =
+              numbersValid && rawMsg
+                ? rawMsg
+                : `Identificamos ${realCount} compras em ${matchedSpend ? matchedSpend.title : matchedHabit!.habitName} totalizando R$ ${realTotal.toFixed(2)} (${paymentBreakdown}).`;
 
             patterns.push({
               item: matchedSpend ? matchedSpend.title : matchedHabit!.habitName,
@@ -285,7 +289,7 @@ ${JSON.stringify(
               paymentBreakdown,
               habitCategory,
               alertType: (obj.alertType as "info" | "warning" | "alert") || "info",
-              message: sanitizeText(String(obj.message || "")) || `Identificamos ${realCount} compras totalizando R$ ${realTotal.toFixed(2)}.`,
+              message: finalMessage,
             });
           }
         }
@@ -345,10 +349,13 @@ ${JSON.stringify(
         modelUsed: openAIResult.modelUsed,
         durationMs: openAIResult.durationMs,
       });
-    } catch {
-      await reconcileAIQuota({ reservation, success: false });
+    } catch (patternsErr) {
+      if (!quotaReconciled) {
+        await reconcileAIQuota({ reservation, success: false });
+        quotaReconciled = true;
+      }
 
-      console.error("[AI_PATTERNS_ERROR]", { errorCode: "AI_PATTERNS_FAILED" });
+      console.error("[AI_PATTERNS_ERROR]", patternsErr);
       return NextResponse.json(
         {
           success: false,
@@ -356,6 +363,10 @@ ${JSON.stringify(
         },
         { status: 500 }
       );
+    } finally {
+      if (!quotaReconciled) {
+        await reconcileAIQuota({ reservation, success: false });
+      }
     }
   } catch (err: unknown) {
     console.error("[AI_PATTERNS_CRITICAL_ERROR]", err);

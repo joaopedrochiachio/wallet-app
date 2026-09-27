@@ -4,11 +4,34 @@ service cloud.firestore {
   match /databases/{database}/documents {
     // Isolamento estrito: cada usuário autenticado só pode ler e escrever em sua própria subárvore
     match /users/{userId} {
+      // Leitura e escrita no documento raiz de perfil do próprio usuário
       allow read, write: if request.auth != null && request.auth.uid == userId;
 
-      match /{subcollection}/{document=**} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+      // ai_usage: Leitura permitida para o próprio usuário consultar suas cotas restantes;
+      // Escrita TOTALMENTE PROIBIDA para o cliente Web (atualizações ocorrem exclusivamente pelo Firebase Admin SDK)
+      match /ai_usage/{docId} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow write: if false;
       }
+
+      // ai_logs: Registro de auditoria técnica;
+      // Escrita TOTALMENTE PROIBIDA para o cliente Web
+      match /ai_logs/{docId} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow write: if false;
+      }
+
+      // Demais subcoleções financeiras legítimas (transactions, accounts, cards, recurring, goals, etc.)
+      match /{subcollection}/{document=**} {
+        allow read, write: if request.auth != null && request.auth.uid == userId
+          && subcollection != "ai_usage"
+          && subcollection != "ai_logs";
+      }
+    }
+
+    // Coleção global de limites orçamentários do app: Acesso exclusivo do Firebase Admin SDK no servidor
+    match /app_limits/{document=**} {
+      allow read, write: if false;
     }
 
     // Bloqueio padrão de qualquer acesso em coleções não mapeadas

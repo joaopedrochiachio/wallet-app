@@ -12,7 +12,7 @@ import type {
   RiskToleranceId,
   AIToneId,
 } from "../../types/index.ts";
-import { isCommonCommercialTerm, redactPersonalData } from "./privacyService.ts";
+import { redactPersonalData } from "./privacyService.ts";
 
 export interface TransactionContextItem {
   id: string;
@@ -1400,6 +1400,7 @@ ${
     : ""
 }
 
+
 9. GRUPOS MACRO DE ESTILO DE VIDA & HÁBITOS DE CONSUMO (CRÉDITO vs DÉBITO):
 ${
   context.lifestyleHabits && context.lifestyleHabits.length > 0
@@ -1413,3 +1414,50 @@ ${
 }
 `;
 }
+
+/**
+ * Extrai todos os valores numéricos (moeda ou inteiros) de uma string.
+ * Suporta formatos brasileiros "R$ 1.250,50", "150,00", e internacionais "150.00".
+ */
+export function extractNumbersFromText(text: string): number[] {
+  if (!text) return [];
+  const regex = /(?:R\$\s*)?(\d{1,3}(?:\.\d{3})*(?:,\d+)?|\d+(?:\.\d+)?)/g;
+  const numbers: number[] = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(text)) !== null) {
+    let clean = match[1];
+    if (clean.includes(".") && clean.includes(",")) {
+      clean = clean.replace(/\./g, "").replace(",", ".");
+    } else if (clean.includes(",")) {
+      clean = clean.replace(",", ".");
+    }
+    const val = parseFloat(clean);
+    if (!isNaN(val)) {
+      numbers.push(val);
+    }
+  }
+  return numbers;
+}
+
+/**
+ * Valida se os números presentes em uma frase batem com o conjunto de números reais autorizados.
+ * Se houver qualquer número inventado (ex: alucinação de gasto ou contagem), retorna falso.
+ */
+export function validateNumbersInText(
+  text: string,
+  allowedNumbers: number[],
+  tolerance = 0.5
+): boolean {
+  const numbers = extractNumbersFromText(text);
+  if (numbers.length === 0) return true; // Texto puramente qualitativo é aceito
+
+  for (const num of numbers) {
+    const isAllowed = allowedNumbers.some((allowed) => Math.abs(num - allowed) <= tolerance);
+    if (!isAllowed) {
+      return false; // Contém número não fundamentado nos dados reais
+    }
+  }
+  return true;
+}
+
