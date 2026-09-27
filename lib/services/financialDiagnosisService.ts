@@ -193,14 +193,15 @@ export function safeParseFinancialDiagnosis(
     healthScore = Math.max(0, Math.min(100, Math.round(parsed.healthScore)));
   } else {
     // Cálculo de resgate determinístico baseado na taxa de comprometimento
-    const ratio = context.commitments.commitmentRatioPercent;
+    const ratio = context?.commitments?.commitmentRatioPercent ?? 0;
     if (ratio <= 40) healthScore = 85;
     else if (ratio <= 60) healthScore = 72;
     else if (ratio <= 80) healthScore = 55;
     else healthScore = 35;
 
     // Se o saldo em conta corrente for negativo, penaliza a nota
-    if (context.cashflow.checkingBalance < 0) {
+    const checkingBalance = context?.cashflow?.checkingBalance ?? 0;
+    if (checkingBalance < 0) {
       healthScore = Math.max(20, healthScore - 20);
     }
   }
@@ -215,12 +216,15 @@ export function safeParseFinancialDiagnosis(
   }
 
   if (!executiveSummary) {
+    const checkingBalance = context?.cashflow?.checkingBalance ?? 0;
     const netFormatted =
-      context.cashflow.checkingBalance >= 0
-        ? `positivo em R$ ${context.cashflow.checkingBalance.toFixed(2)}`
-        : `negativo em R$ ${Math.abs(context.cashflow.checkingBalance).toFixed(2)}`;
+      checkingBalance >= 0
+        ? `positivo em R$ ${checkingBalance.toFixed(2)}`
+        : `negativo em R$ ${Math.abs(checkingBalance).toFixed(2)}`;
+    const ratio = context?.commitments?.commitmentRatioPercent ?? 0;
+    const alertLimit = context?.profile?.maxCommitmentAlertPercent ?? 70;
     const statusWord =
-      context.commitments.commitmentRatioPercent > context.profile.maxCommitmentAlertPercent
+      ratio > alertLimit
         ? "está acima da faixa de alerta recomendada"
         : "está sob controle";
 
@@ -290,7 +294,7 @@ export function safeParseFinancialDiagnosis(
 
         spendingPatterns.push({
           title: `Hábito: ${habit.habitName}`,
-          description: `Identificados ${habit.count} gastos acumulando R$ ${habit.total.toFixed(2)} (${breakdown}${habit.examples.length ? ` — ex: ${habit.examples.join(", ")}` : ""}).`,
+          description: `Identificados ${habit.count} gastos acumulando R$ ${habit.total.toFixed(2)} (${breakdown}${habit.examples?.length ? ` — ex: ${habit.examples.join(", ")}` : ""}).`,
           type: habit.total > 150 || habit.count >= 4 ? "warning" : "info",
         });
       }
@@ -534,7 +538,7 @@ export function safeParseFinancialDiagnosis(
           paymentBreakdown: breakdown,
           habitCategory: habit.habitName,
           alertType: isHigh ? "warning" : "info",
-          message: `Identificados ${habit.count} gastos com ${habit.habitName} somando R$ ${habit.total.toFixed(2)} (${breakdown}${habit.examples.length ? ` — ex: ${habit.examples.join(", ")}` : ""}).`,
+          message: `Identificados ${habit.count} gastos com ${habit.habitName} somando R$ ${habit.total.toFixed(2)} (${breakdown}${habit.examples?.length ? ` — ex: ${habit.examples.join(", ")}` : ""}).`,
         });
       }
     }
@@ -566,35 +570,45 @@ export function safeParseFinancialDiagnosis(
   }
 
   // 8. Normalização da Janela de Liquidez (Hoje vs Mês Que Vem)
-  const liq = context.liquidityAnalysis;
+  const liq = context?.liquidityAnalysis;
   const rawCashflow = parsed?.cashflowWindow as Record<string, unknown> | undefined;
   const rawCurrent = rawCashflow?.currentMonth as Record<string, unknown> | undefined;
   const rawNext = rawCashflow?.nextMonth as Record<string, unknown> | undefined;
 
+  const currentChecking = liq ? liq.currentMonth.checkingBalance : (context?.cashflow?.checkingBalance ?? 0);
+  const currentBills = liq ? liq.currentMonth.pendingBills : (context?.commitments?.recurringMonthlyTotal ?? 0);
+  const currentFree = liq ? liq.currentMonth.projectedFreeBalance : (currentChecking - currentBills);
+
+  const nextIncome = liq ? liq.nextMonth.projectedIncome : (context?.profile?.monthlyIncomeBase ?? 0);
+  const nextCard = liq ? liq.nextMonth.cardInstallments : (context?.credit?.totalSpent ?? 0);
+  const nextDebit = liq ? liq.nextMonth.recurringDebit : (context?.commitments?.recurringMonthlyTotal ?? 0);
+  const nextCommitted = liq ? liq.nextMonth.committedExpenses : (nextCard + nextDebit);
+  const nextFree = liq ? liq.nextMonth.projectedFreeBalance : (nextIncome - nextCommitted);
+
   const cashflowWindow: CashflowWindowSummary = {
     currentMonth: {
-      monthName: liq.currentMonth.monthName,
-      checkingBalance: liq.currentMonth.checkingBalance,
-      pendingBills: liq.currentMonth.pendingBills,
-      projectedFreeBalance: liq.currentMonth.projectedFreeBalance,
+      monthName: liq?.currentMonth.monthName || "Mês Atual",
+      checkingBalance: currentChecking,
+      pendingBills: currentBills,
+      projectedFreeBalance: currentFree,
       insight:
         typeof rawCurrent?.insight === "string" && rawCurrent.insight.trim()
           ? sanitizeText(rawCurrent.insight)
-          : liq.currentMonth.projectedFreeBalance >= 0
-          ? `Mês positivo: R$ ${liq.currentMonth.projectedFreeBalance.toFixed(2)} livres em conta após descontar todas as saídas e contas fixas previstas.`
-          : `Alerta de fluxo: déficit previsto de R$ ${Math.abs(liq.currentMonth.projectedFreeBalance).toFixed(2)} na conta este mês.`,
+          : currentFree >= 0
+          ? `Mês positivo: R$ ${currentFree.toFixed(2)} livres em conta após descontar todas as saídas e contas fixas previstas.`
+          : `Alerta de fluxo: déficit previsto de R$ ${Math.abs(currentFree).toFixed(2)} na conta este mês.`,
     },
     nextMonth: {
-      monthName: liq.nextMonth.monthName,
-      projectedIncome: liq.nextMonth.projectedIncome,
-      committedExpenses: liq.nextMonth.committedExpenses,
-      cardInstallments: liq.nextMonth.cardInstallments,
-      recurringDebit: liq.nextMonth.recurringDebit,
-      projectedFreeBalance: liq.nextMonth.projectedFreeBalance,
+      monthName: liq?.nextMonth.monthName || "Próximo Mês",
+      projectedIncome: nextIncome,
+      committedExpenses: nextCommitted,
+      cardInstallments: nextCard,
+      recurringDebit: nextDebit,
+      projectedFreeBalance: nextFree,
       insight:
         typeof rawNext?.insight === "string" && rawNext.insight.trim()
           ? sanitizeText(rawNext.insight)
-          : `Fatura de cartão de R$ ${liq.nextMonth.cardInstallments.toFixed(2)} e despesas fixas em débito de R$ ${liq.nextMonth.recurringDebit.toFixed(2)}. Saldo livre projetado de R$ ${liq.nextMonth.projectedFreeBalance.toFixed(2)}.`,
+          : `Fatura de cartão de R$ ${nextCard.toFixed(2)} e despesas fixas em débito de R$ ${nextDebit.toFixed(2)}. Saldo livre projetado de R$ ${nextFree.toFixed(2)}.`,
     },
   };
 
@@ -625,7 +639,7 @@ export function safeParseFinancialDiagnosis(
   }
 
   // Fallback para cronograma com base nas projeções reais do motor de projeção
-  if (installmentSchedule.length === 0 && context.monthlyProjections && context.monthlyProjections.length > 0) {
+  if (installmentSchedule.length === 0 && context?.monthlyProjections && context.monthlyProjections.length > 0) {
     for (const p of context.monthlyProjections.slice(0, 4)) {
       if (p.cardInstallments > 0) {
         installmentSchedule.push({
@@ -655,22 +669,29 @@ export function safeParseFinancialDiagnosis(
     high: "Arrojada",
   };
   const rawProfileAssessment = parsed?.clientProfileAssessment as Record<string, unknown> | undefined;
+  const persona = context?.profile?.persona || "optimizer";
+  const risk = context?.profile?.riskTolerance || "moderate";
+  const incomeBase = context?.profile?.monthlyIncomeBase ?? 0;
+  const primaryFocus = context?.profile?.primaryFocus || "Equilíbrio financeiro e metas";
+  const alertPercent = context?.profile?.maxCommitmentAlertPercent ?? 70;
+  const ratio = context?.commitments?.commitmentRatioPercent ?? 0;
+
   const clientProfileAssessment: ClientProfileAssessment = {
     persona:
       typeof rawProfileAssessment?.persona === "string" && rawProfileAssessment.persona.trim()
         ? sanitizeText(rawProfileAssessment.persona)
-        : personaLabels[context.profile.persona] || "Otimizador",
+        : personaLabels[persona] || "Otimizador",
     riskTolerance:
       typeof rawProfileAssessment?.riskTolerance === "string" && rawProfileAssessment.riskTolerance.trim()
         ? sanitizeText(rawProfileAssessment.riskTolerance)
-        : riskLabels[context.profile.riskTolerance] || "Moderada",
-    monthlyIncomeBase: context.profile.monthlyIncomeBase,
-    primaryFocus: context.profile.primaryFocus || "Equilíbrio financeiro e metas",
-    commitmentLimitPercent: context.profile.maxCommitmentAlertPercent,
+        : riskLabels[risk] || "Moderada",
+    monthlyIncomeBase: incomeBase,
+    primaryFocus,
+    commitmentLimitPercent: alertPercent,
     profileAlignmentInsight:
       typeof rawProfileAssessment?.profileAlignmentInsight === "string" && rawProfileAssessment.profileAlignmentInsight.trim()
         ? sanitizeText(rawProfileAssessment.profileAlignmentInsight)
-        : `Com renda base de R$ ${context.profile.monthlyIncomeBase.toFixed(2)} e foco em "${context.profile.primaryFocus}", seus compromissos fixos e faturas absorvem ${context.commitments.commitmentRatioPercent}% do seu orçamento mensal.`,
+        : `Com renda base de R$ ${incomeBase.toFixed(2)} e foco em "${primaryFocus}", seus compromissos fixos e faturas absorvem ${ratio}% do seu orçamento mensal.`,
     recommendedActionForGoal:
       typeof rawProfileAssessment?.recommendedActionForGoal === "string" && rawProfileAssessment.recommendedActionForGoal.trim()
         ? sanitizeText(rawProfileAssessment.recommendedActionForGoal)

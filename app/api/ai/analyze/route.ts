@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { callGeminiCascade } from "@/lib/services/geminiService";
+import { orchestrateDualAgentDiagnosis } from "@/lib/services/agentManagerService";
 import {
   synthesizeFinancialTelemetry,
   createSafeFinancialContext,
@@ -242,16 +243,14 @@ RESPONDA ESTRITAMENTE EM FORMATO JSON com a seguinte estrutura:
 
 IMPORTANTE: Responda APENAS o JSON válido. Não coloque texto antes ou depois. Nunca use aspas duplas dentro dos valores de texto.`;
 
-    const response = await callGeminiCascade({
+    const response = await orchestrateDualAgentDiagnosis({
+      context: safeContext,
       systemPrompt,
-      prompt: userPrompt,
-      temperature: 0.25,
-      jsonMode: true,
-      maxOutputTokens: 3500,
+      fullUserPrompt: userPrompt,
+      dismissedPatterns: safeDismissed,
     });
 
-    const parsedDiagnosis = safeParseFinancialDiagnosis(response.text, safeContext, safeDismissed);
-    const sanitizedDiagnosis = JSON.parse(JSON.stringify(parsedDiagnosis));
+    const sanitizedDiagnosis = JSON.parse(JSON.stringify(response.diagnosis));
 
     return NextResponse.json({
       success: true,

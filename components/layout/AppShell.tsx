@@ -12,6 +12,7 @@ import {
   MessageCircle,
   User,
   Sparkles,
+  Compass,
 } from "lucide-react";
 import { WalletProvider } from "@/context/WalletContext";
 import { AuthProvider } from "@/context/AuthContext";
@@ -85,8 +86,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <div className="mt-auto space-y-1.5">
                   <NavItem
                     href="/ai"
-                    icon={<Sparkles strokeWidth={1.5} size={18} className="text-amber-500" />}
-                    label="Analista IA"
+                    icon={<Compass strokeWidth={1.5} size={18} />}
+                    label="Diagnóstico"
                     active={pathname === "/ai"}
                   />
                 </div>
@@ -126,9 +127,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   />
                   <MobileNavItem
                     href="/ai"
-                    icon={<Sparkles strokeWidth={1.5} size={21} className={pathname === "/ai" ? "text-amber-500" : ""} />}
+                    icon={<Compass strokeWidth={1.5} size={21} />}
                     active={pathname === "/ai"}
-                    label="Analista IA"
+                    label="Diagnóstico"
                   />
                   <MobileNavItem
                     href="/goals"

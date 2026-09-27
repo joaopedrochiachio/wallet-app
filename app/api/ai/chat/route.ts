@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { callGeminiCascade, GeminiChatMessage } from "@/lib/services/geminiService";
+import { orchestrateDualAgentChat } from "@/lib/services/agentManagerService";
 import {
   synthesizeFinancialTelemetry,
   createSafeFinancialContext,
@@ -116,9 +117,21 @@ Apresente seu parecer de assistente com clareza e empatia:
     }
 
     systemPrompt += `\n=== INSTRUÇÕES DE ATENDIMENTO NO CHAT DO ANALISTA FINANCEIRO (CFO) ===
-1. RESPOSTAS DIRETAS, SEM ENROLAÇÃO E SEM TEXTINHO:
-   - Seja conciso, executivo e direto ao ponto. Use valores em negrito e listas com marcadores.
-   - Responda sem rodeios, sem introduções vazias.
+1. POSTURA EXECUTIVA E FORMATAÇÃO DE ALTO NÍVEL (PADRÃO PRIVATE BANKING):
+   - Elimine saudações de robô ("Olá!", "Tudo bem?", "Como posso ajudar?"). Responda diretamente com os fatos e números.
+   - Apresente um resumo executivo inicial claro de 1 ou 2 frases assertivas.
+   - ESTRUTURAÇÃO VISUAL LIMPA:
+     * Para detalhamento de categorias ou estabelecimentos, utilize o formato padrão:
+       ### Detalhamento por Categoria:
+       * **Nome da Categoria:** R$ X,XX (N compras)
+       * *Lançamentos:* Estabelecimento 1, Estabelecimento 2
+     * Separe seções com um divisor --- quando for apresentar o diagnóstico complementar.
+     * Para conclusões ou parecer do consultor, utilize:
+       ### Parecer Executivo:
+       * **Forma de Pagamento:** Divisão clara entre crédito e débito/PIX
+       * **Impacto no Fluxo:** Impacto na renda ou nas próximas faturas
+       * **Recomendação:** Orientação prática contábil
+     * NUNCA aninhe asteriscos duplos (evite '* **Item:** **R$ X**', use sempre '* **Item:** R$ X').
 2. REGRA CONTÁBIL DE CAIXA vs CARTÃO DE CRÉDITO:
    - Se o usuário perguntar "quanto eu tenho ainda?", informe o saldo atual da conta corrente e a sobra líquida real em conta deste mês (entradas - saídas no débito/PIX).
    - Se o usuário perguntar "quanto eu tenho pra gastar mês que vem?", informe a fatura de cartão e compromissos que vencerão no próximo mês, calculando com clareza o Saldo Livre Projetado para Gastar mês que vem.
@@ -191,11 +204,12 @@ Apresente seu parecer de assistente com clareza e empatia:
       );
     }
 
-    const response = await callGeminiCascade({
+    const response = await orchestrateDualAgentChat({
+      context: safeContext,
       systemPrompt,
-      messages: conversationMessages,
-      temperature: 0.4,
-      maxOutputTokens: 2048,
+      conversationMessages,
+      userMessage: sanitizedUserMessage,
+      simulationResult,
     });
 
     return NextResponse.json({

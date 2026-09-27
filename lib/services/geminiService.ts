@@ -14,6 +14,33 @@ export const MODEL_CASCADE = [
   "gemini-2.5-flash-lite",
 ] as const;
 
+/**
+ * Agente 1 (Auditor Contábil & Triagem Rápida):
+ * Prioriza modelos ultra-leves e rápidos para processamento ágil de transações e contagem.
+ * (Gemini 3.5 Flash Lite e 3.1 Flash Lite ativos).
+ */
+export const FAST_AUDITOR_MODELS = [
+  "gemini-3.5-flash-lite",
+  "gemini-3.1-flash-lite",
+  "gemini-3.6-flash",
+  "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
+] as const;
+
+/**
+ * Agente 2 (Personal CFO & Estratégia de Alto Nível):
+ * Prioriza Gemini 3.8 Flash e Gemini 3.7 Flash para raciocínio complexo e síntese executiva.
+ * Possui fallback estendido para modelos Lite para garantir 100% de disponibilidade mesmo sob picos de demanda.
+ */
+export const HEAVY_STRATEGIC_MODELS = [
+  "gemini-3.8-flash",
+  "gemini-3.7-flash",
+  "gemini-3.6-flash",
+  "gemini-3.5-flash",
+  "gemini-3.5-flash-lite",
+  "gemini-3.1-flash-lite",
+] as const;
+
 export type SupportedGeminiModel = (typeof MODEL_CASCADE)[number];
 
 export interface GeminiChatMessage {
@@ -149,6 +176,11 @@ export async function callGeminiCascade(
         attempt: attemptedModels.length,
       });
       lastError = data?.error || { status: response.status };
+
+      // Se for sobrecarga ou rate limit temporário, aguarda 500ms antes do próximo modelo
+      if (response.status === 503 || response.status === 429) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
     } catch (err: unknown) {
       clearTimeout(timeoutId);
       const isAbort = (err as { name?: string })?.name === "AbortError";

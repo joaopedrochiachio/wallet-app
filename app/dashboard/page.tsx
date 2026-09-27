@@ -24,6 +24,8 @@ import {
   Target,
   ShieldCheck,
   Plane,
+  TrendingUp,
+  ArrowUpRight,
 } from "lucide-react";
 import Link from "next/link";
 import { formatAccountLabel } from "@/lib/utils/ledger";
@@ -223,33 +225,45 @@ export default function DashboardPage() {
           )}
         </section>
 
-        {/* 3. ANALISTA FINANCEIRO IA WIDGET */}
+        {/* 3. DIAGNÓSTICO ESTRATÉGICO WIDGET */}
         <section className="space-y-2">
           <div className="flex items-center justify-between px-1">
             <div className="flex items-center gap-1.5">
-              <Sparkles size={14} className="text-amber-500" />
+              <TrendingUp size={14} className="text-[#1D1D1F]" />
               <h2 className="text-xs font-semibold uppercase tracking-wider text-[#86868B]">
-                Analista Financeiro IA
+                Diagnóstico Estratégico
               </h2>
             </div>
             <Link
               href="/ai"
               className="text-xs font-semibold text-[#1D1D1F] hover:underline flex items-center gap-1"
             >
-              <span>Abrir Análise</span>
+              <span>Abrir Diagnóstico</span>
               <ChevronRight size={13} />
             </Link>
           </div>
 
           <Link
             href="/ai"
-            className="block p-5 rounded-[24px] bg-gradient-to-br from-white via-white to-[#F7F7FA] border border-black/[0.04] shadow-[0_2px_10px_rgba(0,0,0,0.035)] hover:border-black/15 transition-all group"
+            className="block p-5 rounded-[24px] bg-white border border-black/[0.04] shadow-[0_2px_10px_rgba(0,0,0,0.035)] hover:border-black/15 transition-all group"
           >
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                    IA Ativa • Gemini Flash
+                  <span
+                    className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full border ${
+                      Math.round((monthExpense / (userProfile?.monthlyIncomeBase || 5000)) * 100) > 60
+                        ? "bg-rose-50 text-rose-700 border-rose-200"
+                        : Math.round((monthExpense / (userProfile?.monthlyIncomeBase || 5000)) * 100) > 35
+                        ? "bg-amber-50 text-amber-700 border-amber-200"
+                        : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    }`}
+                  >
+                    {Math.round((monthExpense / (userProfile?.monthlyIncomeBase || 5000)) * 100) > 60
+                      ? "Alerta de Comprometimento"
+                      : Math.round((monthExpense / (userProfile?.monthlyIncomeBase || 5000)) * 100) > 35
+                      ? "Atenção Moderada"
+                      : "Fluxo Equilibrado"}
                   </span>
                   <span className="text-[11px] text-[#86868B]">
                     Comprometimento: {Math.round((monthExpense / (userProfile?.monthlyIncomeBase || 5000)) * 100)}%
@@ -259,12 +273,12 @@ export default function DashboardPage() {
                   Diagnóstico e Simulação de Compras
                 </h3>
                 <p className="text-xs text-[#86868B] leading-relaxed line-clamp-2">
-                  Toque para conferir seu score de saúde financeira, identificar gargalos de consumo e simular o impacto de compras no fluxo de caixa.
+                  Acompanhe seu score de liquidez, identifique gargalos de consumo e simule o impacto de compras no fluxo de caixa.
                 </p>
               </div>
 
-              <div className="w-10 h-10 rounded-2xl bg-[#1D1D1F] text-white flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-xs">
-                <Sparkles size={18} className="text-amber-300" />
+              <div className="w-10 h-10 rounded-2xl bg-[#1D1D1F] text-white flex items-center justify-center shrink-0 group-hover:bg-black transition-all shadow-xs">
+                <ArrowUpRight size={18} className="text-white group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
               </div>
             </div>
           </Link>

@@ -24,6 +24,7 @@ import {
   Sliders,
   Compass,
 } from "lucide-react";
+import { FormattedMessage } from "@/components/ai/FormattedMessage";
 import { FinancialDiagnosis, SpecificExpenseAlert } from "@/app/api/ai/analyze/route";
 import { PurchaseSimulationResult } from "@/lib/services/financialContextService";
 import {
@@ -36,6 +37,15 @@ import {
   loadDismissedPatterns,
   dismissPattern,
 } from "@/lib/services/aiChatService";
+
+function cleanExecutiveSummary(text?: string | null): string {
+  if (!text) return "";
+  return text
+    .replace(/^Olá!\s*Analisei\s*(todo\s*o\s*)?seu\s*fluxo\s*(deste\s*mês)?\.?\s*/i, "")
+    .replace(/^Olá!\s*/i, "")
+    .replace(/^Oi!\s*/i, "")
+    .trim();
+}
 
 interface ChatMessage {
   id: string;
@@ -550,20 +560,16 @@ export default function AIAnalystPage() {
       {/* Container Central com Padding Dinâmico Apple */}
       <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
         {/* =========================================================
-            1. HEADER APPLE INTELLIGENCE
+            1. HEADER DIAGNÓSTICO FINANCEIRO
            ========================================================= */}
-        <header className="relative rounded-[28px] bg-white/75 backdrop-blur-xl border border-white/60 p-5 sm:p-6 shadow-[0_8px_28px_rgba(0,0,0,0.03)] overflow-hidden">
-          {/* Luz de Fundo Iridescente Apple Intelligence */}
-          <div className="absolute -top-16 -right-16 w-56 h-56 bg-gradient-to-br from-violet-400/20 via-sky-400/20 to-amber-300/20 rounded-full blur-3xl pointer-events-none" />
-          <div className="absolute -bottom-16 -left-16 w-48 h-48 bg-gradient-to-tr from-emerald-400/15 via-blue-400/15 to-purple-400/15 rounded-full blur-3xl pointer-events-none" />
-
-          <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <header className="rounded-[28px] bg-white/90 backdrop-blur-xl border border-black/[0.05] p-5 sm:p-6 shadow-[0_4px_24px_rgba(0,0,0,0.02)]">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="space-y-1.5">
               {/* Badge de Metadados Apple Style */}
               <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium text-[#86868B]">
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-gradient-to-r from-violet-500/10 via-sky-500/10 to-amber-500/10 border border-violet-500/15 text-[#1D1D1F] font-semibold">
-                  <span className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-violet-600 to-amber-500" />
-                  <span>Apple Intelligence</span>
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#F2F2F7] border border-black/[0.05] text-[#1D1D1F] font-semibold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  <span>Diagnóstico em Tempo Real</span>
                 </div>
                 <span>•</span>
                 <span>{getPersonaLabel()}</span>
@@ -578,18 +584,17 @@ export default function AIAnalystPage() {
                 )}
               </div>
 
-              {/* Título com Ícone de Aura Fluida */}
+              {/* Título com Ícone Apple Minimalista */}
               <div className="flex items-center gap-3">
-                <div className="relative w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#1D1D1F] via-[#2C2C2E] to-[#48484A] text-white flex items-center justify-center shadow-md shrink-0">
-                  <div className="absolute inset-0 rounded-2xl bg-gradient-to-tr from-violet-500/30 via-sky-400/30 to-amber-400/30 blur-sm" />
-                  <Sparkles size={18} className="relative z-10 text-amber-300" />
+                <div className="w-10 h-10 rounded-2xl bg-[#1D1D1F] text-white flex items-center justify-center shadow-xs shrink-0">
+                  <Compass size={18} className="text-white" />
                 </div>
                 <div>
                   <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-[#1D1D1F]">
-                    Analista Financeiro
+                    Diagnóstico Financeiro
                   </h1>
                   <p className="text-xs text-[#86868B]">
-                    Inteligência contábil sob demanda com validação de fluxo de caixa
+                    Auditoria contábil de fluxo de caixa, cartões e hábitos de consumo
                   </p>
                 </div>
               </div>
@@ -673,11 +678,8 @@ export default function AIAnalystPage() {
             {/* ESTADO 1: ANALISANDO DO ZERO (SKELETON ELEGANTE COM EFEITO SHIMMER) */}
             {isAnalyzing && !diagnosis ? (
               <section className="bg-white rounded-[28px] p-8 sm:p-12 border border-black/[0.04] shadow-[0_8px_30px_rgba(0,0,0,0.03)] text-center space-y-4">
-                <div className="relative w-16 h-16 mx-auto flex items-center justify-center">
-                  <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-violet-500/20 via-sky-400/20 to-amber-300/20 blur-md animate-pulse" />
-                  <div className="w-14 h-14 rounded-full bg-[#F2F2F7] flex items-center justify-center relative z-10">
-                    <RefreshCw size={24} className="text-[#1D1D1F] animate-spin" />
-                  </div>
+                <div className="w-14 h-14 rounded-full bg-[#F2F2F7] flex items-center justify-center mx-auto">
+                  <RefreshCw size={24} className="text-[#1D1D1F] animate-spin" />
                 </div>
                 <div className="space-y-1 max-w-md mx-auto">
                   <h3 className="text-base sm:text-lg font-semibold tracking-tight text-[#1D1D1F]">
@@ -688,15 +690,15 @@ export default function AIAnalystPage() {
                   </p>
                 </div>
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#F2F2F7] text-[11px] font-medium text-[#86868B]">
-                  <Sparkles size={12} className="text-amber-500" />
-                  <span>Modelo ativo: {analysisModel}</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>Auditoria Contábil de Caixa & Cartões</span>
                 </div>
               </section>
             ) : !diagnosis ? (
               /* ESTADO 2: SEM ANÁLISE SALVA (HERO SOB DEMANDA) */
               <section className="relative bg-white rounded-[28px] p-7 sm:p-10 border border-black/[0.04] shadow-[0_8px_30px_rgba(0,0,0,0.03)] space-y-6 text-center overflow-hidden">
-                <div className="w-16 h-16 rounded-[22px] bg-gradient-to-tr from-[#1D1D1F] via-[#2C2C2E] to-[#48484A] text-amber-300 mx-auto flex items-center justify-center shadow-lg">
-                  <Sparkles size={28} />
+                <div className="w-14 h-14 rounded-[22px] bg-[#1D1D1F] text-white mx-auto flex items-center justify-center shadow-xs">
+                  <Compass size={24} className="text-white" />
                 </div>
 
                 <div className="space-y-2 max-w-lg mx-auto">
@@ -704,7 +706,7 @@ export default function AIAnalystPage() {
                     Diagnóstico Financeiro Sob Demanda
                   </h2>
                   <p className="text-xs sm:text-sm text-[#86868B] leading-relaxed">
-                    O diagnóstico é gerado apenas sob sua solicitação para economizar chamadas e garantir privacidade. Uma vez calculado, ele fica salvo no seu dispositivo e na nuvem.
+                    O diagnóstico é gerado sob sua solicitação para manter privacidade total e processamento local. Uma vez calculado, ele fica salvo no seu dispositivo e na nuvem.
                   </p>
                 </div>
 
@@ -714,8 +716,8 @@ export default function AIAnalystPage() {
                     onClick={runDiagnosis}
                     className="bg-[#1D1D1F] hover:bg-black active:scale-[0.98] text-white text-xs sm:text-sm font-semibold px-6 py-3 rounded-full transition-all inline-flex items-center gap-2.5 shadow-md cursor-pointer"
                   >
-                    <Sparkles size={16} className="text-amber-300" />
-                    <span>Gerar Diagnóstico com IA</span>
+                    <Compass size={16} className="text-white" />
+                    <span>Gerar Diagnóstico Estratégico</span>
                   </button>
                 </div>
 
@@ -866,17 +868,17 @@ export default function AIAnalystPage() {
                     </div>
                   </div>
 
-                  {/* Parecer Apple Intelligence Summary Note */}
-                  <div className="p-5 rounded-2xl bg-gradient-to-r from-violet-500/[0.03] via-sky-500/[0.03] to-amber-500/[0.03] border border-black/[0.05] space-y-2">
+                  {/* Parecer Executivo do Mês */}
+                  <div className="p-5 rounded-2xl bg-[#F9F9FB] border border-black/[0.05] space-y-2">
                     <div className="flex items-center gap-2 text-xs font-semibold text-[#1D1D1F]">
-                      <div className="w-5 h-5 rounded-md bg-[#1D1D1F] text-amber-300 flex items-center justify-center shadow-2xs">
-                        <Sparkles size={11} />
+                      <div className="w-5 h-5 rounded-md bg-[#1D1D1F] text-white flex items-center justify-center shadow-2xs">
+                        <TrendingUp size={11} />
                       </div>
-                      <span>Síntese do Analista</span>
+                      <span>Parecer do Mês</span>
                     </div>
                     <p className="text-xs sm:text-sm text-[#1D1D1F] leading-relaxed font-normal">
-                      {diagnosis?.executiveSummary ||
-                        "Seu fluxo de caixa opera de maneira regular. Mantenha os vencimentos futuros sob observação para preservar sua liquidez."}
+                      {cleanExecutiveSummary(diagnosis?.executiveSummary) ||
+                        "Fluxo de caixa sob acompanhamento regular. Mantenha os vencimentos futuros sob observação para preservar sua liquidez."}
                     </p>
                   </div>
                 </section>
@@ -1099,11 +1101,11 @@ export default function AIAnalystPage() {
                           type="button"
                           onClick={handleFetchMorePatterns}
                           disabled={isSearchingPatterns}
-                          className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-200/60 px-2.5 py-1 rounded-full transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-sm active:scale-95"
-                          title="Buscar novos padrões com modelo rápido e econômico"
+                          className="text-[11px] font-semibold text-[#1D1D1F] bg-[#F2F2F7] hover:bg-[#E5E5EA] border border-black/[0.05] px-2.5 py-1 rounded-full transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-xs active:scale-95"
+                          title="Escanear lançamentos em busca de padrões recorrentes"
                         >
-                          <Sparkles size={11} className={isSearchingPatterns ? "animate-spin text-emerald-600" : "text-emerald-600"} />
-                          <span>{isSearchingPatterns ? "Buscando..." : "Buscar Mais Padrões"}</span>
+                          <RefreshCw size={11} className={isSearchingPatterns ? "animate-spin text-[#1D1D1F]" : "text-[#86868B]"} />
+                          <span>{isSearchingPatterns ? "Auditando..." : "Buscar Mais Padrões"}</span>
                         </button>
                       </div>
                     </div>
@@ -1138,8 +1140,8 @@ export default function AIAnalystPage() {
                           disabled={isSearchingPatterns}
                           className="mt-1 inline-flex items-center gap-1.5 text-xs font-semibold text-[#1D1D1F] bg-[#F2F2F7] hover:bg-[#E5E5EA] px-3.5 py-1.5 rounded-full transition-colors disabled:opacity-50 cursor-pointer"
                         >
-                          <Sparkles size={12} className={isSearchingPatterns ? "animate-spin text-amber-500" : "text-amber-500"} />
-                          <span>{isSearchingPatterns ? "Analisando lançamentos..." : "Buscar Padrões"}</span>
+                          <RefreshCw size={12} className={isSearchingPatterns ? "animate-spin text-[#1D1D1F]" : "text-[#86868B]"} />
+                          <span>{isSearchingPatterns ? "Auditando lançamentos..." : "Buscar Padrões"}</span>
                         </button>
                       </div>
                     ) : (
@@ -1581,8 +1583,8 @@ export default function AIAnalystPage() {
                       onClick={executeSimulation}
                       className="w-full sm:w-auto py-2.5 px-6 rounded-full bg-[#1D1D1F] hover:bg-black active:scale-[0.98] text-white text-xs font-semibold transition-all shadow-xs cursor-pointer flex items-center justify-center gap-2"
                     >
-                      <Sparkles size={14} className="text-amber-300" />
-                      <span>Simular Impacto no Chat</span>
+                      <Calculator size={14} className="text-white" />
+                      <span>Simular Impacto no Fluxo</span>
                     </button>
                   </div>
                 </div>
@@ -1600,9 +1602,9 @@ export default function AIAnalystPage() {
                   <button
                     type="button"
                     onClick={() => setActiveTab("diagnosis")}
-                    className="hidden sm:inline-flex items-center gap-1 text-[10px] font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 px-2.5 py-0.5 rounded-full transition-all cursor-pointer"
+                    className="hidden sm:inline-flex items-center gap-1 text-[10px] font-medium text-[#1D1D1F] bg-[#F2F2F7] hover:bg-[#E5E5EA] px-2.5 py-0.5 rounded-full transition-all cursor-pointer border border-black/[0.04]"
                   >
-                    <Sparkles size={10} />
+                    <Compass size={10} />
                     <span>Ver Diagnóstico ({diagnosis.healthScore} pts)</span>
                   </button>
                 )}
@@ -1621,20 +1623,20 @@ export default function AIAnalystPage() {
               )}
             </div>
 
-            {/* 3. ÁREA DE MENSAGENS ESTILO APPLE MESSAGES & SIRI */}
+            {/* 3. ÁREA DE MENSAGENS ESTILO APPLE MESSAGES */}
             <section className="bg-white rounded-[28px] p-5 sm:p-6 border border-black/[0.04] shadow-[0_8px_30px_rgba(0,0,0,0.03)] h-[540px] flex flex-col justify-between">
               <div className="overflow-y-auto space-y-4 pr-1 touch-scroll flex-1">
                 {messages.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-4">
-                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-[#1D1D1F] via-[#2C2C2E] to-[#48484A] text-white flex items-center justify-center shadow-md">
-                      <Sparkles size={22} className="text-amber-300" />
+                    <div className="w-12 h-12 rounded-2xl bg-[#1D1D1F] text-white flex items-center justify-center shadow-xs">
+                      <Compass size={22} className="text-white" />
                     </div>
                     <div className="max-w-md space-y-1.5">
                       <h3 className="text-lg font-semibold tracking-tight text-[#1D1D1F]">
-                        Como posso orientar suas finanças hoje?
+                        Consultoria & Análise de Fluxo
                       </h3>
                       <p className="text-xs text-[#86868B] leading-relaxed">
-                        Faça perguntas diretas sobre suas contas, faturas ou simule compras parceladas para entender o impacto no fluxo de caixa.
+                        Consulte detalhes do seu fluxo, faturas abertas, hábitos recorrentes ou simule o impacto de compras parceladas.
                       </p>
                     </div>
 
@@ -1661,10 +1663,10 @@ export default function AIAnalystPage() {
                       }`}
                     >
                       <div
-                        className={`max-w-[85%] rounded-[24px] p-4 sm:p-4.5 text-xs leading-relaxed space-y-2.5 ${
+                        className={`max-w-[92%] sm:max-w-[85%] rounded-[24px] p-4 sm:p-4.5 text-xs leading-relaxed space-y-3 ${
                           msg.role === "user"
                             ? "bg-[#1D1D1F] text-white rounded-br-xs shadow-xs"
-                            : "bg-[#FAFAFC] text-[#1D1D1F] border border-black/[0.05] rounded-bl-xs shadow-2xs"
+                            : "bg-[#FAFAFC] text-[#1D1D1F] border border-black/[0.06] rounded-bl-xs shadow-2xs"
                         }`}
                       >
                         {/* Cartão de Veredito Apple Wallet Pass */}
@@ -1703,15 +1705,21 @@ export default function AIAnalystPage() {
                           </div>
                         )}
 
-                        <div className="whitespace-pre-line font-normal">{msg.content}</div>
+                        <FormattedMessage content={msg.content} role={msg.role} />
 
                         <div
-                          className={`flex items-center justify-between text-[10px] pt-1 ${
-                            msg.role === "user" ? "text-white/60" : "text-[#86868B]"
+                          className={`flex items-center justify-between text-[10px] pt-1.5 border-t ${
+                            msg.role === "user"
+                              ? "text-white/60 border-white/10"
+                              : "text-[#86868B] border-black/[0.04]"
                           }`}
                         >
+                          <div className="flex items-center gap-1.5">
+                            {msg.role === "assistant" && (
+                              <span className="font-semibold text-[#1D1D1F]">Parecer Financeiro</span>
+                            )}
+                          </div>
                           <span>{msg.timestamp}</span>
-                          {msg.modelUsed && <span>⚡ {msg.modelUsed}</span>}
                         </div>
                       </div>
                     </div>
@@ -1721,13 +1729,13 @@ export default function AIAnalystPage() {
                 {isSending && (
                   <div className="flex items-center gap-2 p-3 text-xs text-[#86868B] bg-[#FAFAFC] rounded-2xl w-fit border border-black/[0.04]">
                     <RefreshCw size={13} className="animate-spin text-[#1D1D1F]" />
-                    <span>O assistente está calculando os impactos contábeis...</span>
+                    <span>Calculando impactos no fluxo de caixa...</span>
                   </div>
                 )}
                 <div ref={chatBottomRef} />
               </div>
 
-              {/* 4. INPUT DE MENSAGEM SIRI / SPOTLIGHT (iOS 18) */}
+              {/* 4. INPUT DE MENSAGEM */}
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -1740,11 +1748,11 @@ export default function AIAnalystPage() {
                     type="text"
                     value={inputMessage}
                     onChange={(e) => setInputMessage(e.target.value)}
-                    placeholder="Pergunte ao assistente... (ex: 'Quanto tenho para gastar este mês?')"
+                    placeholder="Pergunte sobre seus gastos, faturas ou simule compras..."
                     className="w-full pl-4 pr-10 py-3 rounded-full bg-[#F2F2F7] text-xs font-medium text-[#1D1D1F] border border-black/5 focus:outline-none focus:ring-2 focus:ring-black/10 placeholder:text-[#86868B] transition-all"
                   />
                   <div className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#86868B] pointer-events-none">
-                    <Sparkles size={14} className="text-amber-500" />
+                    <Compass size={14} className="text-[#86868B]" />
                   </div>
                 </div>
 
