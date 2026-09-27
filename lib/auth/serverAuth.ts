@@ -45,8 +45,14 @@ export async function verifyServerAuth(
 
   try {
     const adminAuth = getAdminAuth();
-    // checkRevoked: true valida se o token não foi revogado e checa assinatura criptográfica completa
-    const decodedToken = await adminAuth.verifyIdToken(token, true);
+    const hasAdminCredentials = Boolean(
+      process.env.FIREBASE_SERVICE_ACCOUNT_KEY ||
+      process.env.GOOGLE_APPLICATION_CREDENTIALS ||
+      process.env.FIREBASE_AUTH_EMULATOR_HOST
+    );
+    // Valida criptograficamente assinatura (RS256), audiência, emissor e expiração via Google Public Keys.
+    // Se credenciais de admin estiverem presentes, valida também se a sessão foi revogada.
+    const decodedToken = await adminAuth.verifyIdToken(token, hasAdminCredentials);
 
     if (!decodedToken.uid || typeof decodedToken.uid !== "string" || decodedToken.uid.trim().length === 0) {
       return {
@@ -72,6 +78,8 @@ export async function verifyServerAuth(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const authErr = err as any;
     const errorCode = authErr?.code || "AUTH_VALIDATION_FAILED";
+
+    console.error("[SERVER_AUTH_ERROR]", errorCode, authErr?.message);
 
     if (errorCode === "auth/id-token-expired") {
       return {
