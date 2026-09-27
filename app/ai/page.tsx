@@ -23,11 +23,18 @@ import {
   Zap,
   Sliders,
   Compass,
+  Plus,
+  MessageSquare,
 } from "lucide-react";
 import { FormattedMessage } from "@/components/ai/FormattedMessage";
 import { FinancialDiagnosis, SpecificExpenseAlert } from "@/app/api/ai/analyze/route";
 import { PurchaseSimulationResult } from "@/lib/services/financialContextService";
 import {
+  ChatSession,
+  loadChatSessions,
+  saveChatSessions,
+  createChatSession,
+  deleteChatSession,
   loadChatHistory,
   saveChatHistory,
   clearChatHistory,
@@ -45,6 +52,30 @@ function cleanExecutiveSummary(text?: string | null): string {
     .replace(/^Olá!\s*/i, "")
     .replace(/^Oi!\s*/i, "")
     .trim();
+}
+
+function formatSessionDate(isoStr?: string): string {
+  if (!isoStr) return "";
+  try {
+    const d = new Date(isoStr);
+    const now = new Date();
+    const isToday =
+      d.getDate() === now.getDate() &&
+      d.getMonth() === now.getMonth() &&
+      d.getFullYear() === now.getFullYear();
+
+    if (isToday) {
+      return `Hoje às ${d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+    }
+    return d.toLocaleDateString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return "";
+  }
 }
 
 interface ChatMessage {
@@ -91,11 +122,18 @@ export default function AIAnalystPage() {
   const [isSearchingPatterns, setIsSearchingPatterns] = useState<boolean>(false);
   const [patternsFeedback, setPatternsFeedback] = useState<string | null>(null);
 
-  // Estados do Chat
+  // Estados do Chat e Histórico de Sessões
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string>("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputMessage, setInputMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement>(null);
+  const chatSectionRef = useRef<HTMLElement>(null);
+
+  // Sessão atual ativa
+  const currentSession =
+    sessions.find((s) => s.id === activeSessionId) || sessions[0] || null;
 
   // Estados do Simulador de Compra (Apple Interactive Sheet)
   const [isSimulatorOpen, setIsSimulatorOpen] = useState(false);
@@ -110,7 +148,7 @@ export default function AIAnalystPage() {
 
   const activeSimCardId = simCardId || (creditCards[0]?.id ?? "");
 
-  // Carrega diagnóstico persistido e histórico salvo de mensagens do chat (Firestore / localStorage)
+  // Carrega diagnóstico persistido e histórico de sessões do chat (Firestore / localStorage)
   useEffect(() => {
     let isMounted = true;
 
@@ -132,9 +170,18 @@ export default function AIAnalystPage() {
       }
     });
 
-    loadChatHistory(user?.uid).then((savedMsgs) => {
-      if (isMounted && savedMsgs.length > 0) {
-        setMessages(savedMsgs);
+    loadChatSessions(user?.uid).then((savedSessions) => {
+      if (isMounted) {
+        if (savedSessions.length > 0) {
+          setSessions(savedSessions);
+          setActiveSessionId(savedSessions[0].id);
+          setMessages(savedSessions[0].messages || []);
+        } else {
+          const initial = createChatSession("Nova Conversa");
+          setSessions([initial]);
+          setActiveSessionId(initial.id);
+          setMessages([]);
+        }
       }
     });
 
@@ -303,9 +350,42 @@ export default function AIAnalystPage() {
       timestamp: new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
     };
 
-    const newMessages = [...messages, userMsg];
+    // Identifica ou cria sessão ativa
+    let activeSess = sessions.find((s) => s.id === activeSessionId) || sessions[0];
+    if (!activeSess) {
+      activeSess = createChatSession();
+    }
+    const currentId = activeSess.id;
+
+    let updatedTitle = activeSess.title;
+    if (
+      activeSess.title === "Nova Conversa" ||
+      activeSess.title === "Nova Consulta" ||
+      !activeSess.messages ||
+      activeSess.messages.length === 0
+    ) {
+      updatedTitle = text.length > 36 ? text.slice(0, 34) + "..." : text;
+    }
+
+    const currentMsgs = activeSess.messages || [];
+    const newMessages = [...currentMsgs, userMsg];
     setMessages(newMessages);
-    void saveChatHistory(newMessages, user?.uid);
+
+    const updatedSession: ChatSession = {
+      ...activeSess,
+      id: currentId,
+      title: updatedTitle,
+      updatedAt: new Date().toISOString(),
+      messages: newMessages,
+    };
+
+    const updatedSessionsList = [
+      updatedSession,
+      ...sessions.filter((s) => s.id !== currentId),
+    ];
+    setSessions(updatedSessionsList);
+    setActiveSessionId(currentId);
+    void saveChatSessions(updatedSessionsList, user?.uid);
 
     if (!textToSend) setInputMessage("");
     setIsSending(true);
@@ -334,7 +414,7 @@ export default function AIAnalystPage() {
           ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
         },
         body: JSON.stringify({
-          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          messages: currentMsgs.map((m) => ({ role: m.role, content: m.content })),
           userMessage: text,
           simulation: simulationPayload,
           userProfile,
@@ -363,9 +443,20 @@ export default function AIAnalystPage() {
           modelUsed: data.modelUsed,
           simulationResult: data.simulationResult,
         };
-        const updated = [...newMessages, assistantMsg];
-        setMessages(updated);
-        void saveChatHistory(updated, user?.uid);
+        const finalMessages = [...newMessages, assistantMsg];
+        setMessages(finalMessages);
+
+        const finalSession: ChatSession = {
+          ...updatedSession,
+          updatedAt: new Date().toISOString(),
+          messages: finalMessages,
+        };
+        const finalSessionsList = [
+          finalSession,
+          ...sessions.filter((s) => s.id !== currentId),
+        ];
+        setSessions(finalSessionsList);
+        void saveChatSessions(finalSessionsList, user?.uid);
       } else {
         throw new Error(data.error || "O assistente não conseguiu responder agora.");
       }
@@ -381,22 +472,79 @@ export default function AIAnalystPage() {
           minute: "2-digit",
         }),
       };
-      const updated = [...newMessages, errorMsg];
-      setMessages(updated);
-      void saveChatHistory(updated, user?.uid);
+      const finalMessages = [...newMessages, errorMsg];
+      setMessages(finalMessages);
+
+      const finalSession: ChatSession = {
+        ...updatedSession,
+        updatedAt: new Date().toISOString(),
+        messages: finalMessages,
+      };
+      const finalSessionsList = [
+        finalSession,
+        ...sessions.filter((s) => s.id !== currentId),
+      ];
+      setSessions(finalSessionsList);
+      void saveChatSessions(finalSessionsList, user?.uid);
     } finally {
       setIsSending(false);
     }
   };
 
-  const handleClearChat = async () => {
+  const handleNewChat = () => {
+    const newSess = createChatSession("Nova Conversa");
+    const updated = [newSess, ...sessions];
+    setSessions(updated);
+    setActiveSessionId(newSess.id);
+    setMessages([]);
+    void saveChatSessions(updated, user?.uid);
+    chatSectionRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const handleSelectSession = (sessionId: string) => {
+    const target = sessions.find((s) => s.id === sessionId);
+    if (!target) return;
+    setActiveSessionId(sessionId);
+    setMessages(target.messages || []);
+    chatSectionRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const handleDeleteSession = async (sessionId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const confirmed = window.confirm("Deseja realmente excluir esta conversa do histórico?");
+    if (!confirmed) return;
+
+    const remaining = sessions.filter((s) => s.id !== sessionId);
+    if (remaining.length === 0) {
+      const fresh = createChatSession("Nova Conversa");
+      setSessions([fresh]);
+      setActiveSessionId(fresh.id);
+      setMessages([]);
+      await saveChatSessions([fresh], user?.uid);
+    } else {
+      setSessions(remaining);
+      if (activeSessionId === sessionId) {
+        setActiveSessionId(remaining[0].id);
+        setMessages(remaining[0].messages || []);
+      }
+      await saveChatSessions(remaining, user?.uid);
+    }
+  };
+
+  const handleClearCurrentSession = async () => {
     if (messages.length === 0) return;
     const confirmClear = window.confirm(
-      "Deseja realmente limpar o histórico de conversas com o assistente?"
+      "Deseja realmente limpar as mensagens desta conversa?"
     );
     if (confirmClear) {
       setMessages([]);
-      await clearChatHistory(user?.uid);
+      const updated = sessions.map((s) =>
+        s.id === activeSessionId
+          ? { ...s, messages: [], updatedAt: new Date().toISOString() }
+          : s
+      );
+      setSessions(updated);
+      await saveChatSessions(updated, user?.uid);
     }
   };
 
@@ -548,15 +696,15 @@ export default function AIAnalystPage() {
   });
 
   return (
-    <div className="min-h-full bg-[#F2F2F7] text-[#1D1D1F] font-sans selection:bg-[#1D1D1F] selection:text-white">
+    <div className="min-h-full w-full max-w-full overflow-x-hidden bg-[#F2F2F7] text-[#1D1D1F] font-sans selection:bg-[#1D1D1F] selection:text-white">
       {/* Container Central com Padding Dinâmico Apple */}
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+      <div className="w-full max-w-4xl mx-auto px-3.5 sm:px-6 py-5 sm:py-8 space-y-6 min-w-0">
         {/* =========================================================
             1. HEADER DIAGNÓSTICO FINANCEIRO
            ========================================================= */}
-        <header className="rounded-[28px] bg-white/90 backdrop-blur-xl border border-black/[0.05] p-5 sm:p-6 shadow-[0_4px_24px_rgba(0,0,0,0.02)]">
+        <header className="rounded-[28px] bg-white/90 backdrop-blur-xl border border-black/[0.05] p-4.5 sm:p-6 shadow-[0_4px_24px_rgba(0,0,0,0.02)] min-w-0 overflow-hidden">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 min-w-0">
               {/* Badge de Metadados Apple Style */}
               <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium text-[#86868B]">
                 <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#F2F2F7] border border-black/[0.05] text-[#1D1D1F] font-semibold">
@@ -577,23 +725,29 @@ export default function AIAnalystPage() {
               </div>
 
               {/* Título com Ícone Apple Minimalista */}
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 min-w-0">
                 <div className="w-10 h-10 rounded-2xl bg-[#1D1D1F] text-white flex items-center justify-center shadow-xs shrink-0">
                   <Compass size={18} className="text-white" />
                 </div>
-                <div>
-                  <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-[#1D1D1F]">
-                    Diagnóstico Financeiro
-                  </h1>
-                  <p className="text-xs text-[#86868B]">
-                    Auditoria contábil de fluxo de caixa, cartões e hábitos de consumo
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-[#1D1D1F] truncate">
+                      Diagnóstico Financeiro
+                    </h1>
+                    <div className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-[#1D1D1F] border border-white/10 text-white shadow-2xs">
+                      <span className="text-[11px] font-semibold tracking-tight">Wallet</span>
+                      <span className="text-[12px] font-bold text-white tracking-tighter drop-shadow-[0_0_8px_rgba(255,255,255,0.85)] ml-0.5 leading-none">+</span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-[#86868B] truncate">
+                    Auditoria contábil de fluxo de caixa, cartões e inteligência estratégica
                   </p>
                 </div>
               </div>
             </div>
 
             {/* Segmented Control & Botão Recalcular */}
-            <div className="flex items-center gap-2 self-start sm:self-auto pt-2 sm:pt-0">
+            <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto pt-2 sm:pt-0">
               <div className="flex items-center p-1 bg-[#E5E5EA]/75 backdrop-blur-md rounded-full border border-black/5">
                 <button
                   type="button"
@@ -657,9 +811,9 @@ export default function AIAnalystPage() {
 
             {/* Banner delicado ao recalcular mantendo o dashboard visível */}
             {isAnalyzing && diagnosis && (
-              <div className="p-3.5 rounded-2xl bg-white/90 backdrop-blur-md border border-purple-500/20 shadow-xs flex items-center justify-between gap-3 text-xs text-[#1D1D1F] animate-in fade-in duration-200">
+              <div className="p-3.5 rounded-2xl bg-white/90 backdrop-blur-md border border-black/[0.08] shadow-xs flex items-center justify-between gap-3 text-xs text-[#1D1D1F] animate-in fade-in duration-200">
                 <div className="flex items-center gap-2">
-                  <RefreshCw size={14} className="animate-spin text-purple-600 shrink-0" />
+                  <RefreshCw size={14} className="animate-spin text-[#1D1D1F] shrink-0" />
                   <span className="font-medium text-[#1D1D1F]">
                     O Analista está recalculando seu diagnóstico com as informações mais recentes...
                   </span>
@@ -880,7 +1034,7 @@ export default function AIAnalystPage() {
                   <section className="bg-white rounded-[28px] p-6 sm:p-7 border border-black/[0.04] shadow-[0_8px_30px_rgba(0,0,0,0.03)] space-y-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
+                        <div className="w-8 h-8 rounded-xl bg-[#F2F2F7] text-[#1D1D1F] flex items-center justify-center">
                           <Sliders size={17} />
                         </div>
                         <div>
@@ -892,7 +1046,7 @@ export default function AIAnalystPage() {
                           </p>
                         </div>
                       </div>
-                      <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full bg-purple-50 text-purple-700 border border-purple-200/50">
+                      <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full bg-[#F2F2F7] text-[#1D1D1F] border border-black/[0.06]">
                         {diagnosis.clientProfileAssessment.persona}
                       </span>
                     </div>
@@ -926,7 +1080,7 @@ export default function AIAnalystPage() {
 
                     <div className="p-4 rounded-2xl bg-[#FAFAFC] border border-black/[0.04] space-y-1.5 text-xs">
                       <span className="font-semibold text-[#1D1D1F] flex items-center gap-1.5">
-                        <ShieldCheck size={14} className="text-purple-600" />
+                        <ShieldCheck size={14} className="text-[#1D1D1F]" />
                         <span>Diagnóstico de Alinhamento com o Perfil</span>
                       </span>
                       <p className="text-[#86868B] leading-relaxed">
@@ -959,7 +1113,7 @@ export default function AIAnalystPage() {
                         </div>
                       </div>
                       {diagnosis.futureMonthsRealityCheck.historicalVariableBaseline > 0 && (
-                        <span className="text-[11px] font-semibold px-3 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200/60 self-start sm:self-auto">
+                        <span className="text-[11px] font-semibold px-3 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200/60 self-start sm:self-auto max-w-full break-words">
                           Gasto variável habitual: ~R$ {formatCurrency(diagnosis.futureMonthsRealityCheck.historicalVariableBaseline)}/mês
                         </span>
                       )}
@@ -1195,7 +1349,7 @@ export default function AIAnalystPage() {
                               {(item.creditAmount !== undefined || item.debitAmount !== undefined || item.paymentBreakdown) && (
                                 <div className="flex items-center gap-1.5 flex-wrap pt-0.5 pb-1">
                                   {typeof item.creditAmount === "number" && item.creditAmount > 0 && (
-                                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200/60">
+                                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-[#F2F2F7] text-[#1D1D1F] border border-black/[0.06]">
                                       Crédito: R$ {formatCurrency(item.creditAmount)}
                                     </span>
                                   )}
@@ -1388,33 +1542,33 @@ export default function AIAnalystPage() {
                     <span className="text-xs text-[#86868B]">Ações sugeridas</span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 min-w-0">
                     {diagnosis?.actionableSuggestions?.map((sug, idx) => (
                       <div
                         key={idx}
-                        className="bg-white rounded-[24px] p-5 border border-black/[0.04] shadow-[0_4px_20px_rgba(0,0,0,0.025)] hover:border-black/15 transition-all flex flex-col justify-between space-y-3.5"
+                        className="bg-white rounded-[24px] p-5 border border-black/[0.04] shadow-[0_4px_20px_rgba(0,0,0,0.025)] hover:border-black/15 transition-all flex flex-col justify-between space-y-3.5 min-w-0 overflow-hidden"
                       >
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between gap-2">
-                            <h3 className="text-xs font-semibold text-[#1D1D1F]">{sug.title}</h3>
+                        <div className="space-y-1.5 min-w-0">
+                          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-1.5 min-w-0">
+                            <h3 className="text-xs font-semibold text-[#1D1D1F] break-words flex-1 min-w-0">{sug.title}</h3>
                             {sug.potentialGain && (
-                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60 shrink-0">
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60 max-w-full break-words self-start sm:self-auto">
                                 {sug.potentialGain}
                               </span>
                             )}
                           </div>
-                          <p className="text-xs text-[#86868B] leading-relaxed">{sug.action}</p>
+                          <p className="text-xs text-[#86868B] leading-relaxed break-words">{sug.action}</p>
                         </div>
 
-                        <div className="pt-2.5 flex items-center justify-between border-t border-black/[0.04] text-[11px] text-[#86868B]">
-                          <span>{sug.targetGoal ? `Meta: ${sug.targetGoal}` : "Equilíbrio"}</span>
+                        <div className="pt-2.5 flex items-center justify-between border-t border-black/[0.04] text-[11px] text-[#86868B] gap-2">
+                          <span className="truncate">{sug.targetGoal ? `Meta: ${sug.targetGoal}` : "Equilíbrio"}</span>
                           <button
                             type="button"
                             onClick={() => {
                               setActiveTab("chat");
                               handleSendMessage(`Como posso colocar em prática a recomendação "${sug.title}"?`);
                             }}
-                            className="text-xs font-semibold text-[#1D1D1F] hover:underline flex items-center gap-1 cursor-pointer"
+                            className="text-xs font-semibold text-[#1D1D1F] hover:underline flex items-center gap-1 cursor-pointer shrink-0"
                           >
                             <span>Conversar sobre isso</span>
                             <ChevronRight size={12} />
@@ -1583,11 +1737,13 @@ export default function AIAnalystPage() {
               )}
             </section>
 
-            {/* 2. BARRA DE STATUS DO CHAT */}
-            <div className="flex items-center justify-between px-2 text-xs text-[#86868B]">
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-[#1D1D1F]">Conversas Salvas</span>
-                <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-[#E5E5EA] text-[#1D1D1F] font-medium">
+            {/* 2. BARRA DE STATUS DO CHAT & SESSÃO ATIVA */}
+            <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-[#86868B]">
+              <div className="flex items-center gap-2 flex-wrap min-w-0">
+                <span className="font-semibold text-[#1D1D1F] truncate max-w-[220px]">
+                  {currentSession?.title || "Conversa Atual"}
+                </span>
+                <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-[#E5E5EA] text-[#1D1D1F] font-medium shrink-0">
                   {messages.length} {messages.length === 1 ? "mensagem" : "mensagens"}
                 </span>
                 {diagnosis && (
@@ -1602,31 +1758,49 @@ export default function AIAnalystPage() {
                 )}
               </div>
 
-              {messages.length > 0 && (
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={handleClearChat}
-                  title="Limpar histórico da conversa"
-                  className="flex items-center gap-1 text-[11px] text-[#86868B] hover:text-rose-600 transition-colors cursor-pointer"
+                  onClick={handleNewChat}
+                  className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-white bg-[#1D1D1F] hover:bg-black active:scale-95 px-3 py-1.5 rounded-full transition-all cursor-pointer shadow-xs"
                 >
-                  <Trash2 size={12} />
-                  <span>Limpar conversa</span>
+                  <Plus size={12} />
+                  <span>Nova Conversa</span>
                 </button>
-              )}
+                {messages.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearCurrentSession}
+                    title="Limpar histórico desta conversa"
+                    className="flex items-center gap-1 text-[11px] text-[#86868B] hover:text-rose-600 transition-colors cursor-pointer px-2 py-1"
+                  >
+                    <Trash2 size={12} />
+                    <span className="hidden sm:inline">Limpar</span>
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* 3. ÁREA DE MENSAGENS ESTILO APPLE MESSAGES */}
-            <section className="bg-white rounded-[28px] p-5 sm:p-6 border border-black/[0.04] shadow-[0_8px_30px_rgba(0,0,0,0.03)] h-[540px] flex flex-col justify-between">
+            <section
+              ref={chatSectionRef}
+              className="bg-white rounded-[28px] p-4.5 sm:p-6 border border-black/[0.04] shadow-[0_8px_30px_rgba(0,0,0,0.03)] h-[540px] flex flex-col justify-between min-w-0 overflow-hidden"
+            >
               <div className="overflow-y-auto space-y-4 pr-1 touch-scroll flex-1">
                 {messages.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-4">
+                  <div className="h-full flex flex-col items-center justify-center text-center p-4 sm:p-6 space-y-4">
                     <div className="w-12 h-12 rounded-2xl bg-[#1D1D1F] text-white flex items-center justify-center shadow-xs">
                       <Compass size={22} className="text-white" />
                     </div>
                     <div className="max-w-md space-y-1.5">
-                      <h3 className="text-lg font-semibold tracking-tight text-[#1D1D1F]">
-                        Consultoria & Análise de Fluxo
-                      </h3>
+                      <div className="flex items-center justify-center gap-1">
+                        <span className="text-xl font-bold tracking-tight text-[#1D1D1F]">
+                          Wallet
+                        </span>
+                        <span className="text-2xl font-black tracking-tighter text-[#1D1D1F] leading-none">
+                          +
+                        </span>
+                      </div>
                       <p className="text-xs text-[#86868B] leading-relaxed">
                         Consulte detalhes do seu fluxo, faturas abertas, hábitos recorrentes ou simule o impacto de compras parceladas.
                       </p>
@@ -1639,7 +1813,7 @@ export default function AIAnalystPage() {
                           key={i}
                           type="button"
                           onClick={() => handleSendMessage(prompt)}
-                          className="text-xs px-4 py-2 rounded-full bg-white hover:bg-[#F2F2F7] active:scale-95 text-[#1D1D1F] border border-black/[0.06] shadow-xs transition-all text-left cursor-pointer"
+                          className="text-xs px-3.5 py-2 rounded-full bg-white hover:bg-[#F2F2F7] active:scale-95 text-[#1D1D1F] border border-black/[0.06] shadow-xs transition-all text-left cursor-pointer break-words max-w-full"
                         >
                           {prompt}
                         </button>
@@ -1756,6 +1930,115 @@ export default function AIAnalystPage() {
                   <Send size={15} />
                 </button>
               </form>
+            </section>
+
+            {/* =========================================================
+                5. HISTÓRICO DE CONVERSAS (SESSÕES SALVAS ABAIXO)
+               ========================================================= */}
+            <section className="bg-white rounded-[28px] p-5 sm:p-6 border border-black/[0.04] shadow-[0_8px_30px_rgba(0,0,0,0.03)] space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-[#1D1D1F] text-white flex items-center justify-center shrink-0 shadow-xs">
+                    <MessageSquare size={18} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-semibold text-[#1D1D1F]">
+                        Histórico de Conversas
+                      </h3>
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#F2F2F7] text-[#1D1D1F] border border-black/[0.06]">
+                        {sessions.length} {sessions.length === 1 ? "conversa" : "conversas"}
+                      </span>
+                    </div>
+                    <p className="text-xs text-[#86868B]">
+                      Visualize, alterne ou interaja com diferentes conversas salvas
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleNewChat}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#1D1D1F] hover:bg-black active:scale-95 text-white text-xs font-semibold transition-all cursor-pointer shadow-xs self-start sm:self-auto"
+                >
+                  <Plus size={14} />
+                  <span>Nova Conversa</span>
+                </button>
+              </div>
+
+              {sessions.length === 0 ? (
+                <div className="p-6 text-center text-xs text-[#86868B] bg-[#FAFAFC] rounded-2xl border border-black/[0.04]">
+                  Nenhuma conversa gravada no momento. Suas consultas e simulações aparecerão aqui automaticamente.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  {sessions.map((sess) => {
+                    const isActive = sess.id === activeSessionId;
+                    const lastMsg = sess.messages && sess.messages.length > 0
+                      ? sess.messages[sess.messages.length - 1]
+                      : null;
+                    const preview = lastMsg
+                      ? lastMsg.content.slice(0, 95) + (lastMsg.content.length > 95 ? "..." : "")
+                      : "Conversa pronta para iniciar...";
+
+                    return (
+                      <div
+                        key={sess.id}
+                        onClick={() => handleSelectSession(sess.id)}
+                        className={`p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between space-y-3 ${
+                          isActive
+                            ? "bg-white border-[#1D1D1F]/40 shadow-xs ring-1 ring-[#1D1D1F]/15"
+                            : "bg-[#FAFAFC] hover:bg-white border-black/[0.04] hover:border-black/15 shadow-2xs"
+                        }`}
+                      >
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              {isActive && (
+                                <span className="w-2 h-2 rounded-full bg-[#1D1D1F] shrink-0" />
+                              )}
+                              <h4 className="text-xs font-semibold text-[#1D1D1F] truncate">
+                                {sess.title}
+                              </h4>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-white text-[#86868B] border border-black/5">
+                                {sess.messages ? sess.messages.length : 0} msgs
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => handleDeleteSession(sess.id, e)}
+                                title="Excluir esta conversa"
+                                className="p-1 rounded-lg text-[#86868B] hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          </div>
+
+                          <p className="text-[11px] text-[#86868B] line-clamp-2 leading-relaxed">
+                            {preview}
+                          </p>
+                        </div>
+
+                        <div className="pt-2 border-t border-black/[0.04] flex items-center justify-between text-[10px] text-[#86868B]">
+                          <span>
+                            {formatSessionDate(sess.updatedAt || sess.createdAt)}
+                          </span>
+                          <span
+                            className={`font-semibold flex items-center gap-0.5 ${
+                              isActive ? "text-[#1D1D1F]" : "text-[#86868B]"
+                            }`}
+                          >
+                            <span>{isActive ? "Aberta agora" : "Abrir conversa"}</span>
+                            <ChevronRight size={11} />
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </section>
           </div>
         )}

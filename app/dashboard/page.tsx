@@ -228,8 +228,11 @@ export default function DashboardPage() {
         {/* 3. DIAGNÓSTICO ESTRATÉGICO WIDGET */}
         <section className="space-y-2">
           <div className="flex items-center justify-between px-1">
-            <div className="flex items-center gap-1.5">
-              <TrendingUp size={14} className="text-[#1D1D1F]" />
+            <div className="flex items-center gap-2">
+              <div className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#1D1D1F] border border-white/10 text-white shadow-2xs">
+                <span className="text-[10px] font-semibold tracking-tight">Wallet</span>
+                <span className="text-[11px] font-bold text-white tracking-tighter drop-shadow-[0_0_6px_rgba(255,255,255,0.8)] ml-0.5 leading-none">+</span>
+              </div>
               <h2 className="text-xs font-semibold uppercase tracking-wider text-[#86868B]">
                 Diagnóstico Estratégico
               </h2>

@@ -9,7 +9,7 @@
     --sal: env(safe-area-inset-left, 0px);
   }
 
-  body {
+  html, body {
     background-color: #F5F5F7; /* Off-white oficial da Apple */
     color: #1D1D1F;
     font-family: var(--font-apple);
@@ -17,6 +17,9 @@
     -moz-osx-font-smoothing: grayscale;
     letter-spacing: -0.015em;
     -webkit-tap-highlight-color: transparent;
+    overflow-x: hidden;
+    max-width: 100vw;
+    width: 100%;
   }
 
   /* Rótulos e Headings com tracking refinado Apple */

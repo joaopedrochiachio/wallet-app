@@ -11,13 +11,26 @@ export interface StoredChatMessage {
   simulationResult?: PurchaseSimulationResult | null;
 }
 
+export interface ChatSession {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messages: StoredChatMessage[];
+}
+
 const LOCAL_STORAGE_PREFIX = "wallet_ai_chat_history_";
+const CHAT_SESSIONS_PREFIX = "wallet_ai_chat_sessions_";
 const DIAGNOSIS_KEY = "wallet_ai_diagnosis";
 const DIAGNOSIS_TIMESTAMP_KEY = "wallet_ai_diagnosis_timestamp";
 const DIAGNOSIS_MODEL_KEY = "wallet_ai_model";
 
 function getStorageKey(userId?: string | null): string {
   return `${LOCAL_STORAGE_PREFIX}${userId || "guest"}`;
+}
+
+function getSessionsStorageKey(userId?: string | null): string {
+  return `${CHAT_SESSIONS_PREFIX}${userId || "guest"}`;
 }
 
 /**
@@ -121,6 +134,150 @@ export async function clearChatHistory(userId?: string | null): Promise<void> {
       console.warn("Falha ao excluir histórico do Firestore:", err);
     }
   }
+}
+
+/**
+ * Cria uma nova sessão de conversa vazia
+ */
+export function createChatSession(initialTitle?: string): ChatSession {
+  const now = new Date().toISOString();
+  return {
+    id: `chat_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    title: initialTitle || "Nova Conversa",
+    createdAt: now,
+    updatedAt: now,
+    messages: [],
+  };
+}
+
+/**
+ * Carrega a lista completa de sessões de chat salvas
+ * (Com migração automática se o usuário possuir histórico anterior sem sessões)
+ */
+export async function loadChatSessions(userId?: string | null): Promise<ChatSession[]> {
+  const sessionsKey = getSessionsStorageKey(userId);
+
+  // 1. Tenta carregar do Firestore se autenticado
+  if (userId) {
+    try {
+      const docRef = doc(db, "users", userId, "ai_chat", "sessions");
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        if (Array.isArray(data?.sessions) && data.sessions.length > 0) {
+          try {
+            window.localStorage.setItem(sessionsKey, JSON.stringify(data.sessions));
+          } catch {
+            // Silencioso
+          }
+          return data.sessions as ChatSession[];
+        }
+      }
+    } catch (err) {
+      console.warn("Aviso ao carregar sessões de chat do Firestore:", err);
+    }
+  }
+
+  // 2. Tenta carregar do localStorage
+  try {
+    const raw = window.localStorage.getItem(sessionsKey);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed as ChatSession[];
+      }
+    }
+  } catch (err) {
+    console.warn("Falha ao ler sessões do localStorage:", err);
+  }
+
+  // 3. Migração automática: se não existem sessões, mas há histórico legado único, migra para a primeira sessão
+  try {
+    const legacyHistory = await loadChatHistory(userId);
+    if (legacyHistory.length > 0) {
+      const firstUserMsg = legacyHistory.find((m) => m.role === "user");
+      const derivedTitle = firstUserMsg
+        ? firstUserMsg.content.length > 35
+          ? firstUserMsg.content.slice(0, 32) + "..."
+          : firstUserMsg.content
+        : "Conversa Anterior";
+
+      const initialSession: ChatSession = {
+        id: `chat_${Date.now()}`,
+        title: derivedTitle,
+        createdAt: legacyHistory[0]?.timestamp || new Date().toISOString(),
+        updatedAt: legacyHistory[legacyHistory.length - 1]?.timestamp || new Date().toISOString(),
+        messages: legacyHistory,
+      };
+
+      const migrated = [initialSession];
+      await saveChatSessions(migrated, userId);
+      return migrated;
+    }
+  } catch {
+    // Silencioso em caso de falha de migração
+  }
+
+  return [];
+}
+
+/**
+ * Salva a lista de sessões de chat
+ */
+export async function saveChatSessions(
+  sessions: ChatSession[],
+  userId?: string | null
+): Promise<void> {
+  const sessionsKey = getSessionsStorageKey(userId);
+
+  // Mantém no máximo 30 conversas para economizar espaço
+  const trimmed = sessions.slice(0, 30);
+
+  // 1. Salva localmente
+  try {
+    window.localStorage.setItem(sessionsKey, JSON.stringify(trimmed));
+  } catch (err) {
+    console.warn("Falha ao salvar sessões no localStorage:", err);
+  }
+
+  // 2. Se houver mensagens na sessão ativa, sincroniza também com o histórico legado
+  if (trimmed.length > 0 && trimmed[0].messages.length > 0) {
+    try {
+      await saveChatHistory(trimmed[0].messages, userId);
+    } catch {
+      // Silencioso
+    }
+  }
+
+  // 3. Salva no Firestore
+  if (userId) {
+    try {
+      const docRef = doc(db, "users", userId, "ai_chat", "sessions");
+      await setDoc(
+        docRef,
+        {
+          sessions: trimmed,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+    } catch (err) {
+      console.warn("Falha ao salvar sessões no Firestore:", err);
+    }
+  }
+}
+
+/**
+ * Remove uma sessão de conversa por ID
+ */
+export async function deleteChatSession(
+  sessionId: string,
+  userId?: string | null
+): Promise<ChatSession[]> {
+  const current = await loadChatSessions(userId);
+  const updated = current.filter((s) => s.id !== sessionId);
+  await saveChatSessions(updated, userId);
+  return updated;
 }
 
 function getDiagnosisStorageKey(userId?: string | null): string {

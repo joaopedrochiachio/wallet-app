@@ -15,6 +15,7 @@ import type { TransactionUpdateInput } from "@/lib/services/transactionsService"
 import { formatAccountLabel, matchesLedgerCard } from "@/lib/utils/ledger";
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "./AddTransactionSheet";
 import { AppleConfirmModal } from "./AppleConfirmModal";
+import { Portal } from "./Portal";
 import { sanitizeTextInput, validateCurrency } from "@/lib/utils/security";
 
 interface TransactionDetailsSheetProps {
@@ -168,17 +169,18 @@ export function TransactionDetailsSheet({
 
   return (
     <>
-      <div className="fixed inset-0 z-[100] flex items-end justify-center sm:items-center sm:p-4">
-        {/* Backdrop com Blur Suave */}
-        <button
-          type="button"
-          className="fixed inset-0 bg-black/40 backdrop-blur-sm animate-apple-backdrop"
-          onClick={onClose}
-          aria-label="Fechar detalhes"
-        />
+      <Portal>
+        <div className="fixed inset-0 z-[100] flex items-end justify-center sm:items-center sm:p-4">
+          {/* Backdrop com Blur Suave */}
+          <button
+            type="button"
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm animate-apple-backdrop"
+            onClick={onClose}
+            aria-label="Fechar detalhes"
+          />
 
-        {/* Sheet / Modal Estilo macOS/iOS */}
-        <div className="relative z-10 max-h-[90dvh] sm:max-h-[85vh] w-full max-w-[480px] overflow-y-auto rounded-t-[28px] sm:rounded-[28px] bg-white shadow-[0_20px_60px_rgba(0,0,0,0.15)] animate-apple-sheet sm:animate-apple-modal border border-black/[0.04] pb-safe touch-scroll">
+          {/* Sheet / Modal Estilo macOS/iOS */}
+          <div className="relative z-10 max-h-[90dvh] sm:max-h-[85vh] w-full max-w-[480px] overflow-y-auto rounded-t-[28px] sm:rounded-[28px] bg-white shadow-[0_20px_60px_rgba(0,0,0,0.15)] animate-apple-sheet sm:animate-apple-modal border border-black/[0.04] pb-8 pb-safe touch-scroll">
           {/* Pílula no Mobile */}
           <div className="mx-auto mt-2.5 h-1 w-10 rounded-full bg-[#D1D1D6] sm:hidden" />
 
@@ -450,6 +452,7 @@ export function TransactionDetailsSheet({
           </form>
         </div>
       </div>
+      </Portal>
 
       <AppleConfirmModal
         isOpen={isSaveConfirmOpen}
