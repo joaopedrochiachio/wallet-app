@@ -22,6 +22,7 @@ import {
   Tv,
   Utensils,
   ArrowDownLeft,
+  Target,
 } from "lucide-react";
 
 interface DayGroup {
@@ -117,6 +118,9 @@ function getTransactionIcon(category: string, type: "despesa" | "receita") {
   }
   if (cat.includes("cartão")) {
     return <CreditCard strokeWidth={1.5} size={15} />;
+  }
+  if (cat.includes("meta") || cat.includes("investimento") || cat.includes("reserva")) {
+    return <Target strokeWidth={1.5} size={15} />;
   }
   return <ShoppingBag strokeWidth={1.5} size={15} />;
 }

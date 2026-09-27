@@ -183,7 +183,33 @@ interface WalletContextType {
     targetMonth: number
   ) => Promise<void>;
   getMonthlyProjection: (monthIndex: number, customMonths?: PlanningMonth[]) => MonthProjection;
-  addGoal: (goal: Omit<GoalItem, "id">) => GoalItem;
+  addGoal: (
+    goal: Omit<GoalItem, "id">,
+    source?: {
+      type: "account" | "already_saved";
+      cardId?: string | null;
+      accountName?: string;
+    }
+  ) => GoalItem;
+  contributeToGoal: (
+    goalId: string,
+    amount: number,
+    source: {
+      type: "account" | "already_saved";
+      cardId?: string | null;
+      accountName?: string;
+    }
+  ) => Promise<void>;
+  withdrawFromGoal: (
+    goalId: string,
+    amount: number,
+    destination: {
+      type: "account" | "already_withdrawn";
+      cardId?: string | null;
+      accountName?: string;
+    }
+  ) => Promise<void>;
+  updateGoal: (goalId: string, updates: Partial<GoalItem>) => void;
   updateGoalProgress: (goalId: string, amountToAdd: number) => void;
   deleteGoal: (goalId: string) => void;
 }
@@ -762,7 +788,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     await unrealizePlannedOccurrence(user.uid, item.id, periodKey);
   };
 
-  const addGoal = (goalInput: Omit<GoalItem, "id">): GoalItem => {
+  const addGoal = (
+    goalInput: Omit<GoalItem, "id">,
+    source?: {
+      type: "account" | "already_saved";
+      cardId?: string | null;
+      accountName?: string;
+    }
+  ): GoalItem => {
     const newGoal: GoalItem = {
       ...goalInput,
       id: `goal-${Date.now()}`,
@@ -773,14 +806,128 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         console.error("Erro ao salvar meta no Firestore:", e)
       );
     }
+
+    if (source?.type === "account" && newGoal.current > 0 && user) {
+      const now = new Date();
+      const formattedDate = `${now.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}, ${now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+      void addTransaction({
+        title: `Aporte inicial: ${newGoal.title}`,
+        amount: newGoal.current,
+        type: "despesa",
+        category: "Investimentos & Metas",
+        account: source.accountName || "Débito/Pix",
+        cardId: source.cardId || null,
+        date: formattedDate,
+        occurredAt: now,
+      });
+    }
+
     return newGoal;
+  };
+
+  const contributeToGoal = async (
+    goalId: string,
+    amount: number,
+    source: {
+      type: "account" | "already_saved";
+      cardId?: string | null;
+      accountName?: string;
+    }
+  ) => {
+    const targetGoal = goals.find((g) => g.id === goalId);
+    if (!targetGoal) return;
+
+    const nextCurrent = targetGoal.current + amount;
+    const updated = { ...targetGoal, current: nextCurrent };
+
+    setGoals((prev) => prev.map((g) => (g.id === goalId ? updated : g)));
+
+    if (user) {
+      await saveGoalToFirestore(user.uid, updated).catch((e) =>
+        console.error("Erro ao atualizar meta no Firestore:", e)
+      );
+    }
+
+    if (source.type === "account" && amount > 0 && user) {
+      const now = new Date();
+      const formattedDate = `${now.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}, ${now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+      await addTransaction({
+        title: `Aporte: ${targetGoal.title}`,
+        amount,
+        type: "despesa",
+        category: "Investimentos & Metas",
+        account: source.accountName || "Débito/Pix",
+        cardId: source.cardId || null,
+        date: formattedDate,
+        occurredAt: now,
+      });
+    }
+  };
+
+  const withdrawFromGoal = async (
+    goalId: string,
+    amount: number,
+    destination: {
+      type: "account" | "already_withdrawn";
+      cardId?: string | null;
+      accountName?: string;
+    }
+  ) => {
+    const targetGoal = goals.find((g) => g.id === goalId);
+    if (!targetGoal) return;
+
+    const actualAmount = Math.min(targetGoal.current, amount);
+    if (actualAmount <= 0) return;
+
+    const nextCurrent = Math.max(0, targetGoal.current - actualAmount);
+    const updated = { ...targetGoal, current: nextCurrent };
+
+    setGoals((prev) => prev.map((g) => (g.id === goalId ? updated : g)));
+
+    if (user) {
+      await saveGoalToFirestore(user.uid, updated).catch((e) =>
+        console.error("Erro ao atualizar meta no Firestore:", e)
+      );
+    }
+
+    if (destination.type === "account" && user) {
+      const now = new Date();
+      const formattedDate = `${now.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}, ${now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+      await addTransaction({
+        title: `Resgate: ${targetGoal.title}`,
+        amount: actualAmount,
+        type: "receita",
+        category: "Investimentos & Metas",
+        account: destination.accountName || "Débito/Pix",
+        cardId: destination.cardId || null,
+        date: formattedDate,
+        occurredAt: now,
+      });
+    }
+  };
+
+  const updateGoal = (goalId: string, updates: Partial<GoalItem>) => {
+    setGoals((prev) =>
+      prev.map((g) => {
+        if (g.id === goalId) {
+          const updated = { ...g, ...updates };
+          if (user) {
+            saveGoalToFirestore(user.uid, updated).catch((e) =>
+              console.error("Erro ao atualizar meta no Firestore:", e)
+            );
+          }
+          return updated;
+        }
+        return g;
+      })
+    );
   };
 
   const updateGoalProgress = (goalId: string, amountToAdd: number) => {
     setGoals((prev) =>
       prev.map((g) => {
         if (g.id === goalId) {
-          const updated = { ...g, current: Math.min(g.target, g.current + amountToAdd) };
+          const updated = { ...g, current: Math.max(0, g.current + amountToAdd) };
           if (user) {
             saveGoalToFirestore(user.uid, updated).catch((e) =>
               console.error("Erro ao atualizar meta no Firestore:", e)
@@ -1030,6 +1177,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         unrealizeRecurringItem,
         getMonthlyProjection,
         addGoal,
+        contributeToGoal,
+        withdrawFromGoal,
+        updateGoal,
         updateGoalProgress,
         deleteGoal,
       }}

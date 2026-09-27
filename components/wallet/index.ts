@@ -10,3 +10,4 @@ export * from "./WalletHeader";
 export * from "./WalletActions";
 export * from "./CardBrandLogo";
 export * from "./CardEMVChip";
+export * from "./MiniCard";

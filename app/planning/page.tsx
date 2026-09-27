@@ -19,6 +19,7 @@ import {
 import { AppleConfirmModal } from "@/components/ui/AppleConfirmModal";
 import { AppleScopeModal } from "@/components/ui/AppleScopeModal";
 import { MonthlyMovementOverview } from "@/components/planning/MonthlyMovementOverview";
+import { MiniCard } from "@/components/wallet";
 import {
   get5thBusinessDay,
   getEffectiveDueDay,
@@ -1154,6 +1155,7 @@ export default function PlanningPage() {
             ) : (
               <div className="grid grid-cols-1 gap-3.5">
                 {projection.cardInvoices.map((ci) => {
+                  const matchingCard = cards.find((c) => c.id === ci.cardId);
                   const hasInstallments = ci.installmentsAmount > 0;
                   const hasRecurring = ci.recurringAmount > 0;
                   const isEmpty = !hasInstallments && !hasRecurring && ci.totalInvoice === 0;
@@ -1166,12 +1168,11 @@ export default function PlanningPage() {
                       {/* Topo do Cartão Específico */}
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                         <div className="flex items-center gap-3">
-                          <div
-                            className="w-8 h-8 rounded-xl flex items-center justify-center text-white shrink-0 shadow-2xs"
-                            style={{ backgroundColor: ci.cardColor || "#1D1D1F" }}
-                          >
-                            <CreditCard size={15} strokeWidth={2} />
-                          </div>
+                          <MiniCard
+                            cardName={ci.cardName}
+                            brand={matchingCard?.brand}
+                            colorScheme={matchingCard?.colorScheme}
+                          />
                           <div>
                             <div className="flex items-center gap-2">
                               <h5 className="text-sm font-semibold text-[#1D1D1F]">

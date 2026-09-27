@@ -49,6 +49,7 @@ export const EXPENSE_CATEGORIES = [
   "Saúde & Farmácia",
   "Compras & Roupas",
   "Educação",
+  "Investimentos & Metas",
   "Outros",
 ];
 
@@ -56,6 +57,7 @@ export const INCOME_CATEGORIES = [
   "Salário / Pró-labore",
   "Freelance & Projetos",
   "Rendimentos & Dividendos",
+  "Resgate de Metas & Investimentos",
   "Venda & Desapego",
   "Reembolso & Cashback",
   "Bônus & 13º",

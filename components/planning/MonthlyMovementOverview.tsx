@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo, useRef } from "react";
 import {
   ArrowDownLeft,
   ArrowUpRight,
   Building2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   CreditCard,
   Search,
   X,
@@ -52,6 +54,9 @@ export function MonthlyMovementOverview({
   const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>("all");
   const [directionFilter, setDirectionFilter] = useState<DirectionFilter>("all");
   const [search, setSearch] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const sectionRef = useRef<HTMLElement>(null);
+  const PAGE_SIZE = 10;
 
   const isCreditTransaction = (transaction: TransactionItem) =>
     cards.some(
@@ -80,6 +85,33 @@ export function MonthlyMovementOverview({
 
     return matchesPayment && matchesDirection && matchesSearch;
   });
+
+  // Cálculos de paginação de 10 em 10
+  const totalPages = Math.max(1, Math.ceil(filteredTransactions.length / PAGE_SIZE));
+  const validCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+  const startIndex = (validCurrentPage - 1) * PAGE_SIZE;
+  const endIndex = Math.min(startIndex + PAGE_SIZE, filteredTransactions.length);
+  const paginatedTransactions = filteredTransactions.slice(startIndex, endIndex);
+
+  const handlePageChange = (newPage: number) => {
+    setCurrentPage(newPage);
+    sectionRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  };
+
+  const handlePaymentFilterChange = (filter: PaymentFilter) => {
+    setPaymentFilter(filter);
+    setCurrentPage(1);
+  };
+
+  const handleDirectionFilterChange = (filter: DirectionFilter) => {
+    setDirectionFilter(filter);
+    setCurrentPage(1);
+  };
+
+  const handleSearchChange = (query: string) => {
+    setSearch(query);
+    setCurrentPage(1);
+  };
 
   const filteredIncome = filteredTransactions
     .filter((transaction) => transaction.type === "receita")
@@ -115,6 +147,7 @@ export function MonthlyMovementOverview({
     setPaymentFilter("all");
     setDirectionFilter("all");
     setSearch("");
+    setCurrentPage(1);
   };
 
   const paymentOptions: Array<{
@@ -136,7 +169,7 @@ export function MonthlyMovementOverview({
   ];
 
   return (
-    <section className="space-y-3 pt-2" data-testid="monthly-movement-overview">
+    <section ref={sectionRef} className="space-y-3 pt-2" data-testid="monthly-movement-overview">
       {/* 1. Header Editorial da Seção */}
       <div className="flex flex-col gap-1 px-1 sm:flex-row sm:items-baseline sm:justify-between">
         <div>
@@ -149,7 +182,9 @@ export function MonthlyMovementOverview({
                 className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#E5E5EA]/70 text-[#86868B]"
                 aria-live="polite"
               >
-                {filteredTransactions.length === transactions.length
+                {filteredTransactions.length > PAGE_SIZE
+                  ? `Página ${validCurrentPage} de ${totalPages} · ${filteredTransactions.length} lançamentos`
+                  : filteredTransactions.length === transactions.length
                   ? `${transactions.length} ${transactions.length === 1 ? "lançamento" : "lançamentos"}`
                   : `${filteredTransactions.length} de ${transactions.length} lançamentos`}
               </span>
@@ -174,7 +209,7 @@ export function MonthlyMovementOverview({
               <button
                 key={option.id}
                 type="button"
-                onClick={() => setPaymentFilter(option.id)}
+                onClick={() => handlePaymentFilterChange(option.id)}
                 className={`flex h-7.5 items-center gap-1.5 rounded-[9px] px-3 text-xs transition-all select-none cursor-pointer ${
                   paymentFilter === option.id
                     ? "bg-white text-[#1D1D1F] shadow-[0_1px_3px_rgba(0,0,0,0.06)] font-semibold"
@@ -205,14 +240,14 @@ export function MonthlyMovementOverview({
               <input
                 type="search"
                 value={search}
-                onChange={(event) => setSearch(event.target.value)}
+                onChange={(event) => handleSearchChange(event.target.value)}
                 placeholder="Buscar lançamento..."
                 className="h-8.5 w-full rounded-xl border border-black/[0.05] bg-[#F2F2F7]/60 pl-8.5 pr-7 text-xs text-[#1D1D1F] outline-none transition-all placeholder:text-[#86868B] focus:bg-white focus:border-black/15 focus:ring-2 focus:ring-black/5"
               />
               {search && (
                 <button
                   type="button"
-                  onClick={() => setSearch("")}
+                  onClick={() => handleSearchChange("")}
                   className="absolute right-2 top-1/2 flex h-4.5 w-4.5 -translate-y-1/2 items-center justify-center rounded-full bg-black/10 text-[#86868B] hover:text-[#1D1D1F] transition-colors cursor-pointer"
                   aria-label="Limpar busca"
                 >
@@ -226,7 +261,7 @@ export function MonthlyMovementOverview({
               <select
                 value={directionFilter}
                 onChange={(event) =>
-                  setDirectionFilter(event.target.value as DirectionFilter)
+                  handleDirectionFilterChange(event.target.value as DirectionFilter)
                 }
                 className="h-8.5 appearance-none rounded-xl border border-black/[0.05] bg-[#F2F2F7]/60 pl-3.5 pr-8 text-xs font-medium text-[#1D1D1F] outline-none transition-all focus:bg-white focus:border-black/15 focus:ring-2 focus:ring-black/5 cursor-pointer"
                 aria-label="Filtrar entradas e saídas"
@@ -339,77 +374,151 @@ export function MonthlyMovementOverview({
             )}
           </div>
         ) : (
-          /* Lista com Ritmo Vertical Suave e Divisórias Delicadas */
-          <div className="divide-y divide-black/[0.035]">
-            {filteredTransactions.map((transaction) => {
-              const onCredit = isCreditTransaction(transaction);
-              const isIncome = transaction.type === "receita";
+          /* Lista com Ritmo Vertical Suave e Divisórias Delicadas (10 por página) */
+          <div>
+            <div className="divide-y divide-black/[0.035]">
+              {paginatedTransactions.map((transaction) => {
+                const onCredit = isCreditTransaction(transaction);
+                const isIncome = transaction.type === "receita";
 
-              return (
-                <div
-                  key={transaction.id}
-                  className="flex items-center justify-between gap-4 px-5 sm:px-6 py-3.5 sm:py-4 transition-colors hover:bg-black/[0.015]"
-                >
-                  <div className="flex min-w-0 items-center gap-3.5">
-                    {/* Ícone Discreto e Harmonioso */}
-                    <div
-                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
-                        isIncome
-                          ? "bg-emerald-50 text-emerald-600"
-                          : onCredit
-                          ? "bg-indigo-50/70 text-indigo-600"
-                          : "bg-[#F2F2F7] text-[#1D1D1F]/80"
-                      }`}
-                    >
-                      {isIncome ? (
-                        <ArrowDownLeft size={16} strokeWidth={1.75} />
-                      ) : onCredit ? (
-                        <CreditCard size={15} strokeWidth={1.75} />
-                      ) : (
-                        <ArrowUpRight size={16} strokeWidth={1.75} />
-                      )}
-                    </div>
-
-                    {/* Título e Metadados Hierarquizados */}
-                    <div className="min-w-0 space-y-0.5">
-                      <h3 className="truncate text-sm font-medium text-[#1D1D1F] tracking-tight">
-                        {transaction.title}
-                      </h3>
-                      <div className="flex items-center gap-1.5 text-xs text-[#86868B] truncate">
-                        <span>
-                          {formatTransactionDate(
-                            transaction.date,
-                            transaction.occurredAt
-                          )}
-                        </span>
-                        <span className="text-black/20">·</span>
-                        <span>{formatAccountLabel(transaction.account)}</span>
-                        {transaction.category && (
-                          <>
-                            <span className="text-black/20">·</span>
-                            <span className="truncate">{transaction.category}</span>
-                          </>
+                return (
+                  <div
+                    key={transaction.id}
+                    className="flex items-center justify-between gap-4 px-5 sm:px-6 py-3.5 sm:py-4 transition-colors hover:bg-black/[0.015]"
+                  >
+                    <div className="flex min-w-0 items-center gap-3.5">
+                      {/* Ícone Discreto e Harmonioso */}
+                      <div
+                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
+                          isIncome
+                            ? "bg-emerald-50 text-emerald-600"
+                            : onCredit
+                            ? "bg-indigo-50/70 text-indigo-600"
+                            : "bg-[#F2F2F7] text-[#1D1D1F]/80"
+                        }`}
+                      >
+                        {isIncome ? (
+                          <ArrowDownLeft size={16} strokeWidth={1.75} />
+                        ) : onCredit ? (
+                          <CreditCard size={15} strokeWidth={1.75} />
+                        ) : (
+                          <ArrowUpRight size={16} strokeWidth={1.75} />
                         )}
                       </div>
+
+                      {/* Título e Metadados Hierarquizados */}
+                      <div className="min-w-0 space-y-0.5">
+                        <h3 className="truncate text-sm font-medium text-[#1D1D1F] tracking-tight">
+                          {transaction.title}
+                        </h3>
+                        <div className="flex items-center gap-1.5 text-xs text-[#86868B] truncate">
+                          <span>
+                            {formatTransactionDate(
+                              transaction.date,
+                              transaction.occurredAt
+                            )}
+                          </span>
+                          <span className="text-black/20">·</span>
+                          <span>{formatAccountLabel(transaction.account)}</span>
+                          {transaction.category && (
+                            <>
+                              <span className="text-black/20">·</span>
+                              <span className="truncate">{transaction.category}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Valor Alinhado à Direita com Sinalização Elegante */}
+                    <div className="text-right shrink-0">
+                      <span
+                        className={`text-sm sm:text-base font-semibold tracking-tight block ${
+                          isIncome ? "text-emerald-600" : "text-[#1D1D1F]"
+                        }`}
+                      >
+                        {isIncome ? "+ " : "− "}R$ {formatCurrency(transaction.amount)}
+                      </span>
+                      <span className="text-[10px] text-[#86868B] font-normal block">
+                        {isIncome ? "Entrada" : onCredit ? "Fatura" : "Débito"}
+                      </span>
                     </div>
                   </div>
+                );
+              })}
+            </div>
 
-                  {/* Valor Alinhado à Direita com Sinalização Elegante */}
-                  <div className="text-right shrink-0">
-                    <span
-                      className={`text-sm sm:text-base font-semibold tracking-tight block ${
-                        isIncome ? "text-emerald-600" : "text-[#1D1D1F]"
-                      }`}
-                    >
-                      {isIncome ? "+ " : "− "}R$ {formatCurrency(transaction.amount)}
-                    </span>
-                    <span className="text-[10px] text-[#86868B] font-normal block">
-                      {isIncome ? "Entrada" : onCredit ? "Fatura" : "Débito"}
-                    </span>
+            {/* Paginação de 10 em 10 */}
+            {filteredTransactions.length > PAGE_SIZE && (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-5 sm:px-6 py-3.5 border-t border-black/[0.04] bg-[#FAFAFC]/70">
+                <span className="text-xs text-[#86868B] font-medium">
+                  Mostrando <strong className="text-[#1D1D1F] font-semibold">{startIndex + 1}–{endIndex}</strong> de <strong className="text-[#1D1D1F] font-semibold">{filteredTransactions.length}</strong> lançamentos
+                </span>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handlePageChange(Math.max(1, validCurrentPage - 1))}
+                    disabled={validCurrentPage === 1}
+                    className="px-3 py-1.5 rounded-xl text-xs font-semibold border border-black/[0.06] bg-white text-[#1D1D1F] hover:bg-black/[0.03] active:scale-[0.98] transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer shadow-2xs flex items-center gap-1"
+                  >
+                    <ChevronLeft size={14} />
+                    <span>Anterior</span>
+                  </button>
+
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => {
+                      if (
+                        totalPages > 7 &&
+                        pageNum !== 1 &&
+                        pageNum !== totalPages &&
+                        Math.abs(pageNum - validCurrentPage) > 1
+                      ) {
+                        if (pageNum === 2 && validCurrentPage > 3)
+                          return (
+                            <span key={pageNum} className="text-xs text-[#86868B] px-1">
+                              ...
+                            </span>
+                          );
+                        if (pageNum === totalPages - 1 && validCurrentPage < totalPages - 2)
+                          return (
+                            <span key={pageNum} className="text-xs text-[#86868B] px-1">
+                              ...
+                            </span>
+                          );
+                        return null;
+                      }
+
+                      const isActive = pageNum === validCurrentPage;
+                      return (
+                        <button
+                          key={pageNum}
+                          type="button"
+                          onClick={() => handlePageChange(pageNum)}
+                          className={`w-7.5 h-7.5 rounded-xl text-xs font-semibold transition-all flex items-center justify-center cursor-pointer ${
+                            isActive
+                              ? "bg-[#1D1D1F] text-white shadow-2xs"
+                              : "bg-white border border-black/[0.06] text-[#86868B] hover:text-[#1D1D1F] hover:bg-black/[0.03]"
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    })}
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handlePageChange(Math.min(totalPages, validCurrentPage + 1))}
+                    disabled={validCurrentPage === totalPages}
+                    className="px-3 py-1.5 rounded-xl text-xs font-semibold border border-black/[0.06] bg-white text-[#1D1D1F] hover:bg-black/[0.03] active:scale-[0.98] transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer shadow-2xs flex items-center gap-1"
+                  >
+                    <span>Próxima</span>
+                    <ChevronRight size={14} />
+                  </button>
                 </div>
-              );
-            })}
+              </div>
+            )}
           </div>
         )}
       </div>
