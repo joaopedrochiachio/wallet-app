@@ -209,7 +209,7 @@ export async function savePersistentDiagnosis(
       await setDoc(diagDocRef, {
         diagnosis: cleanDiagnosis,
         timestamp: meta.timestamp,
-        modelUsed: meta.modelUsed || "gemini-3.6-flash",
+        modelUsed: meta.modelUsed || "gpt-6-luna",
       });
     } catch (err) {
       console.warn("Falha ao persistir diagnóstico no Firestore:", err);

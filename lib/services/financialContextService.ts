@@ -589,7 +589,7 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
     const debitAdd = isCredit ? 0 : amount;
 
     // Encontra cluster compatível dinamicamente
-    let matched = clusters.find((c) => {
+    const matched = clusters.find((c) => {
       // 1. Chave compacta idêntica (ex: "mcdonalds" vs "mc donalds")
       if (c.compactKey === compact) return true;
       // 2. Chave compacta inicia com a outra (comprimento >= 4)

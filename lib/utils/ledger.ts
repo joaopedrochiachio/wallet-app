@@ -111,7 +111,7 @@ export function calculateCreditInvoice(
       if (item.excludedPeriods?.includes(openPeriodKey) || item.overrides?.[openPeriodKey]?.isDeleted) continue;
 
       const isRealizedInPeriod = Boolean(item.realizedPeriods?.includes(openPeriodKey));
-      const isAlreadyInTransactions = entries.some((t: any) =>
+      const isAlreadyInTransactions = entries.some((t: LedgerEntry & { recurringItemId?: string; kind?: string; relatedCardId?: string }) =>
         t.recurringItemId === item.id && (
           t.periodKey === openPeriodKey ||
           (calculateInvoiceSchedule(card, [t], referenceDate)[openPeriodKey] || 0) > 0
@@ -126,7 +126,7 @@ export function calculateCreditInvoice(
 
   // 4. Pagamentos de fatura da conta corrente já efetuados nesta competência
   const paidAmount = entries
-    .filter((t: any) =>
+    .filter((t: LedgerEntry & { recurringItemId?: string; kind?: string; relatedCardId?: string }) =>
       t.type === "despesa" &&
       t.kind === "invoice_payment" &&
       (t.relatedCardId === card.id || matchesLedgerCard(card, t.account, t.cardId)) &&

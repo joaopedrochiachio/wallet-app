@@ -25,7 +25,7 @@ function renderInlineContent(text: string): React.ReactNode[] {
   if (!text) return [];
 
   // Remove any loose triple dashes or raw hash markers from inline text
-  let cleaned = text.replace(/^#+\s*/g, "");
+  const cleaned = text.replace(/^#+\s*/g, "");
 
   // Regex to split by bold: **something**
   const boldRegex = /\*\*(.+?)\*\*/g;
@@ -147,7 +147,7 @@ function parseMessageIntoBlocks(content: string): ParsedBlock[] {
     const headingMatch = rawLine.match(/^(#{1,3})\s+(.+)$/);
     if (headingMatch) {
       const level = headingMatch[1].length;
-      let title = headingMatch[2].replace(/:$/, "").replace(/\*\*/g, "").trim();
+      const title = headingMatch[2].replace(/:$/, "").replace(/\*\*/g, "").trim();
       blocks.push({ type: "heading", title, level });
       i++;
       continue;

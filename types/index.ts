@@ -88,7 +88,7 @@ export interface RecurringOverride {
   dueDay?: number;
   recurrenceType?: RecurrenceType;
   isDeleted?: boolean;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface RecurringItem {

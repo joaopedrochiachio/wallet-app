@@ -34,15 +34,16 @@ export default function LoginPage() {
   const [acceptedLgpdTerms, setAcceptedLgpdTerms] = useState(false);
   const [isLgpdModalOpen, setIsLgpdModalOpen] = useState(false);
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
-  const [failedAttempts, setFailedAttempts] = useState(0);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  useEffect(() => {
+  const [failedAttempts, setFailedAttempts] = useState(() => {
     if (typeof window !== "undefined") {
       const saved = parseInt(sessionStorage.getItem("wallet_login_failed_attempts") || "0", 10);
-      if (!isNaN(saved)) setFailedAttempts(saved);
+      return !isNaN(saved) ? saved : 0;
     }
-  }, []);
+    return 0;
+  });
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const activeError = error || authError;
 
   // Timer de resfriamento regressivo para mitigar ataques de força bruta
   useEffect(() => {
@@ -64,13 +65,6 @@ export default function LoginPage() {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
   }, []);
-
-  // Sincroniza erro de autenticação/redirect do contexto
-  useEffect(() => {
-    if (authError) {
-      setError(authError);
-    }
-  }, [authError]);
 
   // Navega para o destino correto com fallback imediato se o router do Next.js engasgar em mobile/PWA
   const navigateToAuthenticatedApp = async (uid: string) => {
@@ -438,9 +432,9 @@ export default function LoginPage() {
         )}
 
         {/* Mensagem de Erro Estilo Alerta iOS */}
-        {error && (
+        {activeError && (
           <div className="bg-red-50 text-red-600 border border-red-200/60 rounded-xl px-4 py-2.5 text-xs font-medium animate-in fade-in duration-200">
-            {error}
+            {activeError}
           </div>
         )}
 

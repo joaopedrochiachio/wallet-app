@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { callGeminiCascade } from "@/lib/services/geminiService";
+import { callOpenAIResponses } from "@/lib/services/openaiService";
+import { SPENDING_PATTERNS_JSON_SCHEMA } from "@/lib/services/agentManagerService";
 import {
   synthesizeFinancialTelemetry,
   createSafeFinancialContext,
@@ -8,19 +9,14 @@ import {
 } from "@/lib/services/financialContextService";
 import { SpecificExpenseAlert } from "@/app/api/ai/analyze/route";
 import { verifyServerAuth } from "@/lib/auth/serverAuth";
-import { checkRateLimit } from "@/lib/utils/rateLimiter";
+import {
+  reserveAIQuota,
+  reconcileAIQuota,
+  recordAICallLog,
+} from "@/lib/services/aiUsageService";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
-
-// Cascata otimizada com modelos mais rápidos e baratos para extração de padrões
-const FAST_PATTERNS_MODELS = [
-  "gemini-3.5-flash-lite",
-  "gemini-3.1-flash-lite",
-  "gemini-2.5-flash-lite",
-  "gemini-3.5-flash",
-  "gemini-3.6-flash",
-] as const;
 
 function isDismissedPattern(
   itemName: string,
@@ -63,29 +59,12 @@ function sanitizeText(str: string): string {
 
 export async function POST(req: NextRequest) {
   try {
+    // 1. Autenticação estrita do servidor
     const authResult = await verifyServerAuth(req);
     if ("errorResponse" in authResult) {
       return authResult.errorResponse;
     }
-
-    // Rate Limiting (máx 10 solicitações de padrões por minuto por usuário)
-    const rateLimit = checkRateLimit(`ai-patterns:${authResult.user.uid}`, 10, 60000);
-    if (!rateLimit.allowed) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Muitas consultas em sequência. Aguarde ${rateLimit.retryAfterSec} segundos antes de buscar novos padrões.`,
-        },
-        {
-          status: 429,
-          headers: {
-            "Retry-After": String(rateLimit.retryAfterSec),
-            "X-RateLimit-Limit": String(rateLimit.limit),
-            "X-RateLimit-Remaining": "0",
-          },
-        }
-      );
-    }
+    const userId = authResult.user.uid;
 
     const body = await req.json();
     const {
@@ -103,6 +82,7 @@ export async function POST(req: NextRequest) {
       ? dismissedPatterns.map((s) => String(s).trim()).filter(Boolean)
       : [];
 
+    // 2. Cálculo determinístico em TypeScript antes de qualquer envio à IA
     const telemetry = synthesizeFinancialTelemetry({
       userProfile,
       cards: safeCards,
@@ -132,219 +112,257 @@ export async function POST(req: NextRequest) {
         !isDismissedPattern(h.habitName, undefined, safeDismissed)
     );
 
+    // Se NÃO existirem transações elegíveis repetidas (count >= 2), não inventa padrões nem gasta tokens
+    if (availableSpends.length === 0 && availableHabits.length === 0) {
+      return NextResponse.json({
+        success: true,
+        patterns: [],
+        modelUsed: "motor-contabil-local",
+        durationMs: 0,
+      });
+    }
+
+    // 3. Reserva Atômica de Cota Persistente (máx 4 buscas de padrões/dia e 20/mês)
+    const quotaReservation = await reserveAIQuota({
+      uid: userId,
+      route: "patterns",
+    });
+
+    if (!quotaReservation.allowed || !quotaReservation.reservation) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: quotaReservation.error || "Limite de busca de padrões adicionais atingido.",
+          code: quotaReservation.errorCode || "AI_QUOTA_EXCEEDED",
+        },
+        {
+          status: 429,
+          headers: quotaReservation.retryAfterSec
+            ? { "Retry-After": String(quotaReservation.retryAfterSec) }
+            : {},
+        }
+      );
+    }
+
+    const { reservation } = quotaReservation;
+
     const systemPrompt = `Você é um Analista de Inteligência Financeira e Detecção de Hábitos de Consumo.
-Sua única responsabilidade é identificar PADRÕES DE CONSUMO e HÁBITOS DE ESTILO DE VIDA repetitivos nos lançamentos do usuário.
+Sua responsabilidade é redigir explicações claras e empáticas sobre os padrões pré-computados fornecidos.
 
-REGRAS RÍGIDAS DE ELEGIBILIDADE:
+REGRAS RÍGIDAS DE ELEGIBILIDADE E INTEGRIDADE:
 1. REPETIÇÃO OBRIGATÓRIA (count >= 2):
-   - Um padrão EXIGE no MÍNIMO 2 compras reais no mesmo estabelecimento ou mesmo tipo de gasto.
-   - NUNCA reporte compras isoladas (1 compra), cursos/mensalidades (ex: "Inglês"), notas manuais com múltiplas despesas somadas (ex: "Gastos (Inatel...)").
-2. NÃO CONFUNDA TRANSAÇÕES BANCÁRIAS/AJUSTES COM HÁBITOS:
-   - Faturas de cartão de crédito ("Fatura Santander", "Fatura Nubank"), ajustes de saldo, transferências e rifas/sorteios NUNCA são hábitos de consumo. É ESTRITAMENTE PROIBIDO incluí-los.
-3. PADRONIZAÇÃO COMPORTAMENTAL:
-   - Identifique categorias como: "Sobremesas & Doces" (sorvete, docerias, Chiquinho), "Lanches & Fast Food" (McDonald's, hamburguerias, pipoca), "Cafés & Cantinas", "Restaurantes & Delivery" (iFood, almoço), "Telefonia & Internet" (Vivo Easy, recargas), "Transporte & Mobilidade" (Uber, 99, combustível).
-   - "Vivo Easy" é 'Telefonia & Internet', NUNCA delivery nem restaurantes.
-4. PADRÕES DESCARTADOS PELO USUÁRIO:
-   ${safeDismissed.length > 0 ? `- O usuário descartou os seguintes padrões: ${JSON.stringify(safeDismissed)}. NÃO gere nenhum alerta para estes itens.` : "- Nenhum padrão descartado previamente."}
-5. ZERO ALUCINAÇÃO:
-   - Se os lançamentos não mostrarem padrões repetitivos elegíveis, retorne {"patterns": []}. Não invente dados fictícios.`;
+   - Nunca crie padrões para compras isoladas (1 compra), cursos/mensalidades (ex: "Inglês"), notas manuais com múltiplas despesas somadas.
+2. TRANSAÇÕES OPERACIONAIS NUNCA SÃO HÁBITOS:
+   - Faturas de cartão, transferências e rifas/sorteios não são hábitos de estilo de vida.
+3. PADRÕES DESCARTADOS PELO USUÁRIO:
+   ${safeDismissed.length > 0 ? `- O usuário descartou os seguintes padrões: ${JSON.stringify(safeDismissed)}. NÃO gere alertas para estes itens.` : "- Nenhum padrão descartado previamente."}
+4. ZERO ALUCINAÇÃO:
+   - Use estritamente os fatos e contagens fornecidos nos dados. Não altere valores nem contagens.`;
 
-    const userPrompt = `Identifique padrões e hábitos de consumo recorrentes com base nos seguintes dados consolidados:
-
-CANDIDATOS RECORRENTES IDENTIFICADOS NO CAIXA:
+    const userPrompt = `Redija os alertas e mensagens para os seguintes candidatos de padrões reais apurados:
 ${JSON.stringify(
   {
     topSpendItems: availableSpends,
     lifestyleHabits: availableHabits,
-    recentExpenses: safeContext.recentExpenses.slice(0, 10),
   },
   null,
   2
-)}
+)}`;
 
-RESPONDA ESTRITAMENTE EM JSON no formato:
-{
-  "patterns": [
-    {
-      "item": "Nome do hábito ou estabelecimento (ex: Sobremesas & Doces ou McDonald's)",
-      "habitCategory": "Categoria padronizada",
-      "totalAmount": 120.50,
-      "count": 3,
-      "creditAmount": 80.00,
-      "debitAmount": 40.50,
-      "paymentBreakdown": "Crédito: R$ 80,00 | Débito: R$ 40,50",
-      "alertType": "info" | "warning" | "alert",
-      "message": "Você realizou 3 compras em ... somando R$ 120,50 (sendo R$ 80,00 no crédito e R$ 40,50 no débito)."
-    }
-  ]
-}
-
-IMPORTANTE: Apenas JSON válido sem texto adicional. Se não houver padrões com count >= 2, retorne "patterns": [].`;
-
-    const response = await callGeminiCascade({
-      systemPrompt,
-      prompt: userPrompt,
-      models: FAST_PATTERNS_MODELS,
-      temperature: 0.2,
-      jsonMode: true,
-      maxOutputTokens: 1500,
-      timeoutMs: 20000,
-    });
-
-    let candidate = response.text.trim();
-    if (candidate.startsWith("```json")) {
-      candidate = candidate.replace(/^```json\s*/i, "").replace(/```\s*$/i, "");
-    } else if (candidate.startsWith("```")) {
-      candidate = candidate.replace(/^```\s*/i, "").replace(/```\s*$/i, "");
-    }
-
-    const firstBrace = candidate.indexOf("{");
-    const lastBrace = candidate.lastIndexOf("}");
-    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-      candidate = candidate.slice(firstBrace, lastBrace + 1);
-    }
-
-    let parsed: Record<string, unknown> | null = null;
     try {
-      parsed = JSON.parse(candidate);
-    } catch {
-      console.warn("[AI_PATTERNS_PARSE_FAILED]", { errorCode: "INVALID_MODEL_JSON" });
-    }
+      const openAIResult = await callOpenAIResponses({
+        systemPrompt,
+        prompt: userPrompt,
+        reasoningEffort: "none",
+        maxOutputTokens: 1500,
+        jsonSchema: SPENDING_PATTERNS_JSON_SCHEMA,
+        timeoutMs: 20000,
+      });
 
-    const patterns: SpecificExpenseAlert[] = [];
-    const rawPatterns = parsed?.patterns || parsed?.specificExpensesAlerts || parsed?.gastosEspecificos;
+      // Reconciliação atômica da cota com base no consumo real
+      await reconcileAIQuota({
+        reservation,
+        success: true,
+        actualCostUsd: openAIResult.estimatedCostUsd,
+      });
 
-    if (Array.isArray(rawPatterns)) {
-      for (const item of rawPatterns) {
-        if (item && typeof item === "object") {
-          const obj = item as Record<string, unknown>;
-          const rawItemName = String(obj.item || "").trim();
-          if (!rawItemName) continue;
+      // Registro de observabilidade
+      void recordAICallLog({
+        requestId: openAIResult.requestId,
+        uid: userId,
+        route: "patterns",
+        model: openAIResult.modelUsed,
+        timestamp: new Date().toISOString(),
+        durationMs: openAIResult.durationMs,
+        success: true,
+        inputTokens: openAIResult.inputTokens,
+        outputTokens: openAIResult.outputTokens,
+        reasoningTokens: openAIResult.reasoningTokens,
+        estimatedCostUsd: openAIResult.estimatedCostUsd,
+        isCostEstimated: openAIResult.isCostEstimated,
+      });
 
-          // 1. Exclui transações operacionais, faturas e rifas
-          if (isExcludedFromHabitAnalysis(rawItemName)) continue;
+      // 4. Conferência rigorosa no servidor de cada contagem e valor retornado
+      let parsed: { patterns?: unknown[] } | null = null;
+      try {
+        parsed = JSON.parse(openAIResult.text);
+      } catch {
+        console.warn("[AI_PATTERNS_PARSE_FAILED] Não foi possível parsear resposta do modelo.");
+      }
 
-          const count = typeof obj.count === "number" ? obj.count : undefined;
-          // Padrão de consumo exige repetição real (mínimo de 2 compras)
-          if (count !== undefined && count < 2) continue;
-          if (/\(1\s*compra\)/i.test(rawItemName)) continue;
+      const patterns: SpecificExpenseAlert[] = [];
+      const rawPatterns = parsed?.patterns;
 
-          const refinedHabit = inferHabitCategory(rawItemName, String(obj.habitCategory || ""));
-          const habitCategory =
-            refinedHabit && refinedHabit !== "Outros Hábitos" && refinedHabit !== "Alimentação Geral"
-              ? refinedHabit
-              : typeof obj.habitCategory === "string" && obj.habitCategory.trim()
-              ? sanitizeText(obj.habitCategory)
-              : undefined;
+      // Cria índice de busca rápida sobre os dados reais calculados localmente
+      const realSpendsMap = new Map(
+        availableSpends.map((s) => [s.title.toLowerCase().trim(), s])
+      );
+      const realHabitsMap = new Map(
+        availableHabits.map((h) => [h.habitName.toLowerCase().trim(), h])
+      );
 
-          // Exclui padrões descartados
-          if (isDismissedPattern(rawItemName, habitCategory, safeDismissed)) continue;
+      if (Array.isArray(rawPatterns)) {
+        for (const item of rawPatterns) {
+          if (item && typeof item === "object") {
+            const obj = item as Record<string, unknown>;
+            const rawItemName = String(obj.item || "").trim();
+            if (!rawItemName) continue;
 
-          const totalAmount = typeof obj.totalAmount === "number" ? obj.totalAmount : 0;
-          const creditAmount = typeof obj.creditAmount === "number" ? obj.creditAmount : undefined;
-          const debitAmount = typeof obj.debitAmount === "number" ? obj.debitAmount : undefined;
+            if (isExcludedFromHabitAnalysis(rawItemName)) continue;
 
-          let paymentBreakdown =
-            typeof obj.paymentBreakdown === "string" && obj.paymentBreakdown.trim()
-              ? sanitizeText(obj.paymentBreakdown)
-              : undefined;
+            // Busca correspondência nos dados reais para garantir zero alucinação
+            const normName = rawItemName.toLowerCase().trim();
+            const matchedSpend = realSpendsMap.get(normName) ||
+              Array.from(realSpendsMap.values()).find((s) => s.title.toLowerCase().includes(normName) || normName.includes(s.title.toLowerCase()));
+            const matchedHabit = realHabitsMap.get(normName) ||
+              Array.from(realHabitsMap.values()).find((h) => h.habitName.toLowerCase().includes(normName) || normName.includes(h.habitName.toLowerCase()));
 
-          if (!paymentBreakdown && (creditAmount !== undefined || debitAmount !== undefined)) {
-            const c = creditAmount ?? 0;
-            const d = debitAmount ?? 0;
-            if (c > 0 && d > 0) {
-              paymentBreakdown = `Crédito: R$ ${c.toFixed(2)} | Débito: R$ ${d.toFixed(2)}`;
-            } else if (c > 0) {
-              paymentBreakdown = `100% no Crédito (R$ ${c.toFixed(2)})`;
-            } else if (d > 0) {
-              paymentBreakdown = `100% no Débito/PIX (R$ ${d.toFixed(2)})`;
+            // Se o modelo inventou um padrão que não existe nos dados reais, rejeita imediatamente!
+            if (!matchedSpend && !matchedHabit) {
+              continue;
             }
+
+            // Garante contagem e valores reais extraídos da base
+            const realCount = matchedSpend ? matchedSpend.count : matchedHabit!.count;
+            if (realCount < 2) continue;
+
+            const realTotal = matchedSpend ? matchedSpend.total : matchedHabit!.total;
+            const realCredit = matchedSpend ? (matchedSpend.creditAmount ?? 0) : matchedHabit!.creditAmount;
+            const realDebit = matchedSpend ? (matchedSpend.debitAmount ?? 0) : matchedHabit!.debitAmount;
+
+            const refinedHabit = inferHabitCategory(
+              rawItemName,
+              String(obj.habitCategory || (matchedSpend ? matchedSpend.habitCategory : matchedHabit!.habitName))
+            );
+            const habitCategory =
+              refinedHabit && refinedHabit !== "Outros Hábitos" && refinedHabit !== "Alimentação Geral"
+                ? refinedHabit
+                : undefined;
+
+            if (isDismissedPattern(rawItemName, habitCategory, safeDismissed)) continue;
+
+            let paymentBreakdown =
+              typeof obj.paymentBreakdown === "string" && obj.paymentBreakdown.trim()
+                ? sanitizeText(obj.paymentBreakdown)
+                : undefined;
+
+            if (!paymentBreakdown) {
+              if (realCredit > 0 && realDebit > 0) {
+                paymentBreakdown = `Crédito: R$ ${realCredit.toFixed(2)} | Débito: R$ ${realDebit.toFixed(2)}`;
+              } else if (realCredit > 0) {
+                paymentBreakdown = `100% no Crédito (R$ ${realCredit.toFixed(2)})`;
+              } else {
+                paymentBreakdown = `100% no Débito/PIX (R$ ${realDebit.toFixed(2)})`;
+              }
+            }
+
+            patterns.push({
+              item: matchedSpend ? matchedSpend.title : matchedHabit!.habitName,
+              totalAmount: realTotal,
+              count: realCount,
+              creditAmount: realCredit,
+              debitAmount: realDebit,
+              paymentBreakdown,
+              habitCategory,
+              alertType: (obj.alertType as "info" | "warning" | "alert") || "info",
+              message: sanitizeText(String(obj.message || "")) || `Identificamos ${realCount} compras totalizando R$ ${realTotal.toFixed(2)}.`,
+            });
           }
+        }
+      }
+
+      // Complementa com candidatos reais elegíveis não mencionados pela IA
+      const isPatternAlreadyCovered = (name: string) => {
+        const norm = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+        return patterns.some((p) => {
+          const pName = (p.item || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+          return pName === norm || pName.includes(norm) || norm.includes(pName);
+        });
+      };
+
+      for (const habit of availableHabits) {
+        if (!isPatternAlreadyCovered(habit.habitName)) {
+          const breakdown =
+            habit.creditAmount > 0 && habit.debitAmount > 0
+              ? `Crédito: R$ ${habit.creditAmount.toFixed(2)} | Débito: R$ ${habit.debitAmount.toFixed(2)}`
+              : habit.creditAmount > 0
+              ? `100% no Crédito (R$ ${habit.creditAmount.toFixed(2)})`
+              : `100% no Débito/PIX (R$ ${habit.debitAmount.toFixed(2)})`;
 
           patterns.push({
-            item: rawItemName,
-            totalAmount,
-            count,
-            creditAmount,
-            debitAmount,
-            paymentBreakdown,
-            habitCategory,
-            alertType: (obj.alertType as "info" | "warning" | "alert") || "info",
-            message: sanitizeText(String(obj.message || "")),
+            item: habit.habitName,
+            totalAmount: habit.total,
+            count: habit.count,
+            creditAmount: habit.creditAmount,
+            debitAmount: habit.debitAmount,
+            paymentBreakdown: breakdown,
+            habitCategory: habit.habitName,
+            alertType: habit.total > 200 || habit.count >= 4 ? "warning" : "info",
+            message: `Identificados ${habit.count} gastos com ${habit.habitName} somando R$ ${habit.total.toFixed(2)} (${breakdown}${habit.examples.length ? ` — ex: ${habit.examples.join(", ")}` : ""}).`,
           });
         }
       }
-    }
 
-    // Complementa com hábitos consolidados elegíveis (lifestyleHabits) e estabelecimentos recorrentes (topSpendItems)
-    const isPatternAlreadyCovered = (name: string, cat?: string) => {
-      const norm = (name || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-      const catNorm = (cat || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-      return patterns.some((p) => {
-        const pName = (p.item || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-        const pCat = (p.habitCategory || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-        return (
-          pName === norm ||
-          pName.includes(norm) ||
-          norm.includes(pName) ||
-          (catNorm && (pCat === catNorm || pCat.includes(catNorm) || catNorm.includes(pCat)))
-        );
+      for (const item of availableSpends) {
+        if (!isPatternAlreadyCovered(item.title)) {
+          patterns.push({
+            item: item.title,
+            totalAmount: item.total,
+            count: item.count,
+            creditAmount: item.creditAmount,
+            debitAmount: item.debitAmount,
+            paymentBreakdown: item.paymentBreakdown,
+            habitCategory: item.habitCategory,
+            alertType: item.percentage >= 10 || item.total > 150 ? "warning" : "info",
+            message: `Identificamos ${item.count} compra(s) em ${item.title} somando R$ ${item.total.toFixed(2)} (${item.paymentBreakdown || "À vista"}).`,
+          });
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        patterns,
+        modelUsed: openAIResult.modelUsed,
+        durationMs: openAIResult.durationMs,
       });
-    };
+    } catch {
+      await reconcileAIQuota({ reservation, success: false });
 
-    for (const habit of availableHabits) {
-      if (!isPatternAlreadyCovered(habit.habitName, habit.habitName)) {
-        const isHigh = habit.total > 200 || habit.count >= 4;
-        const breakdown =
-          habit.creditAmount > 0 && habit.debitAmount > 0
-            ? `Crédito: R$ ${habit.creditAmount.toFixed(2)} | Débito: R$ ${habit.debitAmount.toFixed(2)}`
-            : habit.creditAmount > 0
-            ? `100% no Crédito (R$ ${habit.creditAmount.toFixed(2)})`
-            : `100% no Débito/PIX (R$ ${habit.debitAmount.toFixed(2)})`;
-
-        patterns.push({
-          item: habit.habitName,
-          totalAmount: habit.total,
-          count: habit.count,
-          creditAmount: habit.creditAmount,
-          debitAmount: habit.debitAmount,
-          paymentBreakdown: breakdown,
-          habitCategory: habit.habitName,
-          alertType: isHigh ? "warning" : "info",
-          message: `Identificados ${habit.count} gastos com ${habit.habitName} somando R$ ${habit.total.toFixed(2)} (${breakdown}${habit.examples.length ? ` — ex: ${habit.examples.join(", ")}` : ""}).`,
-        });
-      }
+      console.error("[AI_PATTERNS_ERROR]", { errorCode: "AI_PATTERNS_FAILED" });
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Não foi possível buscar padrões adicionais no momento.",
+        },
+        { status: 500 }
+      );
     }
-
-    for (const item of availableSpends) {
-      if (!isPatternAlreadyCovered(item.title, item.habitCategory)) {
-        const isHigh = item.percentage >= 10 || item.total > 150;
-        patterns.push({
-          item: item.title,
-          totalAmount: item.total,
-          count: item.count,
-          creditAmount: item.creditAmount,
-          debitAmount: item.debitAmount,
-          paymentBreakdown: item.paymentBreakdown,
-          habitCategory: item.habitCategory,
-          alertType: isHigh ? "warning" : "info",
-          message: `Identificamos ${item.count} compra(s) em ${item.title} somando R$ ${item.total.toFixed(2)} (${item.paymentBreakdown || "À vista"}).`,
-        });
-      }
-    }
-
-    return NextResponse.json({
-      success: true,
-      patterns,
-      modelUsed: response.modelUsed,
-      durationMs: response.durationMs,
-    });
-  } catch {
-    console.error("[AI_PATTERNS_ERROR]", { errorCode: "AI_PATTERNS_FAILED" });
+  } catch (err: unknown) {
+    console.error("[AI_PATTERNS_CRITICAL_ERROR]", err);
     return NextResponse.json(
       {
         success: false,
-        error: "Não foi possível buscar padrões adicionais no momento.",
+        error: "Erro inesperado ao buscar padrões recorrentes.",
       },
       { status: 500 }
     );

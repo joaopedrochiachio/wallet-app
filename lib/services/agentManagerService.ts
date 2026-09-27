@@ -1,30 +1,31 @@
 /**
- * Serviço de Gerenciamento e Orquestração Multi-Agente (Agent Manager)
+ * Serviço de Gerenciamento e Orquestração do Analista Financeiro
  * 
- * Implementa uma arquitetura de 2 agentes especializados:
- * - AGENTE 1 (Auditor Contábil & Data Scout):
- *   Executa tarefas mais rápidas/leves com Gemini 2.5 Flash (triagem, extração de padrões,
- *   auditoria de transações, contagem de despesas e segregação crédito vs débito).
+ * Arquitetura Eficiente de Agente:
+ * - Etapa 1: Auditor Contábil Factual (Local e Determinístico)
+ *   Calcula e valida com precisão matemática em TypeScript totais, categorias,
+ *   recorrências, hábitos elegíveis e limites de caixa, gerando o AuditDossier sem custo de tokens.
  * 
- * - AGENTE 2 (Personal CFO & Estrategista Financeiro):
- *   Executa raciocínio complexo e pesado com Gemini 3.8 Flash / 3.7 Flash (síntese executiva,
- *   simulação de fluxo de caixa futuro, alinhamento com metas e resposta consultiva).
+ * - Etapa 2: Analista Executivo (OpenAI GPT-6 Luna)
+ *   Recebe os fatos consolidados e produz a síntese estratégica, respostas do chat
+ *   e diagnósticos de alto nível.
+ * 
+ * Uma única chamada ao modelo por interação para manter o controle orçamentário.
  */
 
 import {
-  callGeminiCascade,
-  FAST_AUDITOR_MODELS,
-  HEAVY_STRATEGIC_MODELS,
-} from "./geminiService.ts";
-import type { GeminiChatMessage } from "./geminiService.ts";
+  callOpenAIResponses,
+} from "./openaiService.ts";
 import type {
-  FinancialTelemetry,
+  OpenAIChatMessage,
+  OpenAIResponseResult,
+} from "./openaiService.ts";
+import type {
   SafeFinancialContext,
   PurchaseSimulationResult,
 } from "./financialContextService.ts";
 import type {
   FinancialDiagnosis,
-  SpecificExpenseAlert,
 } from "./financialDiagnosisService.ts";
 import { safeParseFinancialDiagnosis } from "./financialDiagnosisService.ts";
 
@@ -43,150 +44,362 @@ export interface AuditDossier {
 }
 
 export interface AgentExecutionMeta {
-  auditorModel?: string;
-  cfoModel?: string;
+  analystModel: string;
   totalDurationMs: number;
-  parallelExecution: boolean;
+  aiSynthesis: boolean;
+  attemptedModels: string[];
+  tokens?: {
+    input: number;
+    output: number;
+    reasoning: number;
+  };
+  estimatedCostUsd?: number;
 }
 
 /**
- * AGENTE 1: AUDITOR CONTÁBIL (Gemini 2.5 Flash)
- * Realiza tarefas rápidas de auditoria, extração de padrões e contagem analítica.
+ * Flag para ativar opcionalmente o auditor via chamada de IA (desativado por padrão).
+ * Pode ser ativado via variável de ambiente ENABLE_AI_AUDITOR=true quando demonstrado ganho.
+ */
+export const ENABLE_AI_AUDITOR = process.env.ENABLE_AI_AUDITOR === "true";
+
+/**
+ * AUDITOR CONTÁBIL DETERMINÍSTICO (Local em TypeScript)
+ * Produz o dossiê factual de forma instantânea, com 100% de exatidão matemática
+ * e custo US$ 0,00.
+ */
+export function generateDeterministicAuditDossier(params: {
+  context: SafeFinancialContext;
+  userMessage?: string;
+  targetCategory?: string;
+}): AuditDossier {
+  const { context, userMessage } = params;
+  const messageNorm = (userMessage || "").toLowerCase();
+
+  // Categorias principais
+  const safeCategories = (context.categories || []).slice(0, 5).map((c) => c.category);
+
+  // Seleciona estabelecimentos e hábitos relevantes
+  const allSpends = context.topSpendItems || [];
+  let relevantSpends = allSpends;
+
+  if (messageNorm) {
+    const matched = allSpends.filter(
+      (item) =>
+        messageNorm.includes(item.title.toLowerCase()) ||
+        (item.habitCategory && messageNorm.includes(item.habitCategory.toLowerCase()))
+    );
+    if (matched.length > 0) {
+      relevantSpends = matched;
+    }
+  }
+
+  const spendBreakdown = relevantSpends.slice(0, 6).map((t) => ({
+    categoryOrItem: t.title,
+    totalAmount: t.total,
+    count: t.count,
+    creditAmount: t.creditAmount ?? t.total,
+    debitAmount: t.debitAmount ?? 0,
+    establishments: [t.title],
+  }));
+
+  const cashflowAlerts: string[] = [];
+  if (context.commitments.isOverLimit) {
+    cashflowAlerts.push(
+      `Comprometimento de renda (${context.commitments.commitmentRatioPercent}%) excede o teto de alerta (${context.profile.maxCommitmentAlertPercent}%)`
+    );
+  }
+  if (context.credit.creditUtilizationPercent > 80) {
+    cashflowAlerts.push(
+      `Utilização de crédito elevada (${context.credit.creditUtilizationPercent}%)`
+    );
+  }
+  if (context.cashflow.savingsRatePercent < 10) {
+    cashflowAlerts.push(
+      `Taxa de poupança atual em ${context.cashflow.savingsRatePercent}%`
+    );
+  }
+
+  return {
+    relevantCategories: safeCategories,
+    spendBreakdown,
+    cashflowAlerts: cashflowAlerts.length > 0 ? cashflowAlerts : ["Fluxo de caixa sob controle contábil."],
+    quickAuditNotes: "Auditoria contábil determinística realizada localmente: dados verificados com exatidão matemática.",
+  };
+}
+
+/**
+ * Função do Auditor (compatível com a assinatura anterior).
+ * Utiliza o motor determinístico local por padrão.
  */
 export async function runAuditorAgent(params: {
   context: SafeFinancialContext;
   userMessage?: string;
   targetCategory?: string;
 }): Promise<AuditDossier> {
-  const { context, userMessage } = params;
+  // Se configurado para auditor IA opcional (desligado por padrão)
+  if (ENABLE_AI_AUDITOR) {
+    try {
+      const prompt = `Você é o Auditor Contábil preliminar.
+Dados apurados:
+- Total em crédito: R$ ${params.context.credit.totalSpent.toFixed(2)}
+- Despesas fixas: R$ ${params.context.commitments.recurringMonthlyTotal.toFixed(2)}
+- Dúvida: "${params.userMessage || "Geral"}"
+Responda JSON com relevantCategories, spendBreakdown, cashflowAlerts, quickAuditNotes.`;
 
-  // Monta contexto focado em dados brutos para o modelo 2.5 Flash
-  const habitsSummary = (context.lifestyleHabits || [])
-    .map((h) => `${h.habitName} (R$ ${h.total.toFixed(2)})`)
-    .join(", ") || "Nenhum";
-  const topSpendSummary = (context.topSpendItems || [])
-    .map((t) => `${t.title} (R$ ${t.total.toFixed(2)})`)
-    .join(", ") || "Nenhum";
+      const res = await callOpenAIResponses({
+        prompt,
+        reasoningEffort: "none",
+        maxOutputTokens: 600,
+      });
 
-  const prompt = `Você é o AGENTE 1: AUDITOR CONTÁBIL do sistema financeiro.
-Sua missão é estritamente quantitativa, rápida e analítica:
-1. Inspecione as despesas e hábitos de consumo do usuário:
-   - Total em crédito acumulado: R$ ${context.credit.totalSpent.toFixed(2)}
-   - Despesas fixas: R$ ${context.commitments.recurringMonthlyTotal.toFixed(2)}
-   - Hábitos de estilo de vida identificados: ${habitsSummary}
-   - Estabelecimentos frequentes: ${topSpendSummary}
-2. Dúvida do usuário: "${userMessage || "Geral"}"
-3. Extraia fatos precisos:
-   - Identifique categorias e itens relacionados à dúvida
-   - Somatória exata em crédito vs débito
-   - Flags imediatas de risco de caixa
-
-RESPONDA ESTRITAMENTE EM JSON no formato:
-{
-  "relevantCategories": string[],
-  "spendBreakdown": [
-    {
-      "categoryOrItem": string,
-      "totalAmount": number,
-      "count": number,
-      "creditAmount": number,
-      "debitAmount": number,
-      "establishments": string[]
+      const parsed = JSON.parse(res.text) as AuditDossier;
+      if (parsed && Array.isArray(parsed.relevantCategories)) {
+        return parsed;
+      }
+    } catch (err) {
+      console.warn("[AUDITOR_AI_FALLBACK] Utilizando auditor determinístico local:", err);
     }
-  ],
-  "cashflowAlerts": string[],
-  "quickAuditNotes": string
-}`;
-
-  try {
-    const res = await callGeminiCascade({
-      systemPrompt: "Você é um auditor financeiro analítico e ultra-rápido. Responda apenas JSON.",
-      prompt,
-      temperature: 0.1,
-      jsonMode: true,
-      maxOutputTokens: 1024,
-      models: FAST_AUDITOR_MODELS,
-      timeoutMs: 12000,
-    });
-
-    const parsed = JSON.parse(res.text) as AuditDossier;
-    return {
-      relevantCategories: parsed.relevantCategories || [],
-      spendBreakdown: parsed.spendBreakdown || [],
-      cashflowAlerts: parsed.cashflowAlerts || [],
-      quickAuditNotes: parsed.quickAuditNotes || "Auditoria preliminar concluída.",
-    };
-  } catch (err) {
-    console.warn("[AGENT_AUDITOR_FALLBACK] Usando telemetria determinística local:", err);
-    // Fallback gracioso: gera o dossiê determinístico diretamente dos dados locais
-    const safeCategories = (context.categories || []).slice(0, 3).map((c: { category: string }) => c.category);
-    return {
-      relevantCategories: safeCategories,
-      spendBreakdown: (context.topSpendItems || []).slice(0, 5).map((t) => ({
-        categoryOrItem: t.title,
-        totalAmount: t.total,
-        count: t.count,
-        creditAmount: t.creditAmount ?? t.total,
-        debitAmount: t.debitAmount ?? 0,
-        establishments: [t.title],
-      })),
-      cashflowAlerts: context.commitments.isOverLimit
-        ? ["Comprometimento acima do teto recomendado"]
-        : [],
-      quickAuditNotes: "Dados auditados via motor local de fluxo de caixa.",
-    };
   }
+
+  // Padrão determinístico local
+  return generateDeterministicAuditDossier(params);
 }
 
 /**
- * AGENTE 2: PERSONAL CFO & ESTRATEGISTA (Gemini 3.8 / 3.7 Flash)
- * Executa o raciocínio complexo, simulação de fluxo e formula a resposta consultiva.
+ * Formata o dossiê contábil para injeção no prompt do Analista
  */
-export async function runStrategicCFOAgent(params: {
-  systemPrompt: string;
-  conversationMessages: GeminiChatMessage[];
-  auditDossier?: AuditDossier;
-  simulationResult?: PurchaseSimulationResult | null;
-}): Promise<{ text: string; modelUsed: string; durationMs: number; attemptedModels: string[] }> {
-  let enrichedSystemPrompt = params.systemPrompt;
-
-  // Injeta o dossiê do Agente 1 diretamente no cérebro do Agente 2
-  if (params.auditDossier) {
-    enrichedSystemPrompt += `\n\n=== DOSSIÊ DE AUDITORIA PRELIMINAR (PRODUZIDO PELO AGENTE 1 - AUDITOR) ===
-- Categorias de Destaque Auditadas: ${params.auditDossier.relevantCategories.join(", ") || "Gerais"}
+export function formatAuditDossierForPrompt(dossier: AuditDossier): string {
+  return `\n=== DOSSIÊ DE AUDITORIA FACTUAL (AUDITOR LOCAL DETERMINÍSTICO) ===
+- Categorias Relevantes: ${dossier.relevantCategories.join(", ") || "Gerais"}
 - Resumo Analítico dos Gastos:
-${params.auditDossier.spendBreakdown
+${dossier.spendBreakdown
   .map(
     (b) =>
-      `  • ${b.categoryOrItem}: Total R$ ${b.totalAmount.toFixed(2)} (${b.count} compras | Crédito R$ ${b.creditAmount.toFixed(2)} | Débito R$ ${b.debitAmount.toFixed(2)}) - Estabelecimentos: ${b.establishments.join(", ")}`
+      `  • ${b.categoryOrItem}: Total R$ ${b.totalAmount.toFixed(2)} (${b.count} compras | Crédito: R$ ${b.creditAmount.toFixed(2)} | Débito: R$ ${b.debitAmount.toFixed(2)})`
   )
   .join("\n")}
-- Alertas Imediatos de Caixa: ${params.auditDossier.cashflowAlerts.join("; ") || "Nenhum alerta crítico"}
-- Nota do Auditor: "${params.auditDossier.quickAuditNotes}"
+- Alertas de Caixa: ${dossier.cashflowAlerts.join("; ")}
+- Nota da Auditoria: "${dossier.quickAuditNotes}"
 
-DIRETRIZ DE DECISÃO DO CFO:
-Use as evidências factuais do Agente 1 acima para fundamentar sua resposta estratégica com precisão absoluta, sem precisar recontar do zero.`;
-  }
-
-  return await callGeminiCascade({
-    systemPrompt: enrichedSystemPrompt,
-    messages: params.conversationMessages,
-    temperature: 0.35,
-    maxOutputTokens: 2048,
-    models: HEAVY_STRATEGIC_MODELS,
-  });
+DIRETRIZ DE DECISÃO DO ANALISTA:
+Utilize os fatos auditados acima como verdade matemática inalterável. Não recalcule nem crie números divergentes.`;
 }
 
 /**
- * ORQUESTRADOR DE CHAT MULTI-AGENTE
- * Executa o fluxo coordenado:
- * 1. Agente 1 (Gemini 2.5 Flash) faz a auditoria rápida dos dados pertinentes à pergunta.
- * 2. Agente 2 (Gemini 3.8/3.7 Flash) recebe a auditoria e gera a orientação executiva para o usuário.
+ * SCHEMA JSON ESTRUTURADO PARA DIAGNÓSTICO FINANCEIRO (Responses API Structured Outputs)
  */
-export async function orchestrateDualAgentChat(params: {
+export const FINANCIAL_DIAGNOSIS_JSON_SCHEMA = {
+  name: "FinancialDiagnosis",
+  strict: true,
+  schema: {
+    type: "object",
+    properties: {
+      healthScore: { type: "integer" },
+      healthStatus: {
+        type: "string",
+        enum: ["excellent", "healthy", "attention", "critical"],
+      },
+      executiveSummary: { type: "string" },
+      spendingPatterns: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            title: { type: "string" },
+            description: { type: "string" },
+            type: { type: "string", "enum": ["info", "warning", "alert"] },
+          },
+          required: ["title", "description", "type"],
+          additionalProperties: false,
+        },
+      },
+      specificExpensesAlerts: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            item: { type: "string" },
+            habitCategory: { type: "string" },
+            totalAmount: { type: "number" },
+            count: { type: "integer" },
+            creditAmount: { type: "number" },
+            debitAmount: { type: "number" },
+            paymentBreakdown: { type: "string" },
+            alertType: { type: "string", "enum": ["info", "warning", "alert"] },
+            message: { type: "string" },
+          },
+          required: [
+            "item",
+            "habitCategory",
+            "totalAmount",
+            "count",
+            "creditAmount",
+            "debitAmount",
+            "paymentBreakdown",
+            "alertType",
+            "message",
+          ],
+          additionalProperties: false,
+        },
+      },
+      cashflowWindow: {
+        type: "object",
+        properties: {
+          currentMonth: {
+            type: "object",
+            properties: {
+              insight: { type: "string" },
+            },
+            required: ["insight"],
+            additionalProperties: false,
+          },
+          nextMonth: {
+            type: "object",
+            properties: {
+              insight: { type: "string" },
+            },
+            required: ["insight"],
+            additionalProperties: false,
+          },
+        },
+        required: ["currentMonth", "nextMonth"],
+        additionalProperties: false,
+      },
+      installmentSchedule: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            period: { type: "string" },
+            dueDateHint: { type: "string" },
+            cardInstallmentsAmount: { type: "number" },
+            status: { type: "string", "enum": ["safe", "warning", "alert"] },
+            explanation: { type: "string" },
+          },
+          required: [
+            "period",
+            "dueDateHint",
+            "cardInstallmentsAmount",
+            "status",
+            "explanation",
+          ],
+          additionalProperties: false,
+        },
+      },
+      futureMonthsRealityCheck: {
+        type: "object",
+        properties: {
+          realityNote: { type: "string" },
+        },
+        required: ["realityNote"],
+        additionalProperties: false,
+      },
+      clientProfileAssessment: {
+        type: "object",
+        properties: {
+          profileAlignmentInsight: { type: "string" },
+          recommendedActionForGoal: { type: "string" },
+        },
+        required: ["profileAlignmentInsight", "recommendedActionForGoal"],
+        additionalProperties: false,
+      },
+      futureProjections: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            period: { type: "string" },
+            description: { type: "string" },
+            severity: { type: "string", "enum": ["info", "warning", "alert"] },
+          },
+          required: ["period", "description", "severity"],
+          additionalProperties: false,
+        },
+      },
+      actionableSuggestions: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            title: { type: "string" },
+            action: { type: "string" },
+            potentialGain: { type: "string" },
+            targetGoal: { type: "string" },
+          },
+          required: ["title", "action", "potentialGain", "targetGoal"],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: [
+      "healthScore",
+      "healthStatus",
+      "executiveSummary",
+      "spendingPatterns",
+      "specificExpensesAlerts",
+      "cashflowWindow",
+      "installmentSchedule",
+      "futureMonthsRealityCheck",
+      "clientProfileAssessment",
+      "futureProjections",
+      "actionableSuggestions",
+    ],
+    additionalProperties: false,
+  },
+};
+
+/**
+ * SCHEMA JSON ESTRUTURADO PARA DETECÇÃO DE PADRÕES (Responses API Structured Outputs)
+ */
+export const SPENDING_PATTERNS_JSON_SCHEMA = {
+  name: "SpendingPatternsResponse",
+  strict: true,
+  schema: {
+    type: "object",
+    properties: {
+      patterns: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            item: { type: "string" },
+            habitCategory: { type: "string" },
+            totalAmount: { type: "number" },
+            count: { type: "integer" },
+            creditAmount: { type: "number" },
+            debitAmount: { type: "number" },
+            paymentBreakdown: { type: "string" },
+            alertType: { type: "string", "enum": ["info", "warning", "alert"] },
+            message: { type: "string" },
+          },
+          required: [
+            "item",
+            "habitCategory",
+            "totalAmount",
+            "count",
+            "creditAmount",
+            "debitAmount",
+            "paymentBreakdown",
+            "alertType",
+            "message",
+          ],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ["patterns"],
+    additionalProperties: false,
+  },
+};
+
+/**
+ * ORQUESTRADOR DO CHAT DO ANALISTA
+ * Uma chamada única ao modelo gpt-6-luna (Responses API), enriquecida com auditoria determinística.
+ */
+export async function orchestrateAnalystChat(params: {
   context: SafeFinancialContext;
   systemPrompt: string;
-  conversationMessages: GeminiChatMessage[];
+  conversationMessages: OpenAIChatMessage[];
   userMessage?: string;
   simulationResult?: PurchaseSimulationResult | null;
 }): Promise<{
@@ -194,40 +407,49 @@ export async function orchestrateDualAgentChat(params: {
   modelUsed: string;
   durationMs: number;
   attemptedModels: string[];
-  auditBriefing?: AuditDossier;
+  auditBriefing: AuditDossier;
+  openAIResponse?: OpenAIResponseResult;
 }> {
   const startTime = Date.now();
 
-  // 1. Executa o Agente 1 (Auditor rápido)
-  const auditDossier = await runAuditorAgent({
+  // 1. Auditoria Factual Determinística (Local em TypeScript)
+  const auditDossier = generateDeterministicAuditDossier({
     context: params.context,
     userMessage: params.userMessage,
   });
 
-  // 2. Executa o Agente 2 (CFO Sênior) alimentado com o dossiê do Agente 1
-  const cfoResponse = await runStrategicCFOAgent({
-    systemPrompt: params.systemPrompt,
-    conversationMessages: params.conversationMessages,
-    auditDossier,
-    simulationResult: params.simulationResult,
+  // 2. Enriquece o system prompt com o dossiê factual
+  const enrichedSystemPrompt = params.systemPrompt + formatAuditDossierForPrompt(auditDossier);
+
+  // 3. Chamada Única ao Modelo Principal (gpt-6-luna) com reasoning: none para chat ágil
+  const openAIResult = await callOpenAIResponses({
+    systemPrompt: enrichedSystemPrompt,
+    messages: params.conversationMessages,
+    reasoningEffort: "none",
+    maxOutputTokens: 1500,
+    timeoutMs: 25000,
   });
 
   return {
-    text: cfoResponse.text,
-    modelUsed: cfoResponse.modelUsed,
+    text: openAIResult.text,
+    modelUsed: openAIResult.modelUsed,
     durationMs: Date.now() - startTime,
-    attemptedModels: cfoResponse.attemptedModels,
+    attemptedModels: [openAIResult.modelUsed],
     auditBriefing: auditDossier,
+    openAIResponse: openAIResult,
   };
 }
 
+// Alias de retrocompatibilidade
+export const orchestrateDualAgentChat = orchestrateAnalystChat;
+
 /**
- * ORQUESTRADOR DE DIAGNÓSTICO EM PARALELO (Promise.all)
- * Roda ambos os agentes simultaneamente:
- * - Agente 1 (Gemini 2.5 Flash): Extração profunda de padrões de gastos e hábitos repetitivos.
- * - Agente 2 (Gemini 3.8/3.7 Flash): Cálculo de score de saúde, reality check e parecer executivo.
+ * ORQUESTRADOR DO DIAGNÓSTICO FINANCEIRO
+ * Uma chamada única com Structured Outputs (JSON Schema) e reasoning: low.
+ * Em caso de falha da OpenAI ou esgotamento de quota, aciona o diagnóstico determinístico local
+ * com sinalização explícita de aiSynthesis: false.
  */
-export async function orchestrateDualAgentDiagnosis(params: {
+export async function orchestrateFinancialDiagnosis(params: {
   context: SafeFinancialContext;
   systemPrompt: string;
   fullUserPrompt: string;
@@ -237,45 +459,62 @@ export async function orchestrateDualAgentDiagnosis(params: {
   modelUsed: string;
   durationMs: number;
   attemptedModels: string[];
+  aiSynthesis: boolean;
+  openAIResponse?: OpenAIResponseResult;
 }> {
   const startTime = Date.now();
 
-  let cfoText = "";
-  let cfoModelUsed = "motor-contabil-local";
-  let cfoAttemptedModels: string[] = [];
+  // 1. Auditoria Factual Determinística (Local em TypeScript)
+  const auditDossier = generateDeterministicAuditDossier({
+    context: params.context,
+  });
 
-  // Execução resiliente: Agente 2 formula a análise estratégica
+  const enrichedSystemPrompt = params.systemPrompt + formatAuditDossierForPrompt(auditDossier);
+
+  let rawModelText = "";
+  let modelUsed = "motor-contabil-local";
+  let attemptedModels: string[] = [];
+  let aiSynthesis = false;
+  let openAIResult: OpenAIResponseResult | undefined = undefined;
+
   try {
-    const cfoResult = await callGeminiCascade({
-      systemPrompt: params.systemPrompt,
+    openAIResult = await callOpenAIResponses({
+      systemPrompt: enrichedSystemPrompt,
       prompt: params.fullUserPrompt,
-      temperature: 0.25,
-      jsonMode: true,
+      reasoningEffort: "low",
       maxOutputTokens: 3500,
-      models: HEAVY_STRATEGIC_MODELS,
-      timeoutMs: 30000,
+      jsonSchema: FINANCIAL_DIAGNOSIS_JSON_SCHEMA,
+      timeoutMs: 35000,
     });
-    cfoText = cfoResult.text;
-    cfoModelUsed = cfoResult.modelUsed;
-    cfoAttemptedModels = cfoResult.attemptedModels;
-  } catch (cfoErr) {
+
+    rawModelText = openAIResult.text;
+    modelUsed = openAIResult.modelUsed;
+    attemptedModels = [modelUsed];
+    aiSynthesis = true;
+  } catch (err) {
     console.warn(
-      "[AGENT_CFO_FALLBACK] Google AI temporariamente indisponível. Ativando síntese contábil determinística:",
-      cfoErr
+      "[DIAGNOSIS_OPENAI_FALLBACK] Provedor de IA indisponível. Utilizando diagnóstico determinístico local:",
+      err
     );
+    // aiSynthesis permanece false e modelUsed é "motor-contabil-local"
   }
 
-  // Sintetiza o diagnóstico final combinando os dados auditados com a resposta da IA (ou telemetria contábil)
-  const baseDiagnosis = safeParseFinancialDiagnosis(
-    cfoText,
+  // 2. Validação e reconciliação dos fatos contábeis no servidor
+  const finalDiagnosis = safeParseFinancialDiagnosis(
+    rawModelText,
     params.context,
     params.dismissedPatterns
   );
 
   return {
-    diagnosis: baseDiagnosis,
-    modelUsed: cfoModelUsed,
+    diagnosis: finalDiagnosis,
+    modelUsed,
     durationMs: Date.now() - startTime,
-    attemptedModels: cfoAttemptedModels,
+    attemptedModels,
+    aiSynthesis,
+    openAIResponse: openAIResult,
   };
 }
+
+// Alias de retrocompatibilidade
+export const orchestrateDualAgentDiagnosis = orchestrateFinancialDiagnosis;

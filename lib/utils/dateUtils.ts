@@ -201,7 +201,7 @@ export interface RecurringOverrideLike {
   dueDay?: number;
   recurrenceType?: "business_day_5" | "fixed_day";
   isDeleted?: boolean;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 /**

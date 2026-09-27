@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --experimental-strip-types --test --test-isolation=none tests/finance.test.mjs tests/ai-analyst.test.mjs tests/security-privacy.test.mjs tests/agent-manager.test.mjs",
+    "test": "node --experimental-strip-types --test --test-isolation=none tests/finance.test.mjs tests/ai-analyst.test.mjs tests/security-privacy.test.mjs tests/agent-manager.test.mjs tests/openai-migration.test.mjs",
     "test:finance": "node --experimental-strip-types --test tests/finance.test.mjs"
   },
   "dependencies": {
@@ -15,6 +15,7 @@
     "firebase": "^12.19.0",
     "lucide-react": "^1.45.0",
     "next": "16.3.5",
+    "openai": "^7.23.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "tailwind-merge": "^3.6.0"

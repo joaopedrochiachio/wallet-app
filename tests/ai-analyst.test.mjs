@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { MODEL_CASCADE } from "../lib/services/geminiService.ts";
+import { OPENAI_MODELS, resolveConfiguredModel } from "../lib/services/openaiService.ts";
 import {
   synthesizeFinancialTelemetry,
   createSafeFinancialContext,
@@ -26,19 +26,11 @@ import {
 } from "../lib/services/aiChatService.ts";
 import { safeParseFinancialDiagnosis } from "../lib/services/financialDiagnosisService.ts";
 
-test("MODEL_CASCADE contém exatamente os 8 modelos na ordem requisitada", () => {
-  const expectedOrder = [
-    "gemini-3.6-flash",
-    "gemini-3.7-flash",
-    "gemini-3.5-flash",
-    "gemini-3.5-flash-lite",
-    "gemini-3.1-flash-lite",
-    "gemini-3-flash",
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
-  ];
-
-  assert.deepEqual(MODEL_CASCADE, expectedOrder);
+test("Modelos OpenAI: gpt-6-luna é o principal e gpt-6-sol é preparado por configuração", () => {
+  assert.equal(OPENAI_MODELS.MAIN, "gpt-6-luna");
+  assert.equal(OPENAI_MODELS.OPTIONAL, "gpt-6-sol");
+  assert.equal(resolveConfiguredModel(), "gpt-6-luna");
+  assert.equal(resolveConfiguredModel("gpt-6-sol"), "gpt-6-sol");
 });
 
 test("synthesizeFinancialTelemetry calcula métricas consolidadas corretamente", () => {

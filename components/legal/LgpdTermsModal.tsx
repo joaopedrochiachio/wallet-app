@@ -114,7 +114,7 @@ export function LgpdTermsModal({
               <span>4. Inteligência Artificial, Anonimização e Segurança</span>
             </h3>
             <p className="text-[#636366] leading-relaxed">
-              O assistente contábil do Wallet App utiliza modelos de linguagem da família Google Gemini de maneira ética e segura:
+              O assistente contábil do Wallet App utiliza modelos de linguagem da OpenAI (GPT-6 Luna) de maneira ética e segura:
             </p>
             <ul className="list-disc pl-5 space-y-1 text-[#636366]">
               <li><strong>Anonimização Prévia Rigorosa:</strong> Antes do envio de qualquer contexto financeiro à IA, todos os identificadores pessoais (como CPF, CNPJ, e-mail, telefone, chaves PIX aleatórias, números de cartão e contas bancárias) são sanitizados e substituídos por marcadores anônimos.</li>

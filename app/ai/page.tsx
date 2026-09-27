@@ -85,7 +85,7 @@ export default function AIAnalystPage() {
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [analysisModel, setAnalysisModel] = useState<string>(() => {
     const cached = loadInitialDiagnosisSync();
-    return cached?.modelUsed || "gemini-3.6-flash";
+    return cached?.modelUsed || "gpt-6-luna";
   });
   const [dismissedPatterns, setDismissedPatterns] = useState<string[]>(() => loadDismissedPatterns(user?.uid));
   const [isSearchingPatterns, setIsSearchingPatterns] = useState<boolean>(false);
@@ -108,35 +108,27 @@ export default function AIAnalystPage() {
   // Cartões de crédito para o simulador
   const creditCards = cards.filter((c) => c.type === "credit");
 
-  // Inicializa o cartão padrão do simulador
-  useEffect(() => {
-    if (!simCardId && creditCards.length > 0) {
-      setSimCardId(creditCards[0].id);
-    }
-  }, [creditCards, simCardId]);
+  const activeSimCardId = simCardId || (creditCards[0]?.id ?? "");
 
   // Carrega diagnóstico persistido e histórico salvo de mensagens do chat (Firestore / localStorage)
   useEffect(() => {
     let isMounted = true;
 
-    // Sincroniza padrões descartados do usuário
-    setDismissedPatterns(loadDismissedPatterns(user?.uid));
-
-    // Se já tiver cache local para o user específico, aplica de imediato
-    if (user?.uid) {
-      const userCached = loadInitialDiagnosisSync(user.uid);
-      if (userCached?.diagnosis) {
-        setDiagnosis(userCached.diagnosis as FinancialDiagnosis);
-        if (userCached.timestamp) setLastAnalyzedAt(userCached.timestamp);
-        if (userCached.modelUsed) setAnalysisModel(userCached.modelUsed);
-      }
-    }
-
     loadPersistentDiagnosis(user?.uid).then((saved) => {
-      if (isMounted && saved?.diagnosis) {
-        setDiagnosis(saved.diagnosis as FinancialDiagnosis);
-        if (saved.timestamp) setLastAnalyzedAt(saved.timestamp);
-        if (saved.modelUsed) setAnalysisModel(saved.modelUsed);
+      if (isMounted) {
+        setDismissedPatterns(loadDismissedPatterns(user?.uid));
+        if (saved?.diagnosis) {
+          setDiagnosis(saved.diagnosis as FinancialDiagnosis);
+          if (saved.timestamp) setLastAnalyzedAt(saved.timestamp);
+          if (saved.modelUsed) setAnalysisModel(saved.modelUsed);
+        } else if (user?.uid) {
+          const userCached = loadInitialDiagnosisSync(user.uid);
+          if (userCached?.diagnosis) {
+            setDiagnosis(userCached.diagnosis as FinancialDiagnosis);
+            if (userCached.timestamp) setLastAnalyzedAt(userCached.timestamp);
+            if (userCached.modelUsed) setAnalysisModel(userCached.modelUsed);
+          }
+        }
       }
     });
 
@@ -416,11 +408,11 @@ export default function AIAnalystPage() {
       amount: amountVal,
       method: simMethod,
       installments: simMethod === "credit" ? simInstallments : 1,
-      cardId: simCardId,
+      cardId: activeSimCardId,
       description: simDescription,
     };
 
-    const selectedCard = cards.find((c) => c.id === simCardId);
+    const selectedCard = cards.find((c) => c.id === activeSimCardId);
     const cardName = selectedCard?.name || "Cartão";
     const promptText =
       simMethod === "credit"
