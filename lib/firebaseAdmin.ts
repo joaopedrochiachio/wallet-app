@@ -17,18 +17,37 @@ function getServiceAccount(): ServiceAccount | null {
 
   try {
     let clean = saEnv.trim();
-    // Remove aspas simples ou duplas externas se houver
-    if (
-      (clean.startsWith('"') && clean.endsWith('"')) ||
-      (clean.startsWith("'") && clean.endsWith("'"))
+    // Remove qualquer aspa simples ou dupla residual nas pontas (comum ao colar na Vercel)
+    while (
+      clean.startsWith('"') ||
+      clean.startsWith("'") ||
+      clean.endsWith('"') ||
+      clean.endsWith("'")
     ) {
-      clean = clean.slice(1, -1).trim();
+      if (clean.startsWith('"') || clean.startsWith("'")) {
+        clean = clean.slice(1).trim();
+      }
+      if (clean.endsWith('"') || clean.endsWith("'")) {
+        clean = clean.slice(0, -1).trim();
+      }
     }
+
+    const sanitizeSA = (sa: ServiceAccount): ServiceAccount => {
+      if (sa.privateKey && typeof sa.privateKey === "string") {
+        sa.privateKey = sa.privateKey.replace(/\\n/g, "\n");
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const anySA = sa as any;
+      if (anySA.private_key && typeof anySA.private_key === "string") {
+        anySA.private_key = anySA.private_key.replace(/\\n/g, "\n");
+      }
+      return sa;
+    };
 
     // Suporte direto para caminho de arquivo no disco
     if (fs.existsSync(clean)) {
       const fileContent = fs.readFileSync(clean, "utf-8");
-      return JSON.parse(fileContent) as ServiceAccount;
+      return sanitizeSA(JSON.parse(fileContent) as ServiceAccount);
     }
 
     // Auto-recuperação caso falte { inicial ou } final
@@ -40,13 +59,13 @@ function getServiceAccount(): ServiceAccount | null {
     }
 
     if (clean.startsWith("{")) {
-      return JSON.parse(clean) as ServiceAccount;
+      return sanitizeSA(JSON.parse(clean) as ServiceAccount);
     }
 
     // Suporte a base64
     const decoded = Buffer.from(clean, "base64").toString("utf-8");
     if (decoded.trim().startsWith("{")) {
-      return JSON.parse(decoded) as ServiceAccount;
+      return sanitizeSA(JSON.parse(decoded) as ServiceAccount);
     }
 
     return null;
