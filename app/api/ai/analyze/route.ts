@@ -13,7 +13,7 @@ import {
 } from "../../../../lib/services/aiUsageService.ts";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 15;
 
 export * from "../../../../lib/services/financialDiagnosisService.ts";
 

@@ -17,7 +17,7 @@ import {
 } from "../../../../lib/services/aiUsageService.ts";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
+export const maxDuration = 15;
 
 function isDismissedPattern(
   itemName: string,

@@ -23,7 +23,7 @@ import {
 import type { OpenAIChatMessage } from "../../../../lib/services/openaiService.ts";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 45;
+export const maxDuration = 15;
 
 const MAX_HISTORY_MESSAGES = 10;
 const MAX_MESSAGE_LENGTH = 1000;

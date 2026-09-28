@@ -427,7 +427,7 @@ export async function orchestrateAnalystChat(params: {
     messages: params.conversationMessages,
     reasoningEffort: "none",
     maxOutputTokens: 1500,
-    timeoutMs: 25000,
+    timeoutMs: 11000,
   });
 
   return {
@@ -484,7 +484,7 @@ export async function orchestrateFinancialDiagnosis(params: {
       reasoningEffort: "low",
       maxOutputTokens: 3500,
       jsonSchema: FINANCIAL_DIAGNOSIS_JSON_SCHEMA,
-      timeoutMs: 35000,
+      timeoutMs: 11000,
     });
 
     rawModelText = openAIResult.text;

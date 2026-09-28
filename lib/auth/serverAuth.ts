@@ -45,14 +45,8 @@ export async function verifyServerAuth(
 
   try {
     const adminAuth = getAdminAuth();
-    const hasAdminCredentials = Boolean(
-      process.env.FIREBASE_SERVICE_ACCOUNT_KEY ||
-      process.env.GOOGLE_APPLICATION_CREDENTIALS ||
-      process.env.FIREBASE_AUTH_EMULATOR_HOST
-    );
-    // Valida criptograficamente assinatura (RS256), audiência, emissor e expiração via Google Public Keys.
-    // Se credenciais de admin estiverem presentes, valida também se a sessão foi revogada.
-    const decodedToken = await adminAuth.verifyIdToken(token, hasAdminCredentials);
+    // Valida criptograficamente assinatura (RS256), audiência, emissor e expiração via Google Public Keys em cache (instantâneo).
+    const decodedToken = await adminAuth.verifyIdToken(token);
 
     if (!decodedToken.uid || typeof decodedToken.uid !== "string" || decodedToken.uid.trim().length === 0) {
       return {
