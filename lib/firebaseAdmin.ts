@@ -35,12 +35,13 @@ function getServiceAccount(): ServiceAccount | null {
       }
     }
 
-    const sanitizeSA = (sa: ServiceAccount): ServiceAccount => {
+    const sanitizeSA = (sa: ServiceAccount): ServiceAccount | null => {
+      if (!sa || typeof sa !== "object") return null;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const anySA = sa as any;
       if (sa.privateKey && typeof sa.privateKey === "string") {
         sa.privateKey = sa.privateKey.replace(/\\n/g, "\n");
       }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const anySA = sa as any;
       if (anySA.private_key && typeof anySA.private_key === "string") {
         anySA.private_key = anySA.private_key.replace(/\\n/g, "\n");
         if (!sa.privateKey) {
@@ -52,6 +53,11 @@ function getServiceAccount(): ServiceAccount | null {
       }
       if (anySA.project_id && !sa.projectId) {
         sa.projectId = anySA.project_id;
+      }
+
+      if (!sa.privateKey || !sa.clientEmail) {
+        console.warn("[FIREBASE_ADMIN] Chave FIREBASE_SERVICE_ACCOUNT_KEY incompleta: private_key ou client_email ausentes no JSON.");
+        return null;
       }
       return sa;
     };
@@ -115,11 +121,15 @@ export function getAdminApp(): App {
 
   const serviceAccount = getServiceAccount();
 
-  if (serviceAccount) {
-    return initializeApp({
-      credential: cert(serviceAccount),
-      projectId,
-    });
+  if (serviceAccount && serviceAccount.privateKey && serviceAccount.clientEmail) {
+    try {
+      return initializeApp({
+        credential: cert(serviceAccount),
+        projectId,
+      });
+    } catch (certErr) {
+      console.error("[FIREBASE_ADMIN] Erro ao inicializar com cert:", certErr);
+    }
   }
 
   // No ambiente de nuvem (GCP / Cloud Run / Firebase Functions) ou com emulador

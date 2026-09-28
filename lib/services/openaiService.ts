@@ -170,7 +170,16 @@ let cachedClient: OpenAI | null = null;
 let lastApiKey: string | undefined = undefined;
 
 export function getOpenAIClient(): OpenAI {
-  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  let apiKey = process.env.OPENAI_API_KEY?.trim();
+  if (apiKey) {
+    while (
+      (apiKey.startsWith('"') && apiKey.endsWith('"')) ||
+      (apiKey.startsWith("'") && apiKey.endsWith("'"))
+    ) {
+      apiKey = apiKey.slice(1, -1).trim();
+    }
+  }
+
   if (!apiKey) {
     throw new OpenAIIntegrationError(
       "Chave da API da OpenAI não configurada no servidor. Defina OPENAI_API_KEY no ambiente.",
