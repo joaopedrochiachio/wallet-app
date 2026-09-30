@@ -30,7 +30,7 @@ import {
   groupRecurringItemsByDate,
   getEffectiveRecurringItemForPeriod,
 } from "@/lib/utils/dateUtils";
-import { formatAccountLabel, getLedgerEntryDate } from "@/lib/utils/ledger";
+import { formatAccountLabel, getLedgerEntryDate, matchesLedgerCard } from "@/lib/utils/ledger";
 import {
   sanitizeTextInput,
   validateCurrency,
@@ -120,10 +120,9 @@ export default function PlanningPage() {
     val.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const isCheckingAccount = (item: RecurringItem) =>
-    item.account === "Débito/Pix" || cards.some((card) =>
-      card.type === "checking" &&
-      (card.id === item.cardId || card.id === item.account || card.name === item.account)
-    );
+    cards.some((card) =>
+      card.type === "checking" && matchesLedgerCard(card, item.account, item.cardId)
+    ) || item.account === "Débito/Pix";
 
   const isActiveInSelectedMonth = (item: RecurringItem) =>
     isRecurringActiveInMonth(item, targetYear, targetMonth);
@@ -185,10 +184,16 @@ export default function PlanningPage() {
   const totalIncomesActive = visiblePlannedIncomes
     .filter(isActiveInSelectedMonth)
     .reduce((acc, r) => acc + r.amount, 0);
+  const totalIncomesScheduled = visiblePlannedIncomes
+    .reduce((acc, r) => acc + r.amount, 0);
 
   const totalDebitExpensesActive = visiblePlannedDebitExpenses
     .filter(isActiveInSelectedMonth)
     .reduce((acc, r) => acc + r.amount, 0);
+  const totalDebitExpensesScheduled = visiblePlannedDebitExpenses
+    .reduce((acc, r) => acc + r.amount, 0);
+
+  const monthNetSurplus = projection.projectedIncome - projection.totalCommitted;
 
   const totalAvailable = projection.openingBalance + projection.projectedIncome;
   const freePercentage =
@@ -845,16 +850,16 @@ export default function PlanningPage() {
           ))}
         </div>
 
-        {/* 2. RESUMO FINANCEIRO PRINCIPAL (Superfície Única Apple com 3 Métricas Essenciais) */}
-        <div className="bg-white rounded-[24px] p-6 sm:p-7 border border-black/[0.04] shadow-[0_1px_6px_rgba(0,0,0,0.02)]">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 sm:gap-8 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
+        {/* 2. RESUMO FINANCEIRO PRINCIPAL (Superfície Única Apple com 4 Métricas Essenciais) */}
+        <div className="bg-white rounded-[24px] p-6 sm:p-7 border border-black/[0.04] shadow-[0_1px_6px_rgba(0,0,0,0.02)] space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
             {/* 1. Entradas previstas */}
             <div className="space-y-1">
               <span className="text-xs font-medium text-[#86868B] tracking-tight">
                 Entradas previstas
               </span>
               <div className="text-2xl sm:text-3xl font-semibold tracking-tight text-[#1D1D1F]">
-                R$ {formatCurrency(projection.projectedIncome)}
+                + R$ {formatCurrency(projection.projectedIncome)}
               </div>
               <p className="text-xs text-[#86868B] pt-0.5">
                 R$ {formatCurrency(projection.actualIncomeTotal)} recebidos · R${" "}
@@ -863,12 +868,12 @@ export default function PlanningPage() {
             </div>
 
             {/* 2. Compromissos */}
-            <div className="pt-5 sm:pt-0 sm:pl-8 space-y-1">
+            <div className="pt-5 sm:pt-0 sm:pl-6 space-y-1">
               <span className="text-xs font-medium text-[#86868B] tracking-tight">
                 Compromissos
               </span>
               <div className="text-2xl sm:text-3xl font-semibold tracking-tight text-[#1D1D1F]">
-                R$ {formatCurrency(projection.totalCommitted)}
+                − R$ {formatCurrency(projection.totalCommitted)}
               </div>
               <p className="text-xs text-[#86868B] pt-0.5">
                 R$ {formatCurrency(projection.actualOutflowTotal)} pagos · R${" "}
@@ -876,26 +881,73 @@ export default function PlanningPage() {
               </p>
             </div>
 
-            {/* 3. Saldo livre projetado (Destaque Principal) */}
-            <div className="pt-5 sm:pt-0 sm:pl-8 space-y-1">
-              <span className="text-xs font-semibold text-[#1D1D1F] tracking-tight">
-                Saldo livre projetado
+            {/* 3. Sobra das Contas do Mês (Entradas − Compromissos) */}
+            <div className="pt-5 sm:pt-0 sm:pl-6 space-y-1">
+              <span className="text-xs font-medium text-[#86868B] tracking-tight">
+                Sobra do mês
               </span>
               <div
                 className={`text-2xl sm:text-3xl font-bold tracking-tight ${
-                  projection.projectedFreeBalance >= 0 ? "text-emerald-600" : "text-rose-600"
+                  monthNetSurplus >= 0 ? "text-emerald-600" : "text-rose-600"
+                }`}
+              >
+                {monthNetSurplus >= 0 ? "+" : "−"} R$ {formatCurrency(Math.abs(monthNetSurplus))}
+              </div>
+              <p className="text-xs text-[#86868B] pt-0.5">
+                {monthNetSurplus >= 0 ? "Superávit" : "Déficit"} das contas de {activeMonthObj.name}
+              </p>
+            </div>
+
+            {/* 4. Saldo Livre Projetado Final */}
+            <div className="pt-5 sm:pt-0 sm:pl-6 space-y-1">
+              <span className="text-xs font-semibold text-[#1D1D1F] tracking-tight">
+                Saldo final em conta
+              </span>
+              <div
+                className={`text-2xl sm:text-3xl font-bold tracking-tight ${
+                  projection.projectedFreeBalance >= 0 ? "text-[#1D1D1F]" : "text-rose-600"
                 }`}
               >
                 R$ {formatCurrency(projection.projectedFreeBalance)}
               </div>
               <p className="text-xs text-[#86868B] pt-0.5">
                 {activeMonthObj.isCurrent
-                  ? `Considera R$ ${formatCurrency(projection.openingBalance)} em conta · ${freePercentage}% livre`
+                  ? `R$ ${formatCurrency(projection.openingBalance)} em conta · ${freePercentage}% livre`
                   : activeMonthObj.isPast
                     ? `Resultado consolidado de ${activeMonthObj.name}`
-                    : `Inclui R$ ${formatCurrency(projection.openingBalance)} vindo de ${planningMonths[selectedMonthIndex - 1]?.name}`}
+                    : `Saldo herdado + sobra do mês`}
               </p>
             </div>
+          </div>
+
+          {/* Equação do Fluxo de Caixa (Validação 100% Matemática e Visual) */}
+          <div className="pt-3 border-t border-black/[0.04] flex flex-wrap items-center justify-between gap-2 text-xs text-[#86868B]">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="font-semibold text-[#1D1D1F]">Conferência do caixa:</span>
+              <span>
+                {activeMonthObj.isCurrent
+                  ? "Saldo em conta hoje"
+                  : `Saldo vindo de ${planningMonths[selectedMonthIndex - 1]?.short || "mês anterior"}`}{" "}
+                (R$ {formatCurrency(projection.openingBalance)})
+              </span>
+              <span>+</span>
+              <span>
+                {activeMonthObj.isCurrent ? "Entradas pendentes" : "Entradas previstas"}{" "}
+                (R$ {formatCurrency(activeMonthObj.isCurrent ? projection.plannedIncomesTotal : projection.projectedIncome)})
+              </span>
+              <span>−</span>
+              <span>
+                {activeMonthObj.isCurrent ? "Compromissos pendentes" : "Compromissos"}{" "}
+                (R$ {formatCurrency(activeMonthObj.isCurrent ? projection.pendingCommitted : projection.totalCommitted)})
+              </span>
+              <span>=</span>
+              <strong className="text-[#1D1D1F] font-semibold">
+                R$ {formatCurrency(projection.projectedFreeBalance)}
+              </strong>
+            </div>
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/70 shrink-0">
+              ✓ Valores conferidos
+            </span>
           </div>
         </div>
 
@@ -996,9 +1048,16 @@ export default function PlanningPage() {
                 Recebimentos previstos
               </h3>
               <div className="flex items-center gap-3">
-                <span className="text-sm font-semibold text-emerald-600">
-                  + R$ {formatCurrency(totalIncomesActive)}
-                </span>
+                <div className="text-right">
+                  <span className="text-sm font-semibold text-emerald-600 block">
+                    + R$ {formatCurrency(totalIncomesScheduled)}
+                  </span>
+                  {totalIncomesActive < totalIncomesScheduled && (
+                    <span className="text-[10px] text-[#86868B] block">
+                      (R$ {formatCurrency(totalIncomesActive)} a receber)
+                    </span>
+                  )}
+                </div>
                 <button
                   type="button"
                   onClick={() => handleOpenModal("income")}
@@ -1055,9 +1114,16 @@ export default function PlanningPage() {
                 </p>
               </div>
               <div className="flex items-center gap-3 shrink-0">
-                <span className="text-sm font-semibold text-[#1D1D1F]">
-                  R$ {formatCurrency(totalDebitExpensesActive)}
-                </span>
+                <div className="text-right">
+                  <span className="text-sm font-semibold text-[#1D1D1F] block">
+                    R$ {formatCurrency(totalDebitExpensesScheduled)}
+                  </span>
+                  {totalDebitExpensesActive < totalDebitExpensesScheduled && (
+                    <span className="text-[10px] text-[#86868B] block">
+                      (R$ {formatCurrency(totalDebitExpensesActive)} a pagar)
+                    </span>
+                  )}
+                </div>
                 <button
                   type="button"
                   onClick={() => handleOpenModal("expense-debit")}

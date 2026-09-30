@@ -214,6 +214,7 @@ export default function AIAnalystPage() {
           cardInstallments: p.cardInstallments,
           totalCommitted: p.totalCommitted,
           projectedFreeBalance: p.projectedFreeBalance,
+          monthNetSurplus: p.monthNetSurplus,
         };
       });
 
@@ -434,6 +435,7 @@ export default function AIAnalystPage() {
           cardInstallments: p.cardInstallments,
           totalCommitted: p.totalCommitted,
           projectedFreeBalance: p.projectedFreeBalance,
+          monthNetSurplus: p.monthNetSurplus,
         };
       });
 

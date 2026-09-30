@@ -132,6 +132,7 @@ export interface MonthProjection {
   totalInvoicesScheduled: number;
   totalInvoicesPending: number;
   totalInvoicesPaid: number;
+  monthNetSurplus: number;
 }
 
 interface WalletContextType {
@@ -955,7 +956,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     monthIndex: number,
     customMonths?: PlanningMonth[]
   ): MonthProjection => {
-    const months = customMonths || getPlanningMonths();
+    const months = customMonths || getPlanningMonths(6);
     const safeIndex = Math.min(Math.max(0, monthIndex), months.length - 1);
     const currentMonthIdx = months.findIndex((m) => m.isCurrent);
 
@@ -1135,6 +1136,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           totalInvoicesScheduled,
           totalInvoicesPending,
           totalInvoicesPaid,
+          monthNetSurplus: (actualIncomeTotal + plannedIncomesTotal) - totalCommitted,
         };
       }
     }

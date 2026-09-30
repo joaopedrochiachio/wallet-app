@@ -13,6 +13,17 @@ import type {
   AIToneId,
 } from "../../types/index.ts";
 import { redactPersonalData } from "./privacyService.ts";
+import {
+  getEffectiveDueDay,
+  getPeriodKey,
+  getEffectiveRecurringItemForPeriod,
+  isRecurringActiveInMonth,
+  MONTH_NAMES_PT,
+} from "../utils/dateUtils.ts";
+import {
+  calculateInvoiceSchedule,
+  matchesLedgerCard,
+} from "../utils/ledger.ts";
 
 export interface TransactionContextItem {
   id: string;
@@ -119,6 +130,13 @@ export interface FinancialTelemetry {
       dueDay: number;
       account: string;
     }>;
+    plannedIncomes?: Array<{
+      title: string;
+      amount: number;
+      category: string;
+      dueDay: number;
+      account: string;
+    }>;
   };
   categories: CategorySummary[];
   goals: Array<{
@@ -144,6 +162,23 @@ export interface FinancialTelemetry {
   lifestyleHabits?: LifestyleHabitSummary[];
 }
 
+export interface FortnightMovementItem {
+  title: string;
+  amount: number;
+  dueDay: number;
+  type: "income" | "debit" | "credit_invoice";
+  account?: string;
+}
+
+export interface FortnightProjection {
+  incomeTotal: number;
+  incomes: FortnightMovementItem[];
+  expenseTotal: number;
+  expenses: FortnightMovementItem[];
+  netSurplus: number;
+  projectedBalance: number;
+}
+
 export interface MonthProjectionSummary {
   monthName: string;
   year: number;
@@ -154,6 +189,9 @@ export interface MonthProjectionSummary {
   cardInstallments: number;
   totalCommitted: number;
   projectedFreeBalance: number;
+  monthNetSurplus?: number;
+  firstFortnight?: FortnightProjection;
+  secondFortnight?: FortnightProjection;
 }
 
 export interface FinancialTelemetryInput {
@@ -217,6 +255,13 @@ export interface SafeFinancialContext {
     commitmentRatioPercent: number;
     isOverLimit: boolean;
     recurringItems: Array<{
+      category: SafeFinancialCategory;
+      amount: number;
+      dueDay: number;
+      paymentMethod: SafePaymentMethod;
+      active: true;
+    }>;
+    plannedIncomes?: Array<{
       category: SafeFinancialCategory;
       amount: number;
       dueDay: number;
@@ -452,6 +497,147 @@ export function inferHabitCategory(title: string, category: string = ""): string
 }
 
 /**
+ * Calcula a divisão precisa por quinzena (1ª quinzena: dias 1 a 15 | 2ª quinzena: dias 16 ao fim do mês)
+ * para um determinado mês das projeções, discriminando cada recebimento, débito fixo e fatura de cartão.
+ */
+export function computeFortnightBreakdown(
+  monthProjection: MonthProjectionSummary,
+  recurringItems: RecurringItem[],
+  cards: CardItem[],
+  transactions: TransactionContextItem[]
+): {
+  firstFortnight: FortnightProjection;
+  secondFortnight: FortnightProjection;
+  monthNetSurplus: number;
+} {
+  const year = monthProjection.year || new Date().getFullYear();
+  const normName = (monthProjection.monthName || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+  const matchedMonthIdx = MONTH_NAMES_PT.findIndex((m) =>
+    m.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").startsWith(normName.slice(0, 3))
+  );
+  const monthIndex = matchedMonthIdx >= 0 ? matchedMonthIdx : new Date().getMonth();
+  const targetPeriodKey = getPeriodKey(year, monthIndex);
+
+  const isChecking = (item: RecurringItem) =>
+    cards.some((card) =>
+      card.type === "checking" && matchesLedgerCard(card, item.account, item.cardId)
+    ) || item.account === "Débito/Pix";
+
+  // 1. Recebimentos planejados ativos no mês
+  const plannedIncomes: FortnightMovementItem[] = recurringItems
+    .filter((r) => r.type === "income" && isRecurringActiveInMonth(r, year, monthIndex))
+    .map((r) => {
+      const effective = getEffectiveRecurringItemForPeriod(r, targetPeriodKey);
+      const dueDay = getEffectiveDueDay(effective, year, monthIndex);
+      return {
+        title: effective.title || "Recebimento Previsto",
+        amount: safeNumber(effective.amount),
+        dueDay,
+        type: "income" as const,
+        account: effective.account,
+      };
+    });
+
+  // 2. Contas em débito direto ativas no mês
+  const plannedDebits: FortnightMovementItem[] = recurringItems
+    .filter((r) => r.type !== "income" && isChecking(r) && isRecurringActiveInMonth(r, year, monthIndex))
+    .map((r) => {
+      const effective = getEffectiveRecurringItemForPeriod(r, targetPeriodKey);
+      const dueDay = getEffectiveDueDay(effective, year, monthIndex);
+      return {
+        title: effective.title || "Conta Fixa",
+        amount: safeNumber(effective.amount),
+        dueDay,
+        type: "debit" as const,
+        account: effective.account,
+      };
+    });
+
+  // 3. Faturas de cartões de crédito para o mês
+  const creditCards = cards.filter((c) => c.type === "credit");
+  const cardInvoices: FortnightMovementItem[] = [];
+
+  for (const creditCard of creditCards) {
+    const schedule = calculateInvoiceSchedule(creditCard, transactions as any);
+    const installments = schedule[targetPeriodKey] || 0;
+
+    let creditRecurring = 0;
+    const matchingCreditItems = recurringItems.filter((candidate) =>
+      candidate.type !== "income" &&
+      !isChecking(candidate) &&
+      matchesLedgerCard(creditCard, candidate.account, candidate.cardId) &&
+      isRecurringActiveInMonth(candidate, year, monthIndex)
+    );
+    for (const raw of matchingCreditItems) {
+      const effective = getEffectiveRecurringItemForPeriod(raw, targetPeriodKey);
+      creditRecurring += safeNumber(effective.amount);
+    }
+
+    const totalInvoice = installments + creditRecurring;
+    if (totalInvoice > 0) {
+      cardInvoices.push({
+        title: `Fatura ${creditCard.name}`,
+        amount: totalInvoice,
+        dueDay: creditCard.dueDay || 10,
+        type: "credit_invoice" as const,
+        account: creditCard.name,
+      });
+    }
+  }
+
+  // 4. Separação por Quinzena
+  const f1Incomes = plannedIncomes.filter((i) => i.dueDay <= 15).sort((a, b) => a.dueDay - b.dueDay);
+  const f2Incomes = plannedIncomes.filter((i) => i.dueDay > 15).sort((a, b) => a.dueDay - b.dueDay);
+
+  const f1Debits = plannedDebits.filter((d) => d.dueDay <= 15);
+  const f2Debits = plannedDebits.filter((d) => d.dueDay > 15);
+
+  const f1Invoices = cardInvoices.filter((ci) => ci.dueDay <= 15);
+  const f2Invoices = cardInvoices.filter((ci) => ci.dueDay > 15);
+
+  const f1Expenses = [...f1Debits, ...f1Invoices].sort((a, b) => a.dueDay - b.dueDay);
+  const f2Expenses = [...f2Debits, ...f2Invoices].sort((a, b) => a.dueDay - b.dueDay);
+
+  const f1IncomeTotal = f1Incomes.reduce((s, i) => s + i.amount, 0);
+  const f1ExpenseTotal = f1Expenses.reduce((s, e) => s + e.amount, 0);
+  const f1NetSurplus = f1IncomeTotal - f1ExpenseTotal;
+  const f1ProjectedBalance = monthProjection.openingBalance + f1NetSurplus;
+
+  const f2IncomeTotal = f2Incomes.reduce((s, i) => s + i.amount, 0);
+  const f2ExpenseTotal = f2Expenses.reduce((s, e) => s + e.amount, 0);
+  const f2NetSurplus = f2IncomeTotal - f2ExpenseTotal;
+  const f2ProjectedBalance = f1ProjectedBalance + f2NetSurplus;
+
+  const totalProjectedIncome = f1IncomeTotal + f2IncomeTotal;
+  const totalProjectedCommitted = f1ExpenseTotal + f2ExpenseTotal;
+  const monthNetSurplus = totalProjectedIncome - totalProjectedCommitted;
+
+  return {
+    firstFortnight: {
+      incomeTotal: f1IncomeTotal,
+      incomes: f1Incomes,
+      expenseTotal: f1ExpenseTotal,
+      expenses: f1Expenses,
+      netSurplus: f1NetSurplus,
+      projectedBalance: f1ProjectedBalance,
+    },
+    secondFortnight: {
+      incomeTotal: f2IncomeTotal,
+      incomes: f2Incomes,
+      expenseTotal: f2ExpenseTotal,
+      expenses: f2Expenses,
+      netSurplus: f2NetSurplus,
+      projectedBalance: f2ProjectedBalance,
+    },
+    monthNetSurplus,
+  };
+}
+
+/**
  * Constrói o objeto de telemetria financeira a partir do estado atual da aplicação
  */
 export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): FinancialTelemetry {
@@ -492,8 +678,10 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
   }));
 
   // Recorrências e Comprometimento Fixo
-  const activeRecurring = recurringItems.filter((r) => r.active !== false);
-  const recurringMonthlyTotal = activeRecurring.reduce((acc, r) => acc + (r.amount || 0), 0);
+  // CRÍTICO: Separa rigorosamente despesas recorrentes de receitas planejadas (como salário)
+  const activeRecurringExpenses = recurringItems.filter((r) => r.active !== false && r.type !== "income");
+  const activeRecurringIncomes = recurringItems.filter((r) => r.active !== false && r.type === "income");
+  const recurringMonthlyTotal = activeRecurringExpenses.reduce((acc, r) => acc + (r.amount || 0), 0);
   const commitmentRatioPercent =
     monthlyIncomeBase > 0
       ? Math.round(((recurringMonthlyTotal + totalSpent) / monthlyIncomeBase) * 100)
@@ -811,10 +999,17 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
     },
     commitments: {
       recurringMonthlyTotal,
-      recurringCount: activeRecurring.length,
+      recurringCount: activeRecurringExpenses.length,
       commitmentRatioPercent,
       isOverLimit,
-      recurringItems: activeRecurring.slice(0, 10).map((r) => ({
+      recurringItems: activeRecurringExpenses.slice(0, 15).map((r) => ({
+        title: r.title,
+        amount: r.amount,
+        category: r.category,
+        dueDay: r.dueDay,
+        account: r.account,
+      })),
+      plannedIncomes: activeRecurringIncomes.slice(0, 10).map((r) => ({
         title: r.title,
         amount: r.amount,
         category: r.category,
@@ -824,7 +1019,15 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
     },
     categories,
     goals: goalsSummary,
-    monthlyProjections: data.monthlyProjections || [],
+    monthlyProjections: (data.monthlyProjections || []).map((p) => {
+      const fortnights = computeFortnightBreakdown(p, recurringItems, cards, transactions);
+      return {
+        ...p,
+        monthNetSurplus: fortnights.monthNetSurplus,
+        firstFortnight: fortnights.firstFortnight,
+        secondFortnight: fortnights.secondFortnight,
+      };
+    }),
     topSpendItems,
     recentExpenses,
     liquidityAnalysis,
@@ -1002,6 +1205,13 @@ export function createSafeFinancialContext(telemetry: FinancialTelemetry): SafeF
         paymentMethod: toSafePaymentMethod(recurring.account),
         active: true,
       })),
+      plannedIncomes: (telemetry.commitments.plannedIncomes || []).map((income) => ({
+        category: normalizeFinancialCategory(String(income.category ?? "")),
+        amount: safeNumber(income.amount),
+        dueDay: safeNumber(income.dueDay),
+        paymentMethod: toSafePaymentMethod(income.account),
+        active: true,
+      })),
     },
     categories,
     goals: telemetry.goals.map((goal, index) => ({
@@ -1012,17 +1222,44 @@ export function createSafeFinancialContext(telemetry: FinancialTelemetry): SafeF
       progressPercent: safeNumber(goal.progressPercent),
       deadline: safeDeadline(goal.deadline),
     })),
-    monthlyProjections: (telemetry.monthlyProjections || []).map((p) => ({
-      monthName: String(p.monthName || ""),
-      year: safeNumber(p.year),
-      openingBalance: safeNumber(p.openingBalance),
-      plannedIncomesTotal: safeNumber(p.plannedIncomesTotal),
-      recurringDebitTotal: safeNumber(p.recurringDebitTotal),
-      recurringCreditTotal: safeNumber(p.recurringCreditTotal),
-      cardInstallments: safeNumber(p.cardInstallments),
-      totalCommitted: safeNumber(p.totalCommitted),
-      projectedFreeBalance: safeNumber(p.projectedFreeBalance),
-    })),
+    monthlyProjections: (telemetry.monthlyProjections || []).map((p) => {
+      const safeSanitizeMovement = (item: FortnightMovementItem): FortnightMovementItem => ({
+        title: redactPersonalData(item.title || "").trim(),
+        amount: safeNumber(item.amount),
+        dueDay: safeNumber(item.dueDay),
+        type: item.type,
+        account: item.account ? redactPersonalData(item.account).trim() : undefined,
+      });
+
+      return {
+        monthName: String(p.monthName || ""),
+        year: safeNumber(p.year),
+        openingBalance: safeNumber(p.openingBalance),
+        plannedIncomesTotal: safeNumber(p.plannedIncomesTotal),
+        recurringDebitTotal: safeNumber(p.recurringDebitTotal),
+        recurringCreditTotal: safeNumber(p.recurringCreditTotal),
+        cardInstallments: safeNumber(p.cardInstallments),
+        totalCommitted: safeNumber(p.totalCommitted),
+        projectedFreeBalance: safeNumber(p.projectedFreeBalance),
+        monthNetSurplus: safeNumber(p.monthNetSurplus),
+        firstFortnight: p.firstFortnight ? {
+          incomeTotal: safeNumber(p.firstFortnight.incomeTotal),
+          incomes: p.firstFortnight.incomes.map(safeSanitizeMovement),
+          expenseTotal: safeNumber(p.firstFortnight.expenseTotal),
+          expenses: p.firstFortnight.expenses.map(safeSanitizeMovement),
+          netSurplus: safeNumber(p.firstFortnight.netSurplus),
+          projectedBalance: safeNumber(p.firstFortnight.projectedBalance),
+        } : undefined,
+        secondFortnight: p.secondFortnight ? {
+          incomeTotal: safeNumber(p.secondFortnight.incomeTotal),
+          incomes: p.secondFortnight.incomes.map(safeSanitizeMovement),
+          expenseTotal: safeNumber(p.secondFortnight.expenseTotal),
+          expenses: p.secondFortnight.expenses.map(safeSanitizeMovement),
+          netSurplus: safeNumber(p.secondFortnight.netSurplus),
+          projectedBalance: safeNumber(p.secondFortnight.projectedBalance),
+        } : undefined,
+      };
+    }),
     topSpendItems: (telemetry.topSpendItems || []).map((item) => {
       // Preserva o nome do titular/estabelecimento real, removendo apenas identificadores pessoais do usuário
       let safeTitle = redactPersonalData(item.title || "").trim();
@@ -1286,6 +1523,16 @@ Você atua como um parceiro e consultor financeiro de alto nível que trabalha l
    - Separe as datas e meses específicos de cada vencimento de fatura. Se o saldo livre de cada mês permanecer positivo após pagar a fatura e as contas fixas, declare com clareza que o fluxo de caixa está saudável e sob controle.
    - Apenas alerte se em algum mês específico o total de faturas somado às contas fixas for superior à renda, gerando déficit contábil.
 
+6. CONSULTAS TEMPORAIS E POR QUINZENA (LIMITAÇÃO ESTRITA DE DATAS):
+   - Se o usuário perguntar quanto terá na conta em um período ou data específica (ex: "na primeira quinzena de outubro, quanto vou ter na conta?", "quanto terei no dia 15?", "quanto sobra das contas?"):
+     * IDENTIFIQUE O SALDO QUE ENTRA NO PERÍODO: O saldo inicial em conta vindo do mês anterior (para meses futuros) ou o saldo atual em conta (para o mês corrente).
+     * LISTE TUDO QUE VAI ENTRAR: Apenas as receitas e salários com recebimento ATÉ o dia limite perguntado (ex: dia 1 a 15).
+     * LISTE TUDO QUE VAI SAIR: Todas as contas diretas em débito E faturas de cartão de crédito que vencem ATÉ o dia limite perguntado (ex: dia 1 a 15).
+     * EQUAÇÃO MATEMÁTICA OBRIGATÓRIA:
+       Saldo Inicial que entra + Entradas do período − Saídas do período = Saldo Previsto na Conta ao fim do período.
+     * ISOLAMENTO TOTAL DE DATAS: NUNCA deduza faturas ou contas que vencem na 2ª quinzena (dia 16 em diante) quando a pergunta for sobre a 1ª quinzena (dias 1 a 15), e NUNCA adicione receitas que só caem após a data perguntada.
+     * Declare com destaque a Sobra Líquida do período e o Saldo Final Previsto que estará disponível na conta.
+
 === CONTEXTO FINANCEIRO DO USUÁRIO ===
 1. PERFIL DO CLIENTE & FLUXO DE CAIXA REALIZADO:
    - Renda Base Mensal: R$ ${profile.monthlyIncomeBase.toFixed(2)}
@@ -1317,13 +1564,24 @@ ${credit.cardsSummary
    - Total em Despesas Recorrentes/Fixas: R$ ${commitments.recurringMonthlyTotal.toFixed(2)}/mês
    - Taxa de Comprometimento Atual (Recorrentes + Faturas / Renda): ${commitments.commitmentRatioPercent}% (Teto de Alerta: ${profile.maxCommitmentAlertPercent}%)
    - Status de Alerta de Comprometimento: ${commitments.isOverLimit ? "⚠️ EM ALERTA (Acima do teto)" : "✅ DENTRO DO LIMITE"}
-   - Principais Gastos Fixos:
+   - Principais Gastos Fixos (Débitos e Contas):
 ${commitments.recurringItems
   .map(
     (r) =>
       `     • ${r.category}: R$ ${r.amount.toFixed(2)} (vence dia ${r.dueDay} em ${r.paymentMethod}; ativo)`
   )
   .join("\n")}
+${
+  commitments.plannedIncomes && commitments.plannedIncomes.length > 0
+    ? `   - Recebimentos e Rendas Planejadas:\n` +
+      commitments.plannedIncomes
+        .map(
+          (inc) =>
+            `     • ${inc.category}: R$ ${inc.amount.toFixed(2)} (recebimento dia ${inc.dueDay} em ${inc.paymentMethod}; ativo)`
+        )
+        .join("\n")
+    : ""
+}
 
 4. PRINCIPAIS CATEGORIAS DE GASTO:
 ${categories
@@ -1345,26 +1603,70 @@ ${goals
 
 ${
   context.monthlyProjections && context.monthlyProjections.length > 0
-    ? `\n6. PROJEÇÃO REAL MÊS A MÊS (Calculada pelo motor do livro-caixa do sistema):\n` +
+    ? `\n6. PROJEÇÃO REAL MÊS A MÊS COM CRONOGRAMA POR QUINZENAS (Motor de Livro-Caixa):\n` +
       context.monthlyProjections
         .map(
-          (p, idx) => `   • ${p.monthName}/${p.year} (${idx === 0 ? "Mês Atual" : `Mês +${idx}`}):
+          (p, idx) => {
+            const surplus = p.monthNetSurplus ?? (p.plannedIncomesTotal - p.totalCommitted);
+            let monthBlock = `   • ${p.monthName}/${p.year} (${idx === 0 ? "Mês Atual" : `Mês +${idx}`}):
      - Saldo Inicial que entra no mês: R$ ${p.openingBalance.toFixed(2)}
      - Entradas Planejadas: R$ ${p.plannedIncomesTotal.toFixed(2)}
      - Contas Fixas em Débito: R$ ${p.recurringDebitTotal.toFixed(2)}
      - Faturas de Cartão (Parcelamentos + Assinaturas Crédito): R$ ${(p.cardInstallments + p.recurringCreditTotal).toFixed(2)}
      - Total Comprometido (Saídas Previstas): R$ ${p.totalCommitted.toFixed(2)}
-     - Saldo Livre Final Projetado: R$ ${p.projectedFreeBalance.toFixed(2)} ${
-            p.projectedFreeBalance < 0 ? "⚠️ [DÉFICIT PREVISTO]" : "✅ [SALDO POSITIVO]"
-          }`
+     - Sobra Líquida das Contas de ${p.monthName}: ${surplus >= 0 ? "+" : "−"}R$ ${Math.abs(surplus).toFixed(2)} (Entradas menos Compromissos do mês)
+     - Saldo Final Livre Projetado em Conta: R$ ${p.projectedFreeBalance.toFixed(2)} ${
+              p.projectedFreeBalance < 0 ? "⚠️ [DÉFICIT PREVISTO]" : "✅ [SALDO POSITIVO]"
+            }`;
+
+            if (p.firstFortnight && p.secondFortnight) {
+              const f1 = p.firstFortnight;
+              const f2 = p.secondFortnight;
+              const f1IncomesStr = f1.incomes.length > 0
+                ? f1.incomes.map((i) => `${i.title} (dia ${i.dueDay}): +R$ ${i.amount.toFixed(2)}`).join(", ")
+                : "Nenhuma entrada programada";
+              const f1ExpensesStr = f1.expenses.length > 0
+                ? f1.expenses.map((e) => `${e.title} (dia ${e.dueDay}): −R$ ${e.amount.toFixed(2)}`).join(", ")
+                : "Nenhuma saída programada";
+
+              const f2IncomesStr = f2.incomes.length > 0
+                ? f2.incomes.map((i) => `${i.title} (dia ${i.dueDay}): +R$ ${i.amount.toFixed(2)}`).join(", ")
+                : "Nenhuma entrada programada";
+              const f2ExpensesStr = f2.expenses.length > 0
+                ? f2.expenses.map((e) => `${e.title} (dia ${e.dueDay}): −R$ ${e.amount.toFixed(2)}`).join(", ")
+                : "Nenhuma saída programada";
+
+              monthBlock += `
+     [CRONOGRAMA DETALHADO POR QUINZENA E DATAS DE ${p.monthName.toUpperCase()}]:
+     * Cronograma 1ª Quinzena (Dias 1 a 15 de ${p.monthName}):
+       - Saldo que entra no dia 1: R$ ${p.openingBalance.toFixed(2)}
+       - Entradas até dia 15 (+R$ ${f1.incomeTotal.toFixed(2)}): ${f1IncomesStr}
+       - Saídas até dia 15 (−R$ ${f1.expenseTotal.toFixed(2)}): ${f1ExpensesStr}
+       - Sobra da 1ª Quinzena: ${f1.netSurplus >= 0 ? "+" : "−"}R$ ${Math.abs(f1.netSurplus).toFixed(2)}
+       - Saldo Previsto ao fim da 1ª Quinzena (Dia 15): R$ ${f1.projectedBalance.toFixed(2)} (Saldo Inicial R$ ${p.openingBalance.toFixed(2)} ${f1.netSurplus >= 0 ? "+" : "−"} Sobra R$ ${Math.abs(f1.netSurplus).toFixed(2)})
+     * Cronograma 2ª Quinzena (Dias 16 ao fim do mês de ${p.monthName}):
+       - Saldo vindo do dia 15: R$ ${f1.projectedBalance.toFixed(2)}
+       - Entradas após dia 15 (+R$ ${f2.incomeTotal.toFixed(2)}): ${f2IncomesStr}
+       - Saídas após dia 15 (−R$ ${f2.expenseTotal.toFixed(2)}): ${f2ExpensesStr}
+       - Sobra da 2ª Quinzena: ${f2.netSurplus >= 0 ? "+" : "−"}R$ ${Math.abs(f2.netSurplus).toFixed(2)}
+       - Saldo Final Previsto na Conta ao Fim de ${p.monthName}: R$ ${f2.projectedBalance.toFixed(2)} (Saldo dia 15 R$ ${f1.projectedBalance.toFixed(2)} ${f2.netSurplus >= 0 ? "+" : "−"} Sobra R$ ${Math.abs(f2.netSurplus).toFixed(2)})`;
+            }
+
+            return monthBlock;
+          }
         )
-        .join("\n") +
+        .join("\n\n") +
       `\n\nDIRETRIZES DE INTEGRIDADE CONTÁBIL MÊS A MÊS:
-- Não assuma lucros ou sobras que não constem estritamente na linha 'Saldo Livre Final Projetado' de cada mês acima.
-- Observe a herança do saldo: se um mês fecha com saldo negativo, o mês seguinte já começa com esse saldo negativo herdado!
-- Se as parcelas de cartão diminuírem em determinado mês porque compras parceladas chegam ao fim, aponte isso como o ponto de alívio e dê a data ou mês exato.
-- Se algum mês fechar com saldo livre negativo, alerte explicitamente qual é o mês crítico e de quanto será a falta de caixa.
-- Nunca afirme que o usuário está lucrando se os meses futuros apresentarem déficit ou se o saldo livre for decrescente!`
+- Não assuma lucros ou sobras que não constem estritamente na linha 'Saldo Livre Final Projetado'.
+- Nunca afirme que o usuário está lucrando se os meses futuros apresentarem déficit.
+- Se houver déficit projetado em meses à frente, alerte o usuário imediatamente e aponte o mês crítico.
+- REGRA DE DATAS E QUINZENAS: Quando o usuário perguntar quanto terá na conta na 1ª quinzena de um mês (ex: "na primeira quinzena de outubro, quanto vou ter na conta?"), limite o cálculo estritamente às movimentações até o dia 15:
+  1. Informe o Saldo Inicial que entra no mês (vindo do mês anterior ou saldo atual).
+  2. Liste TUDO que vai entrar até o dia 15 (ex: Salário) com dia e valor exato.
+  3. Liste TUDO que vai sair até o dia 15 (contas em débito e faturas de cartão com vencimento até dia 15).
+  4. Mostre a matemática: Saldo Inicial + Entradas até dia 15 − Saídas até dia 15 = Saldo Previsto em Conta no dia 15.
+  5. JAMAIS deduza faturas ou contas que vencem após o dia 15 na resposta da 1ª quinzena!
+- Se a pergunta for sobre a sobra do mês de contas, informe a Sobra Líquida das Contas (Entradas do mês − Compromissos do mês) e explique a soma com o saldo herdado.`
     : ""
 }
 

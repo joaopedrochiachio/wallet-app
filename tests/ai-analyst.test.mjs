@@ -10,6 +10,7 @@ import {
   buildFinancialAnalystSystemPrompt,
   inferHabitCategory,
   isExcludedFromHabitAnalysis,
+  computeFortnightBreakdown,
 } from "../lib/services/financialContextService.ts";
 import {
   redactKnownFinancialText,
@@ -1255,6 +1256,190 @@ test("safeParseFinancialDiagnosis respeita dismissedPatterns e exclui padrões d
   const patternTitles = diagnosis.spendingPatterns.map((p) => p.title.toLowerCase());
   assert.ok(!patternTitles.some((t) => t.includes("gasolina")), "Gasolina descartada não deve aparecer em spendingPatterns");
 });
+
+test("computeFortnightBreakdown divide rigorosamente entradas, débitos e faturas entre 1ª e 2ª quinzena", () => {
+  const monthProjection = {
+    monthName: "Outubro",
+    year: 2026,
+    openingBalance: 1500,
+    plannedIncomesTotal: 7500,
+    recurringDebitTotal: 370,
+    recurringCreditTotal: 0,
+    cardInstallments: 0,
+    totalCommitted: 2370,
+    projectedFreeBalance: 6630,
+  };
+
+  const recurringItems = [
+    // Entradas
+    { id: "inc-1", title: "Salário CLT", amount: 6000, dueDay: 5, type: "income", account: "Conta Corrente", active: true },
+    { id: "inc-2", title: "Freelance", amount: 1500, dueDay: 20, type: "income", account: "Conta Corrente", active: true },
+    // Débitos em conta
+    { id: "deb-1", title: "Internet Fibra", amount: 120, dueDay: 10, type: "expense", account: "Conta Corrente", active: true },
+    { id: "deb-2", title: "Energia Elétrica", amount: 250, dueDay: 22, type: "expense", account: "Conta Corrente", active: true },
+  ];
+
+  const cards = [
+    {
+      id: "card-nubank",
+      name: "Nubank",
+      type: "credit",
+      limit: 5000,
+      spent: 800,
+      dueDay: 12,
+      closingDay: 5,
+      colorScheme: { gradient: "", border: "", accent: "", badgeText: "", chipGradient: "" },
+    },
+    {
+      id: "card-inter",
+      name: "Inter Black",
+      type: "credit",
+      limit: 10000,
+      spent: 1200,
+      dueDay: 25,
+      closingDay: 18,
+      colorScheme: { gradient: "", border: "", accent: "", badgeText: "", chipGradient: "" },
+    },
+    {
+      id: "acc-checking",
+      name: "Conta Corrente",
+      type: "checking",
+      openingBalance: 1500,
+      limit: 0,
+      spent: 0,
+      colorScheme: { gradient: "", border: "", accent: "", badgeText: "", chipGradient: "" },
+    },
+  ];
+
+  const transactions = [
+    { id: "tx-1", title: "Mercado Nubank", amount: 800, type: "despesa", account: "Nubank", cardId: "card-nubank", date: "2026-09-02" },
+    { id: "tx-2", title: "Compra Inter", amount: 1200, type: "despesa", account: "Inter Black", cardId: "card-inter", date: "2026-09-10" },
+  ];
+
+  const breakdown = computeFortnightBreakdown(monthProjection, recurringItems, cards, transactions);
+
+  // 1ª Quinzena (dias 1 a 15):
+  // Entradas: Salário CLT R$ 6.000 (dia 5)
+  // Saídas: Internet R$ 120 (dia 10) + Fatura Nubank R$ 800 (dia 12) = R$ 920
+  // Sobra 1ª Quinzena = R$ 6.000 - R$ 920 = R$ 5.080
+  // Saldo projetado no dia 15 = Saldo inicial R$ 1.500 + R$ 5.080 = R$ 6.580
+  assert.equal(breakdown.firstFortnight.incomeTotal, 6000);
+  assert.equal(breakdown.firstFortnight.incomes.length, 1);
+  assert.equal(breakdown.firstFortnight.incomes[0].dueDay, 5);
+
+  assert.equal(breakdown.firstFortnight.expenseTotal, 920);
+  assert.equal(breakdown.firstFortnight.expenses.length, 2);
+  assert.equal(breakdown.firstFortnight.netSurplus, 5080);
+  assert.equal(breakdown.firstFortnight.projectedBalance, 6580);
+
+  // 2ª Quinzena (dias 16 ao fim do mês):
+  // Entradas: Freelance R$ 1.500 (dia 20)
+  // Saídas: Energia R$ 250 (dia 22) + Fatura Inter R$ 1.200 (dia 25) = R$ 1.450
+  // Sobra 2ª Quinzena = R$ 1.500 - R$ 1.450 = R$ 50
+  // Saldo projetado ao fim do mês = R$ 6.580 + R$ 50 = R$ 6.630
+  assert.equal(breakdown.secondFortnight.incomeTotal, 1500);
+  assert.equal(breakdown.secondFortnight.incomes.length, 1);
+  assert.equal(breakdown.secondFortnight.incomes[0].dueDay, 20);
+
+  assert.equal(breakdown.secondFortnight.expenseTotal, 1450);
+  assert.equal(breakdown.secondFortnight.expenses.length, 2);
+  assert.equal(breakdown.secondFortnight.netSurplus, 50);
+  assert.equal(breakdown.secondFortnight.projectedBalance, 6630);
+
+  // Sobra do mês = R$ 7.500 - R$ 2.370 = R$ 5.130
+  // Saldo final = R$ 1.500 + R$ 5.130 = R$ 6.630
+  assert.equal(breakdown.monthNetSurplus, 5130);
+  assert.equal(breakdown.secondFortnight.projectedBalance, monthProjection.openingBalance + breakdown.monthNetSurplus);
+});
+
+test("synthesizeFinancialTelemetry separa receitas recorrentes de compromissos de despesa", () => {
+  const mockRecurring = [
+    { id: "rec-inc-1", title: "Salário Mensal", amount: 8000, dueDay: 5, account: "Conta Corrente", category: "Renda", type: "income", active: true },
+    { id: "rec-exp-1", title: "Aluguel", amount: 2000, dueDay: 10, account: "Conta Corrente", category: "Moradia", type: "expense", active: true },
+    { id: "rec-exp-2", title: "Internet", amount: 150, dueDay: 15, account: "Conta Corrente", category: "Assinaturas", type: "expense", active: true },
+  ];
+
+  const telemetry = synthesizeFinancialTelemetry({
+    userProfile: {
+      name: "Arthur",
+      email: "a@a.com",
+      role: "User",
+      avatarInitials: "AT",
+      monthlyIncomeBase: 8000,
+      currency: "BRL",
+      persona: "optimizer",
+      riskTolerance: "moderate",
+      aiTone: "analytical",
+      maxCommitmentAlertPercent: 60,
+      primaryFocus: "Organização",
+    },
+    cards: [],
+    transactions: [],
+    recurringItems: mockRecurring,
+    goals: [],
+    mainBalance: 2000,
+    monthIncome: 8000,
+    monthExpense: 2150,
+  });
+
+  // Salário NÃO pode entrar em recurringMonthlyTotal nem em recurringCount!
+  assert.equal(telemetry.commitments.recurringMonthlyTotal, 2150);
+  assert.equal(telemetry.commitments.recurringCount, 2);
+
+  // Salário deve constar em plannedIncomes
+  assert.ok(telemetry.commitments.plannedIncomes, "plannedIncomes deve estar definido");
+  assert.equal(telemetry.commitments.plannedIncomes?.length, 1);
+  assert.equal(telemetry.commitments.plannedIncomes?.[0].title, "Salário Mensal");
+  assert.equal(telemetry.commitments.plannedIncomes?.[0].amount, 8000);
+
+  // Safe context também deve herdar plannedIncomes sem vazar tipo como despesa
+  const safeContext = createSafeFinancialContext(telemetry);
+  assert.equal(safeContext.commitments.recurringMonthlyTotal, 2150);
+  assert.equal(safeContext.commitments.recurringCount, 2);
+  assert.equal(safeContext.commitments.plannedIncomes?.length, 1);
+  assert.equal(safeContext.commitments.plannedIncomes?.[0].amount, 8000);
+});
+
+test("buildFinancialAnalystSystemPrompt inclui regras temporais e cronograma quinzenal com datas", () => {
+  const mockRecurring = [
+    { id: "rec-inc-1", title: "Salário", amount: 5000, dueDay: 5, account: "Conta Corrente", category: "Renda", type: "income", active: true },
+    { id: "rec-exp-1", title: "Internet", amount: 100, dueDay: 10, account: "Conta Corrente", category: "Assinaturas", type: "expense", active: true },
+  ];
+
+  const telemetry = synthesizeFinancialTelemetry({
+    cards: [],
+    transactions: [],
+    recurringItems: mockRecurring,
+    goals: [],
+    mainBalance: 1000,
+    monthIncome: 5000,
+    monthExpense: 100,
+    monthlyProjections: [
+      {
+        monthName: "Outubro",
+        year: 2026,
+        openingBalance: 1000,
+        plannedIncomesTotal: 5000,
+        recurringDebitTotal: 100,
+        recurringCreditTotal: 0,
+        cardInstallments: 0,
+        totalCommitted: 100,
+        projectedFreeBalance: 5900,
+        monthNetSurplus: 4900,
+      },
+    ],
+  });
+
+  const safeContext = createSafeFinancialContext(telemetry);
+  const prompt = buildFinancialAnalystSystemPrompt(safeContext);
+
+  assert.ok(prompt.includes("CONSULTAS TEMPORAIS E POR QUINZENA"), "Prompt deve conter a regra de consultas por quinzena");
+  assert.ok(prompt.includes("Cronograma 1ª Quinzena"), "Prompt deve conter o cronograma da 1ª quinzena");
+  assert.ok(prompt.includes("Cronograma 2ª Quinzena"), "Prompt deve conter o cronograma da 2ª quinzena");
+  assert.ok(prompt.includes("Sobra Líquida das Contas"), "Prompt deve conter a Sobra Líquida das Contas");
+  assert.ok(prompt.includes("Saldo Previsto ao fim da 1ª Quinzena (Dia 15)"), "Prompt deve conter o Saldo do Dia 15");
+});
+
 
 
 
