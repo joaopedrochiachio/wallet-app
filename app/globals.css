@@ -1,8 +1,14 @@
 @import "tailwindcss";
 
+@theme {
+  --font-sans: var(--font-sf-pro), -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-sf-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
 @layer base {
   :root {
-    --font-apple: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif;
+    --font-apple: var(--font-sf-pro), -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif;
+    --font-sf-mono-stack: var(--font-sf-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     --sat: env(safe-area-inset-top, 0px);
     --sar: env(safe-area-inset-right, 0px);
     --sab: env(safe-area-inset-bottom, 0px);
@@ -25,6 +31,21 @@
   /* Rótulos e Headings com tracking refinado Apple */
   h1, h2, h3, h4, h5, h6 {
     letter-spacing: -0.025em;
+  }
+
+  /* Inputs, Caixas de Texto, Botões e Labels herdam rigorosamente SF Pro */
+  input, textarea, select, button, label {
+    font-family: inherit;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Alinhamento numérico tabular para valores monetários e financeiros Apple */
+  .font-mono,
+  .tabular-nums {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" on;
   }
 
   /* Esconde a scrollbar mas mantém a rolagem suave */

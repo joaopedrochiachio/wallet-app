@@ -220,7 +220,7 @@ export function AddCardSheet({ isOpen, onClose, onAddCard }: AddCardSheetProps) 
                     <span className="text-[10px] uppercase text-white/60 block">
                       Limite
                     </span>
-                    <span className="text-base font-semibold text-white tracking-tight">
+                    <span className="text-base font-semibold text-white tracking-tight font-mono tabular-nums">
                       R$ {formatCurrency(parsedLimit > 0 ? parsedLimit : 5000)}
                     </span>
                   </div>
@@ -291,7 +291,7 @@ export function AddCardSheet({ isOpen, onClose, onAddCard }: AddCardSheetProps) 
                   value={limitInput}
                   onChange={(e) => setLimitInput(e.target.value)}
                   placeholder="5.000,00"
-                  className="w-full bg-white rounded-xl pl-11 pr-4 py-3 text-sm font-semibold text-[#1D1D1F] placeholder-[#86868B] border border-black/[0.06] focus:outline-none focus:ring-2 focus:ring-[#1D1D1F]/20 transition-all"
+                  className="w-full bg-white rounded-xl pl-11 pr-4 py-3 text-sm font-semibold text-[#1D1D1F] placeholder-[#86868B] border border-black/[0.06] focus:outline-none focus:ring-2 focus:ring-[#1D1D1F]/20 transition-all font-mono tabular-nums"
                 />
               </div>
             </div>

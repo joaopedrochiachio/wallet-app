@@ -305,7 +305,7 @@ export function MonthlyMovementOverview({
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
                   Entradas
                 </span>
-                <div className="text-base sm:text-lg font-semibold tracking-tight text-emerald-600">
+                <div className="text-base sm:text-lg font-semibold tracking-tight text-emerald-600 font-mono tabular-nums">
                   + R$ {formatCurrency(filteredIncome)}
                 </div>
               </div>
@@ -315,7 +315,7 @@ export function MonthlyMovementOverview({
                   <span className="w-1.5 h-1.5 rounded-full bg-[#1D1D1F] shrink-0" />
                   Saídas
                 </span>
-                <div className="text-base sm:text-lg font-semibold tracking-tight text-[#1D1D1F]">
+                <div className="text-base sm:text-lg font-semibold tracking-tight text-[#1D1D1F] font-mono tabular-nums">
                   − R$ {formatCurrency(filteredExpenses)}
                 </div>
               </div>
@@ -325,7 +325,7 @@ export function MonthlyMovementOverview({
                   <span className="w-1.5 h-1.5 rounded-full bg-[#8E8E93] shrink-0" />
                   Saiu do saldo
                 </span>
-                <div className="text-base sm:text-lg font-semibold tracking-tight text-[#1D1D1F]">
+                <div className="text-base sm:text-lg font-semibold tracking-tight text-[#1D1D1F] font-mono tabular-nums">
                   R$ {formatCurrency(filteredBalanceExpenses)}
                 </div>
               </div>
@@ -335,7 +335,7 @@ export function MonthlyMovementOverview({
                   <span className="w-1.5 h-1.5 rounded-full bg-[#6366F1] shrink-0" />
                   Foi para faturas
                 </span>
-                <div className="text-base sm:text-lg font-semibold tracking-tight text-indigo-600">
+                <div className="text-base sm:text-lg font-semibold tracking-tight text-indigo-600 font-mono tabular-nums">
                   R$ {formatCurrency(filteredCreditExpenses)}
                 </div>
               </div>
@@ -433,7 +433,7 @@ export function MonthlyMovementOverview({
                     {/* Valor Alinhado à Direita com Sinalização Elegante */}
                     <div className="text-right shrink-0">
                       <span
-                        className={`text-sm sm:text-base font-semibold tracking-tight block ${
+                        className={`text-sm sm:text-base font-semibold tracking-tight block font-mono tabular-nums ${
                           isIncome ? "text-emerald-600" : "text-[#1D1D1F]"
                         }`}
                       >

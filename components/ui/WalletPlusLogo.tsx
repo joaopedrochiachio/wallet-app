@@ -62,7 +62,7 @@ export function WalletPlusLogo({
       className={`inline-flex items-center select-none tracking-tight font-semibold ${currentSize.gap} ${className}`}
       style={{
         fontFamily:
-          '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif',
+          'var(--font-sf-pro), -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif',
       }}
     >
       {showSymbol && (
@@ -107,7 +107,7 @@ export function WalletPlusLogo({
         }`}
         style={{
           fontFamily:
-            '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", sans-serif',
+            'var(--font-sf-pro), -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", sans-serif',
         }}
       >
         +

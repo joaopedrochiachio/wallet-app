@@ -35,7 +35,7 @@ export function WPayLogo({ size = "md", variant = "dark", className = "" }: WPay
   return (
     <div
       className={`inline-flex items-center font-sans tracking-tight select-none ${sizeClasses[size]} ${className}`}
-      style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", sans-serif' }}
+      style={{ fontFamily: 'var(--font-sf-pro), -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", sans-serif' }}
     >
       {/* Glifo com a logo oficial Wallet */}
       <span
@@ -90,7 +90,7 @@ export function WPayButton({
       type="button"
       disabled={disabled || isLoading}
       className={`${baseClasses} ${themeClasses[theme]} ${className}`}
-      style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif' }}
+      style={{ fontFamily: 'var(--font-sf-pro), -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif' }}
       {...props}
     >
       {isLoading ? (

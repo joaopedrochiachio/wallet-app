@@ -303,14 +303,14 @@ export default function DashboardPage() {
             <div className="grid grid-cols-2 sm:grid-cols-3">
               <div className="border-b border-r border-black/[0.05] p-3.5 sm:p-5 min-w-0 sm:border-b-0">
                 <span className="text-[10px] font-medium text-[#86868B]">Entrou</span>
-                <strong className="mt-1 block text-sm font-semibold text-emerald-600 sm:text-base truncate">
+                <strong className="mt-1 block text-sm font-semibold text-emerald-600 sm:text-base truncate font-mono tabular-nums">
                   + R$ {formatCurrency(monthIncome)}
                 </strong>
               </div>
 
               <div className="border-b border-black/[0.05] p-3.5 sm:p-5 min-w-0 sm:border-b-0 sm:border-r">
                 <span className="text-[10px] font-medium text-[#86868B]">Saiu</span>
-                <strong className="mt-1 block text-sm font-semibold text-[#1D1D1F] sm:text-base truncate">
+                <strong className="mt-1 block text-sm font-semibold text-[#1D1D1F] sm:text-base truncate font-mono tabular-nums">
                   − R$ {formatCurrency(monthExpense)}
                 </strong>
               </div>
@@ -318,7 +318,7 @@ export default function DashboardPage() {
               <div className="col-span-2 bg-[#FAFAFC] p-3.5 sm:p-5 min-w-0 sm:col-span-1">
                 <span className="text-[10px] font-medium text-[#86868B]">Tenho na conta</span>
                 <strong
-                  className={`mt-1 block text-lg sm:text-xl font-semibold tracking-tight truncate ${
+                  className={`mt-1 block text-lg sm:text-xl font-semibold tracking-tight truncate font-mono tabular-nums ${
                     balanceIsPositive ? "text-[#1D1D1F]" : "text-rose-600"
                   }`}
                 >
@@ -461,10 +461,10 @@ export default function DashboardPage() {
                         />
                       </div>
                       <div className="flex justify-between items-center text-xs text-[#86868B]">
-                        <span className="font-semibold text-[#1D1D1F]">
+                        <span className="font-semibold text-[#1D1D1F] font-mono tabular-nums">
                           R$ {formatCurrency(goal.current)}
                         </span>
-                        <span>Meta: R$ {formatCurrency(goal.target)}</span>
+                        <span className="font-mono tabular-nums">Meta: R$ {formatCurrency(goal.target)}</span>
                       </div>
                     </div>
                   </Link>

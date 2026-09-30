@@ -272,7 +272,7 @@ export function TransactionDetailsSheet({
                     onChange={(event) => setAmountInput(event.target.value)}
                     disabled={!fieldsAreEditable}
                     inputMode="decimal"
-                    className="min-w-0 flex-1 bg-transparent px-2 py-2.5 text-sm font-semibold text-[#1D1D1F] outline-none disabled:text-[#86868B] disabled:cursor-not-allowed"
+                    className="min-w-0 flex-1 bg-transparent px-2 py-2.5 text-sm font-semibold text-[#1D1D1F] outline-none disabled:text-[#86868B] disabled:cursor-not-allowed font-mono tabular-nums"
                   />
                 </div>
               </label>
@@ -286,7 +286,7 @@ export function TransactionDetailsSheet({
                   value={dateInput}
                   onChange={(event) => setDateInput(event.target.value)}
                   disabled={!fieldsAreEditable}
-                  className="w-full rounded-xl border border-black/[0.05] bg-[#F2F2F7]/60 px-3.5 py-2.5 text-xs font-medium text-[#1D1D1F] outline-none transition-all focus:bg-white focus:border-black/20 focus:ring-2 focus:ring-black/5 disabled:text-[#86868B] disabled:cursor-not-allowed"
+                  className="w-full rounded-xl border border-black/[0.05] bg-[#F2F2F7]/60 px-3.5 py-2.5 text-xs font-medium text-[#1D1D1F] outline-none transition-all focus:bg-white focus:border-black/20 focus:ring-2 focus:ring-black/5 disabled:text-[#86868B] disabled:cursor-not-allowed font-mono"
                 />
               </label>
             </div>

@@ -271,13 +271,13 @@ export default function OnboardingPage() {
                   Renda Líquida Mensal Estimada
                 </label>
                 <div className="flex justify-center items-baseline gap-1.5">
-                  <span className="text-xl font-medium text-gray-400">R$</span>
+                  <span className="text-xl font-medium text-gray-400 font-mono tabular-nums">R$</span>
                   <input
                     type="text"
                     value={monthlyIncome}
                     onChange={(e) => setMonthlyIncome(e.target.value)}
                     placeholder="5.000,00"
-                    className="text-4xl font-light text-[#1D1D1F] text-center w-56 outline-none bg-transparent"
+                    className="text-4xl font-light text-[#1D1D1F] text-center w-56 outline-none bg-transparent font-mono tabular-nums"
                   />
                 </div>
               </div>
@@ -409,13 +409,13 @@ export default function OnboardingPage() {
                   Quanto você tem na conta hoje?
                 </label>
                 <div className="flex justify-center items-baseline gap-1.5">
-                  <span className="text-xl font-medium text-gray-400">R$</span>
+                  <span className="text-xl font-medium text-gray-400 font-mono tabular-nums">R$</span>
                   <input
                     type="text"
                     value={initialAmount}
                     onChange={(e) => setInitialAmount(e.target.value)}
                     placeholder="2.500,00"
-                    className="text-4xl font-light text-[#1D1D1F] text-center w-56 outline-none bg-transparent"
+                    className="text-4xl font-light text-[#1D1D1F] text-center w-56 outline-none bg-transparent font-mono tabular-nums"
                   />
                 </div>
               </div>

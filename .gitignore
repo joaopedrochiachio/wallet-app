@@ -45,3 +45,4 @@ next-env.d.ts
 .env.local
 .env.example
 
+.fonts/SFWindows.27.0.1789118100

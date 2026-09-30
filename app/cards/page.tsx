@@ -102,7 +102,7 @@ export default function CardsPage() {
         <div className="flex items-center gap-3 self-start sm:self-auto">
           <div className="flex items-center gap-2 bg-white px-3.5 py-2 rounded-full border border-black/[0.04] shadow-xs">
             <span className="text-xs text-[#86868B]">Saldo Disponível:</span>
-            <span className="text-xs font-semibold text-[#1D1D1F]">
+            <span className="text-xs font-semibold text-[#1D1D1F] font-mono tabular-nums">
               R$ {formatCurrency(mainBalance)}
             </span>
           </div>
@@ -233,7 +233,7 @@ export default function CardsPage() {
                       <span className="text-xs uppercase tracking-wider text-[#86868B] font-medium">
                         Fatura Atual (Vence dia {card.dueDay})
                       </span>
-                      <div className="text-3xl font-light text-[#1D1D1F] tracking-tight">
+                      <div className="text-3xl font-light text-[#1D1D1F] tracking-tight font-mono tabular-nums">
                         R$ {formatCurrency(invoice)}
                       </div>
                     </div>
@@ -243,11 +243,11 @@ export default function CardsPage() {
                       <div className="flex justify-between items-center text-xs">
                         <span className="text-[#86868B]">
                           Utilizado:{" "}
-                          <strong className="text-[#1D1D1F]">R$ {formatCurrency(card.spent)}</strong>
+                          <strong className="text-[#1D1D1F] font-mono tabular-nums">R$ {formatCurrency(card.spent)}</strong>
                         </span>
                         <span className="text-[#86868B]">
                           Disponível:{" "}
-                          <strong className="text-[#1D1D1F]">R$ {formatCurrency(availableLimit)}</strong>
+                          <strong className="text-[#1D1D1F] font-mono tabular-nums">R$ {formatCurrency(availableLimit)}</strong>
                         </span>
                       </div>
 
@@ -270,7 +270,7 @@ export default function CardsPage() {
                               value={newLimitInput}
                               onChange={(e) => setNewLimitInput(e.target.value)}
                               onKeyDown={(e) => e.key === "Enter" && handleSaveLimit(card.id)}
-                              className="w-20 bg-transparent text-[#1D1D1F] font-semibold outline-none text-xs"
+                              className="w-20 bg-transparent text-[#1D1D1F] font-semibold outline-none text-xs font-mono tabular-nums"
                               autoFocus
                             />
                             <button
@@ -369,10 +369,10 @@ export default function CardsPage() {
                       <span className="text-[11px] uppercase font-semibold text-[#86868B] tracking-wider">
                         {month.short} {month.year}
                       </span>
-                      <div className="text-lg font-semibold text-[#1D1D1F]">
+                      <div className="text-lg font-semibold text-[#1D1D1F] font-mono tabular-nums">
                         R$ {formatCurrency(month.total)}
                       </div>
-                      <p className="text-xs text-[#86868B]">
+                      <p className="text-xs text-[#86868B] font-mono tabular-nums">
                         R$ {formatCurrency(month.openInvoice)} em aberto + R${" "}
                         {formatCurrency(month.plannedCharges)} planejados
                       </p>

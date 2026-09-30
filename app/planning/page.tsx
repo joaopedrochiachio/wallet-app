@@ -678,7 +678,7 @@ export default function PlanningPage() {
 
           {/* Valor formatado */}
           <span
-            className={`text-sm font-semibold tracking-tight min-w-[90px] text-right ${
+            className={`text-sm font-semibold tracking-tight min-w-[90px] text-right font-mono tabular-nums ${
               isFinishedInThisMonth
                 ? "text-gray-400 line-through text-xs"
                 : isRealizedInThisMonth || item.active
@@ -748,7 +748,7 @@ export default function PlanningPage() {
                   ? `Realizado em ${activeMonthObj.short}:`
                   : `Saldo vindo de ${planningMonths[selectedMonthIndex - 1]?.short}:`}
             </span>
-            <span className="text-xs font-semibold text-[#1D1D1F]">
+            <span className="text-xs font-semibold text-[#1D1D1F] font-mono tabular-nums">
               R$ {formatCurrency(projection.openingBalance)}
             </span>
           </div>
@@ -858,7 +858,7 @@ export default function PlanningPage() {
               <span className="text-xs font-medium text-[#86868B] tracking-tight">
                 Entradas previstas
               </span>
-              <div className="text-2xl sm:text-3xl font-semibold tracking-tight text-[#1D1D1F]">
+              <div className="text-2xl sm:text-3xl font-semibold tracking-tight text-[#1D1D1F] font-mono tabular-nums">
                 + R$ {formatCurrency(projection.projectedIncome)}
               </div>
               <p className="text-xs text-[#86868B] pt-0.5">
@@ -872,7 +872,7 @@ export default function PlanningPage() {
               <span className="text-xs font-medium text-[#86868B] tracking-tight">
                 Compromissos
               </span>
-              <div className="text-2xl sm:text-3xl font-semibold tracking-tight text-[#1D1D1F]">
+              <div className="text-2xl sm:text-3xl font-semibold tracking-tight text-[#1D1D1F] font-mono tabular-nums">
                 − R$ {formatCurrency(projection.totalCommitted)}
               </div>
               <p className="text-xs text-[#86868B] pt-0.5">
@@ -887,7 +887,7 @@ export default function PlanningPage() {
                 Sobra do mês
               </span>
               <div
-                className={`text-2xl sm:text-3xl font-bold tracking-tight ${
+                className={`text-2xl sm:text-3xl font-bold tracking-tight font-mono tabular-nums ${
                   monthNetSurplus >= 0 ? "text-emerald-600" : "text-rose-600"
                 }`}
               >
@@ -904,7 +904,7 @@ export default function PlanningPage() {
                 Saldo final em conta
               </span>
               <div
-                className={`text-2xl sm:text-3xl font-bold tracking-tight ${
+                className={`text-2xl sm:text-3xl font-bold tracking-tight font-mono tabular-nums ${
                   projection.projectedFreeBalance >= 0 ? "text-[#1D1D1F]" : "text-rose-600"
                 }`}
               >
@@ -941,7 +941,7 @@ export default function PlanningPage() {
                 (R$ {formatCurrency(activeMonthObj.isCurrent ? projection.pendingCommitted : projection.totalCommitted)})
               </span>
               <span>=</span>
-              <strong className="text-[#1D1D1F] font-semibold">
+              <strong className="text-[#1D1D1F] font-semibold font-mono tabular-nums">
                 R$ {formatCurrency(projection.projectedFreeBalance)}
               </strong>
             </div>
@@ -961,7 +961,7 @@ export default function PlanningPage() {
               Composição dos compromissos
             </h2>
             <span className="text-xs text-[#86868B]">
-              Total: R$ {formatCurrency(projection.totalCommitted)}
+              Total: <span className="font-mono tabular-nums">R$ {formatCurrency(projection.totalCommitted)}</span>
             </span>
           </div>
 
@@ -972,7 +972,7 @@ export default function PlanningPage() {
                 <span className="w-1.5 h-1.5 rounded-full bg-[#8E8E93]" />
                 Já saiu da conta
               </span>
-              <div className="text-base sm:text-lg font-semibold text-[#1D1D1F] mt-0.5">
+              <div className="text-base sm:text-lg font-semibold text-[#1D1D1F] mt-0.5 font-mono tabular-nums">
                 R$ {formatCurrency(projection.actualOutflowTotal)}
               </div>
             </div>
@@ -982,7 +982,7 @@ export default function PlanningPage() {
                 <span className="w-1.5 h-1.5 rounded-full bg-[#1D1D1F]" />
                 Contas diretas a pagar
               </span>
-              <div className="text-base sm:text-lg font-semibold text-[#1D1D1F] mt-0.5">
+              <div className="text-base sm:text-lg font-semibold text-[#1D1D1F] mt-0.5 font-mono tabular-nums">
                 R$ {formatCurrency(debitCommitments)}
               </div>
             </div>
@@ -992,7 +992,7 @@ export default function PlanningPage() {
                 <span className="w-1.5 h-1.5 rounded-full bg-[#6366F1]" />
                 Faturas de cartão a pagar
               </span>
-              <div className="text-base sm:text-lg font-semibold text-[#1D1D1F] mt-0.5">
+              <div className="text-base sm:text-lg font-semibold text-[#1D1D1F] mt-0.5 font-mono tabular-nums">
                 R$ {formatCurrency(projection.totalInvoicesPending ?? creditCommitments)}
               </div>
             </div>
@@ -1028,8 +1028,8 @@ export default function PlanningPage() {
 
           {/* Pequeno Insight Complementar */}
           <p className="text-xs text-[#86868B] leading-relaxed pt-0.5">
-            R$ {formatCurrency(debitCommitments)} em contas diretas + R$ {formatCurrency(projection.totalInvoicesPending ?? creditCommitments)} em faturas de cartão totalizam R${" "}
-            {formatCurrency(projection.pendingCommitted)} que sairão da sua conta.
+            <span className="font-mono tabular-nums">R$ {formatCurrency(debitCommitments)}</span> em contas diretas + <span className="font-mono tabular-nums">R$ {formatCurrency(projection.totalInvoicesPending ?? creditCommitments)}</span> em faturas de cartão totalizam <span className="font-mono tabular-nums">R${" "}
+            {formatCurrency(projection.pendingCommitted)}</span> que sairão da sua conta.
           </p>
         </section>
 
@@ -1049,11 +1049,11 @@ export default function PlanningPage() {
               </h3>
               <div className="flex items-center gap-3">
                 <div className="text-right">
-                  <span className="text-sm font-semibold text-emerald-600 block">
+                  <span className="text-sm font-semibold text-emerald-600 block font-mono tabular-nums">
                     + R$ {formatCurrency(totalIncomesScheduled)}
                   </span>
                   {totalIncomesActive < totalIncomesScheduled && (
-                    <span className="text-[10px] text-[#86868B] block">
+                    <span className="text-[10px] text-[#86868B] block font-mono tabular-nums">
                       (R$ {formatCurrency(totalIncomesActive)} a receber)
                     </span>
                   )}
@@ -1091,7 +1091,7 @@ export default function PlanningPage() {
                           · {group.items.length} {group.items.length === 1 ? "recebimento" : "recebimentos"}
                         </span>
                       </div>
-                      <span className="text-xs font-semibold text-emerald-600">
+                      <span className="text-xs font-semibold text-emerald-600 font-mono tabular-nums">
                         + R$ {formatCurrency(group.totalAmount)}
                       </span>
                     </div>
@@ -1115,11 +1115,11 @@ export default function PlanningPage() {
               </div>
               <div className="flex items-center gap-3 shrink-0">
                 <div className="text-right">
-                  <span className="text-sm font-semibold text-[#1D1D1F] block">
+                  <span className="text-sm font-semibold text-[#1D1D1F] block font-mono tabular-nums">
                     R$ {formatCurrency(totalDebitExpensesScheduled)}
                   </span>
                   {totalDebitExpensesActive < totalDebitExpensesScheduled && (
-                    <span className="text-[10px] text-[#86868B] block">
+                    <span className="text-[10px] text-[#86868B] block font-mono tabular-nums">
                       (R$ {formatCurrency(totalDebitExpensesActive)} a pagar)
                     </span>
                   )}
@@ -1157,7 +1157,7 @@ export default function PlanningPage() {
                           · {group.items.length} {group.items.length === 1 ? "saída direta" : "saídas diretas"}
                         </span>
                       </div>
-                      <span className="text-xs font-semibold text-[#1D1D1F]">
+                      <span className="text-xs font-semibold text-[#1D1D1F] font-mono tabular-nums">
                         R$ {formatCurrency(group.totalAmount)}
                       </span>
                     </div>
@@ -1199,12 +1199,12 @@ export default function PlanningPage() {
                   <span className="text-[11px] text-[#86868B] mr-1.5 font-medium">
                     Valor Somado:
                   </span>
-                  <span className="text-lg sm:text-xl font-semibold text-[#1D1D1F] tracking-tight">
+                  <span className="text-lg sm:text-xl font-semibold text-[#1D1D1F] tracking-tight font-mono tabular-nums">
                     R$ {formatCurrency(projection.totalInvoicesScheduled ?? creditCommitments)}
                   </span>
                 </div>
                 {projection.totalInvoicesPending !== undefined && projection.totalInvoicesPending < (projection.totalInvoicesScheduled ?? 0) && (
-                  <span className="text-[11px] text-[#86868B]">
+                  <span className="text-[11px] text-[#86868B] font-mono tabular-nums">
                     (R$ {formatCurrency(projection.totalInvoicesPending)} ainda pendente)
                   </span>
                 )}
@@ -1265,7 +1265,7 @@ export default function PlanningPage() {
                             <span className="text-[10px] uppercase font-semibold tracking-wider text-[#86868B] block">
                               Fatura {ci.cardName}
                             </span>
-                            <span className="text-base sm:text-lg font-semibold text-[#1D1D1F] tracking-tight">
+                            <span className="text-base sm:text-lg font-semibold text-[#1D1D1F] tracking-tight font-mono tabular-nums">
                               R$ {formatCurrency(ci.totalInvoice)}
                             </span>
                             {(() => {
@@ -1275,8 +1275,8 @@ export default function PlanningPage() {
                               const available = Math.max(0, limit - ci.totalInvoice);
                               return (
                                 <span className="text-[10px] text-[#86868B] block mt-0.5">
-                                  Limite: R$ {formatCurrency(limit)} · Disp:{" "}
-                                  <strong className="text-emerald-700 font-semibold">
+                                  Limite: <span className="font-mono tabular-nums">R$ {formatCurrency(limit)}</span> · Disp:{" "}
+                                  <strong className="text-emerald-700 font-semibold font-mono tabular-nums">
                                     R$ {formatCurrency(available)}
                                   </strong>
                                 </span>
@@ -1305,10 +1305,10 @@ export default function PlanningPage() {
                             <span>Composição da fatura</span>
                             <div className="flex items-center gap-3">
                               {hasInstallments && (
-                                <span>Compras: <strong className="text-[#1D1D1F]">R$ {formatCurrency(ci.installmentsAmount)}</strong></span>
+                                <span>Compras: <strong className="text-[#1D1D1F] font-mono tabular-nums">R$ {formatCurrency(ci.installmentsAmount)}</strong></span>
                               )}
                               {hasRecurring && (
-                                <span>Assinaturas: <strong className="text-[#1D1D1F]">R$ {formatCurrency(ci.recurringAmount)}</strong></span>
+                                <span>Assinaturas: <strong className="text-[#1D1D1F] font-mono tabular-nums">R$ {formatCurrency(ci.recurringAmount)}</strong></span>
                               )}
                             </div>
                           </div>
@@ -1324,7 +1324,7 @@ export default function PlanningPage() {
                           {hasInstallments && (
                             <div className="flex items-center justify-between text-xs pt-1 px-1 text-[#86868B]">
                               <span>Lançamentos e compras faturadas no {ci.cardName}</span>
-                              <span className="font-medium text-[#1D1D1F]">
+                              <span className="font-medium text-[#1D1D1F] font-mono tabular-nums">
                                 R$ {formatCurrency(ci.installmentsAmount)}
                               </span>
                             </div>
@@ -1463,14 +1463,14 @@ export default function PlanningPage() {
                     VALOR
                   </span>
                   <div className="flex-1 flex items-baseline gap-1">
-                    <span className="text-xl font-bold text-[#1D1D1F]">R$</span>
+                    <span className="text-xl font-bold text-[#1D1D1F] font-mono tabular-nums">R$</span>
                     <input
                       type="text"
                       inputMode="decimal"
                       placeholder="0,00"
                       value={newAmount}
                       onChange={(e) => setNewAmount(e.target.value)}
-                      className="w-full text-2xl sm:text-3xl font-bold text-[#1D1D1F] placeholder:text-gray-300 outline-none bg-transparent"
+                      className="w-full text-2xl sm:text-3xl font-bold text-[#1D1D1F] placeholder:text-gray-300 outline-none bg-transparent font-mono tabular-nums"
                     />
                   </div>
                 </div>
@@ -1792,11 +1792,11 @@ export default function PlanningPage() {
                             <div className="text-[11px] bg-blue-50/60 border border-blue-100 rounded-lg p-2 text-blue-900 flex items-center justify-between">
                               {installmentPricingType === "total" ? (
                                 <span>
-                                  Total <strong>R$ {formatCurrency(clean)}</strong> ÷ {count}x = <strong>R$ {formatCurrency(clean / count)}/mês</strong>
+                                  Total <strong className="font-mono tabular-nums">R$ {formatCurrency(clean)}</strong> ÷ {count}x = <strong className="font-mono tabular-nums">R$ {formatCurrency(clean / count)}/mês</strong>
                                 </span>
                               ) : (
                                 <span>
-                                  {count}x de <strong>R$ {formatCurrency(clean)}</strong> = Total de <strong>R$ {formatCurrency(clean * count)}</strong>
+                                  {count}x de <strong className="font-mono tabular-nums">R$ {formatCurrency(clean)}</strong> = Total de <strong className="font-mono tabular-nums">R$ {formatCurrency(clean * count)}</strong>
                                 </span>
                               )}
                               <span className="text-[10px] text-blue-700/80 font-medium ml-2 shrink-0">
@@ -1989,14 +1989,14 @@ export default function PlanningPage() {
                     VALOR
                   </span>
                   <div className="flex-1 flex items-baseline gap-1">
-                    <span className="text-xl font-bold text-[#1D1D1F]">R$</span>
+                    <span className="text-xl font-bold text-[#1D1D1F] font-mono tabular-nums">R$</span>
                     <input
                       type="text"
                       inputMode="decimal"
                       placeholder="0,00"
                       value={editAmount}
                       onChange={(e) => setEditAmount(e.target.value)}
-                      className="w-full text-2xl sm:text-3xl font-bold text-[#1D1D1F] placeholder:text-gray-300 outline-none bg-transparent"
+                      className="w-full text-2xl sm:text-3xl font-bold text-[#1D1D1F] placeholder:text-gray-300 outline-none bg-transparent font-mono tabular-nums"
                     />
                   </div>
                 </div>

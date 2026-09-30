@@ -351,18 +351,18 @@ export default function GoalsPage() {
               <Target strokeWidth={1.5} size={15} className="text-[#1D1D1F]" />
               <span>Progresso Global</span>
             </div>
-            <span className="font-semibold text-[#1D1D1F] px-2.5 py-0.5 rounded-full bg-[#F2F2F7]">
+            <span className="font-semibold text-[#1D1D1F] px-2.5 py-0.5 rounded-full bg-[#F2F2F7] font-mono tabular-nums">
               {overallPercentage}% acumulado
             </span>
           </div>
 
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <div className="text-2xl font-semibold text-[#1D1D1F] tracking-tight">
+            <div className="text-2xl font-semibold text-[#1D1D1F] tracking-tight font-mono tabular-nums">
               {formatCurrency(totalCurrent)}
             </div>
             <div className="text-xs text-[#86868B]">
               Objetivo total:{" "}
-              <strong className="text-[#1D1D1F] font-medium">
+              <strong className="text-[#1D1D1F] font-medium font-mono tabular-nums">
                 {formatCurrency(totalTarget)}
               </strong>
             </div>
@@ -483,7 +483,7 @@ export default function GoalsPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-[#F2F2F7] text-[#86868B]">
+                      <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-[#F2F2F7] text-[#86868B] font-mono tabular-nums">
                         {percentage}%
                       </span>
                       <button
@@ -500,10 +500,10 @@ export default function GoalsPage() {
                   <div className="space-y-2">
                     <div className="flex justify-between items-baseline text-xs">
                       <span className="text-[#86868B]">
-                        <strong className="text-[#1D1D1F] font-semibold">
+                        <strong className="text-[#1D1D1F] font-semibold font-mono tabular-nums">
                           {formatCurrency(goal.current)}
                         </strong>{" "}
-                        guardados de {formatCurrency(goal.target)}
+                        guardados de <span className="font-mono tabular-nums">{formatCurrency(goal.target)}</span>
                       </span>
                     </div>
 
@@ -661,7 +661,7 @@ export default function GoalsPage() {
                     value={targetAmount}
                     onChange={(e) => setTargetAmount(e.target.value)}
                     placeholder="10.000,00"
-                    className="w-full bg-[#F2F2F7] rounded-xl px-4 py-3 text-sm text-[#1D1D1F] outline-none font-semibold focus:ring-2 focus:ring-black/10 transition-all"
+                    className="w-full bg-[#F2F2F7] rounded-xl px-4 py-3 text-sm text-[#1D1D1F] outline-none font-semibold focus:ring-2 focus:ring-black/10 transition-all font-mono tabular-nums"
                     required
                   />
                 </div>
@@ -675,7 +675,7 @@ export default function GoalsPage() {
                     value={initialAmount}
                     onChange={(e) => setInitialAmount(e.target.value)}
                     placeholder="0,00"
-                    className="w-full bg-[#F2F2F7] rounded-xl px-4 py-3 text-sm text-[#1D1D1F] outline-none focus:ring-2 focus:ring-black/10 transition-all"
+                    className="w-full bg-[#F2F2F7] rounded-xl px-4 py-3 text-sm text-[#1D1D1F] outline-none focus:ring-2 focus:ring-black/10 transition-all font-mono tabular-nums"
                   />
                 </div>
               </div>
@@ -686,7 +686,7 @@ export default function GoalsPage() {
                   <div className="space-y-0.5">
                     <span className="text-[11px] font-semibold text-[#1D1D1F] flex items-center gap-1.5">
                       <Wallet size={14} className="text-emerald-600" />
-                      De onde vem esse valor inicial de {formatCurrency(parsedInitialAmount)}?
+                      De onde vem esse valor inicial de <span className="font-mono tabular-nums">{formatCurrency(parsedInitialAmount)}</span>?
                     </span>
                     <p className="text-[10px] text-[#86868B]">
                       Escolha se deseja debitar da sua conta agora ou se esse dinheiro já estava guardado externamente.
@@ -769,7 +769,7 @@ export default function GoalsPage() {
                                 <span className="text-xs font-semibold text-[#1D1D1F]">{acc.name}</span>
                               </div>
                               <span className="text-xs font-medium text-[#1D1D1F]">
-                                Saldo: <strong>{formatCurrency(acc.balance ?? 0)}</strong>
+                                Saldo: <strong className="font-mono tabular-nums">{formatCurrency(acc.balance ?? 0)}</strong>
                               </span>
                             </div>
                           );
@@ -781,7 +781,7 @@ export default function GoalsPage() {
                         <div className="flex items-center gap-1.5 text-[11px] text-amber-700 bg-amber-50 p-2 rounded-xl border border-amber-200">
                           <AlertCircle size={14} className="shrink-0" />
                           <span>
-                            Atenção: o saldo na conta é de {formatCurrency(selectedInitialAccount?.balance ?? 0)} e ficará negativo.
+                            Atenção: o saldo na conta é de <span className="font-mono tabular-nums">{formatCurrency(selectedInitialAccount?.balance ?? 0)}</span> e ficará negativo.
                           </span>
                         </div>
                       )}
@@ -894,13 +894,13 @@ export default function GoalsPage() {
                     Quanto deseja guardar agora?
                   </label>
                   <div className="flex justify-center items-baseline gap-1.5 pt-1">
-                    <span className="text-2xl font-light text-gray-400">R$</span>
+                    <span className="text-2xl font-light text-gray-400 font-mono tabular-nums">R$</span>
                     <input
                       type="text"
                       value={movementAmount}
                       onChange={(e) => setMovementAmount(e.target.value)}
                       placeholder="100,00"
-                      className="text-3xl font-light text-[#1D1D1F] text-center w-52 outline-none bg-transparent"
+                      className="text-3xl font-light text-[#1D1D1F] text-center w-52 outline-none bg-transparent font-mono tabular-nums"
                       autoFocus
                     />
                   </div>
@@ -1019,7 +1019,7 @@ export default function GoalsPage() {
                                 <span className="text-xs font-semibold text-[#1D1D1F]">{acc.name}</span>
                               </div>
                               <span className="text-xs font-medium text-[#1D1D1F]">
-                                Saldo: <strong>{formatCurrency(acc.balance ?? 0)}</strong>
+                                Saldo: <strong className="font-mono tabular-nums">{formatCurrency(acc.balance ?? 0)}</strong>
                               </span>
                             </div>
                           );
@@ -1031,7 +1031,7 @@ export default function GoalsPage() {
                         <div className="pt-1 flex items-center justify-between text-[11px] text-[#86868B] px-1">
                           <span>Saldo após guardar:</span>
                           <span
-                            className={`font-semibold ${
+                            className={`font-semibold font-mono tabular-nums ${
                               (selectedContributeAccount.balance ?? 0) - parsedMovementAmount < 0
                                 ? "text-amber-600"
                                 : "text-[#1D1D1F]"
@@ -1047,7 +1047,7 @@ export default function GoalsPage() {
                         <div className="flex items-center gap-1.5 text-[11px] text-amber-700 bg-amber-50 p-2 rounded-xl border border-amber-200">
                           <AlertCircle size={14} className="shrink-0" />
                           <span>
-                            Saldo disponível ({formatCurrency(selectedContributeAccount?.balance ?? 0)}) é menor que o valor a guardar.
+                            Saldo disponível (<span className="font-mono tabular-nums">{formatCurrency(selectedContributeAccount?.balance ?? 0)}</span>) é menor que o valor a guardar.
                           </span>
                         </div>
                       )}
@@ -1080,16 +1080,16 @@ export default function GoalsPage() {
                     Quanto deseja resgatar?
                   </label>
                   <p className="text-[11px] text-[#86868B]">
-                    Disponível nesta meta: <strong className="text-[#1D1D1F]">{formatCurrency(activeMovementGoal.current)}</strong>
+                    Disponível nesta meta: <strong className="text-[#1D1D1F] font-mono tabular-nums">{formatCurrency(activeMovementGoal.current)}</strong>
                   </p>
                   <div className="flex justify-center items-baseline gap-1.5 pt-1">
-                    <span className="text-2xl font-light text-gray-400">R$</span>
+                    <span className="text-2xl font-light text-gray-400 font-mono tabular-nums">R$</span>
                     <input
                       type="text"
                       value={movementAmount}
                       onChange={(e) => setMovementAmount(e.target.value)}
                       placeholder="100,00"
-                      className="text-3xl font-light text-[#1D1D1F] text-center w-52 outline-none bg-transparent"
+                      className="text-3xl font-light text-[#1D1D1F] text-center w-52 outline-none bg-transparent font-mono tabular-nums"
                       autoFocus
                     />
                   </div>
@@ -1215,7 +1215,7 @@ export default function GoalsPage() {
                                 <span className="text-xs font-semibold text-[#1D1D1F]">{acc.name}</span>
                               </div>
                               <span className="text-xs font-medium text-[#1D1D1F]">
-                                Saldo: <strong>{formatCurrency(acc.balance ?? 0)}</strong>
+                                Saldo: <strong className="font-mono tabular-nums">{formatCurrency(acc.balance ?? 0)}</strong>
                               </span>
                             </div>
                           );
@@ -1226,7 +1226,7 @@ export default function GoalsPage() {
                       {parsedMovementAmount > 0 && selectedWithdrawAccount && (
                         <div className="pt-1 flex items-center justify-between text-[11px] text-[#86868B] px-1">
                           <span>Saldo após resgate:</span>
-                          <span className="font-semibold text-emerald-600">
+                          <span className="font-semibold text-emerald-600 font-mono tabular-nums">
                             {formatCurrency((selectedWithdrawAccount.balance ?? 0) + parsedMovementAmount)}
                           </span>
                         </div>

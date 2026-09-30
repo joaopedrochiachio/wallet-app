@@ -928,7 +928,7 @@ export default function AIAnalystPage() {
                       Comprometimento Atual
                     </span>
                     <div className="mt-1 flex items-baseline gap-1.5">
-                      <strong className="text-lg font-semibold text-[#1D1D1F]">
+                      <strong className="text-lg font-semibold text-[#1D1D1F] font-mono tabular-nums">
                         {commitmentRatio}%
                       </strong>
                       <span className="text-[10px] text-[#86868B]">
@@ -941,7 +941,7 @@ export default function AIAnalystPage() {
                     <span className="text-[10px] uppercase font-semibold text-[#86868B] tracking-wider block">
                       Saldo em Conta
                     </span>
-                    <strong className="mt-1 block text-lg font-semibold text-emerald-600 truncate">
+                    <strong className="mt-1 block text-lg font-semibold text-emerald-600 truncate font-mono tabular-nums">
                       R$ {formatCurrency(mainBalance)}
                     </strong>
                   </div>
@@ -950,7 +950,7 @@ export default function AIAnalystPage() {
                     <span className="text-[10px] uppercase font-semibold text-[#86868B] tracking-wider block">
                       Faturas em Aberto
                     </span>
-                    <strong className="mt-1 block text-lg font-semibold text-[#1D1D1F] truncate">
+                    <strong className="mt-1 block text-lg font-semibold text-[#1D1D1F] truncate font-mono tabular-nums">
                       R$ {formatCurrency(totalInvoices)}
                     </strong>
                   </div>
@@ -1035,7 +1035,7 @@ export default function AIAnalystPage() {
                       </span>
                       <div className="mt-1 flex items-baseline gap-1.5">
                         <strong
-                          className={`text-base font-semibold ${
+                          className={`text-base font-semibold font-mono tabular-nums ${
                             commitmentRatio > (userProfile?.maxCommitmentAlertPercent || 60)
                               ? "text-rose-600"
                               : "text-[#1D1D1F]"
@@ -1053,7 +1053,7 @@ export default function AIAnalystPage() {
                       <span className="text-[10px] uppercase font-semibold text-[#86868B] tracking-wider block">
                         Saldo em Conta
                       </span>
-                      <strong className="mt-1 block text-base font-semibold text-emerald-600 truncate">
+                      <strong className="mt-1 block text-base font-semibold text-emerald-600 truncate font-mono tabular-nums">
                         R$ {formatCurrency(mainBalance)}
                       </strong>
                     </div>
@@ -1062,7 +1062,7 @@ export default function AIAnalystPage() {
                       <span className="text-[10px] uppercase font-semibold text-[#86868B] tracking-wider block">
                         Faturas em Aberto
                       </span>
-                      <strong className="mt-1 block text-base font-semibold text-[#1D1D1F] truncate">
+                      <strong className="mt-1 block text-base font-semibold text-[#1D1D1F] truncate font-mono tabular-nums">
                         R$ {formatCurrency(totalInvoices)}
                       </strong>
                     </div>
@@ -1110,7 +1110,7 @@ export default function AIAnalystPage() {
                         <span className="text-[10px] uppercase font-semibold text-[#86868B] tracking-wider block">
                           Renda Fixa Mensal
                         </span>
-                        <strong className="mt-1 block text-base font-semibold text-[#1D1D1F]">
+                        <strong className="mt-1 block text-base font-semibold text-[#1D1D1F] font-mono tabular-nums">
                           R$ {formatCurrency(diagnosis.clientProfileAssessment.monthlyIncomeBase)}
                         </strong>
                       </div>
@@ -1215,7 +1215,7 @@ export default function AIAnalystPage() {
 
                       <div className="space-y-1">
                         <div className="text-[11px] text-[#86868B]">Saldo livre que resta no mês:</div>
-                        <div className="text-3xl font-semibold tracking-tight text-[#1D1D1F]">
+                        <div className="text-3xl font-semibold tracking-tight text-[#1D1D1F] font-mono tabular-nums">
                           R$ {formatCurrency(diagnosis?.cashflowWindow?.currentMonth.projectedFreeBalance ?? mainBalance)}
                         </div>
                       </div>
@@ -1223,13 +1223,13 @@ export default function AIAnalystPage() {
                       <div className="grid grid-cols-2 gap-2 pt-2.5 border-t border-black/5 text-[11px]">
                         <div>
                           <span className="text-[#86868B] block text-[10px]">Saldo na Conta</span>
-                          <span className="font-semibold text-emerald-700 truncate block">
+                          <span className="font-semibold text-emerald-700 truncate block font-mono tabular-nums">
                             R$ {formatCurrency(diagnosis?.cashflowWindow?.currentMonth.checkingBalance ?? mainBalance)}
                           </span>
                         </div>
                         <div>
                           <span className="text-[#86868B] block text-[10px]">Contas a Fechar</span>
-                          <span className="font-semibold text-[#1D1D1F] truncate block">
+                          <span className="font-semibold text-[#1D1D1F] truncate block font-mono tabular-nums">
                             R$ {formatCurrency(diagnosis?.cashflowWindow?.currentMonth.pendingBills ?? monthExpense)}
                           </span>
                         </div>
@@ -1255,7 +1255,7 @@ export default function AIAnalystPage() {
 
                       <div className="space-y-1">
                         <div className="text-[11px] text-[#86868B]">Livre para gastar mês que vem:</div>
-                        <div className="text-3xl font-semibold tracking-tight text-emerald-700">
+                        <div className="text-3xl font-semibold tracking-tight text-emerald-700 font-mono tabular-nums">
                           R$ {formatCurrency(diagnosis?.cashflowWindow?.nextMonth.projectedFreeBalance ?? (monthlyIncome - totalInvoices))}
                         </div>
                       </div>
@@ -1263,13 +1263,13 @@ export default function AIAnalystPage() {
                       <div className="grid grid-cols-2 gap-2 pt-2.5 border-t border-black/5 text-[11px]">
                         <div>
                           <span className="text-[#86868B] block text-[10px]">Entradas Previstas</span>
-                          <span className="font-semibold text-[#1D1D1F] truncate block">
+                          <span className="font-semibold text-[#1D1D1F] truncate block font-mono tabular-nums">
                             R$ {formatCurrency(diagnosis?.cashflowWindow?.nextMonth.projectedIncome ?? monthlyIncome)}
                           </span>
                         </div>
                         <div>
                           <span className="text-[#86868B] block text-[10px]">Gastos Comprometidos</span>
-                          <span className="font-semibold text-rose-600 truncate block">
+                          <span className="font-semibold text-rose-600 truncate block font-mono tabular-nums">
                             R$ {formatCurrency(diagnosis?.cashflowWindow?.nextMonth.committedExpenses ?? totalInvoices)}
                           </span>
                         </div>
@@ -1390,10 +1390,10 @@ export default function AIAnalystPage() {
                                 </div>
                               </div>
 
-                              <div className="text-lg font-bold text-[#1D1D1F]">
+                              <div className="text-lg font-bold text-[#1D1D1F] font-mono tabular-nums">
                                 R$ {formatCurrency(item.totalAmount)}
                                 {item.count && (
-                                  <span className="text-xs font-normal text-[#86868B] ml-2">
+                                  <span className="text-xs font-normal text-[#86868B] ml-2 font-sans">
                                     ({item.count} compra{item.count > 1 ? "s" : ""})
                                   </span>
                                 )}
@@ -1403,12 +1403,12 @@ export default function AIAnalystPage() {
                               {(item.creditAmount !== undefined || item.debitAmount !== undefined || item.paymentBreakdown) && (
                                 <div className="flex items-center gap-1.5 flex-wrap pt-0.5 pb-1">
                                   {typeof item.creditAmount === "number" && item.creditAmount > 0 && (
-                                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-[#F2F2F7] text-[#1D1D1F] border border-black/[0.06]">
+                                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-[#F2F2F7] text-[#1D1D1F] border border-black/[0.06] font-mono tabular-nums">
                                       Crédito: R$ {formatCurrency(item.creditAmount)}
                                     </span>
                                   )}
                                   {typeof item.debitAmount === "number" && item.debitAmount > 0 && (
-                                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+                                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200/60 font-mono tabular-nums">
                                       Débito/PIX: R$ {formatCurrency(item.debitAmount)}
                                     </span>
                                   )}
@@ -1486,7 +1486,7 @@ export default function AIAnalystPage() {
                             </span>
                           </div>
                           <div>
-                            <span className="text-base font-bold text-[#1D1D1F]">
+                            <span className="text-base font-bold text-[#1D1D1F] font-mono tabular-nums">
                               R$ {formatCurrency(item.cardInstallmentsAmount)}
                             </span>
                             {item.dueDateHint && (
@@ -1691,7 +1691,7 @@ export default function AIAnalystPage() {
                         value={simAmount}
                         onChange={(e) => setSimAmount(e.target.value)}
                         placeholder="1200"
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-[#F2F2F7] text-xs font-semibold text-[#1D1D1F] border border-black/5 focus:outline-none focus:ring-1 focus:ring-black"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-[#F2F2F7] text-xs font-semibold text-[#1D1D1F] border border-black/5 focus:outline-none focus:ring-1 focus:ring-black font-mono tabular-nums"
                       />
                     </div>
 
@@ -1732,7 +1732,7 @@ export default function AIAnalystPage() {
                         <label className="text-[11px] font-semibold text-[#86868B] uppercase tracking-wider">
                           Parcelas no Cartão
                         </label>
-                        <span className="text-xs font-semibold text-emerald-700">
+                        <span className="text-xs font-semibold text-emerald-700 font-mono tabular-nums">
                           {simInstallments}x de R$ {formatCurrency(installmentValue)}
                         </span>
                       </div>
@@ -1917,8 +1917,8 @@ export default function AIAnalystPage() {
                             <p className="leading-relaxed">{msg.simulationResult.verdictMessage}</p>
                             <div className="pt-1 text-[10px] opacity-85 border-t border-black/5 flex items-center justify-between">
                               <span>
-                                Comprometimento: {msg.simulationResult.before.monthlyCommitmentPercent}% ➔{" "}
-                                {msg.simulationResult.after.monthlyCommitmentPercent}%
+                                Comprometimento: <span className="font-mono tabular-nums">{msg.simulationResult.before.monthlyCommitmentPercent}%</span> ➔{" "}
+                                <span className="font-mono tabular-nums">{msg.simulationResult.after.monthlyCommitmentPercent}%</span>
                               </span>
                               <span>{msg.simulationResult.installments}x no cartão</span>
                             </div>

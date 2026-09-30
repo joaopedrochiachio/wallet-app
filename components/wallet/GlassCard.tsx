@@ -76,7 +76,7 @@ export function GlassCard({
             <span className={`text-[9px] uppercase tracking-wider font-semibold ${theme.mutedColor} block`}>
               Saldo Disponível
             </span>
-            <div className={`text-base font-semibold tracking-tight ${theme.textColor} drop-shadow-xs`}>
+            <div className={`text-base font-semibold tracking-tight font-mono tabular-nums ${theme.textColor} drop-shadow-xs`}>
               R$ {card.balance.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
             </div>
           </div>
@@ -85,7 +85,7 @@ export function GlassCard({
             <span className={`text-[9px] uppercase tracking-wider font-semibold ${theme.mutedColor} block`}>
               Limite Disponível
             </span>
-            <div className={`text-base font-semibold tracking-tight ${theme.textColor} drop-shadow-xs`}>
+            <div className={`text-base font-semibold tracking-tight font-mono tabular-nums ${theme.textColor} drop-shadow-xs`}>
               R$ {Math.max(0, (card.limit || 0) - (card.spent || 0)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
             </div>
           </div>

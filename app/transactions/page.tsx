@@ -178,7 +178,7 @@ function TransactionRow({
       <div className="flex items-center gap-3 shrink-0">
         <div className="text-right">
           <span
-            className={`text-sm sm:text-[15px] font-semibold tracking-tight block ${
+            className={`text-sm sm:text-[15px] font-semibold tracking-tight block font-mono tabular-nums ${
               isIncome ? "text-emerald-600" : "text-[#1D1D1F]"
             }`}
           >

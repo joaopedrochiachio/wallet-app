@@ -100,13 +100,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         <div className="flex items-baseline">
                           <span
                             className="text-xs font-semibold tracking-tight text-white"
-                            style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif' }}
+                            style={{ fontFamily: 'var(--font-sf-pro), -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif' }}
                           >
                             Wallet
                           </span>
                           <span
                             className="text-[13px] font-bold ml-0.5 tracking-tighter text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.85)] leading-none"
-                            style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif' }}
+                            style={{ fontFamily: 'var(--font-sf-pro), -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif' }}
                           >
                             +
                           </span>
@@ -261,7 +261,7 @@ function MobileAiNavItem({
           className="text-[12px] font-semibold tracking-tight text-white leading-none"
           style={{
             fontFamily:
-              '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", sans-serif',
+              'var(--font-sf-pro), -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", sans-serif',
           }}
         >
           Wallet
@@ -270,7 +270,7 @@ function MobileAiNavItem({
           className="text-[13px] font-bold text-white tracking-tighter leading-none drop-shadow-[0_0_8px_rgba(255,255,255,0.9)] ml-0.5"
           style={{
             fontFamily:
-              '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", sans-serif',
+              'var(--font-sf-pro), -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", sans-serif',
           }}
           title="Wallet+"
         >

@@ -77,7 +77,7 @@ export function WalletPass({
         <span className="text-[10px] font-semibold uppercase tracking-widest text-white/60 block mb-0.5">
           {primaryLabel}
         </span>
-        <div className="text-2xl sm:text-3xl font-bold tracking-tight text-white">
+        <div className="text-2xl sm:text-3xl font-bold tracking-tight text-white font-mono tabular-nums">
           {primaryValue}
         </div>
       </div>

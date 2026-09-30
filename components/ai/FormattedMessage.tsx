@@ -83,7 +83,7 @@ function highlightFinancialTokens(text: string, baseKey: number): React.ReactNod
     parts.push(
       <span
         key={`fin-${baseKey}-${lastIdx}-${m.index}`}
-        className="font-semibold text-[#1D1D1F] tracking-tight"
+        className="font-semibold text-[#1D1D1F] tracking-tight font-mono tabular-nums"
       >
         {token}
       </span>
@@ -366,7 +366,7 @@ export function FormattedMessage({ content, role = "assistant" }: FormattedMessa
                       </div>
 
                       {cat.amount && (
-                        <span className="text-xs font-bold text-[#1D1D1F] bg-emerald-50 text-emerald-800 border border-emerald-200/50 px-2.5 py-0.5 rounded-full">
+                        <span className="text-xs font-bold text-[#1D1D1F] bg-emerald-50 text-emerald-800 border border-emerald-200/50 px-2.5 py-0.5 rounded-full font-mono tabular-nums">
                           {cat.amount}
                         </span>
                       )}

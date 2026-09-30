@@ -178,7 +178,7 @@ export function InteractiveCard({
             </p>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-light text-white/70">R$</span>
-              <span className="text-4xl sm:text-5xl font-light tracking-tight text-white">
+              <span className="text-4xl sm:text-5xl font-light tracking-tight text-white font-mono tabular-nums">
                 {formatCurrency(displayedMainValue)}
               </span>
             </div>
@@ -207,7 +207,7 @@ export function InteractiveCard({
                     value={tempLimit}
                     onChange={(e) => setTempLimit(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && handleSaveLimit()}
-                    className="w-16 bg-transparent text-white font-semibold outline-none text-xs"
+                    className="w-16 bg-transparent text-white font-semibold outline-none text-xs font-mono tabular-nums"
                     autoFocus
                   />
                   <button onClick={handleSaveLimit} className="text-emerald-400 hover:text-emerald-300">
@@ -218,7 +218,7 @@ export function InteractiveCard({
                   </button>
                 </div>
               ) : (
-                <span className="text-sm font-semibold text-white/90 block mt-0.5">
+                <span className="text-sm font-semibold text-white/90 block mt-0.5 font-mono tabular-nums">
                   {isCredit ? `R$ ${formatCurrency(card.limit)}` : "Movimentação Pix"}
                 </span>
               )}

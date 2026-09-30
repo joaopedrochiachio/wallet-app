@@ -83,7 +83,7 @@ export function WalletLogo({
           <div className="flex items-center gap-1.5">
             <span
               className={`tracking-tight text-[#1D1D1F] ${textClass}`}
-              style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif' }}
+              style={{ fontFamily: 'var(--font-sf-pro), -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif' }}
             >
               Wallet
             </span>

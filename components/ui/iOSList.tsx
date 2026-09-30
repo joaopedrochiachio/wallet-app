@@ -67,7 +67,7 @@ export function ListItem({
         <div className="flex items-center gap-3 shrink-0 ml-3">
           {amount && (
             <div
-              className={`text-[15px] font-semibold tracking-tight tabular-nums ${
+              className={`text-[15px] font-semibold tracking-tight font-mono tabular-nums ${
                 isIncome ? "text-emerald-600" : "text-[#1D1D1F]"
               }`}
             >

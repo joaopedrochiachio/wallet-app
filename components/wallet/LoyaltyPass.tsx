@@ -83,7 +83,7 @@ export function LoyaltyPass({
             <Sparkles size={11} /> +5% Cashback
           </span>
         </div>
-        <div className="text-3xl font-black tracking-tight text-white mt-0.5">
+        <div className="text-3xl font-black tracking-tight text-white mt-0.5 font-mono tabular-nums">
           {data.pointsBalance}
         </div>
       </div>

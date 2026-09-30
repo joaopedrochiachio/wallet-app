@@ -286,7 +286,7 @@ export function AddTransactionSheet({
                 placeholder="0,00"
                 value={amountInput}
                 onChange={(e) => setAmountInput(e.target.value)}
-                className="w-full max-w-[260px] text-center text-3xl sm:text-5xl font-semibold tracking-tight text-[#1D1D1F] placeholder:text-[#D1D1D6] outline-none bg-transparent"
+                className="w-full max-w-[260px] text-center text-3xl sm:text-5xl font-semibold tracking-tight text-[#1D1D1F] placeholder:text-[#D1D1D6] outline-none bg-transparent font-mono tabular-nums"
                 autoFocus
               />
             </div>
@@ -698,7 +698,7 @@ export function AddTransactionSheet({
               <span className="text-xs font-semibold uppercase tracking-wider text-[#86868B]">
                 {type === "receita" ? "Total a receber" : "Total a pagar"}
               </span>
-              <span className="text-2xl font-bold tracking-tight text-[#1D1D1F]">
+              <span className="text-2xl font-bold tracking-tight text-[#1D1D1F] font-mono tabular-nums">
                 R$ {formatCurrency(parsedAmount)}
               </span>
             </div>

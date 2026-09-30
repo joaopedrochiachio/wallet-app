@@ -28,7 +28,7 @@ export function WalletHeader({
         <div>
           <h1
             className="text-2xl sm:text-3xl font-semibold tracking-tight text-[#1D1D1F]"
-            style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif' }}
+            style={{ fontFamily: 'var(--font-sf-pro), -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif' }}
           >
             Carteira
           </h1>

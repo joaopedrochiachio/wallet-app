@@ -1,7 +1,62 @@
 import type { Metadata, Viewport } from "next";
+import localFont from "next/font/local";
 import "./globals.css";
 import { AppShell } from "@/components/layout/AppShell";
 import { PwaRegister } from "@/components/pwa/PwaRegister";
+
+const sfPro = localFont({
+  src: [
+    {
+      path: "../public/fonts/SFWindows.27.0.1789118100/SF Pro/SF-Pro-Display-Regular.otf",
+      weight: "400",
+      style: "normal",
+    },
+    {
+      path: "../public/fonts/SFWindows.27.0.1789118100/SF Pro/SF-Pro-Display-Medium.otf",
+      weight: "500",
+      style: "normal",
+    },
+    {
+      path: "../public/fonts/SFWindows.27.0.1789118100/SF Pro/SF-Pro-Display-Semibold.otf",
+      weight: "600",
+      style: "normal",
+    },
+    {
+      path: "../public/fonts/SFWindows.27.0.1789118100/SF Pro/SF-Pro-Display-Bold.otf",
+      weight: "700",
+      style: "normal",
+    },
+  ],
+  variable: "--font-sf-pro",
+  display: "swap",
+});
+
+const sfMono = localFont({
+  src: [
+    {
+      path: "../public/fonts/SFWindows.27.0.1789118100/SF Mono/SF-Mono-Regular.otf",
+      weight: "400",
+      style: "normal",
+    },
+    {
+      path: "../public/fonts/SFWindows.27.0.1789118100/SF Mono/SF-Mono-Medium.otf",
+      weight: "500",
+      style: "normal",
+    },
+    {
+      path: "../public/fonts/SFWindows.27.0.1789118100/SF Mono/SF-Mono-Semibold.otf",
+      weight: "600",
+      style: "normal",
+    },
+    {
+      path: "../public/fonts/SFWindows.27.0.1789118100/SF Mono/SF-Mono-Bold.otf",
+      weight: "700",
+      style: "normal",
+    },
+  ],
+  variable: "--font-sf-mono",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Wallet Intelligence",
@@ -42,8 +97,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="pt-BR">
-      <body className="min-h-screen w-full bg-[#F2F2F7] text-[#1D1D1F] antialiased selection:bg-[#1D1D1F] selection:text-white">
+    <html lang="pt-BR" className={`${sfPro.variable} ${sfMono.variable}`}>
+      <body className="min-h-screen w-full bg-[#F2F2F7] text-[#1D1D1F] font-sans antialiased selection:bg-[#1D1D1F] selection:text-white">
         <PwaRegister />
         <AppShell>{children}</AppShell>
       </body>

@@ -329,7 +329,7 @@ export default function ProfilePage() {
               <span className="text-[10px] font-semibold uppercase tracking-wider text-white/45 block truncate">
                 Renda Base
               </span>
-              <span className="text-xs sm:text-sm font-semibold text-white tracking-tight mt-0.5 block truncate">
+              <span className="text-xs sm:text-sm font-semibold text-white tracking-tight mt-0.5 block truncate font-mono tabular-nums">
                 R$ {formatCurrency(userProfile.monthlyIncomeBase)}
               </span>
             </div>
@@ -347,7 +347,7 @@ export default function ProfilePage() {
               <span className="text-[10px] font-semibold uppercase tracking-wider text-white/45 block truncate">
                 Saldo Atual
               </span>
-              <span className="text-xs sm:text-sm font-semibold text-emerald-400 tracking-tight mt-0.5 block truncate">
+              <span className="text-xs sm:text-sm font-semibold text-emerald-400 tracking-tight mt-0.5 block truncate font-mono tabular-nums">
                 R$ {formatCurrency(mainBalance)}
               </span>
             </div>
@@ -568,7 +568,7 @@ export default function ProfilePage() {
                   O Advisor enviará alertas prioritários se as faturas superarem esta porcentagem da sua renda.
                 </p>
               </div>
-              <span className="text-sm font-semibold text-[#1D1D1F] bg-[#F2F2F7] px-3 py-1 rounded-full">
+              <span className="text-sm font-semibold text-[#1D1D1F] bg-[#F2F2F7] px-3 py-1 rounded-full font-mono tabular-nums">
                 {maxCommitment}% da renda
               </span>
             </div>
@@ -684,7 +684,7 @@ export default function ProfilePage() {
                 required
                 value={incomeInput}
                 onChange={(e) => setIncomeInput(e.target.value)}
-                className="w-full bg-[#F2F2F7] rounded-xl px-4 py-2.5 text-sm text-[#1D1D1F] font-semibold border border-transparent focus:bg-white focus:border-black/10 focus:outline-none focus:ring-2 focus:ring-[#1D1D1F]/20 transition-all"
+                className="w-full bg-[#F2F2F7] rounded-xl px-4 py-2.5 text-sm text-[#1D1D1F] font-semibold border border-transparent focus:bg-white focus:border-black/10 focus:outline-none focus:ring-2 focus:ring-[#1D1D1F]/20 transition-all font-mono tabular-nums"
               />
             </div>
           </div>
