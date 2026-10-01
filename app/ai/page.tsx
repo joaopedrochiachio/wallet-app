@@ -27,6 +27,10 @@ import {
   MessageSquare,
 } from "lucide-react";
 import { FormattedMessage } from "@/components/ai/FormattedMessage";
+import { CashflowBarChart } from "@/components/ai/CashflowBarChart";
+import { CategorySpectrumBar, CategoryDistribution } from "@/components/ai/CategorySpectrumBar";
+import { InstallmentTimelineChart } from "@/components/ai/InstallmentTimelineChart";
+import { InteractivePatternCard } from "@/components/ai/InteractivePatternCard";
 import { FinancialDiagnosis, SpecificExpenseAlert } from "@/app/api/ai/analyze/route";
 import { PurchaseSimulationResult } from "@/lib/services/financialContextService";
 import {
@@ -121,6 +125,8 @@ export default function AIAnalystPage() {
   const [dismissedPatterns, setDismissedPatterns] = useState<string[]>(() => loadDismissedPatterns(user?.uid));
   const [isSearchingPatterns, setIsSearchingPatterns] = useState<boolean>(false);
   const [patternsFeedback, setPatternsFeedback] = useState<string | null>(null);
+  const [selectedCluster, setSelectedCluster] = useState<"all" | "alerts" | "recurring" | "habits">("all");
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string | null>(null);
 
   // Estados do Chat e Histórico de Sessões
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -749,6 +755,85 @@ export default function AIAnalystPage() {
     });
   });
 
+  // Meta primária para relacionar às economias calculadas
+  const primaryGoal = goals.find((g) => g.current < g.target) || goals[0] || null;
+  const targetGoalName = primaryGoal?.title || userProfile?.primaryFocus || "Reserva Financeira";
+
+  // Agrupamento por Categoria para a barra de espectro estilo Apple Card
+  const categoryColors: Record<string, string> = {
+    "Alimentação & Delivery": "#FF9500", // Apple Orange
+    "Transporte & Mobilidade": "#007AFF", // Apple Blue
+    "Assinaturas & Streaming": "#AF52DE", // Apple Purple
+    "Fixas & Moradia": "#5856D6", // Apple Indigo
+    "Compras & Lazer": "#FF2D55", // Apple Pink
+    "Saúde & Bem-estar": "#30B0C7", // Apple Teal
+    "Outros": "#8E8E93", // Apple Gray
+  };
+
+  const categoryTotals: Record<string, number> = {};
+  visibleSpecificAlerts.forEach((item) => {
+    const cat = item.habitCategory || "Outros";
+    categoryTotals[cat] = (categoryTotals[cat] || 0) + item.totalAmount;
+  });
+
+  if (Object.keys(categoryTotals).length === 0 && transactions.length > 0) {
+    transactions
+      .filter((t) => t.type === "despesa")
+      .forEach((t) => {
+        const cat = t.category || "Outros";
+        categoryTotals[cat] = (categoryTotals[cat] || 0) + t.amount;
+      });
+  }
+
+  const spectrumCategories: CategoryDistribution[] = Object.entries(categoryTotals)
+    .sort((a, b) => b[1] - a[1])
+    .map(([category, total]) => ({
+      category,
+      total,
+      color: categoryColors[category] || "#8E8E93",
+    }));
+
+  // Filtro por Cluster de Padrões e Categoria do Apple Card
+  const filteredPatterns = visibleSpecificAlerts.filter((item) => {
+    if (selectedCategoryFilter && (item.habitCategory || "Outros") !== selectedCategoryFilter) {
+      return false;
+    }
+    if (selectedCluster === "alerts") {
+      return item.alertType === "alert";
+    }
+    if (selectedCluster === "recurring") {
+      const cat = (item.habitCategory || "").toLowerCase();
+      const name = item.item.toLowerCase();
+      return (
+        cat.includes("assinatura") ||
+        cat.includes("streaming") ||
+        name.includes("spotify") ||
+        name.includes("netflix") ||
+        name.includes("amazon") ||
+        name.includes("mensalidade")
+      );
+    }
+    if (selectedCluster === "habits") {
+      return item.alertType !== "alert";
+    }
+    return true;
+  });
+
+  const alertsCount = visibleSpecificAlerts.filter((i) => i.alertType === "alert").length;
+  const recurringCount = visibleSpecificAlerts.filter((i) => {
+    const cat = (i.habitCategory || "").toLowerCase();
+    const name = i.item.toLowerCase();
+    return (
+      cat.includes("assinatura") ||
+      cat.includes("streaming") ||
+      name.includes("spotify") ||
+      name.includes("netflix") ||
+      name.includes("amazon") ||
+      name.includes("mensalidade")
+    );
+  }).length;
+  const habitsCount = visibleSpecificAlerts.filter((i) => i.alertType !== "alert").length;
+
   return (
     <div className="min-h-full w-full max-w-full overflow-x-hidden bg-[#F2F2F7] text-[#1D1D1F] font-sans selection:bg-[#1D1D1F] selection:text-white">
       {/* Container Central com Padding Dinâmico Apple */}
@@ -1179,135 +1264,103 @@ export default function AIAnalystPage() {
                   </section>
                 )}
 
-                {/* 2. LIQUIDEZ REAL: HOJE vs PRÓXIMO MÊS (APPLE CARD WIDGET) */}
-                <section className="bg-white rounded-[28px] p-6 sm:p-7 border border-black/[0.04] shadow-[0_8px_30px_rgba(0,0,0,0.03)] space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                        <Coins size={17} />
-                      </div>
-                      <div>
-                        <h2 className="text-sm font-semibold text-[#1D1D1F]">
-                          Quanto Tenho para Gastar
-                        </h2>
-                        <p className="text-[11px] text-[#86868B]">
-                          Liquidez disponível hoje versus projeção de sobra no próximo ciclo
-                        </p>
-                      </div>
-                    </div>
-                    <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full bg-[#F2F2F7] text-[#1D1D1F]">
-                      Livro-Caixa
-                    </span>
-                  </div>
+                {/* 2. FLUXO & LIQUIDEZ INTERATIVA (GRÁFICO VISUAL APPLE) */}
+                <CashflowBarChart
+                  currentMonthName={diagnosis?.cashflowWindow?.currentMonth.monthName || "Mês Atual"}
+                  currentBalance={diagnosis?.cashflowWindow?.currentMonth.checkingBalance ?? mainBalance}
+                  currentPending={diagnosis?.cashflowWindow?.currentMonth.pendingBills ?? monthExpense}
+                  currentFree={diagnosis?.cashflowWindow?.currentMonth.projectedFreeBalance ?? mainBalance}
+                  nextMonthName={diagnosis?.cashflowWindow?.nextMonth.monthName || "Próximo Mês"}
+                  nextIncome={diagnosis?.cashflowWindow?.nextMonth.projectedIncome ?? monthlyIncome}
+                  nextExpenses={diagnosis?.cashflowWindow?.nextMonth.committedExpenses ?? totalInvoices}
+                  nextFree={diagnosis?.cashflowWindow?.nextMonth.projectedFreeBalance ?? (monthlyIncome - totalInvoices)}
+                />
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
-                    {/* Bloco 1: Agora / Mês Atual */}
-                    <div className="p-5 rounded-2xl bg-gradient-to-br from-[#FAFAFC] to-[#F2F2F7]/70 border border-black/[0.04] space-y-3.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-semibold text-[#1D1D1F] flex items-center gap-1.5">
-                          <CalendarClock size={14} className="text-[#86868B]" />
-                          <span>Agora ({diagnosis?.cashflowWindow?.currentMonth.monthName || "Mês Atual"})</span>
-                        </span>
-                        <span className="text-[10px] font-semibold text-[#86868B] uppercase tracking-wider">
-                          Disponível Imediato
-                        </span>
-                      </div>
+                {/* 3. ESPECTRO DE GASTOS & CATEGORIAS (APPLE CARD STYLE) */}
+                {spectrumCategories.length > 0 && (
+                  <CategorySpectrumBar
+                    categories={spectrumCategories}
+                    selectedCategory={selectedCategoryFilter}
+                    onSelectCategory={setSelectedCategoryFilter}
+                  />
+                )}
 
-                      <div className="space-y-1">
-                        <div className="text-[11px] text-[#86868B]">Saldo livre que resta no mês:</div>
-                        <div className="text-3xl font-semibold tracking-tight text-[#1D1D1F] font-mono tabular-nums">
-                          R$ {formatCurrency(diagnosis?.cashflowWindow?.currentMonth.projectedFreeBalance ?? mainBalance)}
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2 pt-2.5 border-t border-black/5 text-[11px]">
-                        <div>
-                          <span className="text-[#86868B] block text-[10px]">Saldo na Conta</span>
-                          <span className="font-semibold text-emerald-700 truncate block font-mono tabular-nums">
-                            R$ {formatCurrency(diagnosis?.cashflowWindow?.currentMonth.checkingBalance ?? mainBalance)}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-[#86868B] block text-[10px]">Contas a Fechar</span>
-                          <span className="font-semibold text-[#1D1D1F] truncate block font-mono tabular-nums">
-                            R$ {formatCurrency(diagnosis?.cashflowWindow?.currentMonth.pendingBills ?? monthExpense)}
-                          </span>
-                        </div>
-                      </div>
-
-                      <p className="text-[11px] text-[#86868B] leading-relaxed pt-1">
-                        {diagnosis?.cashflowWindow?.currentMonth.insight ||
-                          "Seu saldo cobre as pendências deste ciclo com tranquilidade."}
-                      </p>
-                    </div>
-
-                    {/* Bloco 2: Próximo Mês */}
-                    <div className="p-5 rounded-2xl bg-gradient-to-br from-[#FAFAFC] to-[#F2F2F7]/70 border border-black/[0.04] space-y-3.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-semibold text-[#1D1D1F] flex items-center gap-1.5">
-                          <TrendingUp size={14} className="text-blue-600" />
-                          <span>Próximo Mês ({diagnosis?.cashflowWindow?.nextMonth.monthName || "Mês Seguinte"})</span>
-                        </span>
-                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200/50">
-                          Projetado
-                        </span>
-                      </div>
-
-                      <div className="space-y-1">
-                        <div className="text-[11px] text-[#86868B]">Livre para gastar mês que vem:</div>
-                        <div className="text-3xl font-semibold tracking-tight text-emerald-700 font-mono tabular-nums">
-                          R$ {formatCurrency(diagnosis?.cashflowWindow?.nextMonth.projectedFreeBalance ?? (monthlyIncome - totalInvoices))}
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2 pt-2.5 border-t border-black/5 text-[11px]">
-                        <div>
-                          <span className="text-[#86868B] block text-[10px]">Entradas Previstas</span>
-                          <span className="font-semibold text-[#1D1D1F] truncate block font-mono tabular-nums">
-                            R$ {formatCurrency(diagnosis?.cashflowWindow?.nextMonth.projectedIncome ?? monthlyIncome)}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-[#86868B] block text-[10px]">Gastos Comprometidos</span>
-                          <span className="font-semibold text-rose-600 truncate block font-mono tabular-nums">
-                            R$ {formatCurrency(diagnosis?.cashflowWindow?.nextMonth.committedExpenses ?? totalInvoices)}
-                          </span>
-                        </div>
-                      </div>
-
-                      <p className="text-[11px] text-[#86868B] leading-relaxed pt-1">
-                        {diagnosis?.cashflowWindow?.nextMonth.insight ||
-                          "Suas despesas previstas deixam folga no orçamento após quitar as faturas e contas fixas."}
-                      </p>
-                    </div>
-                  </div>
-                </section>
-
-                {/* 3. GASTOS ESPECÍFICOS & HÁBITOS DE CONSUMO (SCREEN TIME STYLE) */}
+                {/* 4. HUB DE INTELIGÊNCIA DE PADRÕES ORGANIZADOS (COM SIMULAÇÃO TÁTIL) */}
                 {diagnosis && (
-                  <section className="space-y-3">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
+                  <section className="space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-1">
                       <div className="flex items-center gap-2">
-                        <UtensilsCrossed size={14} className="text-[#86868B]" />
+                        <UtensilsCrossed size={15} className="text-[#86868B]" />
                         <h2 className="text-xs uppercase tracking-wider font-semibold text-[#86868B]">
-                          Gastos Específicos & Hábitos de Consumo
+                          Padrões & Hábitos de Consumo
                         </h2>
                       </div>
                       <div className="flex items-center gap-2 self-start sm:self-auto">
                         <span className="text-xs text-[#86868B]">
-                          {visibleSpecificAlerts.length} {visibleSpecificAlerts.length === 1 ? "padrão mapeado" : "padrões mapeados"}
+                          {filteredPatterns.length} de {visibleSpecificAlerts.length} mapeados
                         </span>
                         <button
                           type="button"
                           onClick={handleFetchMorePatterns}
                           disabled={isSearchingPatterns}
-                          className="text-[11px] font-semibold text-[#1D1D1F] bg-[#F2F2F7] hover:bg-[#E5E5EA] border border-black/[0.05] px-2.5 py-1 rounded-full transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-xs active:scale-95"
+                          className="text-[11px] font-semibold text-[#1D1D1F] bg-[#F2F2F7] hover:bg-[#E5E5EA] border border-black/[0.05] px-3 py-1 rounded-full transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-xs active:scale-95"
                           title="Escanear lançamentos em busca de padrões recorrentes"
                         >
                           <RefreshCw size={11} className={isSearchingPatterns ? "animate-spin text-[#1D1D1F]" : "text-[#86868B]"} />
                           <span>{isSearchingPatterns ? "Auditando..." : "Buscar Mais Padrões"}</span>
                         </button>
                       </div>
+                    </div>
+
+                    {/* Filtros em Clusters Apple Style */}
+                    <div className="flex flex-wrap items-center gap-1.5 bg-[#E5E5EA]/60 p-1 rounded-2xl w-fit border border-black/[0.04]">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedCluster("all")}
+                        className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                          selectedCluster === "all"
+                            ? "bg-white text-[#1D1D1F] shadow-xs"
+                            : "text-[#86868B] hover:text-[#1D1D1F]"
+                        }`}
+                      >
+                        Todos ({visibleSpecificAlerts.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedCluster("alerts")}
+                        className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1 ${
+                          selectedCluster === "alerts"
+                            ? "bg-white text-rose-700 shadow-xs"
+                            : "text-[#86868B] hover:text-[#1D1D1F]"
+                        }`}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                        <span>Ralos Financeiros ({alertsCount})</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedCluster("recurring")}
+                        className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1 ${
+                          selectedCluster === "recurring"
+                            ? "bg-white text-purple-700 shadow-xs"
+                            : "text-[#86868B] hover:text-[#1D1D1F]"
+                        }`}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
+                        <span>Assinaturas & Fixas ({recurringCount})</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedCluster("habits")}
+                        className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1 ${
+                          selectedCluster === "habits"
+                            ? "bg-white text-[#1D1D1F] shadow-xs"
+                            : "text-[#86868B] hover:text-[#1D1D1F]"
+                        }`}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-orange-500" />
+                        <span>Estilo de Vida ({habitsCount})</span>
+                      </button>
                     </div>
 
                     {patternsFeedback && (
@@ -1323,185 +1376,56 @@ export default function AIAnalystPage() {
                       </div>
                     )}
 
-                    {visibleSpecificAlerts.length === 0 ? (
+                    {filteredPatterns.length === 0 ? (
                       <div className="bg-white rounded-[24px] p-6 border border-black/[0.04] text-center space-y-2.5 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
                         <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 mx-auto flex items-center justify-center">
                           <CheckCircle2 size={20} />
                         </div>
                         <h3 className="text-sm font-semibold text-[#1D1D1F]">
-                          Nenhum padrão repetitivo acumulado
+                          Nenhum padrão encontrado neste filtro
                         </h3>
                         <p className="text-xs text-[#86868B] max-w-md mx-auto leading-relaxed">
-                          Não detectamos compras repetidas de estilo de vida no momento (mínimo de 2 lançamentos). Conforme novos gastos forem registrados ou ao buscar novos padrões, eles aparecerão aqui.
+                          {selectedCategoryFilter
+                            ? `Não encontramos hábitos registrados na categoria "${selectedCategoryFilter}".`
+                            : "Altere o filtro acima ou clique em 'Buscar Mais Padrões' para auditar novamente."}
                         </p>
-                        <button
-                          type="button"
-                          onClick={handleFetchMorePatterns}
-                          disabled={isSearchingPatterns}
-                          className="mt-1 inline-flex items-center gap-1.5 text-xs font-semibold text-[#1D1D1F] bg-[#F2F2F7] hover:bg-[#E5E5EA] px-3.5 py-1.5 rounded-full transition-colors disabled:opacity-50 cursor-pointer"
-                        >
-                          <RefreshCw size={12} className={isSearchingPatterns ? "animate-spin text-[#1D1D1F]" : "text-[#86868B]"} />
-                          <span>{isSearchingPatterns ? "Auditando lançamentos..." : "Buscar Padrões"}</span>
-                        </button>
+                        {selectedCategoryFilter && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedCategoryFilter(null)}
+                            className="text-xs font-semibold text-[#1D1D1F] bg-[#F2F2F7] hover:bg-[#E5E5EA] px-3.5 py-1.5 rounded-full transition-colors cursor-pointer"
+                          >
+                            Limpar filtro de categoria
+                          </button>
+                        )}
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {visibleSpecificAlerts.map((item, idx) => (
-                          <div
-                            key={idx}
-                            className="bg-white rounded-[24px] p-5 border border-black/[0.04] shadow-[0_4px_20px_rgba(0,0,0,0.025)] hover:border-black/15 transition-all flex flex-col justify-between space-y-3"
-                          >
-                            <div className="space-y-1.5">
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="flex flex-col gap-1">
-                                  <span className="text-sm font-semibold text-[#1D1D1F]">
-                                    {item.item}
-                                  </span>
-                                  {item.habitCategory && item.habitCategory !== item.item && (
-                                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[#F2F2F7] text-[#1D1D1F] self-start">
-                                      {item.habitCategory}
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-1 shrink-0">
-                                  <span
-                                    className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border shrink-0 ${
-                                      item.alertType === "alert"
-                                        ? "bg-rose-50 text-rose-700 border-rose-200/60"
-                                        : item.alertType === "warning"
-                                        ? "bg-amber-50 text-amber-700 border-amber-200/60"
-                                        : "bg-blue-50 text-blue-700 border-blue-200/60"
-                                    }`}
-                                  >
-                                    {item.alertType === "alert"
-                                      ? "Gasto Alto"
-                                      : item.alertType === "warning"
-                                      ? "Atenção"
-                                      : "Frequente"}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDismissPattern(item.item)}
-                                    title="Descartar este padrão (não sugerir mais)"
-                                    className="p-1 rounded-md text-[#86868B] hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                                  >
-                                    <Trash2 size={12} />
-                                  </button>
-                                </div>
-                              </div>
-
-                              <div className="text-lg font-bold text-[#1D1D1F] font-mono tabular-nums">
-                                R$ {formatCurrency(item.totalAmount)}
-                                {item.count && (
-                                  <span className="text-xs font-normal text-[#86868B] ml-2 font-sans">
-                                    ({item.count} compra{item.count > 1 ? "s" : ""})
-                                  </span>
-                                )}
-                              </div>
-
-                              {/* Detalhamento Crédito vs Débito */}
-                              {(item.creditAmount !== undefined || item.debitAmount !== undefined || item.paymentBreakdown) && (
-                                <div className="flex items-center gap-1.5 flex-wrap pt-0.5 pb-1">
-                                  {typeof item.creditAmount === "number" && item.creditAmount > 0 && (
-                                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-[#F2F2F7] text-[#1D1D1F] border border-black/[0.06] font-mono tabular-nums">
-                                      Crédito: R$ {formatCurrency(item.creditAmount)}
-                                    </span>
-                                  )}
-                                  {typeof item.debitAmount === "number" && item.debitAmount > 0 && (
-                                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200/60 font-mono tabular-nums">
-                                      Débito/PIX: R$ {formatCurrency(item.debitAmount)}
-                                    </span>
-                                  )}
-                                  {!item.creditAmount && !item.debitAmount && item.paymentBreakdown && (
-                                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-[#F2F2F7] text-[#86868B]">
-                                      {item.paymentBreakdown}
-                                    </span>
-                                  )}
-                                </div>
-                              )}
-
-                              <p className="text-xs text-[#86868B] leading-relaxed">
-                                {item.message}
-                              </p>
-                            </div>
-
-                            <div className="pt-2.5 border-t border-black/[0.04] flex items-center justify-between">
-                              <button
-                                type="button"
-                                onClick={() => handleDismissPattern(item.item)}
-                                className="text-[11px] text-[#86868B] hover:text-rose-600 flex items-center gap-1 cursor-pointer transition-colors"
-                                title="Descartar este padrão"
-                              >
-                                <Trash2 size={11} />
-                                <span>Descartar</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setActiveTab("chat");
-                                  handleSendMessage(`Como posso otimizar meus gastos com ${item.item}?`);
-                                }}
-                                className="text-xs font-semibold text-[#1D1D1F] hover:underline flex items-center gap-1 cursor-pointer"
-                              >
-                                <span>Conversar sobre</span>
-                                <ChevronRight size={12} />
-                              </button>
-                            </div>
-                          </div>
+                        {filteredPatterns.map((item, idx) => (
+                          <InteractivePatternCard
+                            key={`${item.item}-${idx}`}
+                            item={item}
+                            targetGoalName={targetGoalName}
+                            onDismiss={handleDismissPattern}
+                            onDiscuss={(prompt) => {
+                              setActiveTab("chat");
+                              handleSendMessage(prompt);
+                            }}
+                          />
                         ))}
                       </div>
                     )}
                   </section>
                 )}
 
-                {/* 4. GASTOS PARCELADOS MÊS A MÊS (FLUXO DILUÍDO) */}
+                {/* 5. LINHA DO TEMPO DE FATURAS & PARCELAS DILUÍDAS (APPLE TIMELINE) */}
                 {diagnosis?.installmentSchedule && diagnosis.installmentSchedule.length > 0 && (
-                  <section className="space-y-3">
-                    <div className="flex items-center justify-between px-1">
-                      <div className="flex items-center gap-2">
-                        <CreditCard size={14} className="text-[#86868B]" />
-                        <h2 className="text-xs uppercase tracking-wider font-semibold text-[#86868B]">
-                          Gastos Parcelados Mês a Mês (Fluxo Diluído)
-                        </h2>
-                      </div>
-                      <span className="text-xs text-[#86868B]">Vencimentos futuros</span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                      {diagnosis.installmentSchedule.map((item, idx) => (
-                        <div
-                          key={idx}
-                          className="bg-white rounded-[22px] p-4.5 border border-black/[0.04] shadow-[0_4px_16px_rgba(0,0,0,0.02)] space-y-2 hover:border-black/15 transition-all"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-semibold text-[#1D1D1F]">{item.period}</span>
-                            <span
-                              className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
-                                item.status === "alert"
-                                  ? "bg-rose-50 text-rose-700 border-rose-200/60"
-                                  : "bg-emerald-50 text-emerald-700 border-emerald-200/60"
-                              }`}
-                            >
-                              {item.status === "alert" ? "Pressão" : "Equilibrado"}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-base font-bold text-[#1D1D1F] font-mono tabular-nums">
-                              R$ {formatCurrency(item.cardInstallmentsAmount)}
-                            </span>
-                            {item.dueDateHint && (
-                              <span className="text-[10px] text-[#86868B] block mt-0.5">
-                                {item.dueDateHint}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-[11px] text-[#86868B] leading-relaxed">
-                            {item.explanation}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  </section>
+                  <InstallmentTimelineChart
+                    schedule={diagnosis.installmentSchedule}
+                    onSelectPeriod={(period) => {
+                      // Feedback visual instantâneo
+                    }}
+                  />
                 )}
 
                 {/* 5. PADRÕES DETECTADOS & PRÓXIMOS CICLOS */}

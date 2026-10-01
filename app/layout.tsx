@@ -7,12 +7,12 @@ import { PwaRegister } from "@/components/pwa/PwaRegister";
 const sfPro = localFont({
   src: [
     {
-      path: "../public/fonts/SFWindows.27.0.1789118100/SF Pro/SF-Pro-Display-Regular.otf",
+      path: "../public/fonts/SF-Pro-Display-Regular.otf",
       weight: "400",
       style: "normal",
     },
     {
-      path: "../public/fonts/SFWindows.27.0.1789118100/SF Pro/SF-Pro-Display-Semibold.otf",
+      path: "../public/fonts/SF-Pro-Display-Semibold.otf",
       weight: "600",
       style: "normal",
     },
@@ -24,12 +24,12 @@ const sfPro = localFont({
 const sfMono = localFont({
   src: [
     {
-      path: "../public/fonts/SFWindows.27.0.1789118100/SF Mono/SF-Mono-Regular.otf",
+      path: "../public/fonts/SF-Mono-Regular.otf",
       weight: "400",
       style: "normal",
     },
     {
-      path: "../public/fonts/SFWindows.27.0.1789118100/SF Mono/SF-Mono-Semibold.otf",
+      path: "../public/fonts/SF-Mono-Semibold.otf",
       weight: "600",
       style: "normal",
     },
