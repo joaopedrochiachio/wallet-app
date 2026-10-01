@@ -8,6 +8,7 @@ import {
   Repeat,
   Sparkles,
   Check,
+  CalendarDays,
 } from "lucide-react";
 import { useWallet } from "@/context/WalletContext";
 import { get5thBusinessDay, MONTH_NAMES_PT } from "@/lib/utils/dateUtils";
@@ -73,6 +74,13 @@ const formatCurrency = (value: number) =>
     maximumFractionDigits: 2,
   });
 
+function formatDateToInput(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 export function AddTransactionSheet({
   isOpen,
   onClose,
@@ -86,6 +94,8 @@ export function AddTransactionSheet({
 
   const [category, setCategory] = useState(EXPENSE_CATEGORIES[0]);
   const [account, setAccount] = useState(accounts[0] || "Débito/Pix");
+  const [dateInput, setDateInput] = useState(() => formatDateToInput(new Date()));
+  const [datePreset, setDatePreset] = useState<"today" | "yesterday" | "custom">("today");
   const [isRecurring, setIsRecurring] = useState(false);
   const [recurrenceType, setRecurrenceType] = useState<RecurrenceType>("business_day_5");
   const [recurrenceDay, setRecurrenceDay] = useState(10);
@@ -154,10 +164,22 @@ export function AddTransactionSheet({
     setLoading(true);
     try {
       const txDescription = sanitizedTitle || sanitizedCategory;
-      const formattedDate = `${now.toLocaleDateString("pt-BR", {
+
+      const [y, m, d] = dateInput.split("-").map(Number);
+      const chosenDate = (y && m && d) ? new Date(y, m - 1, d, 12, 0, 0) : new Date();
+      const isToday =
+        chosenDate.getFullYear() === now.getFullYear() &&
+        chosenDate.getMonth() === now.getMonth() &&
+        chosenDate.getDate() === now.getDate();
+
+      const txTime = isToday
+        ? now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+        : "12:00";
+
+      const formattedDate = `${chosenDate.toLocaleDateString("pt-BR", {
         day: "2-digit",
         month: "short",
-      })}, ${now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+      })}, ${txTime}`;
 
       if (!onAdd) throw new Error("Fluxo de lançamento indisponível.");
       await onAdd({
@@ -168,7 +190,7 @@ export function AddTransactionSheet({
         account: effectiveAccount,
         cardId: cards.find((card) => card.name === effectiveAccount)?.id || null,
         date: formattedDate,
-        occurredAt: now,
+        occurredAt: chosenDate,
         isRecurring,
         recurrenceType: isRecurring ? recurrenceType : undefined,
         recurrenceDay: isRecurring ? validateDayOfMonth(effectiveDueDay).value : undefined,
@@ -181,6 +203,8 @@ export function AddTransactionSheet({
       setAmountInput("");
       setTitle("");
       setIsRecurring(false);
+      setDatePreset("today");
+      setDateInput(formatDateToInput(new Date()));
       setDurationMode("continuous");
       setInstallmentsInput("3");
       setErrorMessage(null);
@@ -407,6 +431,98 @@ export function AddTransactionSheet({
                 />
               </div>
             </div>
+          </div>
+
+          {/* 5.1 DATA DO LANÇAMENTO (Lançamento retroativo flexível) */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-[#86868B] flex items-center gap-1.5">
+                <CalendarDays size={13} strokeWidth={1.75} />
+                Data da transação
+              </span>
+              <span className="text-[11px] font-medium text-[#1D1D1F]">
+                {datePreset === "today"
+                  ? `Hoje (${now.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })})`
+                  : datePreset === "yesterday"
+                  ? `Ontem (${(() => {
+                      const y = new Date();
+                      y.setDate(y.getDate() - 1);
+                      return y.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
+                    })()})`
+                  : (() => {
+                      const [y, m, d] = dateInput.split("-").map(Number);
+                      if (y && m && d) {
+                        const dt = new Date(y, m - 1, d, 12);
+                        return dt.toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
+                      }
+                      return dateInput;
+                    })()}
+              </span>
+            </div>
+
+            <div className="p-1 rounded-full bg-[#E5E5EA]/60 border border-black/[0.04] grid grid-cols-3 gap-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setDatePreset("today");
+                  setDateInput(formatDateToInput(new Date()));
+                }}
+                className={`rounded-full py-1.5 text-xs transition-all select-none cursor-pointer ${
+                  datePreset === "today"
+                    ? "bg-white text-[#1D1D1F] font-semibold shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
+                    : "text-[#86868B] hover:text-[#1D1D1F] font-medium"
+                }`}
+              >
+                Hoje
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDatePreset("yesterday");
+                  const yest = new Date();
+                  yest.setDate(yest.getDate() - 1);
+                  setDateInput(formatDateToInput(yest));
+                }}
+                className={`rounded-full py-1.5 text-xs transition-all select-none cursor-pointer ${
+                  datePreset === "yesterday"
+                    ? "bg-white text-[#1D1D1F] font-semibold shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
+                    : "text-[#86868B] hover:text-[#1D1D1F] font-medium"
+                }`}
+              >
+                Ontem
+              </button>
+              <button
+                type="button"
+                onClick={() => setDatePreset("custom")}
+                className={`rounded-full py-1.5 text-xs transition-all select-none cursor-pointer ${
+                  datePreset === "custom"
+                    ? "bg-white text-[#1D1D1F] font-semibold shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
+                    : "text-[#86868B] hover:text-[#1D1D1F] font-medium"
+                }`}
+              >
+                Outra data...
+              </button>
+            </div>
+
+            {datePreset === "custom" && (
+              <div className="pt-1 animate-in fade-in duration-200">
+                <div className="flex items-center justify-between p-2.5 rounded-xl border border-black/[0.08] bg-[#FBFBFD]">
+                  <span className="text-xs font-medium text-[#1D1D1F]">
+                    Quando foi feita:
+                  </span>
+                  <input
+                    type="date"
+                    value={dateInput}
+                    onChange={(e) => {
+                      setDateInput(e.target.value);
+                      setDatePreset("custom");
+                    }}
+                    max={formatDateToInput(new Date(now.getFullYear() + 2, 11, 31))}
+                    className="text-xs font-semibold text-[#1D1D1F] bg-white border border-black/10 rounded-lg px-2.5 py-1.5 outline-none cursor-pointer focus:border-black/30"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* 6. RECORRÊNCIA (Progressive Disclosure) */}

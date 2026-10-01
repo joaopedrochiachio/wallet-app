@@ -12,18 +12,8 @@ const sfPro = localFont({
       style: "normal",
     },
     {
-      path: "../public/fonts/SFWindows.27.0.1789118100/SF Pro/SF-Pro-Display-Medium.otf",
-      weight: "500",
-      style: "normal",
-    },
-    {
       path: "../public/fonts/SFWindows.27.0.1789118100/SF Pro/SF-Pro-Display-Semibold.otf",
       weight: "600",
-      style: "normal",
-    },
-    {
-      path: "../public/fonts/SFWindows.27.0.1789118100/SF Pro/SF-Pro-Display-Bold.otf",
-      weight: "700",
       style: "normal",
     },
   ],
@@ -39,18 +29,8 @@ const sfMono = localFont({
       style: "normal",
     },
     {
-      path: "../public/fonts/SFWindows.27.0.1789118100/SF Mono/SF-Mono-Medium.otf",
-      weight: "500",
-      style: "normal",
-    },
-    {
       path: "../public/fonts/SFWindows.27.0.1789118100/SF Mono/SF-Mono-Semibold.otf",
       weight: "600",
-      style: "normal",
-    },
-    {
-      path: "../public/fonts/SFWindows.27.0.1789118100/SF Mono/SF-Mono-Bold.otf",
-      weight: "700",
       style: "normal",
     },
   ],

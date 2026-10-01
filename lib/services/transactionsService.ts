@@ -45,7 +45,12 @@ function transactionPayload(data: Omit<Transaction, "id">, userId: string) {
     recurringItemId: data.recurringItemId ?? null,
     periodKey: data.periodKey ?? null,
     date: typeof data.date === "string" ? data.date : data.date.toISOString(),
-    occurredAt: data.occurredAt || Timestamp.now(),
+    occurredAt:
+      data.occurredAt instanceof Date
+        ? Timestamp.fromDate(data.occurredAt)
+        : typeof data.occurredAt === "string" || typeof data.occurredAt === "number"
+          ? Timestamp.fromDate(new Date(data.occurredAt))
+          : (data.occurredAt || Timestamp.now()),
     createdAt: serverTimestamp(),
     userId,
   };
@@ -316,7 +321,10 @@ export async function updateTransactionInFirestore(
     paymentMethod: input.account,
     cardId: input.cardId ?? null,
     date: input.date,
-    occurredAt: input.occurredAt,
+    occurredAt:
+      input.occurredAt instanceof Date
+        ? Timestamp.fromDate(input.occurredAt)
+        : Timestamp.fromDate(new Date(input.occurredAt)),
   });
 }
 

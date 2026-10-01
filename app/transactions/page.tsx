@@ -253,16 +253,37 @@ export default function TransactionsPage() {
     isDataLoaded,
   } = useWallet();
   const now = new Date();
-  const monthOptions = [-1, 0, 1].map((offset) => {
-    const date = new Date(now.getFullYear(), now.getMonth() + offset, 1);
-    return {
-      label: MONTH_NAMES_PT[date.getMonth()],
-      periodKey: getPeriodKey(date.getFullYear(), date.getMonth()),
-    };
+  const currentPeriodKey = getPeriodKey(now.getFullYear(), now.getMonth());
+
+  // Coleta dinamicamente meses com lançamentos mais uma janela ampla ao redor do mês atual (-4 a +1)
+  const dynamicPeriodKeys = new Set<string>();
+  for (let offset = -4; offset <= 1; offset++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+    dynamicPeriodKeys.add(getPeriodKey(d.getFullYear(), d.getMonth()));
+  }
+  transactions.forEach((tx) => {
+    const d = getTransactionDate(tx);
+    dynamicPeriodKeys.add(getPeriodKey(d.getFullYear(), d.getMonth()));
   });
-  const [selectedMonth, setSelectedMonth] = useState(
-    getPeriodKey(now.getFullYear(), now.getMonth())
-  );
+
+  const monthOptions = Array.from(dynamicPeriodKeys)
+    .sort()
+    .map((key) => {
+      const [yStr, mStr] = key.split("-");
+      const year = parseInt(yStr, 10);
+      const month = parseInt(mStr, 10) - 1;
+      const isCurrentYear = year === now.getFullYear();
+      return {
+        periodKey: key,
+        label: isCurrentYear
+          ? MONTH_NAMES_PT[month]
+          : `${MONTH_NAMES_PT[month].slice(0, 3)}/${String(year).slice(-2)}`,
+        year,
+        month,
+      };
+    });
+
+  const [selectedMonth, setSelectedMonth] = useState(currentPeriodKey);
   const [selectedFilter, setSelectedFilter] = useState("Todas");
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [txToDelete, setTxToDelete] = useState<TransactionItem | null>(null);
@@ -280,13 +301,9 @@ export default function TransactionsPage() {
 
   const filteredTransactions = transactions.filter((transaction) => {
     if (transaction.kind === "invoice_settlement") return false;
-    const rawDate = transaction.occurredAt || transaction.createdAt;
-    const occurredAt = rawDate ? new Date(rawDate) : null;
+    const txDate = getTransactionDate(transaction);
     const belongsToMonth =
-      occurredAt && !Number.isNaN(occurredAt.getTime())
-        ? getPeriodKey(occurredAt.getFullYear(), occurredAt.getMonth()) ===
-          selectedMonth
-        : selectedMonth === getPeriodKey(now.getFullYear(), now.getMonth());
+      getPeriodKey(txDate.getFullYear(), txDate.getMonth()) === selectedMonth;
     const belongsToAccount =
       selectedFilter === "Todas" || transaction.account === selectedFilter;
     return belongsToMonth && belongsToAccount;
@@ -470,7 +487,15 @@ export default function TransactionsPage() {
         isOpen={isSheetOpen}
         onClose={() => setIsSheetOpen(false)}
         accounts={accountOptions}
-        onAdd={addTransaction}
+        onAdd={async (tx) => {
+          await addTransaction(tx);
+          if (tx.occurredAt) {
+            const d = new Date(tx.occurredAt);
+            if (!Number.isNaN(d.getTime())) {
+              setSelectedMonth(getPeriodKey(d.getFullYear(), d.getMonth()));
+            }
+          }
+        }}
       />
 
       {/* Modal / Sheet Detalhes da Transação */}

@@ -562,7 +562,7 @@ export function computeFortnightBreakdown(
   const cardInvoices: FortnightMovementItem[] = [];
 
   for (const creditCard of creditCards) {
-    const schedule = calculateInvoiceSchedule(creditCard, transactions as any);
+    const schedule = calculateInvoiceSchedule(creditCard, transactions as unknown as Parameters<typeof calculateInvoiceSchedule>[1]);
     const installments = schedule[targetPeriodKey] || 0;
 
     let creditRecurring = 0;

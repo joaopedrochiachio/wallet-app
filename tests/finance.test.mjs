@@ -1093,6 +1093,53 @@ test("validação de limite e fatura aberta do cartão: compras faturadas + assi
   assert.equal(Math.round(availableLimit * 100) / 100, 268.17);
 });
 
+test("lançamento retroativo: lançamento registrado hoje para setembro entra no fluxo de setembro e afeta o saldo histórico corretamente", () => {
+  const checkingAccount = {
+    id: "card-itau",
+    name: "Itaú",
+    type: "checking",
+    balance: 2000,
+    openingBalance: 1000,
+  };
+
+  // Lançamento com data de Setembro inserido hoje
+  const retroactiveTx = {
+    id: "tx-retro-1",
+    amount: 350,
+    type: "despesa",
+    account: "Itaú",
+    cardId: "card-itau",
+    occurredAt: new Date(2026, 8, 15, 12, 0), // 15 de Setembro de 2026
+    createdAt: new Date(), // Criado "hoje"
+  };
+
+  const octTx = {
+    id: "tx-oct-1",
+    amount: 150,
+    type: "despesa",
+    account: "Itaú",
+    cardId: "card-itau",
+    occurredAt: new Date(2026, 9, 2, 12, 0), // 2 de Outubro de 2026
+    createdAt: new Date(),
+  };
+
+  const allTx = [retroactiveTx, octTx];
+
+  // Fluxo de Setembro/2026: deve conter os 350 retroativos e NÃO os 150 de outubro
+  const septFlow = calculateMonthlyAccountFlow([checkingAccount], allTx, new Date(2026, 8, 1));
+  assert.equal(septFlow.outflow, 350);
+  assert.equal(septFlow.income, 0);
+
+  // Fluxo de Outubro/2026: deve conter apenas os 150 de outubro
+  const octFlow = calculateMonthlyAccountFlow([checkingAccount], allTx, new Date(2026, 9, 1));
+  assert.equal(octFlow.outflow, 150);
+  assert.equal(octFlow.income, 0);
+
+  // Saldo bancário total: 1000 saldo inicial - 350 (set) - 150 (out) = 500
+  const currentBalance = calculateCheckingBalance(checkingAccount, allTx);
+  assert.equal(currentBalance, 500);
+});
+
 
 
 
