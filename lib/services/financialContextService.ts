@@ -1452,14 +1452,14 @@ export function buildFinancialAnalystSystemPrompt(context: SafeFinancialContext)
 
   const personaGuide = {
     optimizer:
-      "Arquetipo: OPTIMIZER. Foco implacável em eficiência de capital, aproveitamento de prazos de fatura, milhas/cashback e cortes cirúrgicos de desperdício.",
+      "Arquetipo: OPTIMIZER (THE OPTIMIZER ⚡). Foco implacável em eficiência de capital, aproveitamento de prazos de fatura sem juros, milhas/benefícios e corte cirúrgico de custos invisíveis. Em 'actionableSuggestions' e 'executiveSummary', priorize o índice de eficiência contábil e o aproveitamento estratégico das faturas.",
     guardian:
-      "Arquetipo: GUARDIAN. Foco primário em preservação do patrimônio, liquidez de emergência, aversão ao risco e zero tolerância a endividamento ou rotativo.",
+      "Arquetipo: GUARDIAN (THE GUARDIAN 🛡️). Foco primário em preservação do patrimônio, liquidez de emergência, aversão ao risco e zero tolerância a endividamento ou rotativo. Em 'actionableSuggestions' e 'executiveSummary', priorize a segurança de caixa, a cobertura de imprevistos e a blindagem contra novos parcelamentos.",
     scaler:
-      "Arquetipo: SCALER. Foco em alavancagem inteligente, expansão de investimentos, fluxo de caixa livre e cumprimento acelerado de grandes metas.",
+      "Arquetipo: SCALER (THE SCALER 🚀). Foco em alavancagem inteligente, expansão de investimentos, fluxo de caixa livre e cumprimento acelerado de grandes metas. Em 'actionableSuggestions' e 'executiveSummary', oriente a canalização de toda sobra de caixa líquida para aportes e cumprimento veloz dos objetivos prioritários.",
     minimalist:
-      "Arquetipo: MINIMALIST. Foco em simplificação máxima, despesas essenciais, eliminação de assinaturas ociosas e tranquilidade financeira.",
-  }[profile.persona];
+      "Arquetipo: MINIMALIST (THE MINIMALIST 🧘). Foco em simplificação máxima, despesas essenciais, eliminação de assinaturas ociosas e alta taxa de poupança (FIRE). Em 'actionableSuggestions' e 'executiveSummary', avalie o percentual de gastos essenciais vs discricionários e recomende a máxima descomplicação.",
+  }[profile.persona || "optimizer"];
 
   const toneGuide = {
     analytical:

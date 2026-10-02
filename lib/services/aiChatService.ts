@@ -290,7 +290,13 @@ function getDiagnosisStorageKey(userId?: string | null): string {
  */
 export function loadInitialDiagnosisSync(
   userId?: string | null
-): { diagnosis: unknown; timestamp: string | null; modelUsed?: string } | null {
+): {
+  diagnosis: unknown;
+  timestamp: string | null;
+  modelUsed?: string;
+  persona?: string;
+  aiTone?: string;
+} | null {
   if (typeof window === "undefined") return null;
 
   try {
@@ -298,12 +304,16 @@ export function loadInitialDiagnosisSync(
     let raw = window.localStorage.getItem(userKey);
     let timestamp = window.localStorage.getItem(`${userKey}_timestamp`);
     let modelUsed = window.localStorage.getItem(`${userKey}_model`) || undefined;
+    let persona = window.localStorage.getItem(`${userKey}_persona`) || undefined;
+    let aiTone = window.localStorage.getItem(`${userKey}_aiTone`) || undefined;
 
     // Fallback para chave geral caso não encontre por usuário
     if (!raw) {
       raw = window.localStorage.getItem(DIAGNOSIS_KEY);
       timestamp = window.localStorage.getItem(DIAGNOSIS_TIMESTAMP_KEY);
       modelUsed = window.localStorage.getItem(DIAGNOSIS_MODEL_KEY) || undefined;
+      persona = window.localStorage.getItem("wallet_ai_diagnosis_persona") || undefined;
+      aiTone = window.localStorage.getItem("wallet_ai_diagnosis_aiTone") || undefined;
     }
 
     if (raw) {
@@ -312,6 +322,8 @@ export function loadInitialDiagnosisSync(
         diagnosis: parsed,
         timestamp: timestamp || null,
         modelUsed,
+        persona,
+        aiTone,
       };
     }
   } catch (err) {
@@ -326,7 +338,12 @@ export function loadInitialDiagnosisSync(
  */
 export async function savePersistentDiagnosis(
   diagnosis: unknown,
-  meta: { timestamp: string; modelUsed?: string },
+  meta: {
+    timestamp: string;
+    modelUsed?: string;
+    persona?: string;
+    aiTone?: string;
+  },
   userId?: string | null
 ): Promise<void> {
   // Sanitização profunda obrigatória: remove campos undefined que causam exceção no Firestore setDoc
@@ -348,6 +365,14 @@ export async function savePersistentDiagnosis(
       if (meta.modelUsed) {
         window.localStorage.setItem(`${userKey}_model`, meta.modelUsed);
       }
+      if (meta.persona) {
+        window.localStorage.setItem(`${userKey}_persona`, meta.persona);
+        window.localStorage.setItem("wallet_ai_diagnosis_persona", meta.persona);
+      }
+      if (meta.aiTone) {
+        window.localStorage.setItem(`${userKey}_aiTone`, meta.aiTone);
+        window.localStorage.setItem("wallet_ai_diagnosis_aiTone", meta.aiTone);
+      }
 
       window.localStorage.setItem(DIAGNOSIS_KEY, jsonStr);
       window.localStorage.setItem(DIAGNOSIS_TIMESTAMP_KEY, meta.timestamp);
@@ -367,6 +392,8 @@ export async function savePersistentDiagnosis(
         diagnosis: cleanDiagnosis,
         timestamp: meta.timestamp,
         modelUsed: meta.modelUsed || "gpt-6-luna",
+        persona: meta.persona || "optimizer",
+        aiTone: meta.aiTone || "analytical",
       });
     } catch (err) {
       console.warn("Falha ao persistir diagnóstico no Firestore:", err);
@@ -379,7 +406,13 @@ export async function savePersistentDiagnosis(
  */
 export async function loadPersistentDiagnosis(
   userId?: string | null
-): Promise<{ diagnosis: unknown; timestamp: string | null; modelUsed?: string } | null> {
+): Promise<{
+  diagnosis: unknown;
+  timestamp: string | null;
+  modelUsed?: string;
+  persona?: string;
+  aiTone?: string;
+} | null> {
   // 1. Tenta carregar do Firestore se logado
   if (userId) {
     try {
@@ -396,6 +429,14 @@ export async function loadPersistentDiagnosis(
               window.localStorage.setItem(userKey, jsonStr);
               if (data.timestamp) window.localStorage.setItem(`${userKey}_timestamp`, data.timestamp);
               if (data.modelUsed) window.localStorage.setItem(`${userKey}_model`, data.modelUsed);
+              if (data.persona) {
+                window.localStorage.setItem(`${userKey}_persona`, data.persona);
+                window.localStorage.setItem("wallet_ai_diagnosis_persona", data.persona);
+              }
+              if (data.aiTone) {
+                window.localStorage.setItem(`${userKey}_aiTone`, data.aiTone);
+                window.localStorage.setItem("wallet_ai_diagnosis_aiTone", data.aiTone);
+              }
               window.localStorage.setItem(DIAGNOSIS_KEY, jsonStr);
               if (data.timestamp) window.localStorage.setItem(DIAGNOSIS_TIMESTAMP_KEY, data.timestamp);
               if (data.modelUsed) window.localStorage.setItem(DIAGNOSIS_MODEL_KEY, data.modelUsed);
@@ -407,6 +448,8 @@ export async function loadPersistentDiagnosis(
             diagnosis: data.diagnosis,
             timestamp: data.timestamp || null,
             modelUsed: data.modelUsed || undefined,
+            persona: data.persona || undefined,
+            aiTone: data.aiTone || undefined,
           };
         }
       }

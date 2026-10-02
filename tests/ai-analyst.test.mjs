@@ -1440,6 +1440,68 @@ test("buildFinancialAnalystSystemPrompt inclui regras temporais e cronograma qui
   assert.ok(prompt.includes("Saldo Previsto ao fim da 1ª Quinzena (Dia 15)"), "Prompt deve conter o Saldo do Dia 15");
 });
 
+test("A troca de arquétipo reflete 100% no system prompt e nas recomendações da IA", () => {
+  const personas = ["optimizer", "guardian", "scaler", "minimalist"];
+  const expectedPillars = {
+    optimizer: "The Optimizer ⚡",
+    guardian: "The Guardian 🛡️",
+    scaler: "The Scaler 🚀",
+    minimalist: "The Minimalist 🧘",
+  };
+
+  for (const persona of personas) {
+    const telemetry = synthesizeFinancialTelemetry({
+      userProfile: {
+        name: "João Pedro",
+        email: "joao@exemplo.com",
+        role: "Dev",
+        avatarInitials: "JP",
+        monthlyIncomeBase: 3000,
+        currency: "BRL",
+        persona,
+        riskTolerance: "moderate",
+        aiTone: "analytical",
+        maxCommitmentAlertPercent: 35,
+        primaryFocus: "Otimizar faturas",
+      },
+      cards: [],
+      transactions: [],
+      recurringItems: [],
+      goals: [],
+      mainBalance: 1500,
+      monthIncome: 3000,
+      monthExpense: 1000,
+      monthlyProjections: [],
+    });
+
+    const safeContext = createSafeFinancialContext(telemetry);
+    const systemPrompt = buildFinancialAnalystSystemPrompt(safeContext);
+
+    // Validação 1: O system prompt da OpenAI incorpora obrigatoriamente a diretriz específica da persona
+    assert.ok(
+      systemPrompt.toLowerCase().includes(expectedPillars[persona].toLowerCase().split(" ")[1]),
+      `Prompt deve conter a diretriz de ${expectedPillars[persona]}`
+    );
+
+    // Validação 2: safeParseFinancialDiagnosis calibra o resumo e sugestões com base na persona
+    const diagnosis = safeParseFinancialDiagnosis("", safeContext);
+    assert.ok(
+      diagnosis.executiveSummary.includes(expectedPillars[persona]),
+      `Resumo executivo deve refletir ${expectedPillars[persona]}`
+    );
+    assert.ok(
+      diagnosis.actionableSuggestions.length > 0,
+      "Deve gerar sugestões práticas acionáveis"
+    );
+    assert.ok(
+      diagnosis.actionableSuggestions[0].title.includes(expectedPillars[persona].split(" ")[1]) ||
+      diagnosis.actionableSuggestions[0].title.includes(expectedPillars[persona].split(" ")[2]),
+      `Sugestão deve refletir a especialidade do arquétipo ${persona}`
+    );
+  }
+});
+
+
 
 
 

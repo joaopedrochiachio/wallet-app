@@ -166,6 +166,23 @@ export default function AIAnalystPage() {
     loadPersistentDiagnosis(user?.uid).then((saved) => {
       if (isMounted) {
         setDismissedPatterns(loadDismissedPatterns(user?.uid));
+
+        const isArchetypeChanged = Boolean(
+          saved?.persona &&
+          userProfile?.persona &&
+          saved.persona !== userProfile.persona
+        );
+        const isToneChanged = Boolean(
+          saved?.aiTone &&
+          userProfile?.aiTone &&
+          saved.aiTone !== userProfile.aiTone
+        );
+        const isFlaggedReanalysis =
+          typeof window !== "undefined" &&
+          window.localStorage.getItem("wallet_ai_needs_reanalysis") === "true";
+
+        const shouldReanalyze = isArchetypeChanged || isToneChanged || isFlaggedReanalysis;
+
         if (saved?.diagnosis) {
           setDiagnosis(saved.diagnosis as FinancialDiagnosis);
           if (saved.timestamp) setLastAnalyzedAt(saved.timestamp);
@@ -177,6 +194,11 @@ export default function AIAnalystPage() {
             if (userCached.timestamp) setLastAnalyzedAt(userCached.timestamp);
             if (userCached.modelUsed) setAnalysisModel(userCached.modelUsed);
           }
+        }
+
+        // Se o arquétipo mudou ou foi sinalizado na tela de perfil, dispara reanálise automática
+        if (shouldReanalyze) {
+          void runDiagnosis();
         }
       }
     });
@@ -200,6 +222,34 @@ export default function AIAnalystPage() {
       isMounted = false;
     };
   }, [user?.uid]);
+
+  // Monitora alterações dinâmicas de arquétipo ou tom enquanto a aplicação está rodando
+  const lastKnownPersonaRef = useRef<string | undefined>(userProfile?.persona);
+  const lastKnownToneRef = useRef<string | undefined>(userProfile?.aiTone);
+
+  useEffect(() => {
+    if (!userProfile?.persona) return;
+
+    if (
+      lastKnownPersonaRef.current &&
+      lastKnownPersonaRef.current !== userProfile.persona
+    ) {
+      lastKnownPersonaRef.current = userProfile.persona;
+      void runDiagnosis();
+      return;
+    }
+    lastKnownPersonaRef.current = userProfile.persona;
+
+    if (
+      lastKnownToneRef.current &&
+      lastKnownToneRef.current !== userProfile.aiTone
+    ) {
+      lastKnownToneRef.current = userProfile.aiTone;
+      void runDiagnosis();
+      return;
+    }
+    lastKnownToneRef.current = userProfile.aiTone;
+  }, [userProfile?.persona, userProfile?.aiTone]);
 
   // Scroll automático no chat
   useEffect(() => {
@@ -278,9 +328,19 @@ export default function AIAnalystPage() {
 
         await savePersistentDiagnosis(
           data.diagnosis,
-          { timestamp, modelUsed: data.modelUsed },
+          {
+            timestamp,
+            modelUsed: data.modelUsed,
+            persona: userProfile.persona || "optimizer",
+            aiTone: userProfile.aiTone || "analytical",
+          },
           user?.uid
         );
+
+        if (typeof window !== "undefined") {
+          window.localStorage.removeItem("wallet_ai_needs_reanalysis");
+          window.localStorage.removeItem("wallet_ai_pending_persona");
+        }
       } else {
         throw new Error(data?.error || "Não foi possível carregar a análise no momento.");
       }

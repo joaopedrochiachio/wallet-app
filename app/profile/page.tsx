@@ -150,16 +150,26 @@ export default function ProfilePage() {
   const handleUpdatePersona = (personaId: FinancialPersonaId) => {
     const chosen = PERSONA_METADATA[personaId];
     updateUserProfile({ persona: personaId });
-    showToast(`Arquétipo atualizado para ${chosen?.emoji} ${chosen?.title || personaId}`);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("wallet_ai_needs_reanalysis", "true");
+      window.localStorage.setItem("wallet_ai_pending_persona", personaId);
+    }
+    showToast(`Arquétipo alterado para ${chosen?.emoji} ${chosen?.title}! A IA recalibrará sua análise automaticamente.`);
   };
 
   const handleSelectTone = (tone: AIToneId) => {
     updateUserProfile({ aiTone: tone });
-    showToast("Estilo das recomendações atualizado!");
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("wallet_ai_needs_reanalysis", "true");
+    }
+    showToast("Estilo das recomendações atualizado! IA ajustará seu tom na próxima análise.");
   };
 
   const handleSelectRisk = (risk: RiskToleranceId) => {
     updateUserProfile({ riskTolerance: risk });
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("wallet_ai_needs_reanalysis", "true");
+    }
     showToast("Perfil de risco atualizado!");
   };
 

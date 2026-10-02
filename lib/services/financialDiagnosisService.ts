@@ -250,8 +250,16 @@ export function safeParseFinancialDiagnosis(
       ratio > alertLimit
         ? "está acima da faixa de alerta recomendada"
         : "está sob controle";
+    const persona = context?.profile?.persona || "optimizer";
 
-    executiveSummary = `Olá! Analisei todo o seu fluxo deste mês. Seu saldo em conta fechou ${netFormatted}, mas o comprometimento total com cartões e despesas fixas ${statusWord}. Estou acompanhando cada movimentação de perto para sugerir passos simples que mantenham sua estabilidade e acelerem suas metas.`;
+    const personaClosing = {
+      optimizer: "Sob a lente de The Optimizer ⚡, priorizamos a eficiência em faturas e a eliminação de micro-custos.",
+      guardian: "Sob a lente de The Guardian 🛡️, priorizamos a blindagem da sua reserva de emergência antes de novos compromissos.",
+      scaler: "Sob a lente de The Scaler 🚀, priorizamos direcionar a sobra para acelerar seus objetivos e metas.",
+      minimalist: "Sob a lente de The Minimalist 🧘, simplificamos o fluxo para maximizar sua taxa de poupança e independência.",
+    }[persona];
+
+    executiveSummary = `Fluxo do mês analisado: seu saldo em conta fechou ${netFormatted}, e o comprometimento total com cartões e fixas ${statusWord} (${ratio}%). ${personaClosing}`;
   }
 
   // 4. Normalização e Sincronização de Padrões de Consumo
@@ -427,12 +435,32 @@ export function safeParseFinancialDiagnosis(
   }
 
   if (actionableSuggestions.length === 0) {
-    actionableSuggestions.push({
-      title: "Reserva e Equilíbrio",
-      action:
-        "Separe uma quantia fixa logo no início do mês antes de comprometer o limite com novas compras parceladas.",
-      potentialGain: "Segurança de liquidez",
-    });
+    const persona = context?.profile?.persona || "optimizer";
+    if (persona === "optimizer") {
+      actionableSuggestions.push({
+        title: "Otimização de Crédito e Faturas ⚡",
+        action: "Concentre seus gastos essenciais no cartão com maior benefício e antecipe pagamentos para manter custo financeiro zero.",
+        potentialGain: "Maximização de eficiência e benefícios",
+      });
+    } else if (persona === "guardian") {
+      actionableSuggestions.push({
+        title: "Blindagem de Reserva de Emergência 🛡️",
+        action: "Reserve uma quantia fixa no início do mês antes de comprometer o limite de crédito com novas parcelas.",
+        potentialGain: "Segurança e previsibilidade de caixa",
+      });
+    } else if (persona === "scaler") {
+      actionableSuggestions.push({
+        title: "Aceleração de Metas e Investimentos 🚀",
+        action: "Direcione a sobra líquida mensal diretamente para a sua meta principal e evite deixar capital ocioso.",
+        potentialGain: "Expansão patrimonial acelerada",
+      });
+    } else {
+      actionableSuggestions.push({
+        title: "Frugalidade Consciente & Taxa de Poupança 🧘",
+        action: "Revise assinaturas e gastos discretos da rotina para manter sua taxa de poupança acima de 40% da renda.",
+        potentialGain: "Independência e simplicidade financeira",
+      });
+    }
   }
 
   // 7. Normalização de Alertas de Gastos Específicos & Hábitos (com Débito vs Crédito)
