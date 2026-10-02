@@ -27,8 +27,13 @@ import {
   MessageSquare,
 } from "lucide-react";
 import { FormattedMessage } from "@/components/ai/FormattedMessage";
+import { FinancialHealthRing } from "@/components/ai/FinancialHealthRing";
 import { CashflowBarChart } from "@/components/ai/CashflowBarChart";
-import { CategorySpectrumBar, CategoryDistribution } from "@/components/ai/CategorySpectrumBar";
+import {
+  CategorySpectrumBar,
+  CategoryDistribution,
+  resolveAppleCategoryTheme,
+} from "@/components/ai/CategorySpectrumBar";
 import { InstallmentTimelineChart } from "@/components/ai/InstallmentTimelineChart";
 import { InteractivePatternCard } from "@/components/ai/InteractivePatternCard";
 import { FinancialDiagnosis, SpecificExpenseAlert } from "@/app/api/ai/analyze/route";
@@ -760,16 +765,6 @@ export default function AIAnalystPage() {
   const targetGoalName = primaryGoal?.title || userProfile?.primaryFocus || "Reserva Financeira";
 
   // Agrupamento por Categoria para a barra de espectro estilo Apple Card
-  const categoryColors: Record<string, string> = {
-    "Alimentação & Delivery": "#FF9500", // Apple Orange
-    "Transporte & Mobilidade": "#007AFF", // Apple Blue
-    "Assinaturas & Streaming": "#AF52DE", // Apple Purple
-    "Fixas & Moradia": "#5856D6", // Apple Indigo
-    "Compras & Lazer": "#FF2D55", // Apple Pink
-    "Saúde & Bem-estar": "#30B0C7", // Apple Teal
-    "Outros": "#8E8E93", // Apple Gray
-  };
-
   const categoryTotals: Record<string, number> = {};
   visibleSpecificAlerts.forEach((item) => {
     const cat = item.habitCategory || "Outros";
@@ -787,11 +782,14 @@ export default function AIAnalystPage() {
 
   const spectrumCategories: CategoryDistribution[] = Object.entries(categoryTotals)
     .sort((a, b) => b[1] - a[1])
-    .map(([category, total]) => ({
-      category,
-      total,
-      color: categoryColors[category] || "#8E8E93",
-    }));
+    .map(([category, total]) => {
+      const theme = resolveAppleCategoryTheme(category);
+      return {
+        category,
+        total,
+        color: theme.color,
+      };
+    });
 
   // Filtro por Cluster de Padrões e Categoria do Apple Card
   const filteredPatterns = visibleSpecificAlerts.filter((item) => {
@@ -799,7 +797,7 @@ export default function AIAnalystPage() {
       return false;
     }
     if (selectedCluster === "alerts") {
-      return item.alertType === "alert";
+      return item.alertType === "alert" || item.alertType === "warning" || item.totalAmount >= 120;
     }
     if (selectedCluster === "recurring") {
       const cat = (item.habitCategory || "").toLowerCase();
@@ -807,32 +805,62 @@ export default function AIAnalystPage() {
       return (
         cat.includes("assinatura") ||
         cat.includes("streaming") ||
+        cat.includes("telefonia") ||
+        cat.includes("internet") ||
         name.includes("spotify") ||
         name.includes("netflix") ||
         name.includes("amazon") ||
+        name.includes("vivo") ||
         name.includes("mensalidade")
       );
     }
     if (selectedCluster === "habits") {
-      return item.alertType !== "alert";
+      const cat = (item.habitCategory || "").toLowerCase();
+      return (
+        cat.includes("lanche") ||
+        cat.includes("café") ||
+        cat.includes("cafe") ||
+        cat.includes("fast food") ||
+        cat.includes("doce") ||
+        cat.includes("restaurante") ||
+        cat.includes("delivery") ||
+        cat.includes("transporte")
+      );
     }
     return true;
   });
 
-  const alertsCount = visibleSpecificAlerts.filter((i) => i.alertType === "alert").length;
+  const alertsCount = visibleSpecificAlerts.filter(
+    (i) => i.alertType === "alert" || i.alertType === "warning" || i.totalAmount >= 120
+  ).length;
   const recurringCount = visibleSpecificAlerts.filter((i) => {
     const cat = (i.habitCategory || "").toLowerCase();
     const name = i.item.toLowerCase();
     return (
       cat.includes("assinatura") ||
       cat.includes("streaming") ||
+      cat.includes("telefonia") ||
+      cat.includes("internet") ||
       name.includes("spotify") ||
       name.includes("netflix") ||
       name.includes("amazon") ||
+      name.includes("vivo") ||
       name.includes("mensalidade")
     );
   }).length;
-  const habitsCount = visibleSpecificAlerts.filter((i) => i.alertType !== "alert").length;
+  const habitsCount = visibleSpecificAlerts.filter((i) => {
+    const cat = (i.habitCategory || "").toLowerCase();
+    return (
+      cat.includes("lanche") ||
+      cat.includes("café") ||
+      cat.includes("cafe") ||
+      cat.includes("fast food") ||
+      cat.includes("doce") ||
+      cat.includes("restaurante") ||
+      cat.includes("delivery") ||
+      cat.includes("transporte")
+    );
+  }).length;
 
   return (
     <div className="min-h-full w-full max-w-full overflow-x-hidden bg-[#F2F2F7] text-[#1D1D1F] font-sans selection:bg-[#1D1D1F] selection:text-white">
@@ -1044,195 +1072,25 @@ export default function AIAnalystPage() {
             ) : (
               /* ESTADO 3: DIAGNÓSTICO COMPLETO (APPLE HEALTH + APPLE CARD) */
               <>
-                {/* 1. HERO HEALTH RING CARD */}
-                <section className="bg-white rounded-[28px] p-6 sm:p-7 border border-black/[0.04] shadow-[0_8px_30px_rgba(0,0,0,0.03)] space-y-6">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
-                    <div className="flex items-center gap-5">
-                      {/* Anel de Atividade Apple Health */}
-                      <div className="relative w-20 h-20 sm:w-22 sm:h-22 flex items-center justify-center shrink-0">
-                        <svg className="w-full h-full -rotate-90" viewBox="0 0 72 72">
-                          <circle
-                            cx="36"
-                            cy="36"
-                            r="30"
-                            className="stroke-black/[0.05]"
-                            strokeWidth="6"
-                            fill="none"
-                          />
-                          <circle
-                            cx="36"
-                            cy="36"
-                            r="30"
-                            stroke={healthBadge.ringColor}
-                            strokeWidth="6"
-                            strokeDasharray="188.5"
-                            strokeDashoffset={188.5 - (188.5 * currentScore) / 100}
-                            strokeLinecap="round"
-                            fill="none"
-                            className="transition-all duration-1000 ease-out"
-                          />
-                        </svg>
-                        <div className="absolute flex flex-col items-center justify-center text-center">
-                          <span className="text-2xl font-bold tracking-tight text-[#1D1D1F]">
-                            {currentScore}
-                          </span>
-                          <span className="text-[9px] font-semibold text-[#86868B] uppercase tracking-wider">
-                            Pontos
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <div className="flex items-center gap-2">
-                          <h2 className="text-lg sm:text-xl font-semibold text-[#1D1D1F] tracking-tight">
-                            Saúde Financeira
-                          </h2>
-                          <span
-                            className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full border ${healthBadge.bg} ${healthBadge.color}`}
-                          >
-                            {healthBadge.label}
-                          </span>
-                        </div>
-                        <p className="text-xs text-[#86868B] leading-relaxed max-w-sm">
-                          Balanço ponderado entre saldo líquido, liquidez projetada e comprometimento de faturas.
-                        </p>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveTab("chat");
-                        setIsSimulatorOpen(true);
-                      }}
-                      className="self-start sm:self-auto bg-[#1D1D1F] hover:bg-black active:scale-[0.98] text-white text-xs font-semibold px-4 py-2.5 rounded-full transition-all flex items-center gap-2 shadow-xs cursor-pointer shrink-0"
-                    >
-                      <Calculator size={14} />
-                      <span>Simulador de Compra</span>
-                    </button>
-                  </div>
-
-                  {/* Grid de 3 Métricas Apple Health Style */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-black/[0.04]">
-                    <div className="p-3.5 rounded-2xl bg-[#FAFAFC] border border-black/[0.03]">
-                      <span className="text-[10px] uppercase font-semibold text-[#86868B] tracking-wider block">
-                        Comprometimento
-                      </span>
-                      <div className="mt-1 flex items-baseline gap-1.5">
-                        <strong
-                          className={`text-base font-semibold font-mono tabular-nums ${
-                            commitmentRatio > (userProfile?.maxCommitmentAlertPercent || 60)
-                              ? "text-rose-600"
-                              : "text-[#1D1D1F]"
-                          }`}
-                        >
-                          {commitmentRatio}%
-                        </strong>
-                        <span className="text-[11px] text-[#86868B]">
-                          (teto {userProfile?.maxCommitmentAlertPercent || 60}%)
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="p-3.5 rounded-2xl bg-[#FAFAFC] border border-black/[0.03]">
-                      <span className="text-[10px] uppercase font-semibold text-[#86868B] tracking-wider block">
-                        Saldo em Conta
-                      </span>
-                      <strong className="mt-1 block text-base font-semibold text-emerald-600 truncate font-mono tabular-nums">
-                        R$ {formatCurrency(mainBalance)}
-                      </strong>
-                    </div>
-
-                    <div className="p-3.5 rounded-2xl bg-[#FAFAFC] border border-black/[0.03]">
-                      <span className="text-[10px] uppercase font-semibold text-[#86868B] tracking-wider block">
-                        Faturas em Aberto
-                      </span>
-                      <strong className="mt-1 block text-base font-semibold text-[#1D1D1F] truncate font-mono tabular-nums">
-                        R$ {formatCurrency(totalInvoices)}
-                      </strong>
-                    </div>
-                  </div>
-
-                  {/* Parecer Executivo do Mês */}
-                  <div className="p-5 rounded-2xl bg-[#F9F9FB] border border-black/[0.05] space-y-2">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-[#1D1D1F]">
-                      <div className="w-5 h-5 rounded-md bg-[#1D1D1F] text-white flex items-center justify-center shadow-2xs">
-                        <TrendingUp size={11} />
-                      </div>
-                      <span>Parecer do Mês</span>
-                    </div>
-                    <p className="text-xs sm:text-sm text-[#1D1D1F] leading-relaxed font-normal">
-                      {cleanExecutiveSummary(diagnosis?.executiveSummary) ||
-                        "Fluxo de caixa sob acompanhamento regular. Mantenha os vencimentos futuros sob observação para preservar sua liquidez."}
-                    </p>
-                  </div>
-                </section>
-
-                {/* PERFIL DO CLIENTE & ALINHAMENTO ESTRATÉGICO */}
-                {diagnosis?.clientProfileAssessment && (
-                  <section className="bg-white rounded-[28px] p-6 sm:p-7 border border-black/[0.04] shadow-[0_8px_30px_rgba(0,0,0,0.03)] space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-xl bg-[#F2F2F7] text-[#1D1D1F] flex items-center justify-center">
-                          <Sliders size={17} />
-                        </div>
-                        <div>
-                          <h2 className="text-sm font-semibold text-[#1D1D1F]">
-                            Perfil Estratégico & Metas
-                          </h2>
-                          <p className="text-[11px] text-[#86868B]">
-                            Alinhamento entre sua renda fixa base, arquétipo financeiro e metas
-                          </p>
-                        </div>
-                      </div>
-                      <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full bg-[#F2F2F7] text-[#1D1D1F] border border-black/[0.06]">
-                        {diagnosis.clientProfileAssessment.persona}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-                      <div className="p-3.5 rounded-2xl bg-[#FAFAFC] border border-black/[0.03]">
-                        <span className="text-[10px] uppercase font-semibold text-[#86868B] tracking-wider block">
-                          Renda Fixa Mensal
-                        </span>
-                        <strong className="mt-1 block text-base font-semibold text-[#1D1D1F] font-mono tabular-nums">
-                          R$ {formatCurrency(diagnosis.clientProfileAssessment.monthlyIncomeBase)}
-                        </strong>
-                      </div>
-                      <div className="p-3.5 rounded-2xl bg-[#FAFAFC] border border-black/[0.03]">
-                        <span className="text-[10px] uppercase font-semibold text-[#86868B] tracking-wider block">
-                          Tolerância a Risco
-                        </span>
-                        <strong className="mt-1 block text-base font-semibold text-[#1D1D1F]">
-                          {diagnosis.clientProfileAssessment.riskTolerance}
-                        </strong>
-                      </div>
-                      <div className="p-3.5 rounded-2xl bg-[#FAFAFC] border border-black/[0.03]">
-                        <span className="text-[10px] uppercase font-semibold text-[#86868B] tracking-wider block">
-                          Foco Primário
-                        </span>
-                        <strong className="mt-1 block text-xs font-semibold text-[#1D1D1F] truncate" title={diagnosis.clientProfileAssessment.primaryFocus}>
-                          {diagnosis.clientProfileAssessment.primaryFocus}
-                        </strong>
-                      </div>
-                    </div>
-
-                    <div className="p-4 rounded-2xl bg-[#FAFAFC] border border-black/[0.04] space-y-1.5 text-xs">
-                      <span className="font-semibold text-[#1D1D1F] flex items-center gap-1.5">
-                        <ShieldCheck size={14} className="text-[#1D1D1F]" />
-                        <span>Diagnóstico de Alinhamento com o Perfil</span>
-                      </span>
-                      <p className="text-[#86868B] leading-relaxed">
-                        {diagnosis.clientProfileAssessment.profileAlignmentInsight}
-                      </p>
-                      {diagnosis.clientProfileAssessment.recommendedActionForGoal && (
-                        <p className="text-[#1D1D1F] font-medium pt-1 border-t border-black/5">
-                          🎯 <strong>Ação tática recomendada:</strong> {diagnosis.clientProfileAssessment.recommendedActionForGoal}
-                        </p>
-                      )}
-                    </div>
-                  </section>
-                )}
+                {/* 1. HERO FINANCIAL HEALTH COMMAND CENTER (APPLE HEALTH TRIPLE RINGS & AI AUDIT) */}
+                <FinancialHealthRing
+                  score={currentScore}
+                  healthStatus={diagnosis?.healthStatus}
+                  commitmentRatio={commitmentRatio}
+                  commitmentCeiling={userProfile?.maxCommitmentAlertPercent || 35}
+                  mainBalance={mainBalance}
+                  totalInvoices={totalInvoices}
+                  pendingBills={diagnosis?.cashflowWindow?.currentMonth.pendingBills ?? monthExpense}
+                  executiveSummary={cleanExecutiveSummary(diagnosis?.executiveSummary)}
+                  onOpenSimulator={() => {
+                    setActiveTab("chat");
+                    setIsSimulatorOpen(true);
+                  }}
+                  onDiscussWithAI={(topic) => {
+                    setActiveTab("chat");
+                    handleSendMessage(topic);
+                  }}
+                />
 
                 {/* REALITY CHECK PARA MESES FUTUROS (PREVENÇÃO CONTÁBIL) */}
                 {diagnosis?.futureMonthsRealityCheck && (

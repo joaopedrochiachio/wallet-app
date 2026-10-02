@@ -15,6 +15,7 @@ import {
   Target,
 } from "lucide-react";
 import { SpecificExpenseAlert } from "@/app/api/ai/analyze/route";
+import { resolveAppleCategoryTheme } from "./CategorySpectrumBar";
 
 interface InteractivePatternCardProps {
   item: SpecificExpenseAlert;
@@ -35,22 +36,24 @@ export function InteractivePatternCard({
   const formatCurrency = (val: number) =>
     val.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+  const categoryTheme = resolveAppleCategoryTheme(item.habitCategory || item.item);
+
   // Ícone por categoria
   const getCategoryIcon = (category?: string, name?: string) => {
     const combined = `${category || ""} ${name || ""}`.toLowerCase();
     if (combined.includes("ifood") || combined.includes("aliment") || combined.includes("delivery") || combined.includes("burger") || combined.includes("mcdonald") || combined.includes("restaurante")) {
-      return <UtensilsCrossed size={14} className="text-orange-600" />;
+      return <UtensilsCrossed size={14} />;
     }
     if (combined.includes("uber") || combined.includes("transporte") || combined.includes("99") || combined.includes("combustivel") || combined.includes("posto")) {
-      return <Car size={14} className="text-blue-600" />;
+      return <Car size={14} />;
     }
     if (combined.includes("netflix") || combined.includes("spotify") || combined.includes("streaming") || combined.includes("assinatura") || combined.includes("youtube") || combined.includes("prime")) {
-      return <Tv size={14} className="text-purple-600" />;
+      return <Tv size={14} />;
     }
     if (combined.includes("luz") || combined.includes("energia") || combined.includes("internet") || combined.includes("celular") || combined.includes("vivo")) {
-      return <Zap size={14} className="text-amber-600" />;
+      return <Zap size={14} />;
     }
-    return <ShoppingBag size={14} className="text-emerald-600" />;
+    return <ShoppingBag size={14} />;
   };
 
   // Cálculo da simulação de economia
@@ -66,12 +69,15 @@ export function InteractivePatternCard({
   const debitPct = totalSplit > 0 ? (debit / totalSplit) * 100 : 0;
 
   return (
-    <div className="bg-white rounded-[24px] p-5 border border-black/[0.04] shadow-[0_4px_20px_rgba(0,0,0,0.025)] hover:border-black/15 transition-all flex flex-col justify-between space-y-4 group">
+    <div className="bg-white rounded-[26px] p-5 border border-black/[0.04] shadow-[0_4px_24px_rgba(0,0,0,0.025)] hover:border-black/15 transition-all flex flex-col justify-between space-y-4 group">
       <div className="space-y-3">
         {/* Cabeçalho do Card */}
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-[#F2F2F7] flex items-center justify-center shrink-0">
+            <div
+              className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-2xs"
+              style={{ backgroundColor: `${categoryTheme.color}15`, color: categoryTheme.color }}
+            >
               {getCategoryIcon(item.habitCategory, item.item)}
             </div>
             <div>
@@ -79,18 +85,18 @@ export function InteractivePatternCard({
                 {item.item}
               </h3>
               <div className="flex items-center gap-1.5 mt-0.5">
-                {item.habitCategory && item.habitCategory !== item.item && (
-                  <span className="text-[10px] font-medium text-[#86868B]">
+                {item.habitCategory && (
+                  <span
+                    className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                    style={{ backgroundColor: `${categoryTheme.color}15`, color: categoryTheme.color }}
+                  >
                     {item.habitCategory}
                   </span>
                 )}
                 {item.count && (
-                  <>
-                    <span className="text-[10px] text-[#86868B]">•</span>
-                    <span className="text-[10px] text-[#86868B] font-medium">
-                      {item.count} compra{item.count > 1 ? "s" : ""}
-                    </span>
-                  </>
+                  <span className="text-[10px] text-[#86868B] font-medium">
+                    • {item.count} compra{item.count > 1 ? "s" : ""}
+                  </span>
                 )}
               </div>
             </div>
