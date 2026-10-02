@@ -2,54 +2,44 @@
 
 import React, { useState } from "react";
 import { UserProfile, FinancialPersonaId, RiskToleranceId, AIToneId } from "@/types";
-import { Sparkles, ArrowRightLeft, ShieldCheck, Award } from "lucide-react";
+import { ArrowRightLeft, ShieldCheck, ChevronRight } from "lucide-react";
 
 export interface PersonaInfo {
   id: FinancialPersonaId;
   title: string;
   subtitle: string;
-  emoji: string;
+  categoryTag: string;
   tagline: string;
-  accentColor: string;
-  gradientBg: string;
 }
 
 export const PERSONA_METADATA: Record<FinancialPersonaId, PersonaInfo> = {
   optimizer: {
     id: "optimizer",
     title: "The Optimizer",
-    subtitle: "Eficiência e otimização financeira",
-    emoji: "⚡",
-    tagline: "Maximizador de benefícios e menor custo financeiro",
-    accentColor: "#34C759",
-    gradientBg: "from-amber-400/20 via-emerald-400/20 to-transparent",
+    subtitle: "Eficiência e Otimização de Capital",
+    categoryTag: "Eficiência de Crédito",
+    tagline: "Maximizador de benefícios, prazos e menor custo financeiro",
   },
   guardian: {
     id: "guardian",
     title: "The Guardian",
-    subtitle: "Segurança e previsibilidade",
-    emoji: "🛡️",
-    tagline: "Proteção de reserva e blindagem de fluxo",
-    accentColor: "#007AFF",
-    gradientBg: "from-blue-500/20 via-cyan-400/20 to-transparent",
+    subtitle: "Preservação e Segurança de Caixa",
+    categoryTag: "Reserva & Blindagem",
+    tagline: "Proteção de liquidez de emergência e controle prudencial",
   },
   scaler: {
     id: "scaler",
     title: "The Scaler",
-    subtitle: "Crescimento e oportunidades",
-    emoji: "🚀",
-    tagline: "Expansão patrimonial e alavancagem estratégica",
-    accentColor: "#AF52DE",
-    gradientBg: "from-purple-500/20 via-pink-400/20 to-transparent",
+    subtitle: "Crescimento e Expansão Patrimonial",
+    categoryTag: "Alavancagem Estratégica",
+    tagline: "Canalização de excedentes para aportes e metas de longo prazo",
   },
   minimalist: {
     id: "minimalist",
     title: "The Minimalist",
-    subtitle: "Simplicidade e independência",
-    emoji: "🧘",
-    tagline: "Frugalidade consciente e alta taxa de poupança",
-    accentColor: "#30B0C7",
-    gradientBg: "from-teal-400/20 via-emerald-300/20 to-transparent",
+    subtitle: "Frugalidade Consciente e Simplicidade",
+    categoryTag: "Independência & Poupança",
+    tagline: "Foco em despesas essenciais e alta taxa de poupança (FIRE)",
   },
 };
 
@@ -80,7 +70,6 @@ export function WalletIdTitaniumCard({
   onOpenArchetypeModal,
   formatCurrency,
 }: WalletIdTitaniumCardProps) {
-  // Modo de visualização: 'finance' (dados da conta/saldo) ou 'intelligence' (raio-x da IA)
   const [viewMode, setViewMode] = useState<"finance" | "intelligence">("finance");
 
   const currentPersona = userProfile.persona
@@ -88,140 +77,92 @@ export function WalletIdTitaniumCard({
     : PERSONA_METADATA.optimizer;
 
   return (
-    <div className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-[#1C1C1E] via-[#2A2A2E] to-[#121213] border border-white/15 shadow-[0_16px_40px_rgba(0,0,0,0.22)] p-6 sm:p-7 text-white font-sans transition-all duration-300">
-      {/* Luz ambiente de titânio escovado */}
-      <div className="absolute top-0 right-0 -mt-12 -mr-12 w-64 h-64 rounded-full bg-radial from-white/[0.08] via-white/[0.02] to-transparent blur-3xl pointer-events-none" />
-      <div className={`absolute bottom-0 left-0 w-72 h-48 bg-gradient-to-tr ${currentPersona.gradientBg} blur-3xl pointer-events-none transition-all duration-500`} />
+    <div className="relative overflow-hidden rounded-[26px] bg-[#121214] border border-white/[0.12] shadow-[0_18px_45px_rgba(0,0,0,0.32)] p-6 sm:p-7 text-white font-sans transition-all duration-300">
+      {/* Specular Edge Highlight Estilo MacBook Space Black */}
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent pointer-events-none" />
+      <div className="absolute top-0 right-0 -mt-16 -mr-16 w-56 h-56 rounded-full bg-radial from-white/[0.04] to-transparent blur-2xl pointer-events-none" />
 
-      {/* Marca d'água refinada Apple Wallet ID */}
-      <div className="absolute top-5 right-6 text-white/[0.05] font-semibold text-2xl sm:text-3xl tracking-tighter select-none pointer-events-none font-mono">
-        WALLET ID
-      </div>
-
-      <div className="relative z-10 space-y-5">
-        {/* Linha 1: Chip EMV + Aproximação NFC + Badges Apple */}
+      <div className="relative z-10 space-y-6">
+        {/* Linha 1: Top Bar Estilo Cartão Private Banking */}
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {/* Microchip EMV Apple Card em Vetor */}
-            <div className="w-10 h-7 rounded-md bg-gradient-to-br from-[#D4AF37]/80 via-[#F5E080] to-[#AA7C11] p-[2px] shadow-xs flex items-center justify-center">
-              <div className="w-full h-full rounded-[4px] bg-[#1F1F21]/80 grid grid-cols-2 gap-[2px] p-[2px]">
-                <div className="border border-[#F5E080]/60 rounded-[2px]" />
-                <div className="border border-[#F5E080]/60 rounded-[2px]" />
-                <div className="border border-[#F5E080]/60 rounded-[2px]" />
-                <div className="border border-[#F5E080]/60 rounded-[2px]" />
-              </div>
-            </div>
-
-            {/* Símbolo de aproximação Contactless / NFC */}
-            <svg
-              className="w-5 h-5 text-white/40 rotate-90"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-            >
-              <path d="M8.5 16.5a5 5 0 0 1 0-9" />
-              <path d="M12 19a8.5 8.5 0 0 1 0-14" />
-              <path d="M15.5 21.5a12 12 0 0 1 0-19" />
-            </svg>
+          <div className="flex items-center gap-2.5">
+            <span className="text-[11px] font-mono tracking-[0.22em] uppercase text-white/50 font-medium">
+              WALLET ID
+            </span>
+            <span className="text-white/20 font-mono text-[10px]">•</span>
+            <span className="text-[10px] font-mono tracking-wider text-emerald-400 font-medium flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              CONTA ATIVA
+            </span>
           </div>
 
-          {/* Badge Wallet Pro & Botão de Alternância de Visão */}
+          {/* Alternância Elegante: Visão Carteira vs Raio-X de IA */}
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setViewMode(viewMode === "finance" ? "intelligence" : "finance")}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/[0.08] hover:bg-white/[0.14] active:scale-95 border border-white/10 text-[11px] font-semibold tracking-wide text-white/90 transition-all cursor-pointer backdrop-blur-md"
-              title="Alternar entre dados da conta e parâmetros de inteligência"
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/[0.06] hover:bg-white/[0.12] active:scale-95 border border-white/10 text-[11px] font-medium tracking-tight text-white/80 transition-all cursor-pointer"
             >
-              <ArrowRightLeft size={12} className="text-white/70" />
-              <span>{viewMode === "finance" ? "Raio-X de IA" : "Visão Carteira"}</span>
+              <ArrowRightLeft size={11} className="text-white/60" />
+              <span>{viewMode === "finance" ? "Ver Parâmetros de IA" : "Ver Saldos"}</span>
             </button>
-
-            <div className="flex items-center gap-1.5 bg-gradient-to-r from-amber-500/20 to-amber-300/10 px-3 py-1.5 rounded-full border border-amber-400/30 text-xs font-semibold text-amber-300 shadow-2xs">
-              <Award size={13} className="text-amber-400" />
-              <span>Wallet Pro</span>
-            </div>
+            <span className="px-2.5 py-0.5 rounded-full bg-white/[0.06] border border-white/10 text-[10px] font-mono tracking-wider text-white/70">
+              PRO
+            </span>
           </div>
         </div>
 
-        {/* Linha 2: Avatar com Emoji de Arquétipo e Identidade */}
+        {/* Linha 2: Identidade do Usuário e Tag de Arquétipo Minimalista */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-1">
           <div className="flex items-center gap-4 min-w-0">
-            {/* Avatar Híbrido: Monograma Apple ID + Emoji 3D de Arquétipo com Anel de Inteligência */}
-            <div className="relative shrink-0 group">
-              {/* Anel de gradiente Apple Intelligence */}
-              <div
-                className="w-16 h-16 sm:w-18 sm:h-18 rounded-full p-[2.5px] transition-transform duration-300 group-hover:scale-105"
-                style={{
-                  background: `linear-gradient(135deg, ${currentPersona.accentColor}, #5856D6, #FF2D55)`,
-                }}
-              >
-                <div className="w-full h-full rounded-full bg-gradient-to-b from-[#2C2C2E] to-[#1C1C1E] text-white font-semibold text-xl sm:text-2xl flex items-center justify-center border border-white/20 shadow-inner select-none">
-                  {userProfile.avatarInitials}
-                </div>
+            {/* Monograma Estilo Apple ID com Borda Metálica Fina */}
+            <div className="relative shrink-0">
+              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-b from-[#242426] to-[#161618] text-white font-semibold text-lg sm:text-xl flex items-center justify-center border border-white/15 shadow-inner select-none font-mono">
+                {userProfile.avatarInitials}
               </div>
-
-              {/* Emoji flutuante característico do arquétipo com status pulsante */}
-              <button
-                type="button"
-                onClick={onOpenArchetypeModal}
-                className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-[#1C1C1E] border-2 border-white/20 shadow-md flex items-center justify-center text-sm hover:scale-110 active:scale-95 transition-transform cursor-pointer"
-                title={`Arquétipo: ${currentPersona.title} (Clique para alterar)`}
-              >
-                <span>{currentPersona.emoji}</span>
-              </button>
             </div>
 
-            {/* Informações Pessoais & Papel */}
-            <div className="min-w-0 space-y-1">
-              <div className="flex items-center gap-2 flex-wrap">
+            {/* Informações Pessoais */}
+            <div className="min-w-0 space-y-0.5">
+              <div className="flex items-center gap-2">
                 <h2 className="text-lg sm:text-xl font-semibold tracking-tight text-white truncate">
                   {userProfile.name}
                 </h2>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/[0.08] text-[11px] font-medium text-white/80 border border-white/10">
-                  <ShieldCheck size={11} className="text-emerald-400" />
-                  Verificado
-                </span>
+                <ShieldCheck size={14} className="text-emerald-400 shrink-0" />
               </div>
-              <p className="text-xs text-white/70 truncate flex items-center gap-1.5">
-                <span>{userProfile.role}</span>
+              <p className="text-xs text-white/60 truncate flex items-center gap-1.5 font-mono">
+                <span>{userProfile.role || "Membro"}</span>
                 <span className="text-white/30">•</span>
-                <span className="text-white/50 font-mono text-[11px]">{userProfile.email}</span>
+                <span className="text-white/40">{userProfile.email}</span>
               </p>
             </div>
           </div>
 
-          {/* Badge Interativo do Arquétipo com atalho para o modal */}
+          {/* Badge Minimalista do Arquétipo Ativo */}
           <button
             type="button"
             onClick={onOpenArchetypeModal}
-            className="self-start sm:self-center shrink-0 inline-flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-white/[0.08] hover:bg-white/[0.14] border border-white/15 backdrop-blur-md transition-all active:scale-95 cursor-pointer text-left shadow-2xs group"
+            className="self-start sm:self-center shrink-0 inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.10] border border-white/10 transition-all active:scale-95 cursor-pointer text-left group"
           >
-            <span className="text-base group-hover:scale-110 transition-transform">
-              {currentPersona.emoji}
-            </span>
-            <div>
+            <div className="space-y-0.5">
               <div className="flex items-center gap-1.5">
-                <span className="text-xs font-semibold text-white/95">
+                <span className="text-xs font-semibold text-white tracking-tight">
                   {currentPersona.title}
                 </span>
-                <Sparkles size={11} className="text-amber-400" />
+                <ChevronRight size={12} className="text-white/40 group-hover:translate-x-0.5 transition-transform" />
               </div>
-              <span className="text-[10px] text-white/50 block font-medium">
-                Tocar para alterar
+              <span className="text-[10px] text-white/45 block font-mono">
+                {currentPersona.categoryTag}
               </span>
             </div>
           </button>
         </div>
 
-        {/* Linha 3: Conteúdo Dinâmico com Transição (Visão Carteira vs Raio-X de Inteligência) */}
+        {/* Linha 3: Métricas em Formato de Prateleira de Banco (MacBook / Apple Wallet) */}
         {viewMode === "finance" ? (
-          /* Visão Financeira: 3 Colunas Horizontais Apple Card */
-          <div className="grid grid-cols-3 divide-x divide-white/10 rounded-2xl bg-white/[0.04] border border-white/[0.08] p-3 sm:p-4 text-center backdrop-blur-xs animate-in fade-in duration-200">
-            <div className="px-1.5 sm:px-2">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-white/45 block truncate">
+          <div className="grid grid-cols-3 divide-x divide-white/[0.08] rounded-xl bg-white/[0.03] border border-white/[0.06] p-3 sm:p-4 text-center">
+            <div className="px-2">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-white/40 block truncate">
                 Renda Base
               </span>
               <span className="text-xs sm:text-sm font-semibold text-white tracking-tight mt-0.5 block truncate font-mono tabular-nums">
@@ -229,17 +170,17 @@ export function WalletIdTitaniumCard({
               </span>
             </div>
 
-            <div className="px-1.5 sm:px-2">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-white/45 block truncate">
-                Cartões
+            <div className="px-2">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-white/40 block truncate">
+                Cartões Ativos
               </span>
-              <span className="text-xs sm:text-sm font-semibold text-white tracking-tight mt-0.5 block truncate">
+              <span className="text-xs sm:text-sm font-semibold text-white tracking-tight mt-0.5 block truncate font-mono">
                 {cardsCount} {cardsCount === 1 ? "ativo" : "ativos"}
               </span>
             </div>
 
-            <div className="px-1.5 sm:px-2">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-white/45 block truncate">
+            <div className="px-2">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-white/40 block truncate">
                 Saldo Atual
               </span>
               <span className="text-xs sm:text-sm font-semibold text-emerald-400 tracking-tight mt-0.5 block truncate font-mono tabular-nums">
@@ -248,31 +189,30 @@ export function WalletIdTitaniumCard({
             </div>
           </div>
         ) : (
-          /* Raio-X de Inteligência: Parâmetros Ativos de Análise da IA */
-          <div className="grid grid-cols-3 divide-x divide-white/10 rounded-2xl bg-white/[0.06] border border-white/[0.12] p-3 sm:p-4 text-center backdrop-blur-xs animate-in fade-in duration-200">
-            <div className="px-1.5 sm:px-2">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-white/45 block truncate">
+          <div className="grid grid-cols-3 divide-x divide-white/[0.08] rounded-xl bg-white/[0.03] border border-white/[0.06] p-3 sm:p-4 text-center">
+            <div className="px-2">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-white/40 block truncate">
                 Tom do Advisor
               </span>
-              <span className="text-xs sm:text-sm font-semibold text-indigo-300 tracking-tight mt-0.5 block truncate">
+              <span className="text-xs sm:text-sm font-semibold text-white tracking-tight mt-0.5 block truncate font-mono">
                 {TONE_LABELS[userProfile.aiTone] || "Analítico Suíço"}
               </span>
             </div>
 
-            <div className="px-1.5 sm:px-2">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-white/45 block truncate">
+            <div className="px-2">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-white/40 block truncate">
                 Teto de Alerta
               </span>
-              <span className="text-xs sm:text-sm font-semibold text-amber-300 tracking-tight mt-0.5 block truncate font-mono tabular-nums">
+              <span className="text-xs sm:text-sm font-semibold text-white tracking-tight mt-0.5 block truncate font-mono tabular-nums">
                 {userProfile.maxCommitmentAlertPercent}% da renda
               </span>
             </div>
 
-            <div className="px-1.5 sm:px-2">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-white/45 block truncate">
+            <div className="px-2">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-white/40 block truncate">
                 Perfil de Risco
               </span>
-              <span className="text-xs sm:text-sm font-semibold text-emerald-300 tracking-tight mt-0.5 block truncate">
+              <span className="text-xs sm:text-sm font-semibold text-white tracking-tight mt-0.5 block truncate font-mono">
                 {RISK_LABELS[userProfile.riskTolerance] || "Equilibrado"}
               </span>
             </div>

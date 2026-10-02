@@ -154,7 +154,7 @@ export default function ProfilePage() {
       window.localStorage.setItem("wallet_ai_needs_reanalysis", "true");
       window.localStorage.setItem("wallet_ai_pending_persona", personaId);
     }
-    showToast(`Arquétipo alterado para ${chosen?.emoji} ${chosen?.title}! A IA recalibrará sua análise automaticamente.`);
+    showToast(`Arquétipo atualizado para ${chosen?.title || personaId}. A IA recalibrará sua análise automaticamente.`);
   };
 
   const handleSelectTone = (tone: AIToneId) => {
@@ -244,45 +244,45 @@ export default function ProfilePage() {
         />
       </section>
 
-      {/* Barra de Segmented Control Apple (Organiza todas as informações em abas focadas) */}
+      {/* Barra de Segmented Control Apple (MacBook / iOS Settings) */}
       <nav aria-label="Seções do Perfil" className="pt-1">
-        <div className="bg-[#E5E5EA]/80 p-1 rounded-2xl flex items-center gap-1 border border-black/[0.04] shadow-2xs">
+        <div className="bg-[#E5E5EA]/70 p-1 rounded-2xl flex items-center gap-1 border border-black/[0.04]">
           <button
             type="button"
             onClick={() => setActiveTab("advisor")}
-            className={`flex-1 py-2 sm:py-2.5 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            className={`flex-1 py-2 sm:py-2.5 px-3 rounded-xl text-xs font-medium flex items-center justify-center gap-2 transition-all cursor-pointer ${
               activeTab === "advisor"
-                ? "bg-white text-[#1D1D1F] shadow-xs"
+                ? "bg-white text-[#1D1D1F] font-semibold shadow-xs"
                 : "text-[#86868B] hover:text-[#1D1D1F]"
             }`}
           >
-            <Brain size={14} className={activeTab === "advisor" ? "text-purple-600" : "text-[#86868B]"} />
-            <span className="truncate">Inteligência & IA</span>
+            <SlidersHorizontal size={13} strokeWidth={1.75} className="shrink-0" />
+            <span className="truncate">Estratégia & IA</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab("account")}
-            className={`flex-1 py-2 sm:py-2.5 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            className={`flex-1 py-2 sm:py-2.5 px-3 rounded-xl text-xs font-medium flex items-center justify-center gap-2 transition-all cursor-pointer ${
               activeTab === "account"
-                ? "bg-white text-[#1D1D1F] shadow-xs"
+                ? "bg-white text-[#1D1D1F] font-semibold shadow-xs"
                 : "text-[#86868B] hover:text-[#1D1D1F]"
             }`}
           >
-            <SlidersHorizontal size={14} className={activeTab === "account" ? "text-blue-600" : "text-[#86868B]"} />
+            <User size={13} strokeWidth={1.75} className="shrink-0" />
             <span className="truncate">Conta & Parâmetros</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab("security")}
-            className={`flex-1 py-2 sm:py-2.5 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            className={`flex-1 py-2 sm:py-2.5 px-3 rounded-xl text-xs font-medium flex items-center justify-center gap-2 transition-all cursor-pointer ${
               activeTab === "security"
-                ? "bg-white text-[#1D1D1F] shadow-xs"
+                ? "bg-white text-[#1D1D1F] font-semibold shadow-xs"
                 : "text-[#86868B] hover:text-[#1D1D1F]"
             }`}
           >
-            <ShieldCheck size={14} className={activeTab === "security" ? "text-emerald-600" : "text-[#86868B]"} />
+            <ShieldCheck size={13} strokeWidth={1.75} className="shrink-0" />
             <span className="truncate">Segurança & LGPD</span>
           </button>
         </div>
@@ -303,17 +303,17 @@ export default function ProfilePage() {
           />
 
           {/* Diretrizes & Parâmetros de Postura do Advisor */}
-          <section className="bg-white rounded-[26px] p-6 sm:p-7 border border-black/[0.04] shadow-[0_2px_12px_rgba(0,0,0,0.04)] space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-semibold tracking-tight text-[#1D1D1F]">
-                  Estilo & Diretrizes do Advisor
-                </h3>
-                <p className="text-xs text-[#86868B]">
-                  Defina o rigor matemático e os limites prudenciais das recomendações
-                </p>
-              </div>
-              <Sparkles size={16} className="text-purple-500" />
+          <section className="bg-white rounded-[24px] p-6 sm:p-7 border border-black/[0.06] shadow-[0_2px_10px_rgba(0,0,0,0.03)] space-y-6">
+            <div>
+              <span className="text-[10px] font-mono tracking-[0.2em] uppercase text-[#86868B] font-semibold block">
+                PARÂMETROS DE RESPOSTA
+              </span>
+              <h3 className="text-base font-semibold tracking-tight text-[#1D1D1F] mt-0.5">
+                Tom e Limites do Advisor
+              </h3>
+              <p className="text-xs text-[#86868B] mt-0.5">
+                Defina a postura de comunicação e o teto prudencial de comprometimento de renda
+              </p>
             </div>
 
             {/* Estilo das recomendações (Tons de IA) */}
