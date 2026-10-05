@@ -338,13 +338,13 @@ test("9. Observabilidade de uso: consulta protegida isola dados entre usuários 
   await reconcileAIQuota({ reservation: r.reservation, success: true, actualCostUsd: 0.0015 });
 
   // 1. Consulta como usuário comum (não admin): NÃO deve ter globalUsage
-  const userSummary = await getAIUsageSummary({ targetUid: testUid, isAdmin: false });
+  const userSummary = await getAIUsageSummary({ targetUid: testUid, monthKey: "2026-09", isAdmin: false });
   assert.ok(userSummary.userUsage);
   assert.equal(userSummary.userUsage.monthly.chatCount, 1);
   assert.equal(userSummary.globalUsage, undefined, "Usuário comum NÃO pode ver consumo global");
 
   // 2. Consulta como administrador: DEVE ter globalUsage e dados agregados
-  const adminSummary = await getAIUsageSummary({ targetUid: testUid, isAdmin: true });
+  const adminSummary = await getAIUsageSummary({ targetUid: testUid, monthKey: "2026-09", isAdmin: true });
   assert.ok(adminSummary.globalUsage, "Administrador deve ter acesso a globalUsage");
   assert.ok(adminSummary.globalUsage.estimatedCostUsd >= 0.0015);
   assert.equal(adminSummary.globalUsage.totalRequests, 1);
