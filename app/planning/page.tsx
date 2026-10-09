@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useWallet } from "@/context/WalletContext";
+import { useWallet, TransactionItem } from "@/context/WalletContext";
 import {
   Plus,
   Trash2,
@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { AppleConfirmModal } from "@/components/ui/AppleConfirmModal";
 import { AppleScopeModal } from "@/components/ui/AppleScopeModal";
+import { AddTransactionSheet } from "@/components/ui/AddTransactionSheet";
 import { MonthlyMovementOverview } from "@/components/planning/MonthlyMovementOverview";
 import { MiniCard } from "@/components/wallet";
 import {
@@ -30,7 +31,12 @@ import {
   groupRecurringItemsByDate,
   getEffectiveRecurringItemForPeriod,
 } from "@/lib/utils/dateUtils";
-import { formatAccountLabel, getLedgerEntryDate, matchesLedgerCard } from "@/lib/utils/ledger";
+import {
+  formatAccountLabel,
+  getLedgerEntryDate,
+  matchesLedgerCard,
+  getInvoiceDueDate,
+} from "@/lib/utils/ledger";
 import {
   sanitizeTextInput,
   validateCurrency,
@@ -54,17 +60,33 @@ export default function PlanningPage() {
     accountOptions,
     cards,
     transactions,
+    addTransaction,
+    deleteTransaction,
+    payInvoice,
+    mainBalance,
   } = useWallet();
 
-  const planningMonths = getPlanningMonthsWindow(0, 3);
+  const [showArchivedMonths, setShowArchivedMonths] = useState(true);
+  const planningMonths = getPlanningMonthsWindow(showArchivedMonths ? 1 : 0, 3);
   const currentMonthIdx = planningMonths.findIndex((m) => m.isCurrent);
   const [selectedMonthIndex, setSelectedMonthIndex] = useState(
     currentMonthIdx >= 0 ? currentMonthIdx : 0
   );
+
+  const toggleArchivePastMonths = () => {
+    const nextShow = !showArchivedMonths;
+    setShowArchivedMonths(nextShow);
+    const newMonths = getPlanningMonthsWindow(nextShow ? 1 : 0, 3);
+    const newCurrentIdx = newMonths.findIndex((m) => m.isCurrent);
+    setSelectedMonthIndex(newCurrentIdx >= 0 ? newCurrentIdx : 0);
+  };
   const [isAddingModalOpen, setIsAddingModalOpen] = useState(false);
   const [isAddingMenuOpen, setIsAddingMenuOpen] = useState(false);
   const [modalType, setModalType] = useState<"income" | "expense">("income");
   const [itemToDelete, setItemToDelete] = useState<RecurringItem | null>(null);
+  const [isCardAddSheetOpen, setIsCardAddSheetOpen] = useState(false);
+  const [selectedCardForAdd, setSelectedCardForAdd] = useState<string>("NuBank");
+  const [txToDelete, setTxToDelete] = useState<TransactionItem | null>(null);
 
   // Form para novo item de planejamento
   const [newTitle, setNewTitle] = useState("");
@@ -107,6 +129,16 @@ export default function PlanningPage() {
     item: RecurringItem;
     updates: Partial<RecurringItem>;
   } | null>(null);
+
+  const [confirmPayModal, setConfirmPayModal] = useState<{
+    isOpen: boolean;
+    cardId: string;
+    cardName: string;
+    amount: number;
+  } | null>(null);
+  const [isPayingInvoice, setIsPayingInvoice] = useState(false);
+  const [paymentSuccessMessage, setPaymentSuccessMessage] = useState<string | null>(null);
+  const [paymentErrorMessage, setPaymentErrorMessage] = useState<string | null>(null);
 
   const activeMonthObj = planningMonths[selectedMonthIndex] || planningMonths[currentMonthIdx >= 0 ? currentMonthIdx : 0];
   const targetYear = activeMonthObj.year;
@@ -241,8 +273,21 @@ export default function PlanningPage() {
     const isIncome = mode === "income";
     const isCredit = mode === "expense-credit";
 
+    if (isCredit) {
+      const targetCreditCard = targetCardId ? cards.find((c) => c.id === targetCardId) : null;
+      const creditAcc =
+        targetCreditCard?.name ||
+        cards.find((card) => card.type === "credit")?.name ||
+        accountOptions.find((acc) => !acc.includes("Débito") && !acc.includes("Pix")) ||
+        "NuBank";
+      setSelectedCardForAdd(creditAcc);
+      setIsAddingMenuOpen(false);
+      setIsCardAddSheetOpen(true);
+      return;
+    }
+
     setModalType(isIncome ? "income" : "expense");
-    setNewCategory(isIncome ? "Salário / Extra" : isCredit ? "Assinaturas & Lazer" : "Moradia & Contas");
+    setNewCategory(isIncome ? "Salário / Extra" : "Moradia & Contas");
 
     const checkingAcc =
       cards.find((card) => card.type === "checking")?.name ||
@@ -515,12 +560,60 @@ export default function PlanningPage() {
     }
   };
 
+  const handleExecutePayInvoice = async () => {
+    if (!confirmPayModal) return;
+    const { cardId, cardName, amount } = confirmPayModal;
+    if (mainBalance < amount) {
+      setPaymentErrorMessage("Saldo na Conta Principal insuficiente para quitar esta fatura!");
+      setConfirmPayModal(null);
+      setTimeout(() => setPaymentErrorMessage(null), 5000);
+      return;
+    }
+    setIsPayingInvoice(true);
+    try {
+      await payInvoice(cardId, amount);
+      setConfirmPayModal(null);
+      setPaymentSuccessMessage(`Fatura do ${cardName} paga com sucesso!`);
+      setTimeout(() => setPaymentSuccessMessage(null), 4000);
+    } catch (error) {
+      setPaymentErrorMessage(error instanceof Error ? error.message : "Não foi possível pagar a fatura.");
+      setTimeout(() => setPaymentErrorMessage(null), 5000);
+    } finally {
+      setIsPayingInvoice(false);
+    }
+  };
+
   const handleRealizeNow = async (item: RecurringItem) => {
     try {
       setProcessingItemId(item.id);
-      const effectiveDay = getEffectiveDueDay(item, targetYear, targetMonth);
-      const plannedDate = new Date(targetYear, targetMonth, effectiveDay, 12, 0, 0);
-      await realizeRecurringItemNow(item, targetYear, targetMonth, undefined, plannedDate);
+      const isCredit = !isCheckingAccount(item);
+      let plannedYear = targetYear;
+      let plannedMonth = targetMonth;
+
+      // Se for cartão de crédito, descobrir o mês exato em que a cobrança ocorre
+      if (isCredit) {
+        const matchingCard = cards.find((c) => matchesLedgerCard(c, item.account, item.cardId));
+        if (matchingCard && matchingCard.type === "credit") {
+          const nextDate = new Date(targetYear, targetMonth + 1, 1);
+          const expectedPeriodKey = getPeriodKey(nextDate.getFullYear(), nextDate.getMonth());
+          for (let offset = -2; offset <= 0; offset++) {
+            const candDate = new Date(targetYear, targetMonth + offset, 1);
+            const candY = candDate.getFullYear();
+            const candM = candDate.getMonth();
+            const day = getEffectiveDueDay(item, candY, candM);
+            const dueDate = getInvoiceDueDate(matchingCard, new Date(candY, candM, day, 12, 0, 0));
+            if (getPeriodKey(dueDate.getFullYear(), dueDate.getMonth()) === expectedPeriodKey) {
+              plannedYear = candY;
+              plannedMonth = candM;
+              break;
+            }
+          }
+        }
+      }
+
+      const effectiveDay = getEffectiveDueDay(item, plannedYear, plannedMonth);
+      const plannedDate = new Date(plannedYear, plannedMonth, effectiveDay, 12, 0, 0);
+      await realizeRecurringItemNow(item, plannedYear, plannedMonth, undefined, plannedDate);
     } catch (error) {
       alert(error instanceof Error ? error.message : "Não foi possível efetivar o lançamento.");
     } finally {
@@ -531,7 +624,31 @@ export default function PlanningPage() {
   const handleUnrealize = async (item: RecurringItem) => {
     try {
       setProcessingItemId(item.id);
-      await unrealizeRecurringItem(item, targetYear, targetMonth);
+      const isCredit = !isCheckingAccount(item);
+      let plannedYear = targetYear;
+      let plannedMonth = targetMonth;
+
+      if (isCredit) {
+        const matchingCard = cards.find((c) => matchesLedgerCard(c, item.account, item.cardId));
+        if (matchingCard && matchingCard.type === "credit") {
+          const nextDate = new Date(targetYear, targetMonth + 1, 1);
+          const expectedPeriodKey = getPeriodKey(nextDate.getFullYear(), nextDate.getMonth());
+          for (let offset = -2; offset <= 0; offset++) {
+            const candDate = new Date(targetYear, targetMonth + offset, 1);
+            const candY = candDate.getFullYear();
+            const candM = candDate.getMonth();
+            const day = getEffectiveDueDay(item, candY, candM);
+            const dueDate = getInvoiceDueDate(matchingCard, new Date(candY, candM, day, 12, 0, 0));
+            if (getPeriodKey(dueDate.getFullYear(), dueDate.getMonth()) === expectedPeriodKey) {
+              plannedYear = candY;
+              plannedMonth = candM;
+              break;
+            }
+          }
+        }
+      }
+
+      await unrealizeRecurringItem(item, plannedYear, plannedMonth);
     } catch (error) {
       alert(error instanceof Error ? error.message : "Não foi possível desfazer a efetivação.");
     } finally {
@@ -539,13 +656,42 @@ export default function PlanningPage() {
     }
   };
 
-  const renderItemRow = (item: RecurringItem, sectionKind: "income" | "debit" | "credit") => {
-    const effectiveDay = getEffectiveDueDay(item, targetYear, targetMonth);
-    const monthOffset = getRecurringMonthOffset(item, targetYear, targetMonth);
+  const renderItemRow = (
+    item: RecurringItem,
+    sectionKind: "income" | "debit" | "credit",
+    isInvoicePaid: boolean = false
+  ) => {
+    const isCredit = sectionKind === "credit";
+    let plannedYear = targetYear;
+    let plannedMonth = targetMonth;
+
+    if (isCredit) {
+      const matchingCard = cards.find((c) => matchesLedgerCard(c, item.account, item.cardId));
+      if (matchingCard && matchingCard.type === "credit") {
+        const nextDate = new Date(targetYear, targetMonth + 1, 1);
+        const expectedPeriodKey = getPeriodKey(nextDate.getFullYear(), nextDate.getMonth());
+        for (let offset = -2; offset <= 0; offset++) {
+          const candDate = new Date(targetYear, targetMonth + offset, 1);
+          const candY = candDate.getFullYear();
+          const candM = candDate.getMonth();
+          const day = getEffectiveDueDay(item, candY, candM);
+          const dueDate = getInvoiceDueDate(matchingCard, new Date(candY, candM, day, 12, 0, 0));
+          if (getPeriodKey(dueDate.getFullYear(), dueDate.getMonth()) === expectedPeriodKey) {
+            plannedYear = candY;
+            plannedMonth = candM;
+            break;
+          }
+        }
+      }
+    }
+
+    const effectiveDay = getEffectiveDueDay(item, plannedYear, plannedMonth);
+    const monthOffset = getRecurringMonthOffset(item, plannedYear, plannedMonth);
     const hasInstallments = Boolean(item.installmentsCount && item.installmentsCount > 1);
     const isFinishedInThisMonth = hasInstallments && monthOffset >= (item.installmentsCount || 0);
     const currentInstallmentNum = monthOffset >= 0 ? monthOffset + 1 : 1;
-    const isRealizedInThisMonth = Boolean(item.realizedPeriods?.includes(getPeriodKey(targetYear, targetMonth)));
+    const recurrencePeriodKey = getPeriodKey(plannedYear, plannedMonth);
+    const isRealizedInThisMonth = Boolean(item.realizedPeriods?.includes(recurrencePeriodKey));
     const isProcessing = processingItemId === item.id;
 
     let dateDescription = "";
@@ -558,7 +704,13 @@ export default function PlanningPage() {
         ? `5º dia útil (dia ${effectiveDay})`
         : `Dia ${effectiveDay}`;
     } else {
-      dateDescription = `Cobrado dia ${effectiveDay}`;
+      if (plannedMonth !== targetMonth) {
+        const candDate = new Date(plannedYear, plannedMonth, 1);
+        const chargeMonthShort = candDate.toLocaleDateString("pt-BR", { month: "short" }).replace(".", "");
+        dateDescription = `Cobrado dia ${effectiveDay} de ${chargeMonthShort}`;
+      } else {
+        dateDescription = `Cobrado dia ${effectiveDay}`;
+      }
     }
 
     return (
@@ -568,7 +720,14 @@ export default function PlanningPage() {
         className="group flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 p-4 hover:bg-[#F9F9FB] transition-colors cursor-pointer"
       >
         <div className="flex items-center gap-3.5 min-w-0">
-          {isRealizedInThisMonth ? (
+          {isInvoicePaid ? (
+            <div
+              className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-2xs"
+              title="Quitado na fatura deste mês"
+            >
+              <Check size={12} strokeWidth={3} />
+            </div>
+          ) : isRealizedInThisMonth ? (
             <div
               className={`w-5 h-5 rounded-full text-white flex items-center justify-center shrink-0 shadow-2xs ${
                 sectionKind === "income"
@@ -611,7 +770,11 @@ export default function PlanningPage() {
               >
                 {item.title}
               </h4>
-              {isRealizedInThisMonth && (
+              {isInvoicePaid ? (
+                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full border shrink-0 bg-emerald-50 text-emerald-700 border-emerald-200">
+                  Quitado na fatura
+                </span>
+              ) : isRealizedInThisMonth ? (
                 <span
                   className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full border shrink-0 ${
                     sectionKind === "income"
@@ -623,7 +786,7 @@ export default function PlanningPage() {
                 >
                   {sectionKind === "credit" ? "Na fatura" : "Efetivado"}
                 </span>
-              )}
+              ) : null}
             </div>
             <p className="text-xs text-[#86868B] truncate mt-0.5">
               {dateDescription} · {formatAccountLabel(item.account)} · {item.category}
@@ -633,8 +796,13 @@ export default function PlanningPage() {
         </div>
 
         <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-1 sm:pt-0 border-t sm:border-t-0 border-gray-100">
-          {/* Ação Rápida Antecipada: "Recebi antes" / "Paguei antes" ("clico e já faz na hora") */}
-          {!isRealizedInThisMonth && !isFinishedInThisMonth && item.active ? (
+          {/* Ação Rápida: Quitado / "Já cobrou" / "Recebi antes" / "Paguei antes" */}
+          {isInvoicePaid ? (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200/60 shadow-2xs">
+              <Check size={11} strokeWidth={2.5} />
+              <span>Liquidado</span>
+            </span>
+          ) : !isRealizedInThisMonth && !isFinishedInThisMonth && item.active ? (
             <button
               type="button"
               onClick={(e) => {
@@ -646,6 +814,8 @@ export default function PlanningPage() {
               title={
                 item.type === "income"
                   ? "Recebi adiantado: efetivar entrada agora"
+                  : sectionKind === "credit"
+                  ? "Registrar que esta cobrança já ocorreu no cartão"
                   : "Paguei adiantado: debitar e efetivar saída agora"
               }
             >
@@ -654,7 +824,13 @@ export default function PlanningPage() {
               ) : (
                 <Zap size={12} className="text-amber-500 fill-amber-500 shrink-0" />
               )}
-              <span>{item.type === "income" ? "Recebi antes" : "Paguei antes"}</span>
+              <span>
+                {item.type === "income"
+                  ? "Recebi antes"
+                  : sectionKind === "credit"
+                  ? "Já cobrou"
+                  : "Paguei antes"}
+              </span>
             </button>
           ) : isRealizedInThisMonth ? (
             <button
@@ -664,15 +840,11 @@ export default function PlanningPage() {
                 void handleUnrealize(item);
               }}
               disabled={isProcessing}
-              className="inline-flex items-center gap-1 text-[11px] text-[#86868B] hover:text-rose-600 transition-colors cursor-pointer px-2 py-1 rounded-md hover:bg-rose-50"
-              title="Desfazer efetivação desta competência"
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-50 hover:bg-rose-50 hover:text-rose-600 text-indigo-700 border border-indigo-200/60 hover:border-rose-200 transition-all cursor-pointer active:scale-95 disabled:opacity-50 group"
+              title="Desfazer efetivação"
             >
-              {isProcessing ? (
-                <Loader2 size={11} className="animate-spin" />
-              ) : (
-                <RotateCcw size={11} />
-              )}
-              <span className="text-[11px]">Desfazer</span>
+              <RotateCcw size={12} className="group-hover:rotate-[-45deg] transition-transform" />
+              <span>Desfazer</span>
             </button>
           ) : null}
 
@@ -832,22 +1004,45 @@ export default function PlanningPage() {
       </header>
 
       <div className="max-w-4xl mx-auto space-y-6">
-        {/* Navegação entre Meses (Controle Segmentado Suave Estilo iOS) */}
-        <div className="bg-[#E5E5EA]/60 p-1 rounded-full flex items-center gap-1 overflow-x-auto border border-black/5 scrollbar-none touch-pan-x">
-          {planningMonths.map((m, idx) => (
-            <button
-              key={m.name}
-              type="button"
-              onClick={() => setSelectedMonthIndex(idx)}
-              className={`flex-1 min-w-[76px] sm:min-w-[90px] py-1.5 px-2.5 sm:px-3 rounded-full text-xs font-semibold transition-all select-none text-center cursor-pointer ${
-                selectedMonthIndex === idx
-                  ? "bg-white text-[#1D1D1F] shadow-xs"
-                  : "text-[#86868B] hover:text-[#1D1D1F]"
-              }`}
-            >
-              {m.name}
-            </button>
-          ))}
+        {paymentSuccessMessage && (
+          <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-2xl flex items-center gap-2.5 text-xs font-medium animate-in fade-in">
+            <span>✓ {paymentSuccessMessage}</span>
+          </div>
+        )}
+
+        {paymentErrorMessage && (
+          <div className="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-3 rounded-2xl flex items-center gap-2.5 text-xs font-medium animate-in fade-in">
+            <span>⚠ {paymentErrorMessage}</span>
+          </div>
+        )}
+
+        {/* Navegação entre Meses (Controle Segmentado Suave Estilo iOS com opção de arquivar) */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          <div className="bg-[#E5E5EA]/60 p-1 rounded-full flex items-center gap-1 overflow-x-auto border border-black/5 scrollbar-none touch-pan-x flex-1">
+            {planningMonths.map((m, idx) => (
+              <button
+                key={m.name}
+                type="button"
+                onClick={() => setSelectedMonthIndex(idx)}
+                className={`flex-1 min-w-[76px] sm:min-w-[90px] py-1.5 px-2.5 sm:px-3 rounded-full text-xs font-semibold transition-all select-none text-center cursor-pointer ${
+                  selectedMonthIndex === idx
+                    ? "bg-white text-[#1D1D1F] shadow-xs"
+                    : "text-[#86868B] hover:text-[#1D1D1F]"
+                }`}
+              >
+                {m.name}
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={toggleArchivePastMonths}
+            className="text-[11px] font-medium text-[#86868B] hover:text-[#1D1D1F] px-3 py-1.5 rounded-full bg-white border border-black/[0.06] hover:bg-[#F2F2F7] transition-all cursor-pointer shrink-0 self-end sm:self-auto shadow-2xs active:scale-95"
+            title={showArchivedMonths ? "Ocultar meses anteriores no planejamento" : "Exibir Setembro e histórico de meses anteriores"}
+          >
+            {showArchivedMonths ? "Arquivar Setembro" : "Exibir Setembro"}
+          </button>
         </div>
 
         {/* 2. RESUMO FINANCEIRO PRINCIPAL (Superfície Única Apple com 4 Métricas Essenciais) */}
@@ -1166,176 +1361,6 @@ export default function PlanningPage() {
                 ))
               )}
             </div>
-          </div>
-
-          {/* 4.3 Faturas dos Cartões de Crédito (Lá para baixo com Valor Somado e cada Cartão separado) */}
-          <div className="bg-[#F8F8FA] rounded-[22px] p-5 sm:p-6 border border-black/[0.04] space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-black/[0.04]">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-[#1D1D1F] text-white flex items-center justify-center shrink-0 shadow-xs">
-                  <CreditCard size={16} strokeWidth={2} />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold uppercase tracking-wider text-[#86868B]">
-                      Faturas dos Cartões
-                    </span>
-                    {projection.totalInvoicesPending === 0 && (projection.totalInvoicesScheduled ?? 0) > 0 ? (
-                      <span className="text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        ✓ Pagas na conta
-                      </span>
-                    ) : null}
-                  </div>
-                  <h4 className="text-sm font-semibold text-[#1D1D1F] tracking-tight mt-0.5">
-                    {projection.cardInvoices && projection.cardInvoices.length > 0
-                      ? `${projection.cardInvoices.length} ${projection.cardInvoices.length === 1 ? "cartão com fatura na saída da conta" : "cartões com faturas na saída da conta"}`
-                      : "Nenhum cartão cadastrado"}
-                  </h4>
-                </div>
-              </div>
-
-              <div className="flex sm:flex-col sm:items-end justify-between items-center shrink-0">
-                <div className="text-right">
-                  <span className="text-[11px] text-[#86868B] mr-1.5 font-medium">
-                    Valor Somado:
-                  </span>
-                  <span className="text-lg sm:text-xl font-semibold text-[#1D1D1F] tracking-tight font-mono tabular-nums">
-                    R$ {formatCurrency(projection.totalInvoicesScheduled ?? creditCommitments)}
-                  </span>
-                </div>
-                {projection.totalInvoicesPending !== undefined && projection.totalInvoicesPending < (projection.totalInvoicesScheduled ?? 0) && (
-                  <span className="text-[11px] text-[#86868B] font-mono tabular-nums">
-                    (R$ {formatCurrency(projection.totalInvoicesPending)} ainda pendente)
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Lista Detalhada Cartão por Cartão */}
-            {(!projection.cardInvoices || projection.cardInvoices.length === 0) ? (
-              <div className="bg-white rounded-[18px] p-6 text-center border border-black/[0.04]">
-                <p className="text-xs text-[#86868B]">
-                  Cadastre um cartão de crédito na aba Cartões para visualizar faturas aqui.
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 gap-3.5">
-                {projection.cardInvoices.map((ci) => {
-                  const matchingCard = cards.find((c) => c.id === ci.cardId);
-                  const hasInstallments = ci.installmentsAmount > 0;
-                  const hasRecurring = ci.recurringAmount > 0;
-                  const isEmpty = !hasInstallments && !hasRecurring && ci.totalInvoice === 0;
-
-                  return (
-                    <div
-                      key={ci.cardId}
-                      className="bg-white rounded-[18px] border border-black/[0.05] p-4 sm:p-5 shadow-2xs hover:shadow-xs transition-shadow space-y-3"
-                    >
-                      {/* Topo do Cartão Específico */}
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                        <div className="flex items-center gap-3">
-                          <MiniCard
-                            cardName={ci.cardName}
-                            brand={matchingCard?.brand}
-                            colorScheme={matchingCard?.colorScheme}
-                          />
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <h5 className="text-sm font-semibold text-[#1D1D1F]">
-                                {ci.cardName}
-                              </h5>
-                              {ci.isPaid ? (
-                                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                  ✓ Paga na conta
-                                </span>
-                              ) : (
-                                <span className="text-[10px] font-semibold text-[#86868B] px-2 py-0.5 rounded-full bg-[#F2F2F7]">
-                                  A pagar dia {ci.dueDay}
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-xs text-[#86868B] mt-0.5">
-                              Vencimento dia {ci.dueDay} · Fechamento dia {ci.closingDay}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center justify-between sm:justify-end gap-3 pt-1 sm:pt-0 border-t sm:border-t-0 border-gray-100">
-                          <div className="text-left sm:text-right">
-                            <span className="text-[10px] uppercase font-semibold tracking-wider text-[#86868B] block">
-                              Fatura {ci.cardName}
-                            </span>
-                            <span className="text-base sm:text-lg font-semibold text-[#1D1D1F] tracking-tight font-mono tabular-nums">
-                              R$ {formatCurrency(ci.totalInvoice)}
-                            </span>
-                            {(() => {
-                              const matchingCard = cards.find((c) => c.id === ci.cardId);
-                              const limit = matchingCard?.limit || 0;
-                              if (limit <= 0) return null;
-                              const available = Math.max(0, limit - ci.totalInvoice);
-                              return (
-                                <span className="text-[10px] text-[#86868B] block mt-0.5">
-                                  Limite: <span className="font-mono tabular-nums">R$ {formatCurrency(limit)}</span> · Disp:{" "}
-                                  <strong className="text-emerald-700 font-semibold font-mono tabular-nums">
-                                    R$ {formatCurrency(available)}
-                                  </strong>
-                                </span>
-                              );
-                            })()}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenModal("expense-credit", ci.cardId)}
-                            className="text-xs font-semibold text-[#0071E3] hover:text-[#0077ED] px-2.5 py-1 rounded-full hover:bg-blue-50/50 transition-colors cursor-pointer shrink-0"
-                            title={`Adicionar compra ou assinatura no ${ci.cardName}`}
-                          >
-                            + Compra
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Detalhamento sem duplicidade do que compõe esta fatura específica */}
-                      {isEmpty ? (
-                        <p className="text-xs text-[#86868B] bg-[#FBFBFD] px-3.5 py-2 rounded-xl border border-black/[0.02]">
-                          Fatura zerada para {activeMonthObj.name}. Nenhuma compra faturada ou assinatura vinculada a este cartão.
-                        </p>
-                      ) : (
-                        <div className="bg-[#FBFBFD] rounded-xl p-3 border border-black/[0.03] space-y-2">
-                          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#86868B] border-b border-black/[0.03] pb-1.5">
-                            <span>Composição da fatura</span>
-                            <div className="flex items-center gap-3">
-                              {hasInstallments && (
-                                <span>Compras: <strong className="text-[#1D1D1F] font-mono tabular-nums">R$ {formatCurrency(ci.installmentsAmount)}</strong></span>
-                              )}
-                              {hasRecurring && (
-                                <span>Assinaturas: <strong className="text-[#1D1D1F] font-mono tabular-nums">R$ {formatCurrency(ci.recurringAmount)}</strong></span>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Itens de assinaturas vinculadas a este cartão */}
-                          {ci.recurringItems && ci.recurringItems.length > 0 && (
-                            <div className="space-y-1.5 pt-0.5">
-                              {ci.recurringItems.map((item) => renderItemRow(item, "credit"))}
-                            </div>
-                          )}
-
-                          {/* Compras e parcelamentos faturados no cartão */}
-                          {hasInstallments && (
-                            <div className="flex items-center justify-between text-xs pt-1 px-1 text-[#86868B]">
-                              <span>Lançamentos e compras faturadas no {ci.cardName}</span>
-                              <span className="font-medium text-[#1D1D1F] font-mono tabular-nums">
-                                R$ {formatCurrency(ci.installmentsAmount)}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
           </div>
         </section>
 
@@ -2470,6 +2495,55 @@ export default function PlanningPage() {
           description={`Tem certeza que deseja remover "${itemToDelete?.title || ""}" dos seus compromissos futuros?`}
           confirmLabel="Excluir"
           cancelLabel="Manter"
+          variant="danger"
+          iconType="trash"
+        />
+      )}
+
+      {/* CONFIRMAÇÃO DE PAGAMENTO DE FATURA VIA CONTA PRINCIPAL */}
+      {confirmPayModal && (
+        <AppleConfirmModal
+          isOpen={confirmPayModal.isOpen}
+          onClose={() => setConfirmPayModal(null)}
+          onConfirm={handleExecutePayInvoice}
+          title={`Pagar Fatura do ${confirmPayModal.cardName}`}
+          description={`Deseja confirmar o débito de R$ ${formatCurrency(confirmPayModal.amount)} na Conta Principal para quitar a fatura do ${confirmPayModal.cardName}?`}
+          confirmLabel={isPayingInvoice ? "Pagando..." : "Confirmar Pagamento"}
+          cancelLabel="Cancelar"
+          variant="primary"
+          iconType="payment"
+        />
+      )}
+
+      {/* MODAL SIMPLES UNIFICADO PARA LANÇAR COMPRAS EM CARTÃO */}
+      <AddTransactionSheet
+        isOpen={isCardAddSheetOpen}
+        onClose={() => setIsCardAddSheetOpen(false)}
+        accounts={accountOptions}
+        initialAccount={selectedCardForAdd}
+        initialType="despesa"
+      />
+
+      {/* CONFIRMAÇÃO DE EXCLUSÃO DE LANÇAMENTO */}
+      {txToDelete && (
+        <AppleConfirmModal
+          isOpen={Boolean(txToDelete)}
+          onClose={() => setTxToDelete(null)}
+          onConfirm={async () => {
+            if (txToDelete) {
+              try {
+                await deleteTransaction(txToDelete.id);
+              } catch (error) {
+                alert(error instanceof Error ? error.message : "Não foi possível excluir o lançamento.");
+              } finally {
+                setTxToDelete(null);
+              }
+            }
+          }}
+          title="Excluir Lançamento"
+          description={`Deseja excluir a compra "${txToDelete.title}" de R$ ${formatCurrency(txToDelete.amount)}?`}
+          confirmLabel="Excluir"
+          cancelLabel="Cancelar"
           variant="danger"
           iconType="trash"
         />

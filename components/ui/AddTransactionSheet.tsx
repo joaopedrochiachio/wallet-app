@@ -26,6 +26,8 @@ export interface AddTransactionSheetProps {
   isOpen: boolean;
   onClose: () => void;
   accounts?: string[];
+  initialAccount?: string;
+  initialType?: "despesa" | "receita";
   onAdd?: (transaction: {
     title: string;
     amount: number;
@@ -85,15 +87,17 @@ export function AddTransactionSheet({
   isOpen,
   onClose,
   accounts = DEFAULT_ACCOUNTS,
+  initialAccount,
+  initialType,
   onAdd,
 }: AddTransactionSheetProps) {
-  const { cards } = useWallet();
-  const [type, setType] = useState<"despesa" | "receita">("despesa");
+  const { cards, addTransaction } = useWallet();
+  const [type, setType] = useState<"despesa" | "receita">(initialType || "despesa");
   const [amountInput, setAmountInput] = useState("");
   const [title, setTitle] = useState("");
 
   const [category, setCategory] = useState(EXPENSE_CATEGORIES[0]);
-  const [account, setAccount] = useState(accounts[0] || "Débito/Pix");
+  const [account, setAccount] = useState(initialAccount || accounts[0] || "Débito/Pix");
   const [dateInput, setDateInput] = useState(() => formatDateToInput(new Date()));
   const [datePreset, setDatePreset] = useState<"today" | "yesterday" | "custom">("today");
   const [isRecurring, setIsRecurring] = useState(false);
@@ -106,6 +110,13 @@ export function AddTransactionSheet({
 
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (isOpen) {
+      if (initialAccount) setAccount(initialAccount);
+      if (initialType) setType(initialType);
+    }
+  }, [isOpen, initialAccount, initialType]);
 
   const now = new Date();
   const currentMonthIndex = now.getMonth();
@@ -181,8 +192,9 @@ export function AddTransactionSheet({
         month: "short",
       })}, ${txTime}`;
 
-      if (!onAdd) throw new Error("Fluxo de lançamento indisponível.");
-      await onAdd({
+      const submitAction = onAdd || addTransaction;
+      if (!submitAction) throw new Error("Fluxo de lançamento indisponível.");
+      await submitAction({
         title: txDescription,
         amount: safeAmount,
         type,

@@ -41,16 +41,20 @@ import {
   isRecurringActiveInMonth,
   getRecurringMonthOffset,
   getEffectiveRecurringItemForPeriod,
+  MONTH_NAMES_PT,
 } from "@/lib/utils/dateUtils";
 import {
   calculateCheckingBalance,
   calculateCreditInvoice,
   calculateInvoiceSchedule,
+  calculateInvoiceScheduleWithCredits,
   calculateMonthlyAccountFlow,
   calculateProjectedBalance,
   getInvoiceDueDate,
   getLedgerEntryDate,
   matchesLedgerCard,
+  getCardInvoiceRecurringDetails,
+  isInvoicePaymentOrSettlement,
 } from "@/lib/utils/ledger";
 import {
   GoalItem,
@@ -111,6 +115,9 @@ export interface CardInvoiceProjection {
   pendingInvoice: number;
   isPaid: boolean;
   recurringItems: RecurringItem[];
+  transactions: TransactionItem[];
+  invoicePeriodKey?: string;
+  invoiceDueMonthName?: string;
 }
 
 export interface MonthProjection {
@@ -156,7 +163,7 @@ interface WalletContextType {
   updateUserProfile: (profile: Partial<UserProfile>) => void;
   addTransaction: (tx: Omit<TransactionItem, "id">) => Promise<void>;
   updateTransaction: (id: string, updates: TransactionUpdateInput) => Promise<void>;
-  payInvoice: (cardId: string) => Promise<void>;
+  payInvoice: (cardId: string, customAmount?: number) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
   addRecurringItem: (item: Omit<RecurringItem, "id">) => Promise<void>;
   updateRecurringItem: (id: string, updates: Partial<RecurringItem>) => Promise<void>;
@@ -679,12 +686,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     [user, cards, recurringItems, resolveCardId]
   );
 
-  const payInvoice = useCallback(async (cardId: string) => {
+  const payInvoice = useCallback(async (cardId: string, customAmount?: number) => {
     const targetCard = enrichedCards.find((c) => c.id === cardId);
-    if (!targetCard || targetCard.type !== "credit" || !targetCard.invoiceAmount) return;
+    if (!targetCard || targetCard.type !== "credit") return;
+    const invoiceValue = customAmount ?? targetCard.invoiceAmount ?? 0;
+    if (invoiceValue <= 0) return;
     if (!user) return;
 
-    const invoiceValue = targetCard.invoiceAmount;
     const checkingCard = enrichedCards.find((c) => c.type === "checking");
     if (!checkingCard) throw new Error("Cadastre uma conta corrente antes de pagar a fatura.");
     if ((checkingCard.balance || 0) < invoiceValue) throw new Error("Saldo insuficiente para pagar a fatura.");
@@ -1037,60 +1045,65 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       // Faturas de cartão de crédito detalhadas por cartão
       const creditCards = cards.filter((card) => card.type === "credit");
 
+      // Para o mês de planejamento m (ex: Outubro), a fatura a ser paga em m tem vencimento no mês m.
+      // Os gastos ocorridos em m que vencem em m+1 entram como compromisso de pagamento no mês m+1 (Novembro).
+      const invoicePeriodYear = m.year;
+      const invoicePeriodMonth = m.monthIndex;
+      const invoicePeriodKey = getPeriodKey(invoicePeriodYear, invoicePeriodMonth);
+      const invoiceDueMonthName = MONTH_NAMES_PT[invoicePeriodMonth];
+
       const cardInvoices: CardInvoiceProjection[] = creditCards.map((creditCard) => {
-        // 1. Parcelas e compras faturadas
-        const schedule = calculateInvoiceSchedule(creditCard, transactions);
-        const installmentsAmount = isPastMonth ? 0 : (schedule[targetPeriodKey] || 0);
+        // 1. Parcelas e compras faturadas com vencimento no mês seguinte (ou pendentes acumuladas)
+        const { schedule, creditsByPeriod } = calculateInvoiceScheduleWithCredits(creditCard, transactions);
+        const installmentsAmount = isPastMonth ? 0 : (schedule[invoicePeriodKey] || 0);
 
         // 2. Assinaturas e cobranças recorrentes que caem nesta fatura
-        const cardRecurringItems: RecurringItem[] = [];
+        let cardRecurringItems: RecurringItem[] = [];
         let cardRecurringTotal = 0;
         if (!isPastMonth) {
-          const matchingCreditItems = recurringItems.filter((candidate: RecurringItem) =>
-            candidate.type !== "income" && !isCheckingRecurring(candidate) && matchesLedgerCard(creditCard, candidate.account, candidate.cardId)
+          const recDetails = getCardInvoiceRecurringDetails(
+            creditCard,
+            recurringItems,
+            invoicePeriodYear,
+            invoicePeriodMonth,
+            transactions
           );
-          for (const rawItem of matchingCreditItems) {
-            const item = getEffectiveRecurringItemForPeriod(rawItem, targetPeriodKey);
-            const monthOffset = getRecurringMonthOffset(item, m.year, m.monthIndex);
-            const isScheduledForMonth = monthOffset >= 0 && (
-              !item.installmentsCount ||
-              item.installmentsCount <= 0 ||
-              monthOffset < item.installmentsCount
-            );
-
-            if (!item.active || !isScheduledForMonth) continue;
-            if (item.excludedPeriods?.includes(targetPeriodKey) || item.overrides?.[targetPeriodKey]?.isDeleted) continue;
-
-            const isRealizedInPeriod = Boolean(item.realizedPeriods?.includes(targetPeriodKey));
-            cardRecurringItems.push(item);
-
-            // Se o item já foi efetivado para esta competência, sua cobrança foi gerada em transactions.
-            // Se calculateInvoiceSchedule já contabilizou a transação em installmentsAmount, não somamos aqui para não duplicar.
-            const isAlreadyInTransactions = transactions.some((t) =>
-              t.recurringItemId === item.id && (
-                t.periodKey === targetPeriodKey ||
-                (calculateInvoiceSchedule(creditCard, [t])[targetPeriodKey] || 0) > 0
-              )
-            );
-
-            if (!isRealizedInPeriod && !isAlreadyInTransactions) {
-              cardRecurringTotal += item.amount;
-            }
-          }
+          cardRecurringItems = recDetails.items;
+          cardRecurringTotal = recDetails.pendingAmount;
         }
 
-        // 3. Pagamentos de fatura já efetuados neste mês para este cartão específico
-        const paidAmount = transactionsInTargetMonth
-          .filter((t) =>
-            t.type === "despesa" &&
-            t.kind === "invoice_payment" &&
-            (t.relatedCardId === creditCard.id || matchesLedgerCard(creditCard, t.account, t.cardId))
-          )
+        // 3. Pagamentos de fatura já efetuados neste ciclo de fatura
+        const transactionsInInvoiceMonth = transactions.filter((transaction) => {
+          const occurredAt = getLedgerEntryDate(transaction);
+          return occurredAt && getPeriodKey(occurredAt.getFullYear(), occurredAt.getMonth()) === invoicePeriodKey;
+        });
+
+        const processedPaymentGroups = new Set<string>();
+        const paidAmount = transactionsInInvoiceMonth
+          .filter((t) => isInvoicePaymentOrSettlement(t, creditCard))
+          .filter((t) => {
+            const groupKey = t.groupId || t.id;
+            if (groupKey && processedPaymentGroups.has(groupKey)) return false;
+            if (groupKey) processedPaymentGroups.add(groupKey);
+            return true;
+          })
           .reduce((sum, t) => sum + t.amount, 0);
 
-        const pendingInvoice = isPastMonth ? 0 : installmentsAmount + cardRecurringTotal;
-        const totalInvoice = pendingInvoice + paidAmount;
-        const isPaid = isPastMonth || (paidAmount > 0 && pendingInvoice <= 0);
+        const cardTransactions = transactions.filter((entry) => {
+          if (entry.id?.startsWith("planned-")) return false;
+          if (entry.type !== "despesa") return false;
+          if (entry.kind === "invoice_payment" || entry.kind === "invoice_settlement") return false;
+          if (!matchesLedgerCard(creditCard, entry.account, entry.cardId)) return false;
+          const dDate = getInvoiceDueDate(creditCard, getLedgerEntryDate(entry) || new Date(invoicePeriodYear, invoicePeriodMonth, 1));
+          const dKey = getPeriodKey(dDate.getFullYear(), dDate.getMonth());
+          return dKey === invoicePeriodKey;
+        });
+
+        const periodCredit = creditsByPeriod?.[invoicePeriodKey] || 0;
+        const pendingRecurring = Math.max(0, cardRecurringTotal - periodCredit);
+        const pendingInvoice = isPastMonth ? 0 : installmentsAmount + pendingRecurring;
+        const totalInvoice = isPastMonth ? paidAmount : Math.max(paidAmount, pendingInvoice);
+        const isPaid = isPastMonth || (paidAmount > 0 && pendingInvoice <= 0) || (totalInvoice === 0);
 
         return {
           cardId: creditCard.id,
@@ -1105,6 +1118,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           pendingInvoice,
           isPaid,
           recurringItems: cardRecurringItems,
+          transactions: cardTransactions,
+          invoicePeriodKey,
+          invoiceDueMonthName,
         };
       });
 

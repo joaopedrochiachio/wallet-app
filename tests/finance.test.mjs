@@ -7,6 +7,8 @@ import {
   calculateMonthlyAccountFlow,
   calculateProjectedBalance,
   getInvoiceDueDate,
+  getCardInvoiceRecurringDetails,
+  isInvoicePaymentOrSettlement,
 } from "../lib/utils/ledger.ts";
 import {
   getPeriodKey,
@@ -1139,6 +1141,300 @@ test("lançamento retroativo: lançamento registrado hoje para setembro entra no
   const currentBalance = calculateCheckingBalance(checkingAccount, allTx);
   assert.equal(currentBalance, 500);
 });
+
+test("ciclo de cartão: compras/assinaturas de outubro após fechamento dia 1 vão para fatura de novembro e fatura de outubro paga fica quitada", () => {
+  const nubank = {
+    id: "card-nubank",
+    name: "NuBank",
+    type: "credit",
+    limit: 800,
+    spent: 0,
+    closingDay: 1, // Fecha dia 1
+    dueDay: 10,    // Vence dia 10
+    colorScheme,
+  };
+
+  const checkingAcc = {
+    id: "acc-main",
+    name: "Conta Principal",
+    type: "checking",
+    balance: 3000,
+    openingBalance: 3000,
+    limit: 0,
+    spent: 0,
+    colorScheme,
+  };
+
+  // 1. Compras de setembro que fecharam em 01/10 e venceram em 10/10
+  const septPurchases = [
+    {
+      id: "tx-sept-1",
+      amount: 692.44,
+      type: "despesa",
+      account: "NuBank",
+      cardId: "card-nubank",
+      occurredAt: new Date(2026, 8, 20), // 20/09 -> vence em 10/10
+    },
+  ];
+
+  // 2. Pagamento efetuado em outubro da fatura de setembro
+  const invoicePayment = {
+    id: "tx-pay-nubank",
+    amount: 692.44,
+    type: "despesa",
+    kind: "invoice_payment",
+    account: "Conta Principal",
+    cardId: "acc-main",
+    relatedCardId: "card-nubank",
+    occurredAt: new Date(2026, 9, 8), // 08/10
+  };
+
+  const invoiceSettlement = {
+    id: "tx-settle-nubank",
+    amount: 692.44,
+    type: "receita",
+    kind: "invoice_settlement",
+    account: "NuBank",
+    cardId: "card-nubank",
+    relatedCardId: "acc-main",
+    occurredAt: new Date(2026, 9, 8),
+  };
+
+  // 3. Assinaturas de Outubro (Spotify dia 10, Apple dia 14, iCloud dia 9)
+  const subscriptions = [
+    {
+      id: "rec-spotify",
+      title: "Spotify",
+      amount: 31.90,
+      dueDay: 10,
+      type: "expense",
+      account: "NuBank",
+      cardId: "card-nubank",
+      active: true,
+      startYear: 2026,
+      startMonth: 9, // Inicia em Outubro
+    },
+    {
+      id: "rec-apple",
+      title: "Apple",
+      amount: 19.90,
+      dueDay: 14,
+      type: "expense",
+      account: "NuBank",
+      cardId: "card-nubank",
+      active: true,
+      startYear: 2026,
+      startMonth: 9,
+    },
+    {
+      id: "rec-icloud",
+      title: "Icloud - Apple",
+      amount: 5.90,
+      dueDay: 9,
+      type: "expense",
+      account: "NuBank",
+      cardId: "card-nubank",
+      active: true,
+      startYear: 2026,
+      startMonth: 9,
+    },
+  ];
+
+  const allLedger = [...septPurchases, invoicePayment, invoiceSettlement];
+
+  // A. Verificação da fatura de OUTUBRO (2026-10):
+  // 1. As assinaturas de outubro (cobradas dias 9, 10, 14) NÃO caem na fatura de outubro,
+  // pois o fechamento foi no dia 1!
+  const octRecDetails = getCardInvoiceRecurringDetails(nubank, subscriptions, 2026, 9, allLedger);
+  assert.equal(octRecDetails.items.length, 0);
+  assert.equal(octRecDetails.pendingAmount, 0);
+
+  // 2. Schedule de compras para Outubro: as compras de 692.44 foram quitadas pela baixa (invoiceSettlement)
+  const schedule = calculateInvoiceSchedule(nubank, allLedger);
+  assert.equal(schedule["2026-10"], 0);
+
+  // 3. Fatura de Outubro está 100% quitada e não tem pendência
+  const octInstallments = schedule["2026-10"] || 0;
+  const octPaid = 692.44;
+  const octPending = octInstallments + octRecDetails.pendingAmount;
+  assert.equal(octPending, 0);
+  const octIsPaid = octPaid > 0 && octPending <= 0;
+  assert.equal(octIsPaid, true);
+
+  // B. Verificação da fatura de NOVEMBRO (2026-11):
+  // As assinaturas cobradas em outubro (gastar esse mês) caem rigorosamente na fatura de Novembro (para pagar em novembro)!
+  const novRecDetails = getCardInvoiceRecurringDetails(nubank, subscriptions, 2026, 10, allLedger);
+  assert.equal(novRecDetails.items.length, 3);
+  assert.equal(novRecDetails.pendingAmount, 31.90 + 19.90 + 5.90); // R$ 57,70
+  assert.equal(Math.round(novRecDetails.pendingAmount * 100) / 100, 57.70);
+});
+
+test("pagamento de fatura registrado na conta corrente liquida a fatura do cartão e libera limite", () => {
+  const nubank = {
+    id: "card-nubank",
+    name: "NuBank",
+    type: "credit",
+    limit: 800,
+    spent: 0,
+    closingDay: 1,
+    dueDay: 10,
+    colorScheme,
+  };
+
+  const checkingAcc = {
+    id: "acc-checking",
+    name: "Conta Principal",
+    type: "checking",
+    balance: 5000,
+    openingBalance: 5000,
+    limit: 0,
+    spent: 0,
+    colorScheme,
+  };
+
+  // Compras de setembro (fechamento 01/10, vencimento 10/10)
+  const purchases = [
+    {
+      id: "tx-purchase-1",
+      amount: 692.44,
+      type: "despesa",
+      account: "NuBank",
+      cardId: "card-nubank",
+      occurredAt: new Date(2026, 8, 15),
+    },
+  ];
+
+  // Assinaturas de setembro que caem na fatura de outubro (vencimento 10/10)
+  const subscriptions = [
+    {
+      id: "rec-spotify",
+      title: "Spotify",
+      amount: 31.90,
+      dueDay: 10,
+      type: "expense",
+      account: "NuBank",
+      cardId: "card-nubank",
+      active: true,
+      startYear: 2026,
+      startMonth: 8, // Setembro
+    },
+    {
+      id: "rec-apple",
+      title: "Apple",
+      amount: 19.90,
+      dueDay: 14,
+      type: "expense",
+      account: "NuBank",
+      cardId: "card-nubank",
+      active: true,
+      startYear: 2026,
+      startMonth: 8,
+    },
+    {
+      id: "rec-icloud",
+      title: "Icloud - Apple",
+      amount: 5.90,
+      dueDay: 9,
+      type: "expense",
+      account: "NuBank",
+      cardId: "card-nubank",
+      active: true,
+      startYear: 2026,
+      startMonth: 8,
+    },
+  ]; // Total assinaturas = 57.70 -> Total fatura de outubro = 692.44 + 57.70 = 750.14
+
+  // Pagamento manual registrado na conta corrente (débito de 750.14)
+  const manualPaymentEntry = {
+    id: "tx-manual-pay",
+    amount: 750.14,
+    type: "despesa",
+    category: "Pagamento de Fatura",
+    description: "Pagamento Fatura NuBank",
+    account: "Conta Principal",
+    cardId: "acc-checking",
+    relatedCardId: "card-nubank",
+    occurredAt: new Date(2026, 9, 8),
+  };
+
+  assert.equal(isInvoicePaymentOrSettlement(manualPaymentEntry, nubank), true);
+
+  const ledger = [...purchases, manualPaymentEntry];
+  const schedule = calculateInvoiceSchedule(nubank, ledger);
+
+  // A fatura de outubro (2026-10) foi 100% quitada no schedule
+  assert.equal(schedule["2026-10"], 0);
+
+  // No cálculo da fatura do cartão (cards/dashboard), total devido em outubro é 0
+  const invoiceAmount = calculateCreditInvoice(nubank, ledger, subscriptions, new Date(2026, 8, 25));
+  assert.equal(invoiceAmount, 0);
+
+  // Saldo da conta corrente foi debitado pelo pagamento
+  const checkingBalance = calculateCheckingBalance(checkingAcc, ledger);
+  assert.equal(checkingBalance, 5000 - 750.14);
+});
+
+test("pagamento de fatura passada nao abate indevidamente compras e assinaturas do novo ciclo (fatura aberta)", () => {
+  const santander = {
+    id: "card-santander",
+    name: "Santander",
+    type: "credit",
+    limit: 157.06,
+    spent: 0,
+    closingDay: 1,
+    dueDay: 10,
+  };
+
+  // 1. Pagamento de fatura anterior (setembro, R$ 136,14 quitado em outubro)
+  const pastPayment = {
+    id: "tx-pay-santander-sept",
+    amount: 136.14,
+    type: "despesa",
+    category: "Pagamento de Fatura",
+    description: "Pagamento Fatura Santander",
+    account: "Conta Principal",
+    cardId: "acc-checking",
+    relatedCardId: "card-santander",
+    occurredAt: new Date(2026, 9, 8),
+  };
+
+  // 2. Compra realizada no cartão no ciclo atual (outubro, após fechamento 01/10)
+  const currentPurchase = {
+    id: "tx-santander-instagram",
+    amount: 10.0,
+    type: "despesa",
+    category: "Assinaturas & Lazer",
+    description: "Instagram Plus",
+    account: "Santander",
+    cardId: "card-santander",
+    occurredAt: new Date(2026, 9, 7),
+  };
+
+  // 3. Assinatura/parcelamento recorrente no cartão
+  const recurringItems = [
+    {
+      id: "rec-carregador",
+      title: "Carregador Iphone (Casas Bahia)",
+      amount: 39.99,
+      type: "expense",
+      account: "Santander",
+      cardId: "card-santander",
+      dueDay: 7,
+      active: true,
+      startYear: 2026,
+      startMonth: 9, // Outubro
+    },
+  ];
+
+  const ledger = [pastPayment, currentPurchase];
+  const refDate = new Date(2026, 9, 8); // 8 de outubro
+
+  // A fatura aberta para o próximo vencimento (novembro) deve somar Instagram (10.00) + Carregador (39.99) = 49.99
+  const openInvoice = calculateCreditInvoice(santander, ledger, recurringItems, refDate);
+  assert.equal(Math.round(openInvoice * 100) / 100, 49.99);
+});
+
+
 
 
 

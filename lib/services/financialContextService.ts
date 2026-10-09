@@ -23,6 +23,7 @@ import {
 import {
   calculateInvoiceSchedule,
   matchesLedgerCard,
+  getCardInvoiceRecurringDetails,
 } from "../utils/ledger.ts";
 
 export interface TransactionContextItem {
@@ -565,19 +566,20 @@ export function computeFortnightBreakdown(
     const schedule = calculateInvoiceSchedule(creditCard, transactions as unknown as Parameters<typeof calculateInvoiceSchedule>[1]);
     const installments = schedule[targetPeriodKey] || 0;
 
-    let creditRecurring = 0;
-    const matchingCreditItems = recurringItems.filter((candidate) =>
-      candidate.type !== "income" &&
-      !isChecking(candidate) &&
-      matchesLedgerCard(creditCard, candidate.account, candidate.cardId) &&
-      isRecurringActiveInMonth(candidate, year, monthIndex)
+    const recDetails = getCardInvoiceRecurringDetails(
+      creditCard,
+      recurringItems,
+      year,
+      monthIndex,
+      transactions as unknown as Parameters<typeof getCardInvoiceRecurringDetails>[4]
     );
-    for (const raw of matchingCreditItems) {
-      const effective = getEffectiveRecurringItemForPeriod(raw, targetPeriodKey);
-      creditRecurring += safeNumber(effective.amount);
+    const creditRecurring = recDetails.pendingAmount;
+
+    let totalInvoice = installments + creditRecurring;
+    if (totalInvoice === 0 && (creditCard.invoiceAmount || creditCard.spent)) {
+      totalInvoice = creditCard.invoiceAmount || creditCard.spent || 0;
     }
 
-    const totalInvoice = installments + creditRecurring;
     if (totalInvoice > 0) {
       cardInvoices.push({
         title: `Fatura ${creditCard.name}`,
