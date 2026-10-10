@@ -8,6 +8,7 @@ import {
   calculateProjectedBalance,
   getInvoiceDueDate,
   getCardInvoiceRecurringDetails,
+  getCardInvoiceDetailsForMonth,
   isInvoicePaymentOrSettlement,
 } from "../lib/utils/ledger.ts";
 import {
@@ -1434,9 +1435,287 @@ test("pagamento de fatura passada nao abate indevidamente compras e assinaturas 
   assert.equal(Math.round(openInvoice * 100) / 100, 49.99);
 });
 
+test("getCardInvoiceDetailsForMonth calcula corretamente fatura aberta com compras e assinaturas", () => {
+  const nubank = {
+    id: "card-nubank",
+    name: "NuBank",
+    type: "credit",
+    limit: 3000,
+    spent: 450,
+    closingDay: 1,
+    dueDay: 10,
+  };
 
+  const purchases = [
+    {
+      id: "tx-supermarket",
+      title: "Supermercado",
+      amount: 250,
+      type: "despesa",
+      category: "Alimentação",
+      account: "NuBank",
+      cardId: "card-nubank",
+      occurredAt: new Date(2026, 9, 5), // 5 de outubro
+    },
+  ];
 
+  const recurringItems = [
+    {
+      id: "rec-spotify",
+      title: "Spotify Familiar",
+      amount: 34.90,
+      type: "expense",
+      account: "NuBank",
+      cardId: "card-nubank",
+      dueDay: 10,
+      active: true,
+      startYear: 2026,
+      startMonth: 8,
+    },
+  ];
 
+  // Compras de outubro (após fechamento dia 1) vencem em novembro (2026-11)
+  const refDate = new Date(2026, 9, 6);
+  const detailsNov = getCardInvoiceDetailsForMonth(
+    nubank,
+    purchases,
+    recurringItems,
+    2026,
+    10, // Novembro (0-indexed: 10)
+    refDate
+  );
 
+  assert.equal(detailsNov.periodKey, "2026-11");
+  assert.equal(detailsNov.isOpenInvoice, true);
+  assert.equal(detailsNov.installmentsAmount, 250);
+  assert.equal(detailsNov.recurringAmount, 34.90);
+  assert.equal(detailsNov.totalInvoice, 284.90);
+  assert.equal(detailsNov.isPaid, false);
+  assert.equal(detailsNov.availableLimit, 2550);
+  assert.equal(detailsNov.cardTransactions.length, 1);
+  assert.equal(detailsNov.recurringItems.length, 1);
+  assert.equal(detailsNov.recurringItemDetails[0].isContinuous, true);
+});
 
+test("getCardInvoiceDetailsForMonth projeta faturas futuras com parcelas e recorrências", () => {
+  const visa = {
+    id: "card-visa",
+    name: "Visa Infinite",
+    type: "credit",
+    limit: 10000,
+    spent: 0,
+    closingDay: 5,
+    dueDay: 15,
+  };
 
+  const recurringItems = [
+    {
+      id: "rec-curso",
+      title: "Curso Inglês (10x)",
+      amount: 200,
+      type: "expense",
+      account: "Visa Infinite",
+      cardId: "card-visa",
+      dueDay: 15,
+      active: true,
+      startYear: 2026,
+      startMonth: 9, // Outubro 2026
+      installmentsCount: 10,
+    },
+  ];
+
+  const refDate = new Date(2026, 9, 1);
+  // Consulta fatura de Dezembro (competência 2026-12 -> 2ª parcela, já que a 1ª entrou em Novembro após fechamento dia 5)
+  const detailsDec = getCardInvoiceDetailsForMonth(
+    visa,
+    [],
+    recurringItems,
+    2026,
+    11, // Dezembro
+    refDate
+  );
+
+  assert.equal(detailsDec.periodKey, "2026-12");
+  assert.equal(detailsDec.isFutureInvoice, true);
+  assert.equal(detailsDec.isOpenInvoice, false);
+  assert.equal(detailsDec.totalInvoice, 200);
+  assert.equal(detailsDec.recurringItemDetails.length, 1);
+  assert.equal(detailsDec.recurringItemDetails[0].isContinuous, false);
+  assert.equal(detailsDec.recurringItemDetails[0].installmentIndex, 2);
+  assert.equal(detailsDec.recurringItemDetails[0].totalInstallments, 10);
+});
+
+test("getCardInvoiceDetailsForMonth reconhece fatura passada e trata como quitada", () => {
+  const mastercard = {
+    id: "card-master",
+    name: "Mastercard Black",
+    type: "credit",
+    limit: 5000,
+    spent: 0,
+    closingDay: 1,
+    dueDay: 10,
+  };
+
+  const refDate = new Date(2026, 9, 8); // Outubro 2026 (fatura aberta corrente é 2026-11)
+  // Consulta fatura de Setembro 2026 (passada)
+  const detailsSept = getCardInvoiceDetailsForMonth(
+    mastercard,
+    [],
+    [],
+    2026,
+    8, // Setembro
+    refDate
+  );
+
+  assert.equal(detailsSept.periodKey, "2026-09");
+  assert.equal(detailsSept.isPastInvoice, true);
+  assert.equal(detailsSept.isPaid, true);
+  assert.equal(detailsSept.isOpenInvoice, false);
+  assert.equal(detailsSept.isFutureInvoice, false);
+});
+
+test("compra recorrente contínua no cartão se propaga indefinidamente pelos meses futuros", () => {
+  const nubank = {
+    id: "card-nu",
+    name: "NuBank",
+    type: "credit",
+    limit: 5000,
+    spent: 0,
+    closingDay: 1,
+    dueDay: 10,
+  };
+
+  // Compra recorrente contínua criada em Outubro/2026 (sem installmentsCount)
+  const continuousItem = {
+    id: "rec-netflix",
+    title: "Netflix",
+    amount: 55.9,
+    type: "expense",
+    account: "NuBank",
+    cardId: "card-nu",
+    dueDay: 10,
+    active: true,
+    startYear: 2026,
+    startMonth: 9, // Outubro 2026
+    recurrenceType: "fixed_day",
+    installmentsCount: undefined,
+    realizedPeriods: ["2026-10"], // já realizada no mês inicial
+  };
+
+  const refDate = new Date(2026, 9, 10);
+
+  // Fatura de Novembro/2026 (vencimento da compra de Outubro)
+  const txNov = {
+    id: "tx-netflix-oct",
+    recurringItemId: "rec-netflix",
+    amount: 55.9,
+    type: "despesa",
+    account: "NuBank",
+    cardId: "card-nu",
+    occurredAt: new Date(2026, 9, 10), // Outubro
+    periodKey: "2026-10",
+  };
+
+  const detailsNov = getCardInvoiceDetailsForMonth(
+    nubank,
+    [txNov],
+    [continuousItem],
+    2026,
+    10, // Novembro
+    refDate
+  );
+
+  // Novembro tem a transação faturada
+  assert.equal(detailsNov.periodKey, "2026-11");
+  assert.equal(detailsNov.totalInvoice, 55.9);
+  assert.equal(detailsNov.cardTransactions.length, 1);
+
+  // Dezembro/2026: deve continuar ativo como pendência contínua futura
+  const detailsDec = getCardInvoiceDetailsForMonth(
+    nubank,
+    [txNov],
+    [continuousItem],
+    2026,
+    11, // Dezembro
+    refDate
+  );
+
+  assert.equal(detailsDec.periodKey, "2026-12");
+  assert.equal(detailsDec.totalInvoice, 55.9);
+  assert.equal(detailsDec.recurringItemDetails.length, 1);
+  assert.equal(detailsDec.recurringItemDetails[0].isContinuous, true);
+  assert.equal(detailsDec.recurringItemDetails[0].installmentIndex, undefined);
+
+  // Janeiro/2027: continua ativo indefinidamente
+  const detailsJan = getCardInvoiceDetailsForMonth(
+    nubank,
+    [txNov],
+    [continuousItem],
+    2027,
+    0, // Janeiro 2027
+    refDate
+  );
+
+  assert.equal(detailsJan.periodKey, "2027-01");
+  assert.equal(detailsJan.totalInvoice, 55.9);
+  assert.equal(detailsJan.recurringItemDetails.length, 1);
+  assert.equal(detailsJan.recurringItemDetails[0].isContinuous, true);
+});
+
+test("exclusão pontual via excludedPeriods em fatura de cartão remove apenas o mês escolhido e mantém os futuros", () => {
+  const nubank = {
+    id: "card-nu",
+    name: "NuBank",
+    type: "credit",
+    limit: 5000,
+    spent: 0,
+    closingDay: 1,
+    dueDay: 10,
+  };
+
+  // Item com exclusão pontual para a competência de Dezembro/2026
+  const itemWithExclusion = {
+    id: "rec-spotify",
+    title: "Spotify",
+    amount: 34.9,
+    type: "expense",
+    account: "NuBank",
+    cardId: "card-nu",
+    dueDay: 10,
+    active: true,
+    startYear: 2026,
+    startMonth: 9,
+    recurrenceType: "fixed_day",
+    excludedPeriods: ["2026-12"],
+  };
+
+  const refDate = new Date(2026, 9, 10);
+
+  // Dezembro/2026: não deve conter o item pois está excluído
+  const detailsDec = getCardInvoiceDetailsForMonth(
+    nubank,
+    [],
+    [itemWithExclusion],
+    2026,
+    11, // Dezembro
+    refDate
+  );
+
+  assert.equal(detailsDec.periodKey, "2026-12");
+  assert.equal(detailsDec.totalInvoice, 0);
+  assert.equal(detailsDec.recurringItemDetails.length, 0);
+
+  // Janeiro/2027: deve reaparecer normalmente pois é contínua
+  const detailsJan = getCardInvoiceDetailsForMonth(
+    nubank,
+    [],
+    [itemWithExclusion],
+    2027,
+    0, // Janeiro
+    refDate
+  );
+
+  assert.equal(detailsJan.periodKey, "2027-01");
+  assert.equal(detailsJan.totalInvoice, 34.9);
+  assert.equal(detailsJan.recurringItemDetails.length, 1);
+});

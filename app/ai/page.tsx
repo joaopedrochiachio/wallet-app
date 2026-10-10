@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useWallet } from "@/context/WalletContext";
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -159,6 +159,112 @@ export default function AIAnalystPage() {
 
   const activeSimCardId = simCardId || (creditCards[0]?.id ?? "");
 
+  const runDiagnosis = useCallback(async () => {
+    setIsAnalyzing(true);
+    setAnalysisError(null);
+
+    try {
+      const monthlyProjections = [0, 1, 2, 3, 4, 5].map((idx) => {
+        const p = getMonthlyProjection(idx);
+        return {
+          monthName: p.monthName,
+          year: p.year,
+          openingBalance: p.openingBalance,
+          plannedIncomesTotal: p.plannedIncomesTotal,
+          recurringDebitTotal: p.recurringDebitTotal,
+          recurringCreditTotal: p.recurringCreditTotal,
+          cardInstallments: p.cardInstallments,
+          totalCommitted: p.totalCommitted,
+          projectedFreeBalance: p.projectedFreeBalance,
+          monthNetSurplus: p.monthNetSurplus,
+        };
+      });
+
+      const idToken = user ? await user.getIdToken() : "";
+      const res = await fetch("/api/ai/analyze", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+        },
+        body: JSON.stringify({
+          userProfile,
+          cards,
+          transactions,
+          recurringItems,
+          goals,
+          mainBalance,
+          monthIncome,
+          monthExpense,
+          monthlyProjections,
+          dismissedPatterns,
+        }),
+      });
+
+      const resText = await res.text();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let data: any = null;
+      try {
+        data = resText ? JSON.parse(resText) : null;
+      } catch {
+        data = null;
+      }
+
+      if (!res.ok) {
+        const errorMsg =
+          data?.error ||
+          (res.status === 408 || res.status === 504
+            ? "Tempo limite esgotado no servidor da Vercel. Tente novamente."
+            : res.status === 500
+            ? "Erro no servidor (500). Verifique as variáveis de ambiente na Vercel."
+            : `Erro ao gerar diagnóstico (${res.status}).`);
+        throw new Error(errorMsg);
+      }
+
+      if (data && data.success && data.diagnosis) {
+        const timestamp = new Date().toISOString();
+        setDiagnosis(data.diagnosis);
+        setLastAnalyzedAt(timestamp);
+        if (data.modelUsed) setAnalysisModel(data.modelUsed);
+
+        await savePersistentDiagnosis(
+          data.diagnosis,
+          {
+            timestamp,
+            modelUsed: data.modelUsed,
+            persona: userProfile.persona || "optimizer",
+            aiTone: userProfile.aiTone || "analytical",
+          },
+          user?.uid
+        );
+
+        if (typeof window !== "undefined") {
+          window.localStorage.removeItem("wallet_ai_needs_reanalysis");
+          window.localStorage.removeItem("wallet_ai_pending_persona");
+        }
+      } else {
+        throw new Error(data?.error || "Não foi possível carregar a análise no momento.");
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Erro ao conectar com o assistente.";
+      setAnalysisError(msg);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  }, [
+    getMonthlyProjection,
+    user,
+    userProfile,
+    cards,
+    transactions,
+    recurringItems,
+    goals,
+    mainBalance,
+    monthIncome,
+    monthExpense,
+    dismissedPatterns,
+  ]);
+
   // Carrega diagnóstico persistido e histórico de sessões do chat (Firestore / localStorage)
   useEffect(() => {
     let isMounted = true;
@@ -258,99 +364,7 @@ export default function AIAnalystPage() {
     }
   }, [messages, activeTab]);
 
-  const runDiagnosis = async () => {
-    setIsAnalyzing(true);
-    setAnalysisError(null);
 
-    try {
-      const monthlyProjections = [0, 1, 2, 3, 4, 5].map((idx) => {
-        const p = getMonthlyProjection(idx);
-        return {
-          monthName: p.monthName,
-          year: p.year,
-          openingBalance: p.openingBalance,
-          plannedIncomesTotal: p.plannedIncomesTotal,
-          recurringDebitTotal: p.recurringDebitTotal,
-          recurringCreditTotal: p.recurringCreditTotal,
-          cardInstallments: p.cardInstallments,
-          totalCommitted: p.totalCommitted,
-          projectedFreeBalance: p.projectedFreeBalance,
-          monthNetSurplus: p.monthNetSurplus,
-        };
-      });
-
-      const idToken = user ? await user.getIdToken() : "";
-      const res = await fetch("/api/ai/analyze", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
-        },
-        body: JSON.stringify({
-          userProfile,
-          cards,
-          transactions,
-          recurringItems,
-          goals,
-          mainBalance,
-          monthIncome,
-          monthExpense,
-          monthlyProjections,
-          dismissedPatterns,
-        }),
-      });
-
-      const resText = await res.text();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let data: any = null;
-      try {
-        data = resText ? JSON.parse(resText) : null;
-      } catch {
-        data = null;
-      }
-
-      if (!res.ok) {
-        const errorMsg =
-          data?.error ||
-          (res.status === 408 || res.status === 504
-            ? "Tempo limite esgotado no servidor da Vercel. Tente novamente."
-            : res.status === 500
-            ? "Erro no servidor (500). Verifique as variáveis de ambiente na Vercel."
-            : `Erro ao gerar diagnóstico (${res.status}).`);
-        throw new Error(errorMsg);
-      }
-
-      if (data && data.success && data.diagnosis) {
-        const timestamp = new Date().toISOString();
-        setDiagnosis(data.diagnosis);
-        setLastAnalyzedAt(timestamp);
-        if (data.modelUsed) setAnalysisModel(data.modelUsed);
-
-        await savePersistentDiagnosis(
-          data.diagnosis,
-          {
-            timestamp,
-            modelUsed: data.modelUsed,
-            persona: userProfile.persona || "optimizer",
-            aiTone: userProfile.aiTone || "analytical",
-          },
-          user?.uid
-        );
-
-        if (typeof window !== "undefined") {
-          window.localStorage.removeItem("wallet_ai_needs_reanalysis");
-          window.localStorage.removeItem("wallet_ai_pending_persona");
-        }
-      } else {
-        throw new Error(data?.error || "Não foi possível carregar a análise no momento.");
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Erro ao conectar com o assistente.";
-      setAnalysisError(msg);
-    } finally {
-      setIsAnalyzing(false);
-    }
-  };
 
   const handleDismissPattern = (patternKey: string) => {
     const updated = dismissPattern(patternKey, user?.uid);

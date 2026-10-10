@@ -101,22 +101,32 @@ export function AddTransactionSheet({
   const [dateInput, setDateInput] = useState(() => formatDateToInput(new Date()));
   const [datePreset, setDatePreset] = useState<"today" | "yesterday" | "custom">("today");
   const [isRecurring, setIsRecurring] = useState(false);
-  const [recurrenceType, setRecurrenceType] = useState<RecurrenceType>("business_day_5");
-  const [recurrenceDay, setRecurrenceDay] = useState(10);
+  const [recurrenceType, setRecurrenceType] = useState<RecurrenceType>(() =>
+    initialType === "receita" ? "business_day_5" : "fixed_day"
+  );
+  const [recurrenceDay, setRecurrenceDay] = useState(() => new Date().getDate());
   const [isCustomDayOpen, setIsCustomDayOpen] = useState(false);
-  const [customDayInput, setCustomDayInput] = useState("10");
+  const [customDayInput, setCustomDayInput] = useState(() => String(new Date().getDate()));
   const [durationMode, setDurationMode] = useState<"continuous" | "limited">("continuous");
   const [installmentsInput, setInstallmentsInput] = useState("3");
 
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  React.useEffect(() => {
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
+  if (isOpen !== prevIsOpen) {
+    setPrevIsOpen(isOpen);
     if (isOpen) {
       if (initialAccount) setAccount(initialAccount);
-      if (initialType) setType(initialType);
+      if (initialType) {
+        setType(initialType);
+        setRecurrenceType(initialType === "receita" ? "business_day_5" : "fixed_day");
+      }
+      const todayDay = new Date().getDate();
+      setRecurrenceDay(todayDay);
+      setCustomDayInput(String(todayDay));
     }
-  }, [isOpen, initialAccount, initialType]);
+  }
 
   const now = new Date();
   const currentMonthIndex = now.getMonth();
@@ -142,6 +152,8 @@ export function AddTransactionSheet({
     if (nextType === "receita") {
       setAccount(checkingAccounts[0] || accounts[0] || "Débito/Pix");
       setRecurrenceType("business_day_5");
+    } else {
+      setRecurrenceType("fixed_day");
     }
   };
 
@@ -216,7 +228,11 @@ export function AddTransactionSheet({
       setTitle("");
       setIsRecurring(false);
       setDatePreset("today");
-      setDateInput(formatDateToInput(new Date()));
+      const today = new Date();
+      setDateInput(formatDateToInput(today));
+      setRecurrenceType(type === "receita" ? "business_day_5" : "fixed_day");
+      setRecurrenceDay(today.getDate());
+      setCustomDayInput(String(today.getDate()));
       setDurationMode("continuous");
       setInstallmentsInput("3");
       setErrorMessage(null);

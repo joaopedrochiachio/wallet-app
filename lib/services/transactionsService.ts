@@ -6,6 +6,7 @@ import {
   arrayUnion,
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -75,9 +76,13 @@ export async function addTransaction(
 
   const batch = writeBatch(db);
   batch.set(transactionRef, transactionPayload(data, userId));
+  const recurringPayload: Record<string, unknown> = JSON.parse(JSON.stringify(recurringItem));
+  if (recurringItem.installmentsCount === undefined) {
+    recurringPayload.installmentsCount = deleteField();
+  }
   batch.set(
     doc(db, "users", userId, "recurring", recurringItem.id),
-    JSON.parse(JSON.stringify(recurringItem)) as RecurringItem,
+    recurringPayload,
     { merge: true }
   );
   await batch.commit();

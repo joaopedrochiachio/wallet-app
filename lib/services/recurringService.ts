@@ -5,6 +5,7 @@ import {
   doc,
   setDoc,
   deleteDoc,
+  deleteField,
   onSnapshot,
 } from "firebase/firestore";
 
@@ -20,12 +21,17 @@ export async function saveRecurringToFirestore(
   item: RecurringItem
 ): Promise<void> {
   const recurringDocRef = doc(db, "users", userId, "recurring", item.id);
-  const cleanItem = sanitizeData(item);
+  const cleanItem: Record<string, unknown> = {
+    ...sanitizeData(item),
+    ...(item.installmentsCount === undefined ? { installmentsCount: deleteField() } : {}),
+  };
   await setDoc(recurringDocRef, cleanItem, { merge: true });
 }
 
 /**
- * Atualiza campos específicos de um item recorrente no Firestore
+ * Atualiza campos específicos de um item recorrente no Firestore.
+ * Converte campos com valor `undefined` em `deleteField()` para que campos
+ * removidos (como installmentsCount ao tornar contínua) sejam efetivamente deletados no Firestore.
  */
 export async function updateRecurringInFirestore(
   userId: string,
@@ -33,8 +39,17 @@ export async function updateRecurringInFirestore(
   updates: Partial<RecurringItem>
 ): Promise<void> {
   const recurringDocRef = doc(db, "users", userId, "recurring", itemId);
-  const cleanUpdates = sanitizeData(updates);
-  await setDoc(recurringDocRef, cleanUpdates, { merge: true });
+  const firestoreUpdates: Record<string, unknown> = {};
+
+  for (const [key, val] of Object.entries(updates)) {
+    if (val === undefined) {
+      firestoreUpdates[key] = deleteField();
+    } else {
+      firestoreUpdates[key] = JSON.parse(JSON.stringify(val));
+    }
+  }
+
+  await setDoc(recurringDocRef, firestoreUpdates, { merge: true });
 }
 
 /**
@@ -49,7 +64,8 @@ export async function deleteRecurringFromFirestore(
 }
 
 /**
- * Escuta em tempo real os itens recorrentes do usuário
+ * Escuta em tempo real os itens recorrentes do usuário, garantindo que o `id`
+ * de cada item seja sempre preservado pelo ID do documento no Firestore.
  */
 export function subscribeToRecurring(
   userId: string,
@@ -59,7 +75,10 @@ export function subscribeToRecurring(
   return onSnapshot(
     colRef,
     (snapshot) => {
-      const items: RecurringItem[] = snapshot.docs.map((doc) => doc.data() as RecurringItem);
+      const items: RecurringItem[] = snapshot.docs.map((d) => ({
+        ...(d.data() as RecurringItem),
+        id: d.id,
+      }));
       callback(items);
     },
     (err) => {

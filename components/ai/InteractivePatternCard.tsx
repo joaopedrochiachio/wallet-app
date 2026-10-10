@@ -227,7 +227,7 @@ export function InteractivePatternCard({
               <div className="text-[10px] text-emerald-800 pt-1 border-t border-emerald-200/40 flex items-center gap-1">
                 <Target size={11} className="shrink-0 text-emerald-700" />
                 <span className="truncate">
-                  Acelera sua meta <strong>"{targetGoalName}"</strong>
+                  Acelera sua meta <strong>&quot;{targetGoalName}&quot;</strong>
                 </span>
               </div>
             )}

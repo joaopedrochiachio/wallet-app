@@ -74,6 +74,15 @@ export function calculateCheckingBalance(card: CardItem, entries: LedgerEntry[])
   );
 }
 
+export interface CardInvoiceRecurringItemDetail {
+  item: RecurringItem;
+  installmentIndex?: number;
+  totalInstallments?: number;
+  isContinuous: boolean;
+  chargeDate: Date;
+  candPeriodKey: string;
+}
+
 /**
  * Retorna os itens recorrentes e o valor pendente que vencem na fatura especificada (invoiceYear, invoiceMonth).
  * Utiliza o dia de fechamento (closingDay) e vencimento (dueDay) do cartão para determinar
@@ -87,11 +96,12 @@ export function getCardInvoiceRecurringDetails(
   entries: LedgerEntry[] = []
 ): {
   items: RecurringItem[];
+  itemDetails: CardInvoiceRecurringItemDetail[];
   pendingAmount: number;
   totalAmount: number;
 } {
   if (card.type !== "credit") {
-    return { items: [], pendingAmount: 0, totalAmount: 0 };
+    return { items: [], itemDetails: [], pendingAmount: 0, totalAmount: 0 };
   }
 
   const targetPeriodKey = getPeriodKey(invoiceYear, invoiceMonth);
@@ -102,6 +112,7 @@ export function getCardInvoiceRecurringDetails(
   );
 
   const matchedItems: RecurringItem[] = [];
+  const itemDetails: CardInvoiceRecurringItemDetail[] = [];
   let pendingAmount = 0;
   let totalAmount = 0;
 
@@ -116,9 +127,6 @@ export function getCardInvoiceRecurringDetails(
       if (!rawItem.active) continue;
 
       const item = getEffectiveRecurringItemForPeriod(rawItem, candPeriodKey);
-      if (item.excludedPeriods?.includes(candPeriodKey) || item.overrides?.[candPeriodKey]?.isDeleted) {
-        continue;
-      }
 
       const monthOffset = getRecurringMonthOffset(rawItem, candYear, candMonth);
       const isScheduledForMonth =
@@ -139,8 +147,25 @@ export function getCardInvoiceRecurringDetails(
 
       // Só pertence a esta fatura se a data de vencimento calculada for este mês
       if (calculatedPeriodKey === targetPeriodKey) {
+        if (
+          item.excludedPeriods?.includes(targetPeriodKey) ||
+          item.overrides?.[targetPeriodKey]?.isDeleted
+        ) {
+          continue;
+        }
+
         matchedItems.push(item);
         totalAmount += item.amount;
+
+        const isContinuous = !rawItem.installmentsCount || rawItem.installmentsCount <= 0;
+        itemDetails.push({
+          item,
+          installmentIndex: isContinuous ? undefined : monthOffset + 1,
+          totalInstallments: isContinuous ? undefined : rawItem.installmentsCount,
+          isContinuous,
+          chargeDate,
+          candPeriodKey,
+        });
 
         const isRealizedInPeriod = Boolean(item.realizedPeriods?.includes(candPeriodKey));
         const isAlreadyInTransactions = entries.some(
@@ -163,6 +188,7 @@ export function getCardInvoiceRecurringDetails(
 
   return {
     items: matchedItems,
+    itemDetails,
     pendingAmount,
     totalAmount,
   };
@@ -376,6 +402,192 @@ export function calculateCreditInvoice(
   referenceDate: Date = new Date()
 ): number {
   return getCardOpenInvoiceDetails(card, entries, recurringItems, referenceDate).totalInvoice;
+}
+
+export interface CardMonthInvoiceDetails {
+  card: CardItem;
+  targetYear: number;
+  targetMonth: number;
+  periodKey: string;
+  dueDate: Date;
+  dueDay: number;
+  dueMonthName: string;
+  closingDay: number;
+  installmentsAmount: number;
+  recurringAmount: number;
+  totalInvoice: number;
+  paidAmount: number;
+  isPaid: boolean;
+  isOpenInvoice: boolean;
+  isFutureInvoice: boolean;
+  isPastInvoice: boolean;
+  availableLimit: number;
+  percentUsed: number;
+  cardTransactions: LedgerEntry[];
+  recurringItems: RecurringItem[];
+  recurringItemDetails: CardInvoiceRecurringItemDetail[];
+  hasInstallments: boolean;
+  hasRecurring: boolean;
+}
+
+/**
+ * Retorna os detalhes da fatura do cartão para qualquer mês específico (passado, presente ou futuro),
+ * distribuindo compras parceladas, cobranças programadas e pagamentos daquela competência.
+ */
+export function getCardInvoiceDetailsForMonth(
+  card: CardItem,
+  entries: LedgerEntry[],
+  recurringItems: RecurringItem[] = [],
+  invoiceYear: number,
+  invoiceMonth: number,
+  referenceDate: Date = new Date()
+): CardMonthInvoiceDetails {
+  const targetPeriodKey = getPeriodKey(invoiceYear, invoiceMonth);
+  const dueDay = card.dueDay || 10;
+  const closingDay = card.closingDay || 1;
+  const lastDayOfMonth = new Date(invoiceYear, invoiceMonth + 1, 0).getDate();
+  const effectiveDueDate = new Date(invoiceYear, invoiceMonth, Math.min(dueDay, lastDayOfMonth));
+  const dueMonthName = MONTH_NAMES_PT[invoiceMonth];
+
+  if (card.type !== "credit") {
+    return {
+      card,
+      targetYear: invoiceYear,
+      targetMonth: invoiceMonth,
+      periodKey: targetPeriodKey,
+      dueDate: effectiveDueDate,
+      dueDay,
+      dueMonthName,
+      closingDay,
+      installmentsAmount: 0,
+      recurringAmount: 0,
+      totalInvoice: 0,
+      paidAmount: 0,
+      isPaid: true,
+      isOpenInvoice: false,
+      isFutureInvoice: false,
+      isPastInvoice: false,
+      availableLimit: card.limit || 0,
+      percentUsed: 0,
+      cardTransactions: [],
+      recurringItems: [],
+      recurringItemDetails: [],
+      hasInstallments: false,
+      hasRecurring: false,
+    };
+  }
+
+  const { schedule, creditsByPeriod } = calculateInvoiceScheduleWithCredits(card, entries, referenceDate);
+  const installmentsAmount = schedule[targetPeriodKey] || 0;
+
+  const recurringDetails = getCardInvoiceRecurringDetails(
+    card,
+    recurringItems,
+    invoiceYear,
+    invoiceMonth,
+    entries
+  );
+
+  const periodCredit = creditsByPeriod?.[targetPeriodKey] || 0;
+  const netRecurring = Math.round(Math.max(0, recurringDetails.pendingAmount - periodCredit) * 100) / 100;
+  let totalInvoice = Math.round(Math.max(0, installmentsAmount + netRecurring) * 100) / 100;
+
+  // Compras faturadas que vencem nesta competência
+  const cardTransactions = entries.filter((entry) => {
+    if (entry.id?.startsWith("planned-")) return false;
+    if (entry.type !== "despesa") return false;
+    if (entry.kind === "invoice_payment" || entry.kind === "invoice_settlement") return false;
+    if (!matchesLedgerCard(card, entry.account, entry.cardId)) return false;
+    const dDate = getInvoiceDueDate(card, getLedgerEntryDate(entry) || new Date(invoiceYear, invoiceMonth, 1));
+    const dKey = getPeriodKey(dDate.getFullYear(), dDate.getMonth());
+    return dKey === targetPeriodKey;
+  });
+
+  // Pagamentos desta competência
+  const processedPaymentGroups = new Set<string>();
+  const paidAmount = entries
+    .filter((entry) => isInvoicePaymentOrSettlement(entry, card))
+    .filter((entry) => {
+      const pDate = getLedgerEntryDate(entry);
+      const pKey = entry.periodKey || (pDate ? getPeriodKey(pDate.getFullYear(), pDate.getMonth()) : null);
+      return pKey === targetPeriodKey;
+    })
+    .filter((entry) => {
+      const groupKey = entry.groupId || entry.id;
+      if (groupKey && processedPaymentGroups.has(groupKey)) return false;
+      if (groupKey) processedPaymentGroups.add(groupKey);
+      return true;
+    })
+    .reduce((sum, entry) => sum + entry.amount, 0);
+
+  // Fatura aberta do ciclo corrente de referência
+  const openDueDate = getInvoiceDueDate(card, referenceDate);
+  const openPeriodKey = getPeriodKey(openDueDate.getFullYear(), openDueDate.getMonth());
+
+  const nextMonthRef = new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 1);
+  const nextMonthPeriodKey = getPeriodKey(nextMonthRef.getFullYear(), nextMonthRef.getMonth());
+
+  let effectiveOpenPeriodKey = openPeriodKey;
+  const currentRecDetails = getCardInvoiceRecurringDetails(
+    card,
+    recurringItems,
+    openDueDate.getFullYear(),
+    openDueDate.getMonth(),
+    entries
+  );
+
+  if (
+    openPeriodKey < nextMonthPeriodKey &&
+    (schedule[openPeriodKey] || 0) === 0 &&
+    currentRecDetails.pendingAmount === 0
+  ) {
+    effectiveOpenPeriodKey = nextMonthPeriodKey;
+  }
+
+  const isOpenInvoice = targetPeriodKey === effectiveOpenPeriodKey;
+  const isFutureInvoice = targetPeriodKey > effectiveOpenPeriodKey;
+  const isPastInvoice = targetPeriodKey < effectiveOpenPeriodKey;
+
+  // Fallback se for fatura aberta sem itens distribuídos mas com gastos brutos
+  if (isOpenInvoice && totalInvoice === 0 && schedule[targetPeriodKey] === undefined && recurringDetails.pendingAmount === 0) {
+    const rawInvoice = entries
+      .filter((entry) => isActualEntry(entry) && matchesLedgerCard(card, entry.account, entry.cardId))
+      .reduce((total, entry) => total + (entry.type === "despesa" ? entry.amount : -entry.amount), 0);
+    totalInvoice = Math.max(0, rawInvoice);
+  }
+
+  const hasInstallments = cardTransactions.length > 0;
+  const hasRecurring = recurringDetails.items.length > 0;
+  const isPaid = isPastInvoice || (paidAmount > 0 && totalInvoice <= 0) || (paidAmount >= (installmentsAmount + netRecurring) && (installmentsAmount + netRecurring) > 0);
+
+  const availableLimit = Math.max(0, card.limit - card.spent);
+  const percentUsed = card.limit > 0 ? Math.min(100, Math.round((card.spent / card.limit) * 100)) : 0;
+
+  return {
+    card,
+    targetYear: invoiceYear,
+    targetMonth: invoiceMonth,
+    periodKey: targetPeriodKey,
+    dueDate: effectiveDueDate,
+    dueDay,
+    dueMonthName,
+    closingDay,
+    installmentsAmount,
+    recurringAmount: netRecurring,
+    totalInvoice,
+    paidAmount,
+    isPaid,
+    isOpenInvoice,
+    isFutureInvoice,
+    isPastInvoice,
+    availableLimit,
+    percentUsed,
+    cardTransactions,
+    recurringItems: recurringDetails.items,
+    recurringItemDetails: recurringDetails.itemDetails || [],
+    hasInstallments,
+    hasRecurring,
+  };
 }
 
 export function getLedgerEntryDate(entry: LedgerEntry): Date | null {
