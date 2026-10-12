@@ -21,6 +21,7 @@ export interface UserProfile {
   aiTone: AIToneId;
   maxCommitmentAlertPercent: number;
   primaryFocus: string;
+  targetMonthEndBalance?: number;
   isOnboarded?: boolean;
   lgpdConsent?: LgpdConsentRecord;
 }

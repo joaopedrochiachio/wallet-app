@@ -161,6 +161,14 @@ export interface FinancialTelemetry {
   liquidityAnalysis?: LiquidityAnalysis;
   historicalVariableBaseline?: number;
   lifestyleHabits?: LifestyleHabitSummary[];
+  target?: {
+    targetEndMonthBalance: number;
+    projectedEndMonthBalance: number;
+    targetStatus: "on_track" | "at_risk";
+    safeSpendingMargin: number;
+    missingAmount: number;
+    topCulprits: string[];
+  };
 }
 
 export interface FortnightMovementItem {
@@ -205,6 +213,7 @@ export interface FinancialTelemetryInput {
   monthIncome: number;
   monthExpense: number;
   monthlyProjections?: MonthProjectionSummary[];
+  targetEndMonthBalance?: number;
 }
 
 export const SAFE_FINANCIAL_CATEGORIES = [
@@ -295,6 +304,14 @@ export interface SafeFinancialContext {
   }>;
   liquidityAnalysis: LiquidityAnalysis;
   lifestyleHabits?: LifestyleHabitSummary[];
+  target: {
+    targetEndMonthBalance: number;
+    projectedEndMonthBalance: number;
+    targetStatus: "on_track" | "at_risk";
+    safeSpendingMargin: number;
+    missingAmount: number;
+    topCulprits: string[];
+  };
 }
 
 export interface PurchaseSimulationInput {
@@ -974,6 +991,27 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
   // Baseline de gastos variáveis do dia a dia (excluindo compromissos fixos e parcelas de fatura)
   const historicalVariableBaseline = Math.max(0, monthExpense - recurringMonthlyTotal);
 
+  // 1. Alvo Estipulado para Fechar o Mês (Meta de Saldo Alvo)
+  const targetEndMonthBalance =
+    data.targetEndMonthBalance !== undefined
+      ? data.targetEndMonthBalance
+      : (userProfile?.targetMonthEndBalance ?? 700);
+
+  // 2. Saldo Projetado = Receitas - (Gastos Já Realizados + Gastos Fixos Previstos)
+  // Utiliza a projeção de liquidez do livro-caixa para o fechamento do mês
+  const projectedEndMonthBalance = currentProj
+    ? currentProj.projectedFreeBalance
+    : Math.max(0, mainBalance - monthExpense);
+
+  const targetDiff = projectedEndMonthBalance - targetEndMonthBalance;
+  const targetStatus: "on_track" | "at_risk" = targetDiff >= 0 ? "on_track" : "at_risk";
+  const safeSpendingMargin = Math.max(0, targetDiff);
+  const missingAmount = Math.max(0, -targetDiff);
+
+  const topCulprits = (topSpendItems || [])
+    .slice(0, 3)
+    .map((item) => `${item.title} (R$ ${item.total.toFixed(2)})`);
+
   return {
     user: {
       name: userProfile?.name || "Usuário",
@@ -1035,6 +1073,14 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
     liquidityAnalysis,
     historicalVariableBaseline,
     lifestyleHabits,
+    target: {
+      targetEndMonthBalance,
+      projectedEndMonthBalance,
+      targetStatus,
+      safeSpendingMargin,
+      missingAmount,
+      topCulprits,
+    },
   };
 }
 
@@ -1330,6 +1376,14 @@ export function createSafeFinancialContext(telemetry: FinancialTelemetry): SafeF
       debitAmount: safeNumber(h.debitAmount),
       examples: (h.examples || []).map((ex) => redactPersonalData(ex).trim()).filter(Boolean),
     })),
+    target: {
+      targetEndMonthBalance: safeNumber(telemetry.target?.targetEndMonthBalance, 700),
+      projectedEndMonthBalance: safeNumber(telemetry.target?.projectedEndMonthBalance),
+      targetStatus: telemetry.target?.targetStatus || "on_track",
+      safeSpendingMargin: safeNumber(telemetry.target?.safeSpendingMargin),
+      missingAmount: safeNumber(telemetry.target?.missingAmount),
+      topCulprits: telemetry.target?.topCulprits || [],
+    },
   };
 }
 
@@ -1481,7 +1535,27 @@ Você atua como um parceiro e consultor financeiro de alto nível que trabalha l
 - ${personaGuide}
 - ${toneGuide}
 - Tolerância a Risco: ${profile.riskTolerance.toUpperCase()}
-- Idioma obrigatório: Português do Brasil (pt-BR). Formate valores em Reais (R$ 0.000,00) e percentuais com %.
+=== DIRETRIZES DE ANÁLISE PRIMORDIAIS (FOCO NA META DO MÊS) ===
+1. FOCO NA META FINAL:
+   - O objetivo primordial é o saldo líquido estipulado para o final do mês (Meta Alvo: fechar com R$ ${context.target.targetEndMonthBalance.toFixed(2)} positivo).
+   - Saldo Projetado Auditado para o Fechamento do Mês: R$ ${context.target.projectedEndMonthBalance.toFixed(2)}.
+   - Não invente tetos de gastos nem limites por categoria que não tenham sido explicitamente configurados pelo usuário.
+
+2. RIGOR MATEMÁTICO E CONTEXTO:
+   - Baseie-se estritamente nos números fornecidos: Receitas, Gastos Fixos/Recorrentes, Gastos Faturados e Saldo Alvo.
+   - Fórmula obrigatória do saldo:
+     Saldo Projetado = Receitas - (Gastos Já Realizados + Gastos Fixos Previstos).
+   ${context.target.targetStatus === "on_track"
+     ? `- Se o saldo projetado (R$ ${context.target.projectedEndMonthBalance.toFixed(2)}) for suficiente para atingir a meta (R$ ${context.target.targetEndMonthBalance.toFixed(2)}):
+        PARABENIZE o usuário e indique com exatidão matemática quanto ainda pode ser gasto com segurança até o fim do mês: Margem Segura Livre = R$ ${context.target.safeSpendingMargin.toFixed(2)}.`
+     : `- Se o saldo projetado (R$ ${context.target.projectedEndMonthBalance.toFixed(2)}) colocar a meta em risco (R$ ${context.target.targetEndMonthBalance.toFixed(2)}):
+        Aponte com precisão cirúrgica o montante em falta (Faltam R$ ${context.target.missingAmount.toFixed(2)}) e destaque os maiores vilões do orçamento recente: ${context.target.topCulprits.join(", ") || "despesas recentes"}.`
+   }
+
+3. TOM E ESTILO DE COMUNICAÇÃO:
+   - Direto, consultivo e encorajador.
+   - Evite jargões vagos como "80% acima do teto" sem demonstrar o cálculo matemático exato.
+   - Seja conciso: 1 parágrafo curto com o panorama geral (Saldo Projetado vs Meta do Mês) + 2 ou 3 tópicos práticos com os passos seguintes.
 
 === REGRAS FUNDAMENTAIS DO ANALISTA FINANCEIRO ===
 1. REGRA CONTÁBIL DE OURO: CAIXA ATUAL vs CARTÃO NO MÊS SEGUINTE
@@ -1536,7 +1610,9 @@ Você atua como um parceiro e consultor financeiro de alto nível que trabalha l
      * Declare com destaque a Sobra Líquida do período e o Saldo Final Previsto que estará disponível na conta.
 
 === CONTEXTO FINANCEIRO DO USUÁRIO ===
-1. PERFIL DO CLIENTE & FLUXO DE CAIXA REALIZADO:
+1. PERFIL DO CLIENTE, META DO MÊS & FLUXO DE CAIXA REALIZADO:
+   - Meta Estipulada para Fechar o Mês: Saldo Líquido de +R$ ${context.target.targetEndMonthBalance.toFixed(2)}
+   - Saldo Projetado para o Fechamento do Mês: R$ ${context.target.projectedEndMonthBalance.toFixed(2)} (${context.target.targetStatus === "on_track" ? `✅ Meta atingida/no caminho certo (+R$ ${context.target.safeSpendingMargin.toFixed(2)} de margem segura)` : `⚠️ Meta em risco (faltam R$ ${context.target.missingAmount.toFixed(2)})`})
    - Renda Base Mensal: R$ ${profile.monthlyIncomeBase.toFixed(2)}
    - Foco Primário Declarado: "${profile.primaryFocus}"
    - Arquétipo Financeiro: ${profile.persona.toUpperCase()} | Risco: ${profile.riskTolerance.toUpperCase()}

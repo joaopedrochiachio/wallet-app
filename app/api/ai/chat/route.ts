@@ -64,6 +64,7 @@ export async function POST(req: NextRequest) {
       monthIncome = 0,
       monthExpense = 0,
       monthlyProjections = [],
+      targetEndMonthBalance,
     } = body;
 
     // Minimiza o volume de dados transmitidos: limita arrays brutos
@@ -83,6 +84,7 @@ export async function POST(req: NextRequest) {
       monthIncome,
       monthExpense,
       monthlyProjections,
+      targetEndMonthBalance: typeof targetEndMonthBalance === "number" ? targetEndMonthBalance : undefined,
     });
     const safeContext = createSafeFinancialContext(telemetry);
 

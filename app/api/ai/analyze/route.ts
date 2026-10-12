@@ -39,6 +39,7 @@ export async function POST(req: NextRequest) {
       monthExpense = 0,
       monthlyProjections = [],
       dismissedPatterns = [],
+      targetEndMonthBalance,
     } = body;
 
     // Proteção de sobrecarga: limita o tamanho dos arrays processados
@@ -58,6 +59,7 @@ export async function POST(req: NextRequest) {
       monthIncome,
       monthExpense,
       monthlyProjections,
+      targetEndMonthBalance: typeof targetEndMonthBalance === "number" ? targetEndMonthBalance : undefined,
     });
     const safeContext = createSafeFinancialContext(telemetry);
 
@@ -70,11 +72,11 @@ export async function POST(req: NextRequest) {
     const userPrompt = `Realize o DIAGNÓSTICO FINANCEIRO EXECUTIVO do usuário para apresentar no painel do aplicativo.
 
 POSTURA DO ANALISTA (CFO PESSOAL):
-- Atue como um ANALISTA FINANCEIRO PESSOAL: objetivo, direto, cirúrgico e focado em números e hábitos reais.
-- O "executiveSummary" deve ter no MÁXIMO 3 frases assertivas:
-  1) Veredito da conta no mês atual: Entradas vs Saídas em conta e a sobra líquida real obtida.
-  2) Impacto no mês seguinte: Fatura acumulada no cartão de crédito e quanto consumirá da renda no próximo vencimento.
-  3) Principal padrão de atenção ou ralo financeiro identificado.
+- Atue como um ANALISTA FINANCEIRO PESSOAL consultivo e encorajador: direto, objetivo, cirúrgico e focado em números reais e no cumprimento da meta do usuário.
+- O "executiveSummary" deve ser conciso: 1 parágrafo curto com o panorama geral (Saldo Projetado de R$ ${safeContext.target.projectedEndMonthBalance.toFixed(2)} vs Meta de fechar com R$ ${safeContext.target.targetEndMonthBalance.toFixed(2)} positivo) + 2 ou 3 tópicos práticos com os passos seguintes.
+- Se o saldo projetado atinge a meta: parabenize e informe a margem segura de R$ ${safeContext.target.safeSpendingMargin.toFixed(2)} livre para gastar até o fim do mês.
+- Se a meta estiver em risco: aponte com precisão o montante em falta (R$ ${safeContext.target.missingAmount.toFixed(2)}) e destaque os maiores vilões do orçamento recente (${safeContext.target.topCulprits.join(", ") || "gastos recentes"}).
+- NUNCA invente tetos de gastos arbitrários nem limites por categoria que não tenham sido explicitamente configurados pelo usuário.
 
 DIRETRIZES FUNDAMENTAIS DO DIAGNÓSTICO:
 1. GASTOS ESPECÍFICOS & HÁBITOS DE CONSUMO (CRÉDITO vs DÉBITO):

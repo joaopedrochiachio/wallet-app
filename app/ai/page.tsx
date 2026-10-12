@@ -36,6 +36,7 @@ import {
 } from "@/components/ai/CategorySpectrumBar";
 import { InstallmentTimelineChart } from "@/components/ai/InstallmentTimelineChart";
 import { InteractivePatternCard } from "@/components/ai/InteractivePatternCard";
+import { SiriFinancialAssistant } from "@/components/ai/SiriFinancialAssistant";
 import { FinancialDiagnosis, SpecificExpenseAlert } from "@/app/api/ai/analyze/route";
 import { PurchaseSimulationResult } from "@/lib/services/financialContextService";
 import {
@@ -110,7 +111,31 @@ export default function AIAnalystPage() {
     getMonthlyProjection,
   } = useWallet();
 
-  const [activeTab, setActiveTab] = useState<"diagnosis" | "chat">("diagnosis");
+  const [activeTab, setActiveTab] = useState<"siri" | "diagnosis" | "chat">("siri");
+  const diagnosisSectionRef = useRef<HTMLDivElement>(null);
+
+  // Meta de Saldo Alvo Estipulado para o Fechamento do Mês
+  const [targetEndMonthBalance, setTargetEndMonthBalance] = useState<number>(() => {
+    if (typeof window !== "undefined") {
+      const saved = window.localStorage.getItem("wallet_monthly_target");
+      if (saved && !isNaN(parseFloat(saved))) return parseFloat(saved);
+    }
+    return userProfile?.targetMonthEndBalance || 700;
+  });
+
+  const handleUpdateTarget = useCallback((newTarget: number) => {
+    setTargetEndMonthBalance(newTarget);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("wallet_monthly_target", String(newTarget));
+    }
+  }, []);
+
+  // Projeção do Mês Corrente e Indicadores de Meta
+  const currentMonthProj = getMonthlyProjection(0);
+  const effectiveProjectedFree = currentMonthProj?.projectedFreeBalance ?? (mainBalance - monthExpense);
+  const safeSpendingMargin = Math.max(0, effectiveProjectedFree - targetEndMonthBalance);
+  const missingAmount = Math.max(0, targetEndMonthBalance - effectiveProjectedFree);
+  const targetStatus: "on_track" | "at_risk" = effectiveProjectedFree >= targetEndMonthBalance ? "on_track" : "at_risk";
 
   // Estados do Diagnóstico (Inicializados de forma síncrona do cache local para nunca sumir no F5)
   const [diagnosis, setDiagnosis] = useState<FinancialDiagnosis | null>(() => {
@@ -198,6 +223,7 @@ export default function AIAnalystPage() {
           monthExpense,
           monthlyProjections,
           dismissedPatterns,
+          targetEndMonthBalance,
         }),
       });
 
@@ -544,6 +570,7 @@ export default function AIAnalystPage() {
           monthIncome,
           monthExpense,
           monthlyProjections,
+          targetEndMonthBalance,
         }),
       });
 
@@ -992,25 +1019,39 @@ export default function AIAnalystPage() {
               <div className="flex items-center p-1 bg-[#E5E5EA]/75 backdrop-blur-md rounded-full border border-black/5">
                 <button
                   type="button"
-                  onClick={() => setActiveTab("diagnosis")}
-                  className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer ${
-                    activeTab === "diagnosis"
+                  onClick={() => setActiveTab("siri")}
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    activeTab === "siri"
                       ? "bg-white text-[#1D1D1F] shadow-[0_2px_8px_rgba(0,0,0,0.06)]"
                       : "text-[#86868B] hover:text-[#1D1D1F]"
                   }`}
                 >
-                  Visão Geral
+                  <Sparkles size={12} className={activeTab === "siri" ? "text-purple-600" : ""} />
+                  <span>Siri & Diagnóstico</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setActiveTab("chat")}
-                  className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
                     activeTab === "chat"
                       ? "bg-white text-[#1D1D1F] shadow-[0_2px_8px_rgba(0,0,0,0.06)]"
                       : "text-[#86868B] hover:text-[#1D1D1F]"
                   }`}
                 >
-                  Conversar & Simular
+                  <MessageSquare size={12} />
+                  <span className="hidden sm:inline">Conversar</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("diagnosis")}
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    activeTab === "diagnosis"
+                      ? "bg-white text-[#1D1D1F] shadow-[0_2px_8px_rgba(0,0,0,0.06)]"
+                      : "text-[#86868B] hover:text-[#1D1D1F]"
+                  }`}
+                >
+                  <Compass size={12} />
+                  <span className="hidden sm:inline">Visão Geral</span>
                 </button>
               </div>
 
@@ -1031,9 +1072,69 @@ export default function AIAnalystPage() {
         {/* =========================================================
             2. CONTEÚDO PRINCIPAL (TABS)
            ========================================================= */}
-        {activeTab === "diagnosis" ? (
-          <div className="space-y-6 animate-in fade-in duration-300">
-            {/* Mensagem de Erro se houver */}
+        {activeTab !== "chat" ? (
+          <div className="space-y-8 animate-in fade-in duration-300">
+            {/* 1. ASSISTENTE DE VOZ & CONVERSA ESTILO APPLE INTELLIGENCE SIRI */}
+            {activeTab === "siri" && (
+              <SiriFinancialAssistant
+                userName={userProfile?.name || user?.displayName || "você"}
+                targetEndMonthBalance={targetEndMonthBalance}
+                projectedFreeBalance={diagnosis?.targetAnalysis?.projectedEndMonthBalance ?? effectiveProjectedFree}
+                safeSpendingMargin={diagnosis?.targetAnalysis?.safeSpendingMargin ?? safeSpendingMargin}
+                missingAmount={diagnosis?.targetAnalysis?.missingAmount ?? missingAmount}
+                targetStatus={diagnosis?.targetAnalysis?.status ?? targetStatus}
+                messages={messages}
+                isSending={isSending}
+                onSendMessage={handleSendMessage}
+                onNewChat={handleNewChat}
+                onClearChat={handleClearCurrentSession}
+                onOpenSimulator={() => {
+                  setIsSimulatorOpen(true);
+                  setActiveTab("chat");
+                }}
+                onScrollToDiagnosis={() => {
+                  diagnosisSectionRef.current?.scrollIntoView({ behavior: "smooth" });
+                }}
+              />
+            )}
+
+            {/* 2. PAINEL DE ANÁLISE DIAGNÓSTICA ESTILO APPLE LOGO ABAIXO */}
+            <div ref={diagnosisSectionRef} className="space-y-6">
+              {activeTab === "siri" && (
+                <div className="pt-2 border-t border-black/[0.06] flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-500 via-pink-500 to-indigo-500 p-[1.5px] shadow-sm shrink-0">
+                      <div className="w-full h-full rounded-full bg-white flex items-center justify-center">
+                        <Sparkles size={14} className="text-purple-600" />
+                      </div>
+                    </div>
+                    <div>
+                      <h2 className="text-sm font-semibold tracking-tight text-[#1D1D1F]">
+                        Diagnóstico & Indicadores em Tempo Real
+                      </h2>
+                      <p className="text-[11px] text-[#86868B]">
+                        Auditoria contábil estruturada • Meta estipulada de R$ {formatCurrency(targetEndMonthBalance)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 self-start sm:self-auto">
+                    <span
+                      className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border ${
+                        targetStatus === "on_track"
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200/60"
+                          : "bg-amber-50 text-amber-700 border-amber-200/60"
+                      }`}
+                    >
+                      {targetStatus === "on_track"
+                        ? `Meta no Alvo (+R$ ${formatCurrency(safeSpendingMargin)})`
+                        : `Ajuste Necessário (-R$ ${formatCurrency(missingAmount)})`}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Mensagem de Erro se houver */}
             {analysisError && (
               <div className="p-4 rounded-2xl bg-rose-50/90 border border-rose-200 text-rose-800 text-xs flex items-center justify-between gap-3 shadow-2xs">
                 <div className="flex items-center gap-2">
@@ -1112,14 +1213,14 @@ export default function AIAnalystPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-6 border-t border-black/[0.04] text-left">
                   <div className="p-4 rounded-2xl bg-[#FAFAFC] border border-black/[0.03]">
                     <span className="text-[10px] uppercase font-semibold text-[#86868B] tracking-wider block">
-                      Comprometimento Atual
+                      Meta do Mês (Saldo Alvo)
                     </span>
                     <div className="mt-1 flex items-baseline gap-1.5">
                       <strong className="text-lg font-semibold text-[#1D1D1F] font-mono tabular-nums">
-                        {commitmentRatio}%
+                        R$ {formatCurrency(effectiveProjectedFree)}
                       </strong>
-                      <span className="text-[10px] text-[#86868B]">
-                        (teto {userProfile?.maxCommitmentAlertPercent || 60}%)
+                      <span className={`text-[10px] font-medium ${effectiveProjectedFree >= targetEndMonthBalance ? "text-emerald-600" : "text-amber-600"}`}>
+                        (alvo R$ {formatCurrency(targetEndMonthBalance)})
                       </span>
                     </div>
                   </div>
@@ -1151,18 +1252,23 @@ export default function AIAnalystPage() {
                   score={currentScore}
                   healthStatus={diagnosis?.healthStatus}
                   commitmentRatio={commitmentRatio}
-                  commitmentCeiling={userProfile?.maxCommitmentAlertPercent || 35}
+                  commitmentCeiling={userProfile?.maxCommitmentAlertPercent || 60}
                   mainBalance={mainBalance}
                   totalInvoices={totalInvoices}
                   pendingBills={diagnosis?.cashflowWindow?.currentMonth.pendingBills ?? monthExpense}
+                  targetEndMonthBalance={targetEndMonthBalance}
+                  projectedFreeBalance={diagnosis?.targetAnalysis?.projectedEndMonthBalance ?? effectiveProjectedFree}
+                  safeSpendingMargin={diagnosis?.targetAnalysis?.safeSpendingMargin ?? safeSpendingMargin}
+                  missingAmount={diagnosis?.targetAnalysis?.missingAmount ?? missingAmount}
+                  targetStatus={diagnosis?.targetAnalysis?.status ?? targetStatus}
+                  onUpdateTarget={handleUpdateTarget}
                   executiveSummary={cleanExecutiveSummary(diagnosis?.executiveSummary)}
                   onOpenSimulator={() => {
-                    setActiveTab("chat");
                     setIsSimulatorOpen(true);
                   }}
                   onDiscussWithAI={(topic) => {
-                    setActiveTab("chat");
                     handleSendMessage(topic);
+                    window.scrollTo({ top: 0, behavior: "smooth" });
                   }}
                 />
 
@@ -1490,10 +1596,11 @@ export default function AIAnalystPage() {
                 </section>
               </>
             )}
+            </div>
           </div>
         ) : (
           /* =========================================================
-             ABA 2: CHAT SIRI & SIMULADOR DE COMPRAS
+             ABA 2: CHAT HISTÓRICO & SIMULADOR DE COMPRAS
              ========================================================= */
           <div className="space-y-5 animate-in fade-in duration-300">
             {/* 1. WIDGET DO SIMULADOR DE COMPRAS ESTILO APPLE SHEET */}

@@ -78,6 +78,15 @@ export interface FutureMonthsRealityCheck {
   realityNote: string;
 }
 
+export interface TargetAnalysisSummary {
+  targetEndMonthBalance: number;
+  projectedEndMonthBalance: number;
+  status: "on_track" | "at_risk";
+  safeSpendingMargin: number;
+  missingAmount: number;
+  topCulprits: string[];
+}
+
 export interface FinancialDiagnosis {
   healthScore: number;
   healthStatus: "excellent" | "healthy" | "attention" | "critical";
@@ -90,6 +99,7 @@ export interface FinancialDiagnosis {
   installmentSchedule?: InstallmentScheduleItem[];
   clientProfileAssessment?: ClientProfileAssessment;
   futureMonthsRealityCheck?: FutureMonthsRealityCheck;
+  targetAnalysis?: TargetAnalysisSummary;
 }
 
 export function normalizeHealthStatus(
@@ -189,16 +199,42 @@ export function safeParseFinancialDiagnosis(
   }
 
   // 1. Normalização do HealthScore
-  let healthScore = 70;
+  let healthScore = 75;
   if (typeof parsed?.healthScore === "number" && !isNaN(parsed.healthScore)) {
     healthScore = Math.max(0, Math.min(100, Math.round(parsed.healthScore)));
   } else {
-    // Cálculo de resgate determinístico baseado na taxa de comprometimento
-    const ratio = context?.commitments?.commitmentRatioPercent ?? 0;
-    if (ratio <= 40) healthScore = 85;
-    else if (ratio <= 60) healthScore = 72;
-    else if (ratio <= 80) healthScore = 55;
-    else healthScore = 35;
+    // Cálculo determinístico com rigor matemático baseado na Meta de Saldo Alvo
+    const targetVal = context?.target?.targetEndMonthBalance ?? 700;
+    const projectedVal =
+      context?.target?.projectedEndMonthBalance ??
+      (context?.liquidityAnalysis?.currentMonth.projectedFreeBalance ?? (context?.cashflow?.checkingBalance ?? 0));
+
+    if (context?.target) {
+      if (projectedVal >= targetVal) {
+        // Meta atingida ou no caminho certo
+        const surplus = projectedVal - targetVal;
+        const surplusBonus = targetVal > 0 ? Math.min(10, Math.round((surplus / targetVal) * 15)) : 5;
+        healthScore = Math.min(100, Math.max(85, 88 + surplusBonus));
+      } else {
+        // Meta em risco
+        const fulfillment = targetVal > 0 ? Math.max(0, projectedVal / targetVal) : 0;
+        if (fulfillment >= 0.75) {
+          healthScore = Math.round(70 + (fulfillment - 0.75) * 40);
+        } else if (fulfillment >= 0.4) {
+          healthScore = Math.round(52 + (fulfillment - 0.4) * 40);
+        } else if (projectedVal >= 0) {
+          healthScore = 45;
+        } else {
+          healthScore = 30;
+        }
+      }
+    } else {
+      const ratio = context?.commitments?.commitmentRatioPercent ?? 0;
+      if (ratio <= 40) healthScore = 85;
+      else if (ratio <= 60) healthScore = 72;
+      else if (ratio <= 80) healthScore = 55;
+      else healthScore = 35;
+    }
 
     // Se o saldo em conta corrente for negativo, penaliza a nota
     const checkingBalance = context?.cashflow?.checkingBalance ?? 0;
@@ -232,6 +268,11 @@ export function safeParseFinancialDiagnosis(
       context?.liquidityAnalysis?.nextMonth.projectedFreeBalance ?? 0,
       Math.abs(context?.liquidityAnalysis?.nextMonth.projectedFreeBalance ?? 0),
       context?.liquidityAnalysis?.nextMonth.cardInstallments ?? 0,
+      context?.target?.targetEndMonthBalance ?? 700,
+      context?.target?.projectedEndMonthBalance ?? 0,
+      Math.abs(context?.target?.projectedEndMonthBalance ?? 0),
+      context?.target?.safeSpendingMargin ?? 0,
+      context?.target?.missingAmount ?? 0,
     ];
     if (validateNumbersInText(rawSummary, allowedTelemetryNumbers, 1.0)) {
       executiveSummary = rawSummary;
@@ -239,17 +280,13 @@ export function safeParseFinancialDiagnosis(
   }
 
   if (!executiveSummary) {
-    const checkingBalance = context?.cashflow?.checkingBalance ?? 0;
-    const netFormatted =
-      checkingBalance >= 0
-        ? `positivo em R$ ${checkingBalance.toFixed(2)}`
-        : `negativo em R$ ${Math.abs(checkingBalance).toFixed(2)}`;
-    const ratio = context?.commitments?.commitmentRatioPercent ?? 0;
-    const alertLimit = context?.profile?.maxCommitmentAlertPercent ?? 70;
-    const statusWord =
-      ratio > alertLimit
-        ? "está acima da faixa de alerta recomendada"
-        : "está sob controle";
+    const targetVal = context?.target?.targetEndMonthBalance ?? 700;
+    const projectedVal =
+      context?.target?.projectedEndMonthBalance ??
+      (context?.liquidityAnalysis?.currentMonth.projectedFreeBalance ?? (context?.cashflow?.checkingBalance ?? 0));
+    const isOnTrack = projectedVal >= targetVal;
+    const safeMargin = Math.max(0, projectedVal - targetVal);
+    const gap = Math.max(0, targetVal - projectedVal);
     const persona = context?.profile?.persona || "optimizer";
 
     const personaClosing = {
@@ -259,7 +296,16 @@ export function safeParseFinancialDiagnosis(
       minimalist: "Sob a lente de The Minimalist 🧘, simplificamos o fluxo para maximizar sua taxa de poupança e independência.",
     }[persona];
 
-    executiveSummary = `Fluxo do mês analisado: seu saldo em conta fechou ${netFormatted}, e o comprometimento total com cartões e fixas ${statusWord} (${ratio}%). ${personaClosing}`;
+    const topCulprits = (context?.topSpendItems || [])
+      .slice(0, 2)
+      .map((t) => `${t.title} (R$ ${t.total.toFixed(2)})`)
+      .join(" e ");
+
+    if (isOnTrack) {
+      executiveSummary = `Panorama do mês: seu saldo projetado para o fechamento é de R$ ${projectedVal.toFixed(2)}, cumprindo a meta de fechar com R$ ${targetVal.toFixed(2)} positivo — você dispõe de uma margem segura de R$ ${safeMargin.toFixed(2)} para despesas extras até o fim do mês. ${personaClosing}`;
+    } else {
+      executiveSummary = `Panorama do mês: seu saldo projetado para o fechamento é de R$ ${projectedVal.toFixed(2)}, ficando a R$ ${gap.toFixed(2)} da sua meta de fechar com R$ ${targetVal.toFixed(2)} positivo${topCulprits ? `, com maior impacto recente vindo de ${topCulprits}` : ""}. ${personaClosing}`;
+    }
   }
 
   // 4. Normalização e Sincronização de Padrões de Consumo
@@ -811,5 +857,15 @@ export function safeParseFinancialDiagnosis(
     installmentSchedule,
     clientProfileAssessment,
     futureMonthsRealityCheck,
+    targetAnalysis: context.target
+      ? {
+          targetEndMonthBalance: context.target.targetEndMonthBalance,
+          projectedEndMonthBalance: context.target.projectedEndMonthBalance,
+          status: context.target.targetStatus,
+          safeSpendingMargin: context.target.safeSpendingMargin,
+          missingAmount: context.target.missingAmount,
+          topCulprits: context.target.topCulprits || [],
+        }
+      : undefined,
   };
 }
