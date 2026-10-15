@@ -13,7 +13,7 @@ import {
 } from "../../../../lib/services/aiUsageService.ts";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 15;
+export const maxDuration = 60;
 
 export * from "../../../../lib/services/financialDiagnosisService.ts";
 
@@ -100,6 +100,7 @@ DIRETRIZES FUNDAMENTAIS DO DIAGNÓSTICO:
     });
 
     if (!quotaReservation.allowed || !quotaReservation.reservation) {
+      const isConfigError = quotaReservation.errorCode === "MISSING_SERVICE_ACCOUNT";
       return NextResponse.json(
         {
           success: false,
@@ -107,7 +108,7 @@ DIRETRIZES FUNDAMENTAIS DO DIAGNÓSTICO:
           code: quotaReservation.errorCode || "AI_QUOTA_EXCEEDED",
         },
         {
-          status: 429,
+          status: isConfigError ? 500 : 429,
           headers: quotaReservation.retryAfterSec
             ? { "Retry-After": String(quotaReservation.retryAfterSec) }
             : {},

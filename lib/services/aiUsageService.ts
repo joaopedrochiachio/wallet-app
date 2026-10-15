@@ -1,4 +1,4 @@
-import { getAdminFirestore } from "../firebaseAdmin.ts";
+import { getAdminFirestore, hasValidServiceAccount } from "../firebaseAdmin.ts";
 import { checkRateLimit } from "../utils/rateLimiter.ts";
 
 /**
@@ -256,6 +256,14 @@ export async function reserveAIQuota(params: {
 
   // 2. Transação Persistente via Firebase Admin SDK no servidor (Produção padrão)
   if (!useMemoryStoreForTesting) {
+    if (!hasValidServiceAccount()) {
+      console.error("[FIRESTORE_ADMIN] FIREBASE_SERVICE_ACCOUNT_KEY não configurada ou inválida no servidor.");
+      return {
+        allowed: false,
+        errorCode: "MISSING_SERVICE_ACCOUNT",
+        error: "A chave FIREBASE_SERVICE_ACCOUNT_KEY não está ativa no servidor da Vercel. Certifique-se de cadastrá-la em Settings -> Environment Variables (marcando Production e Preview) e clicar em Redeploy na Vercel.",
+      };
+    }
     try {
       const adminFirestore = getAdminFirestore();
       const userDocRef = adminFirestore.collection("users").doc(uid).collection("ai_usage").doc(monthKey);

@@ -5,7 +5,6 @@ import OpenAI from "openai";
  * Utiliza o SDK oficial da OpenAI (JS/TS) com o modelo gpt-6-luna (padrão)
  * e gpt-6-sol (opcional por configuração).
  */
-const apiKey = process.env.OPENAI_API_KEY;
 export const OPENAI_MODELS = {
   MAIN: "gpt-6-luna",
   OPTIONAL: "gpt-6-sol",
@@ -170,21 +169,22 @@ let cachedClient: OpenAI | null = null;
 let lastApiKey: string | undefined = undefined;
 
 export function getOpenAIClient(): OpenAI {
+  const currentKey = process.env.OPENAI_API_KEY?.trim();
 
-  if (!apiKey) {
+  if (!currentKey) {
     throw new OpenAIIntegrationError(
-      "Chave da API da OpenAI não configurada no servidor. Defina OPENAI_API_KEY no ambiente.",
+      "A chave OPENAI_API_KEY não foi encontrada no servidor da Vercel. Verifique as Environment Variables do projeto e faça um Redeploy.",
       { code: "MISSING_OPENAI_API_KEY", status: 500, retryable: false }
     );
   }
 
   // Se a chave mudou ou cliente ainda não existe, cria nova instância
-  if (!cachedClient || lastApiKey !== apiKey) {
+  if (!cachedClient || lastApiKey !== currentKey) {
     cachedClient = new OpenAI({
-      apiKey,
+      apiKey: currentKey,
       maxRetries: 0, // Controlamos o retry de forma explícita e estrita
     });
-    lastApiKey = apiKey;
+    lastApiKey = currentKey;
   }
 
   return cachedClient;

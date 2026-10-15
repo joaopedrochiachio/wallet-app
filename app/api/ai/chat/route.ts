@@ -23,7 +23,7 @@ import {
 import type { OpenAIChatMessage } from "../../../../lib/services/openaiService.ts";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 15;
+export const maxDuration = 60;
 
 const MAX_HISTORY_MESSAGES = 10;
 const MAX_MESSAGE_LENGTH = 1000;
@@ -186,6 +186,7 @@ Oriente o usuário com base estritamente nesses números simulados calculados pe
     });
 
     if (!quotaReservation.allowed || !quotaReservation.reservation) {
+      const isConfigError = quotaReservation.errorCode === "MISSING_SERVICE_ACCOUNT";
       return NextResponse.json(
         {
           success: false,
@@ -193,7 +194,7 @@ Oriente o usuário com base estritamente nesses números simulados calculados pe
           code: quotaReservation.errorCode || "AI_QUOTA_EXCEEDED",
         },
         {
-          status: 429,
+          status: isConfigError ? 500 : 429,
           headers: quotaReservation.retryAfterSec
             ? { "Retry-After": String(quotaReservation.retryAfterSec) }
             : {},

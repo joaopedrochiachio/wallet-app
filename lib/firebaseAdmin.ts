@@ -89,7 +89,12 @@ function getServiceAccount(): ServiceAccount | null {
     try {
       const decoded = Buffer.from(clean, "base64").toString("utf-8");
       if (decoded.trim().startsWith("{")) {
-        return sanitizeSA(JSON.parse(decoded) as ServiceAccount);
+        try {
+          return sanitizeSA(JSON.parse(decoded) as ServiceAccount);
+        } catch {
+          const normalized = decoded.replace(/\r\n/g, "\\n").replace(/\n/g, "\\n");
+          return sanitizeSA(JSON.parse(normalized) as ServiceAccount);
+        }
       }
     } catch {
       // Não é base64, segue para caminho de arquivo
@@ -107,6 +112,10 @@ function getServiceAccount(): ServiceAccount | null {
     console.error("[FIREBASE_ADMIN] Erro ao carregar FIREBASE_SERVICE_ACCOUNT_KEY:", err);
     return null;
   }
+}
+
+export function hasValidServiceAccount(): boolean {
+  return testFirestoreMock !== null || getServiceAccount() !== null;
 }
 
 export function getAdminApp(): App {
