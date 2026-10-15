@@ -5,7 +5,7 @@ import OpenAI from "openai";
  * Utiliza o SDK oficial da OpenAI (JS/TS) com o modelo gpt-6-luna (padrão)
  * e gpt-6-sol (opcional por configuração).
  */
-
+const apiKey = process.env.OPENAI_API_KEY;
 export const OPENAI_MODELS = {
   MAIN: "gpt-6-luna",
   OPTIONAL: "gpt-6-sol",
@@ -170,15 +170,6 @@ let cachedClient: OpenAI | null = null;
 let lastApiKey: string | undefined = undefined;
 
 export function getOpenAIClient(): OpenAI {
-  let apiKey = process.env.OPENAI_API_KEY?.trim();
-  if (apiKey) {
-    while (
-      (apiKey.startsWith('"') && apiKey.endsWith('"')) ||
-      (apiKey.startsWith("'") && apiKey.endsWith("'"))
-    ) {
-      apiKey = apiKey.slice(1, -1).trim();
-    }
-  }
 
   if (!apiKey) {
     throw new OpenAIIntegrationError(

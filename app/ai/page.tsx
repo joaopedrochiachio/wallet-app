@@ -235,15 +235,15 @@ export default function AIAnalystPage() {
       } catch {
         data = null;
       }
-
+      console.log(res);
       if (!res.ok) {
         const errorMsg =
           data?.error ||
           (res.status === 408 || res.status === 504
             ? "Tempo limite esgotado no servidor da Vercel. Tente novamente."
             : res.status === 500
-            ? "Erro no servidor (500). Verifique as variáveis de ambiente na Vercel."
-            : `Erro ao gerar diagnóstico (${res.status}).`);
+              ? "Erro no servidor (500). Verifique as variáveis de ambiente na Vercel."
+              : `Erro ao gerar diagnóstico (${res.status}).`);
         throw new Error(errorMsg);
       }
 
