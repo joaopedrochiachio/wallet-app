@@ -21,11 +21,12 @@ service cloud.firestore {
         allow write: if false;
       }
 
-      // Demais subcoleções financeiras legítimas (transactions, accounts, cards, recurring, goals, etc.)
+      // Subcoleções financeiras legítimas com whitelist estrita
       match /{subcollection}/{document=**} {
         allow read, write: if request.auth != null && request.auth.uid == userId
           && subcollection != "ai_usage"
-          && subcollection != "ai_logs";
+          && subcollection != "ai_logs"
+          && (subcollection in ['transactions', 'cards', 'recurring', 'goals', 'ai_chat', 'ai_diagnosis', 'processed_occurrences']);
       }
     }
 

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server.js";
 import { verifyServerAuth } from "../../../../lib/auth/serverAuth.ts";
 import { getAIUsageSummary } from "../../../../lib/services/aiUsageService.ts";
+import { safeCompareTokens } from "../../../../lib/utils/security.ts";
+import { checkRateLimit } from "../../../../lib/utils/rateLimiter.ts";
 
 export const dynamic = "force-dynamic";
 
@@ -16,10 +18,10 @@ export async function GET(req: NextRequest) {
     let isAdmin = false;
     let targetUid: string | undefined = undefined;
 
-    // 1. Verificação de segredo de administração/cron
+    // 1. Verificação de segredo de administração/cron em tempo constante
     if (cronSecret && authHeader) {
       const [scheme, token] = authHeader.split(" ");
-      if (scheme?.toLowerCase() === "bearer" && token === cronSecret) {
+      if (scheme?.toLowerCase() === "bearer" && safeCompareTokens(token, cronSecret)) {
         isAdmin = true;
       }
     }
@@ -36,6 +38,26 @@ export async function GET(req: NextRequest) {
       // Admin pode especificar targetUid via query param
       const searchParams = req.nextUrl.searchParams;
       targetUid = searchParams.get("uid") || undefined;
+    }
+
+    // 3. Rate limiting contra abuso/DoS (30 consultas por minuto por cliente)
+    const rateLimitKey = `ai-usage:${targetUid || "admin"}`;
+    const rateLimit = checkRateLimit(rateLimitKey, 30, 60000);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Muitas consultas ao relatório de uso de IA. Aguarde ${rateLimit.retryAfterSec} segundos.`,
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(rateLimit.retryAfterSec),
+            "X-RateLimit-Limit": String(rateLimit.limit),
+            "X-RateLimit-Remaining": "0",
+          },
+        }
+      );
     }
 
     const searchParams = req.nextUrl.searchParams;

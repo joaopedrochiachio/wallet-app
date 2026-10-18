@@ -22,6 +22,7 @@ import {
 } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { deleteUserDataFromFirestore } from "@/lib/services/userService";
+import { clearUserLocalCaches } from "@/lib/services/aiChatService";
 
 interface AuthContextType {
   user: User | null;
@@ -186,7 +187,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
+    const currentUid = user?.uid;
+    try {
+      if (typeof window !== "undefined") {
+        sessionStorage.removeItem("wallet_login_failed_attempts");
+      }
+      clearUserLocalCaches(currentUid);
+    } catch {
+      // Ignora erro de limpeza local
+    }
     await firebaseSignOut(auth);
+    setUser(null);
   };
 
   const resetPassword = async (email: string) => {

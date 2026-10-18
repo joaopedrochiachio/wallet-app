@@ -281,6 +281,23 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     legacyKeys.forEach((key) => window.localStorage.removeItem(key));
   }, []);
 
+  // Sanitização estrita de dados sensíveis da memória ao deslogar
+  useEffect(() => {
+    if (!user) {
+      setUserProfile(INITIAL_USER_PROFILE);
+      setCards([]);
+      setActiveCardId("");
+      setTransactions([]);
+      setRecurringItems([]);
+      setGoals([]);
+      setProfileLoadedFor(null);
+      setCardsLoadedFor(null);
+      setTransactionsLoadedFor(null);
+      setRecurringLoadedFor(null);
+      setGoalsLoadedFor(null);
+    }
+  }, [user]);
+
   // Sincronização em tempo real do Perfil via Firestore
   useEffect(() => {
     if (!user) {

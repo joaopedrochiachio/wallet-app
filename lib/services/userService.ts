@@ -98,6 +98,7 @@ export async function deleteUserDataFromFirestore(userId: string): Promise<void>
     "goals",
     "ai_chat",
     "ai_diagnosis",
+    "processed_occurrences",
   ];
 
   for (const subcol of subcollections) {
@@ -118,13 +119,30 @@ export async function deleteUserDataFromFirestore(userId: string): Promise<void>
   const userDocRef = doc(db, "users", userId);
   await deleteDoc(userDocRef);
 
-  // Limpa o cache local do dispositivo
+  // Limpa rigorosamente todo o cache local do dispositivo (LGPD Art. 18, VI)
   if (typeof window !== "undefined") {
     try {
-      window.localStorage.removeItem(`wallet_ai_chat_history_${userId}`);
-      window.localStorage.removeItem(`wallet_ai_diagnosis_${userId}`);
-      window.localStorage.removeItem(`wallet_ai_diagnosis_${userId}_timestamp`);
-      window.localStorage.removeItem(`wallet_ai_diagnosis_${userId}_model`);
+      const keysToRemove = [
+        `wallet_ai_chat_history_${userId}`,
+        `wallet_ai_chat_sessions_${userId}`,
+        `wallet_ai_diagnosis_${userId}`,
+        `wallet_ai_diagnosis_${userId}_timestamp`,
+        `wallet_ai_diagnosis_${userId}_model`,
+        `wallet_ai_diagnosis_${userId}_persona`,
+        `wallet_ai_diagnosis_${userId}_aiTone`,
+        `wallet_ai_dismissed_patterns_${userId}`,
+        `wallet_ai_needs_reanalysis_${userId}`,
+        `wallet_ai_pending_persona_${userId}`,
+        "wallet_ai_diagnosis",
+        "wallet_ai_diagnosis_timestamp",
+        "wallet_ai_model",
+        "wallet_ai_diagnosis_persona",
+        "wallet_ai_diagnosis_aiTone",
+        "wallet_ai_needs_reanalysis",
+        "wallet_ai_pending_persona",
+        "wallet_login_failed_attempts",
+      ];
+      keysToRemove.forEach((k) => window.localStorage.removeItem(k));
     } catch {
       // Ignora erro de limpeza local
     }

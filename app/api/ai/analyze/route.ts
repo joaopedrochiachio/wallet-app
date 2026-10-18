@@ -11,22 +11,53 @@ import {
   reconcileAIQuota,
   recordAICallLog,
 } from "../../../../lib/services/aiUsageService.ts";
+import { checkRateLimit } from "../../../../lib/utils/rateLimiter.ts";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
+const MAX_PAYLOAD_BYTES = 512 * 1024; // 512 KB
 
 export * from "../../../../lib/services/financialDiagnosisService.ts";
 
 export async function POST(req: NextRequest) {
   try {
-    // 1. Autenticação estrita do servidor: identifica o usuário exclusivamente pelo token assinado
+    // 1. Verificação de tamanho máximo de payload (proteção anti-DoS)
+    const contentLength = req.headers.get("content-length");
+    if (contentLength && parseInt(contentLength, 10) > MAX_PAYLOAD_BYTES) {
+      return NextResponse.json(
+        { success: false, error: "Tamanho da requisição excede o limite máximo permitido." },
+        { status: 413 }
+      );
+    }
+
+    // 2. Autenticação estrita do servidor: identifica o usuário exclusivamente pelo token assinado
     const authResult = await verifyServerAuth(req);
     if ("errorResponse" in authResult) {
       return authResult.errorResponse;
     }
     const userId = authResult.user.uid;
 
-    // 2. Extração e validação do corpo da requisição ANTES de criar reserva de cota
+    // 3. Rate limiting contra rajadas (burst protection: máx 5 análises por minuto por usuário)
+    const burstCheck = checkRateLimit(`ai-analyze-burst:${userId}`, 5, 60000);
+    if (!burstCheck.allowed) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Muitas solicitações de análise em sequência. Aguarde ${burstCheck.retryAfterSec} segundos.`,
+          code: "BURST_LIMIT_EXCEEDED",
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(burstCheck.retryAfterSec),
+            "X-RateLimit-Limit": String(burstCheck.limit),
+            "X-RateLimit-Remaining": "0",
+          },
+        }
+      );
+    }
+
+    // 4. Extração e validação do corpo da requisição ANTES de criar reserva de cota
     const body = await req.json();
     const {
       userProfile,
@@ -193,11 +224,10 @@ DIRETRIZES FUNDAMENTAIS DO DIAGNÓSTICO:
     }
   } catch (err: unknown) {
     console.error("[AI_ANALYZE_CRITICAL_ERROR]", err);
-    const msg = err instanceof Error ? err.message : "Erro inesperado ao gerar análise financeira.";
     return NextResponse.json(
       {
         success: false,
-        error: msg,
+        error: "Não foi possível concluir o diagnóstico financeiro no momento. Tente novamente mais tarde.",
       },
       { status: 500 }
     );

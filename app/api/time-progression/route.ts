@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { processDueOccurrencesForUser } from "@/lib/services/timeProgressionService";
 import { verifyServerAuth } from "@/lib/auth/serverAuth";
 import { checkRateLimit } from "@/lib/utils/rateLimiter";
+import { safeCompareTokens } from "@/lib/utils/security";
 
 export const dynamic = "force-dynamic";
 
 /**
  * Valida a autorização da requisição contra IDOR e acessos indevidos:
- * 1. Se CRON_SECRET estiver configurado e o Bearer token coincidir, autoriza execução de cron.
+ * 1. Se CRON_SECRET estiver configurado e o Bearer token coincidir (tempo constante), autoriza execução de cron.
  * 2. Se for um usuário autenticado via Firebase ID Token, autoriza APENAS se request.auth.uid == targetUserId.
  * 3. Bloqueia qualquer tentativa indevida com 401 Unauthorized ou 403 Forbidden.
  */
@@ -18,10 +19,10 @@ async function authorizeTimeProgression(
   const cronSecret = process.env.CRON_SECRET;
   const authHeader = request.headers.get("authorization");
 
-  // 1. Autorização via segredo de cron de backend
+  // 1. Autorização via segredo de cron de backend com comparação em tempo constante
   if (cronSecret && authHeader) {
     const [scheme, token] = authHeader.split(" ");
-    if (scheme?.toLowerCase() === "bearer" && token === cronSecret) {
+    if (scheme?.toLowerCase() === "bearer" && safeCompareTokens(token, cronSecret)) {
       return { authorized: true };
     }
   }
@@ -37,11 +38,6 @@ async function authorizeTimeProgression(
         error: "Acesso negado. Você só tem autorização para processar ocorrências da sua própria conta.",
       };
     }
-    return { authorized: true };
-  }
-
-  // 3. Fallback de desenvolvimento local caso segredo não tenha sido gerado
-  if (process.env.NODE_ENV === "development" && !cronSecret) {
     return { authorized: true };
   }
 
@@ -126,10 +122,11 @@ export async function GET(request: NextRequest) {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
+    console.error("[TIME_PROGRESSION_GET_ERROR]", error);
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Erro interno ao processar ocorrências.",
+        error: "Erro interno ao processar ocorrências financeiras.",
       },
       { status: 500 }
     );
@@ -194,10 +191,11 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
+    console.error("[TIME_PROGRESSION_POST_ERROR]", error);
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Erro interno ao processar ocorrências.",
+        error: "Erro interno ao processar ocorrências financeiras.",
       },
       { status: 500 }
     );

@@ -130,3 +130,44 @@ export function validatePassword(password: unknown): { isValid: boolean; error?:
   }
   return { isValid: true };
 }
+
+/**
+ * Comparação em tempo constante para mitigar ataques de canal lateral (timing attacks) em segredos e tokens.
+ * Funciona de forma segura e idêntica no navegador, Node.js e Edge runtimes sem dependências externas.
+ */
+export function safeCompareTokens(a: unknown, b: unknown): boolean {
+  if (typeof a !== "string" || typeof b !== "string") {
+    return false;
+  }
+  if (a.length === 0 || b.length === 0) {
+    return false;
+  }
+
+  // Previne vazamento de timing por comprimento diferente
+  let mismatch = a.length === b.length ? 0 : 1;
+  const len = Math.max(a.length, b.length);
+
+  for (let i = 0; i < len; i++) {
+    const charA = a.charCodeAt(i % a.length);
+    const charB = b.charCodeAt(i % b.length);
+    mismatch |= charA ^ charB;
+  }
+
+  return mismatch === 0;
+}
+
+/**
+ * Sanitiza e valida strings contra tentativas de Prompt Injection em modelos LLM.
+ * Neutraliza delimitadores maliciosos e instruções de controle estruturadas.
+ */
+export function sanitizePromptInput(input: unknown, maxLength = 1000): string {
+  if (typeof input !== "string") return "";
+  const sanitized = input
+    .slice(0, maxLength)
+    .replace(/<[^>]*>/g, "")
+    .replace(/(?:^|\n)\s*(?:system|assistant|instruction|user)\s*:/gi, "")
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
+    .trim();
+
+  return sanitized;
+}

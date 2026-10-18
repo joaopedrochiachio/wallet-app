@@ -307,8 +307,9 @@ export function loadInitialDiagnosisSync(
     let persona = window.localStorage.getItem(`${userKey}_persona`) || undefined;
     let aiTone = window.localStorage.getItem(`${userKey}_aiTone`) || undefined;
 
-    // Fallback para chave geral caso não encontre por usuário
-    if (!raw) {
+    // Fallback para chave geral apenas para sessão anônima/visitante (sem userId).
+    // Previne vazamento de diagnóstico entre diferentes usuários em computadores compartilhados.
+    if (!raw && !userId) {
       raw = window.localStorage.getItem(DIAGNOSIS_KEY);
       timestamp = window.localStorage.getItem(DIAGNOSIS_TIMESTAMP_KEY);
       modelUsed = window.localStorage.getItem(DIAGNOSIS_MODEL_KEY) || undefined;
@@ -354,7 +355,7 @@ export async function savePersistentDiagnosis(
     cleanDiagnosis = diagnosis;
   }
 
-  // 1. Salva imediatamente no localStorage (chave com escopo de usuário + chave geral de fallback)
+  // 1. Salva imediatamente no localStorage (isolado com escopo estrito do usuário)
   if (typeof window !== "undefined") {
     try {
       const userKey = getDiagnosisStorageKey(userId);
@@ -367,17 +368,18 @@ export async function savePersistentDiagnosis(
       }
       if (meta.persona) {
         window.localStorage.setItem(`${userKey}_persona`, meta.persona);
-        window.localStorage.setItem("wallet_ai_diagnosis_persona", meta.persona);
       }
       if (meta.aiTone) {
         window.localStorage.setItem(`${userKey}_aiTone`, meta.aiTone);
-        window.localStorage.setItem("wallet_ai_diagnosis_aiTone", meta.aiTone);
       }
 
-      window.localStorage.setItem(DIAGNOSIS_KEY, jsonStr);
-      window.localStorage.setItem(DIAGNOSIS_TIMESTAMP_KEY, meta.timestamp);
-      if (meta.modelUsed) {
-        window.localStorage.setItem(DIAGNOSIS_MODEL_KEY, meta.modelUsed);
+      // Grava em chave legada não-escopada apenas se NÃO houver usuário autenticado (modo convidado)
+      if (!userId) {
+        window.localStorage.setItem(DIAGNOSIS_KEY, jsonStr);
+        window.localStorage.setItem(DIAGNOSIS_TIMESTAMP_KEY, meta.timestamp);
+        if (meta.modelUsed) {
+          window.localStorage.setItem(DIAGNOSIS_MODEL_KEY, meta.modelUsed);
+        }
       }
     } catch (err) {
       console.warn("Falha ao salvar diagnóstico localmente:", err);
@@ -531,6 +533,44 @@ export function clearDismissedPatterns(userId?: string | null): void {
     window.localStorage.removeItem(getDismissedPatternsKey(userId));
   } catch {
     // Silencioso
+  }
+}
+
+/**
+ * Limpa todos os caches locais em localStorage vinculados ao usuário ao encerrar a sessão (Logout/Sanitização)
+ */
+export function clearUserLocalCaches(userId?: string | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    const keysToRemove = [
+      DIAGNOSIS_KEY,
+      DIAGNOSIS_TIMESTAMP_KEY,
+      DIAGNOSIS_MODEL_KEY,
+      "wallet_ai_diagnosis_persona",
+      "wallet_ai_diagnosis_aiTone",
+      "wallet_ai_needs_reanalysis",
+      "wallet_ai_pending_persona",
+    ];
+
+    if (userId) {
+      const userKey = getDiagnosisStorageKey(userId);
+      keysToRemove.push(
+        userKey,
+        `${userKey}_timestamp`,
+        `${userKey}_model`,
+        `${userKey}_persona`,
+        `${userKey}_aiTone`,
+        getStorageKey(userId),
+        getSessionsStorageKey(userId),
+        getDismissedPatternsKey(userId),
+        `wallet_ai_needs_reanalysis_${userId}`,
+        `wallet_ai_pending_persona_${userId}`
+      );
+    }
+
+    keysToRemove.forEach((k) => window.localStorage.removeItem(k));
+  } catch (err) {
+    console.warn("Erro ao limpar caches locais do usuário:", err);
   }
 }
 

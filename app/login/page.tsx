@@ -61,6 +61,12 @@ export default function LoginPage() {
   }, [cooldownSeconds]);
 
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("reason") === "inactivity") {
+        setError("Sua sessão foi encerrada automaticamente por inatividade para proteger seus dados financeiros.");
+      }
+    }
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
@@ -167,16 +173,17 @@ export default function LoginPage() {
       setLoading(true);
       try {
         await resetPassword(trimmedEmail);
-        setSuccessMessage("Link de recuperação enviado com sucesso! Verifique sua caixa de entrada.");
+        setSuccessMessage("Se o endereço de e-mail estiver cadastrado, as instruções para redefinição de senha foram enviadas. Verifique sua caixa de entrada.");
       } catch (err: unknown) {
         console.error("Erro ao solicitar recuperação de senha:", err);
         const code = typeof err === "object" && err && "code" in err ? String(err.code) : "";
         if (code === "auth/user-not-found") {
-          setError("Não encontramos nenhuma conta com este e-mail.");
+          // Mitigação OWASP contra Enumeração de Usuários (CWE-204)
+          setSuccessMessage("Se o endereço de e-mail estiver cadastrado, as instruções para redefinição de senha foram enviadas. Verifique sua caixa de entrada.");
         } else if (code === "auth/invalid-email") {
           setError("Formato de e-mail inválido.");
         } else {
-          setError("Não foi possível enviar o e-mail de recuperação. Tente novamente.");
+          setError("Não foi possível processar a solicitação no momento. Tente novamente mais tarde.");
         }
       } finally {
         setLoading(false);
