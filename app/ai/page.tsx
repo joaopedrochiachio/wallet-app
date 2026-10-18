@@ -50,7 +50,7 @@ import { FinancialMindMap } from "@/components/ai/FinancialMindMap";
 import { SpendingCalendarHeatmap } from "@/components/ai/SpendingCalendarHeatmap";
 import { VisualPatternStorytelling } from "@/components/ai/VisualPatternStorytelling";
 import { AgentAvatar } from "@/components/companion/AgentAvatar";
-import { WalletCharacter, CharacterId } from "@/components/companion/WalletCharacters";
+import { WalletCharacter, CharacterId, WALLET_CHARACTERS, normalizeCharacterId } from "@/components/companion/WalletCharacters";
 import { InteractiveFinancialCalendar } from "@/components/companion/InteractiveFinancialCalendar";
 import { PurchaseSimulatorModal } from "@/components/companion/PurchaseSimulatorModal";
 import {
@@ -763,12 +763,40 @@ export default function AIAnalystPage() {
   const commitmentRatio =
     monthlyIncome > 0 ? Math.round(((monthExpense + totalInvoices) / monthlyIncome) * 100) : 0;
 
-  const quickPrompts = [
-    "💡 Onde posso cortar gastos esta semana?",
-    `🎯 Como manter a meta de R$ ${formatCurrency(targetEndMonthBalance)} no fim do mês?`,
-    "💳 Qual o melhor cartão para passar hoje?",
-    "⚡ Simular o impacto de uma nova compra",
-  ];
+  const quickPrompts = useMemo(() => {
+    const p = normalizeCharacterId(selectedPersona);
+    if (p === "wallet-rubi") {
+      return [
+        "💡 Rubi, qual meu teto diário seguro hoje?",
+        `🎯 Como fechar com R$ ${formatCurrency(targetEndMonthBalance)} no fim do mês?`,
+        "📊 Como está meu risco de fluxo de caixa (Cashflow at Risk)?",
+        "⚡ Simular o impacto de uma nova compra no orçamento",
+      ];
+    }
+    if (p === "wallet-sol") {
+      return [
+        "🛡️ Sol, quantos dias de sobrevivência e fôlego eu tenho hoje?",
+        "🔥 Quais ralos invisíveis estão vazando meu dinheiro?",
+        "🚨 Como blindar meu caixa contra imprevistos?",
+        "📦 Qual o tamanho ideal do meu fundo de emergência?",
+      ];
+    }
+    if (p === "wallet-nanquim") {
+      return [
+        "💳 Nanquim, qual o melhor cartão para comprar hoje?",
+        "📅 Quantos dias livres sem juros tenho na fatura?",
+        "⚖️ Compensa pagar à vista com desconto ou parcelar?",
+        "📑 Como sincronizar os vencimentos das minhas faturas?",
+      ];
+    }
+    // wallet-atlos
+    return [
+      "🚀 Atlos, como está a eficiência de alocação da minha sobra?",
+      `💰 Quanto posso destinar para metas sem comprometer o mês?`,
+      "📈 Como fazer meu excedente render com segurança?",
+      "🎯 Como acelerar o alcance dos meus objetivos?",
+    ];
+  }, [selectedPersona, targetEndMonthBalance]);
 
   // Padrões de consumo mapeados
   const visibleSpecificAlerts = (diagnosis?.specificExpensesAlerts || []).filter((item) => {
@@ -836,10 +864,10 @@ export default function AIAnalystPage() {
   });
 
   const personasList: { id: CharacterId; name: string; role: string; shortRole: string }[] = [
-    { id: "wallet-rubi", name: "Rubi", role: "CFO & Estrategista", shortRole: "CFO" },
-    { id: "wallet-sol", name: "Sol", role: "Guardiã da Reserva", shortRole: "Reserva" },
-    { id: "wallet-nanquim", name: "Nanquim", role: "Arquiteto de Crédito", shortRole: "Crédito" },
-    { id: "wallet-atlos", name: "Atlos", role: "Metas & Patrimônio", shortRole: "Metas" },
+    { id: "wallet-rubi", name: "Rubi", role: "CFO & Fluxo de Caixa", shortRole: "CFO & Caixa" },
+    { id: "wallet-sol", name: "Sol", role: "Reserva & Proteção", shortRole: "Reserva & Fôlego" },
+    { id: "wallet-nanquim", name: "Nanquim", role: "Crédito & Faturas", shortRole: "Crédito & Fatura" },
+    { id: "wallet-atlos", name: "Atlos", role: "Metas & Multiplicação", shortRole: "Metas & Aportes" },
   ];
 
   return (
@@ -1040,29 +1068,57 @@ export default function AIAnalystPage() {
             </div>
 
             {/* 2. CARD DO AUDITOR ATIVO & PARECER DE HOJE */}
-            <div className="bg-white rounded-[24px] p-4 border border-black/[0.05] shadow-[0_4px_20px_rgba(0,0,0,0.02)] flex items-start gap-3">
-              <AgentAvatar
-                persona={selectedPersona}
-                state={companionAdvice.avatarState}
-                size="md"
-              />
-              <div className="min-w-0 flex-1 space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold text-[#1D1D1F]">
-                    {companionAdvice.agentName} • {companionAdvice.agentTitle}
-                  </span>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold">
-                    Teto R$ {formatCurrency(safeSpendMetric.safeDailyAllowance)}/d
-                  </span>
+            {(() => {
+              const activeCharId = normalizeCharacterId(selectedPersona);
+              const activeCharMeta = WALLET_CHARACTERS[activeCharId] || WALLET_CHARACTERS["wallet-rubi"];
+              return (
+                <div className="bg-white rounded-[24px] p-4 border border-black/[0.05] shadow-[0_4px_20px_rgba(0,0,0,0.02)] space-y-2.5">
+                  <div className="flex items-start gap-3">
+                    <AgentAvatar
+                      persona={selectedPersona}
+                      state={companionAdvice.avatarState}
+                      size="md"
+                    />
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                      <div className="flex items-center justify-between flex-wrap gap-1">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-xs font-bold text-[#1D1D1F] truncate">
+                            {activeCharMeta.name}
+                          </span>
+                          <span className="text-[10px] font-bold px-2 py-0.2 rounded-full bg-[#1D1D1F] text-white">
+                            {activeCharMeta.badgeText}
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold">
+                          Teto R$ {formatCurrency(safeSpendMetric.safeDailyAllowance)}/d
+                        </span>
+                      </div>
+                      <p className="text-[10.5px] text-[#86868B] font-medium leading-tight">
+                        {activeCharMeta.role}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Parecer do Auditor Especialista */}
+                  <div className="bg-[#F8F8FA] rounded-2xl p-3 border border-black/[0.04] space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#86868B]">
+                        Parecer de Hoje
+                      </span>
+                      <span className="text-[9.5px] font-mono text-blue-600 font-medium truncate max-w-[190px]">
+                        {activeCharMeta.quantFoundation}
+                      </span>
+                    </div>
+                    <p className="text-xs text-[#1D1D1F] font-semibold leading-snug">
+                      {companionAdvice.headline}
+                    </p>
+                    <p className="text-[11px] text-[#86868B] leading-relaxed">
+                      {companionAdvice.advice}
+                    </p>
+                  </div>
                 </div>
-                <p className="text-xs text-[#1D1D1F] font-semibold leading-snug">
-                  {companionAdvice.headline}
-                </p>
-                <p className="text-[11px] text-[#86868B] leading-relaxed">
-                  {companionAdvice.advice}
-                </p>
-              </div>
-            </div>
+              );
+            })()}
 
             {/* 3. CARROSSEL DE PROMPTS RÁPIDOS DE AUDITORIA */}
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">

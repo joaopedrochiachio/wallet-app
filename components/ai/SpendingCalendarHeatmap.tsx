@@ -9,10 +9,14 @@ import {
   CreditCard,
   Building2,
   TrendingUp,
-  Check,
-  MessageSquare,
+  ArrowDownLeft,
+  ArrowUpRight,
+  Clock,
   Sparkles,
-  Info,
+  MessageSquare,
+  AlertCircle,
+  Receipt,
+  Wallet,
 } from "lucide-react";
 import {
   MONTH_NAMES_PT,
@@ -21,6 +25,40 @@ import {
   getEffectiveDueDay,
   getEffectiveRecurringItemForPeriod,
 } from "@/lib/utils/dateUtils";
+
+interface CalendarTransactionItem {
+  id: string;
+  title: string;
+  amount: number;
+  type: "income" | "expense";
+  category?: string;
+  account?: string;
+  cardName?: string;
+  dateStr: string;
+  timeStr?: string;
+}
+
+interface CalendarBillItem {
+  id: string;
+  title: string;
+  amount: number;
+  type: "expense" | "income" | "credit_invoice";
+  isPaid: boolean;
+  isCreditCharge?: boolean;
+  sourceObj?: any;
+}
+
+interface DayData {
+  day: number;
+  realizedIncome: number;
+  realizedExpense: number;
+  dayNet: number;
+  transactions: CalendarTransactionItem[];
+  bills: CalendarBillItem[];
+  hasPayday: boolean;
+  hasCardInvoice: boolean;
+  hasUrgentBill: boolean;
+}
 
 interface SpendingCalendarHeatmapProps {
   recurringItems: any[];
@@ -54,7 +92,7 @@ export function SpendingCalendarHeatmap({
   const currentPeriodKey = getPeriodKey(targetYear, targetMonth);
   const isCurrentMonth = targetYear === now.getFullYear() && targetMonth === now.getMonth();
 
-  // Navegação de meses
+  // Navegação de mês
   const handlePrevMonth = () => {
     if (targetMonth === 0) {
       setTargetYear(targetYear - 1);
@@ -82,81 +120,99 @@ export function SpendingCalendarHeatmap({
   };
 
   const daysInMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
-  const firstDayOfWeek = new Date(targetYear, targetMonth, 1).getDay(); // 0 = Domingo
+  const firstDayOfWeek = new Date(targetYear, targetMonth, 1).getDay(); // 0 = Dom
   const fifthBusinessDay = useMemo(() => get5thBusinessDay(targetYear, targetMonth), [targetYear, targetMonth]);
 
-  // Indexação rigorosa dos eventos por dia DO MÊS ESPECÍFICO SELECIONADO
+  // Indexação diária de Transações Reais e Contas Programadas
   const calendarData = useMemo(() => {
-    const dayMap = new Map<
-      number,
-      {
-        realizedSpent: number;
-        scheduledExpenses: number;
-        scheduledIncomes: number;
-        hasPayday: boolean;
-        hasCardInvoice: boolean;
-        hasUrgentBill: boolean;
-        items: Array<{
-          id: string;
-          title: string;
-          amount: number;
-          type: "expense" | "income" | "credit_invoice";
-          isPaid: boolean;
-          isCreditCharge?: boolean;
-          sourceObj?: any;
-        }>;
-      }
-    >();
+    const dayMap = new Map<number, DayData>();
 
     for (let d = 1; d <= daysInMonth; d++) {
       dayMap.set(d, {
-        realizedSpent: 0,
-        scheduledExpenses: 0,
-        scheduledIncomes: 0,
+        day: d,
+        realizedIncome: 0,
+        realizedExpense: 0,
+        dayNet: 0,
+        transactions: [],
+        bills: [],
         hasPayday: d === fifthBusinessDay,
         hasCardInvoice: false,
         hasUrgentBill: false,
-        items: [],
       });
     }
 
-    // 1. Filtragem Rigorosa de Contas Recorrentes para o MÊS SELECIONADO (targetYear/targetMonth)
+    // 1. PROCESSA TODAS AS TRANSAÇÕES REAIS DO MÊS
+    for (const tx of transactions) {
+      if (tx.kind === "invoice_settlement") continue;
+      if (!tx.date) continue;
+
+      let txDate: Date;
+      if (typeof tx.date === "string") {
+        // Suporta tanto YYYY-MM-DD quanto ISO strings
+        const parts = tx.date.split("T")[0].split("-");
+        if (parts.length === 3) {
+          txDate = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+        } else {
+          txDate = new Date(tx.date);
+        }
+      } else {
+        txDate = new Date(tx.date);
+      }
+
+      if (txDate.getFullYear() === targetYear && txDate.getMonth() === targetMonth) {
+        const d = txDate.getDate();
+        const cell = dayMap.get(d);
+        if (cell) {
+          const rawAmount = typeof tx.amount === "number" ? Math.abs(tx.amount) : 0;
+          const isIncome = tx.type === "income" || tx.type === "receita" || tx.kind === "income";
+
+          if (isIncome) {
+            cell.realizedIncome += rawAmount;
+          } else {
+            cell.realizedExpense += rawAmount;
+          }
+
+          cell.dayNet = cell.realizedIncome - cell.realizedExpense;
+
+          let timeStr = "";
+          if (typeof tx.date === "string" && tx.date.includes("T")) {
+            const timePart = tx.date.split("T")[1];
+            if (timePart) timeStr = timePart.substring(0, 5);
+          }
+
+          cell.transactions.push({
+            id: tx.id || `tx_${Math.random()}`,
+            title: tx.title || tx.description || (isIncome ? "Entrada diversa" : "Despesa diversa"),
+            amount: rawAmount,
+            type: isIncome ? "income" : "expense",
+            category: tx.category || (isIncome ? "Renda" : "Geral"),
+            account: tx.account || tx.accountName,
+            cardName: tx.cardName || (tx.cardId ? cards.find((c: any) => c.id === tx.cardId)?.name : undefined),
+            dateStr: tx.date,
+            timeStr,
+          });
+        }
+      }
+    }
+
+    // 2. PROCESSA CONTAS RECORRENTES VÁLIDAS PARA O MÊS ESPECÍFICO
     for (const rawItem of recurringItems) {
       if (rawItem.active === false) continue;
 
-      // Verifica início do item
       const startYear = rawItem.startYear ?? (rawItem.createdAt ? new Date(rawItem.createdAt).getFullYear() : targetYear);
       const startMonth = rawItem.startMonth ?? (rawItem.createdAt ? new Date(rawItem.createdAt).getMonth() : targetMonth);
       const monthOffset = (targetYear - startYear) * 12 + (targetMonth - startMonth);
 
-      // Se ainda não começou na competência selecionada, ignora
       if (monthOffset < 0) continue;
+      if (rawItem.installmentsCount && rawItem.installmentsCount > 0 && monthOffset >= rawItem.installmentsCount) continue;
+      if (rawItem.excludedPeriods && rawItem.excludedPeriods.includes(currentPeriodKey)) continue;
+      if (rawItem.overrides && rawItem.overrides[currentPeriodKey]?.isDeleted) continue;
 
-      // Se é parcelado e o número de parcelas já se esgotou antes deste mês, ignora
-      if (rawItem.installmentsCount && rawItem.installmentsCount > 0 && monthOffset >= rawItem.installmentsCount) {
-        continue;
-      }
-
-      // Se foi excluído pontualmente neste mês, ignora
-      if (rawItem.excludedPeriods && rawItem.excludedPeriods.includes(currentPeriodKey)) {
-        continue;
-      }
-
-      // Se foi deletado via override neste mês, ignora
-      if (rawItem.overrides && rawItem.overrides[currentPeriodKey]?.isDeleted) {
-        continue;
-      }
-
-      // Obtém os dados efetivos com override para este mês
       const item = getEffectiveRecurringItemForPeriod(rawItem, currentPeriodKey);
-
-      // Calcula o dia de vencimento real neste mês
       const day = getEffectiveDueDay(item, targetYear, targetMonth);
       if (day < 1 || day > daysInMonth) continue;
 
       const isIncome = item.type === "income";
-
-      // Verifica se é cobrado no cartão de crédito
       const isCreditCharge = Boolean(
         item.cardId ||
         cards.some(
@@ -166,7 +222,6 @@ export function SpendingCalendarHeatmap({
         )
       );
 
-      // Verifica se já foi baixado / realizado
       const isPaid = Boolean(
         rawItem.realizedPeriods?.includes(currentPeriodKey) ||
         transactions.some(
@@ -178,19 +233,11 @@ export function SpendingCalendarHeatmap({
 
       const cell = dayMap.get(day);
       if (cell) {
-        if (isIncome) {
-          cell.scheduledIncomes += item.amount;
-        } else {
-          // Apenas despesas que saem da conta (não de cartão) entram como saída de caixa direto
-          if (!isCreditCharge) {
-            cell.scheduledExpenses += item.amount;
-            if (!isPaid && isCurrentMonth && day <= now.getDate() + 3) {
-              cell.hasUrgentBill = true;
-            }
-          }
+        if (!isIncome && !isCreditCharge && !isPaid && isCurrentMonth && day <= now.getDate() + 3) {
+          cell.hasUrgentBill = true;
         }
 
-        cell.items.push({
+        cell.bills.push({
           id: `rec_${rawItem.id}`,
           title: item.title,
           amount: item.amount,
@@ -202,7 +249,7 @@ export function SpendingCalendarHeatmap({
       }
     }
 
-    // 2. Faturas de Cartão de Crédito do Mês
+    // 3. FATURAS DE CARTÃO DE CRÉDITO DO MÊS
     for (const card of cards) {
       if (card.type && card.type !== "credit") continue;
       let day = card.dueDay || 10;
@@ -217,31 +264,14 @@ export function SpendingCalendarHeatmap({
       if (invoiceAmount > 0) {
         const cell = dayMap.get(day);
         if (cell) {
-          cell.scheduledExpenses += invoiceAmount;
           cell.hasCardInvoice = true;
-          cell.items.push({
+          cell.bills.push({
             id: `card_${card.id}`,
             title: `Fatura ${card.name}`,
             amount: invoiceAmount,
             type: "credit_invoice",
             isPaid,
           });
-        }
-      }
-    }
-
-    // 3. Gastos REAIS já realizados (apenas de transações do mês)
-    for (const tx of transactions) {
-      if (tx.kind === "invoice_settlement") continue;
-      if (!tx.date) continue;
-      const txDate = new Date(tx.date);
-      if (txDate.getFullYear() === targetYear && txDate.getMonth() === targetMonth) {
-        const d = txDate.getDate();
-        const cell = dayMap.get(d);
-        if (cell) {
-          if (tx.type === "expense" || tx.type === "despesa") {
-            cell.realizedSpent += tx.amount;
-          }
         }
       }
     }
@@ -260,27 +290,32 @@ export function SpendingCalendarHeatmap({
     isCurrentMonth,
   ]);
 
-  const selectedDayData = calendarData.get(selectedDay) || {
-    realizedSpent: 0,
-    scheduledExpenses: 0,
-    scheduledIncomes: 0,
+  const selectedDayData: DayData = calendarData.get(selectedDay) || {
+    day: selectedDay,
+    realizedIncome: 0,
+    realizedExpense: 0,
+    dayNet: 0,
+    transactions: [],
+    bills: [],
     hasPayday: false,
     hasCardInvoice: false,
     hasUrgentBill: false,
-    items: [],
   };
 
-  // Totais do mês
+  // Totais consolidados do mês
   const monthlyTotals = useMemo(() => {
-    let expense = 0;
     let income = 0;
-    let totalRealized = 0;
+    let expense = 0;
+    let daysWithTransactions = 0;
+
     calendarData.forEach((day) => {
-      expense += day.scheduledExpenses;
-      income += day.scheduledIncomes;
-      totalRealized += day.realizedSpent;
+      income += day.realizedIncome;
+      expense += day.realizedExpense;
+      if (day.transactions.length > 0) daysWithTransactions++;
     });
-    return { expense, income, totalRealized };
+
+    const net = income - expense;
+    return { income, expense, net, daysWithTransactions };
   }, [calendarData]);
 
   const formatCurrency = (val: number) =>
@@ -288,19 +323,23 @@ export function SpendingCalendarHeatmap({
 
   const weekLabels = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
-  const handlePay = async (item: any) => {
-    if (!onRealizeItem || !item.sourceObj) return;
-    setActionLoadingId(item.id);
+  const handlePay = async (bill: CalendarBillItem) => {
+    if (!onRealizeItem || !bill.sourceObj) return;
+    setActionLoadingId(bill.id);
     try {
-      await onRealizeItem(item.sourceObj, targetYear, targetMonth);
+      await onRealizeItem(bill.sourceObj, targetYear, targetMonth);
     } finally {
       setActionLoadingId(null);
     }
   };
 
+  // Dia da semana por extenso para a data selecionada
+  const selectedDateObj = new Date(targetYear, targetMonth, selectedDay);
+  const dayOfWeekName = selectedDateObj.toLocaleDateString("pt-BR", { weekday: "long" });
+
   return (
     <div className="w-full rounded-[28px] sm:rounded-[36px] bg-white border border-black/[0.06] shadow-[0_4px_24px_rgba(0,0,0,0.02)] p-4 sm:p-7 space-y-6">
-      {/* 1. TOPO: TÍTULO, NAVEGAÇÃO E HORIZONTE DE CAIXA */}
+      {/* 1. CABEÇALHO & NAVEGAÇÃO DE MÊS */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-black/[0.05] pb-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-2xl bg-[#1D1D1F] text-white flex items-center justify-center shadow-xs shrink-0">
@@ -312,11 +351,11 @@ export function SpendingCalendarHeatmap({
                 {MONTH_NAMES_PT[targetMonth]} de {targetYear}
               </h3>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-                Calendário Apple
+                Extrato Diário Sincronizado
               </span>
             </div>
             <p className="text-xs text-[#86868B]">
-              Vencimentos e gastos reais sincronizados com o livro-caixa.
+              Histórico de entradas e saídas reais dia a dia, integrado aos vencimentos.
             </p>
           </div>
         </div>
@@ -326,56 +365,98 @@ export function SpendingCalendarHeatmap({
           <button
             type="button"
             onClick={handleToday}
-            className="px-3 py-1.5 rounded-full bg-[#F2F2F7] hover:bg-[#E5E5EA] text-[#1D1D1F] text-xs font-semibold transition-colors cursor-pointer"
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+              isCurrentMonth
+                ? "bg-[#1D1D1F] text-white border-black"
+                : "bg-white hover:bg-[#F2F2F7] text-[#1D1D1F] border-black/10"
+            }`}
           >
             Mês Atual
           </button>
-
-          <div className="flex items-center gap-1 bg-[#F2F2F7] p-1 rounded-full border border-black/5">
+          <div className="flex items-center bg-[#F2F2F7] rounded-xl p-0.5 border border-black/[0.05]">
             <button
               type="button"
               onClick={handlePrevMonth}
-              className="w-7 h-7 rounded-full bg-white hover:bg-[#E5E5EA] text-[#1D1D1F] flex items-center justify-center transition-colors cursor-pointer shadow-2xs"
+              className="p-1.5 rounded-lg hover:bg-white text-[#1D1D1F] transition-all cursor-pointer"
               title="Mês anterior"
             >
-              <ChevronLeft size={15} />
+              <ChevronLeft size={16} />
             </button>
             <button
               type="button"
               onClick={handleNextMonth}
-              className="w-7 h-7 rounded-full bg-white hover:bg-[#E5E5EA] text-[#1D1D1F] flex items-center justify-center transition-colors cursor-pointer shadow-2xs"
+              className="p-1.5 rounded-lg hover:bg-white text-[#1D1D1F] transition-all cursor-pointer"
               title="Próximo mês"
             >
-              <ChevronRight size={15} />
+              <ChevronRight size={16} />
             </button>
           </div>
         </div>
       </div>
 
-      {/* 2. GRADE DO CALENDÁRIO ESTILO APPLE CLEAN (SEM QUADRICULADOS CHEIOS DE R$) */}
+      {/* 2. SUMÁRIO CONSOLIDADO DO MÊS (KPIs APPLE WHITE) */}
+      <div className="grid grid-cols-3 gap-2 sm:gap-3 p-3 bg-[#F8F8FA] rounded-2xl border border-black/[0.04]">
+        <div className="space-y-0.5">
+          <span className="text-[10px] font-semibold text-[#86868B] flex items-center gap-1">
+            <ArrowDownLeft size={11} className="text-emerald-600" />
+            Entradas Reais
+          </span>
+          <strong className="text-xs sm:text-sm font-bold font-mono text-emerald-600 tabular-nums block">
+            +R$ {formatCurrency(monthlyTotals.income)}
+          </strong>
+        </div>
+
+        <div className="space-y-0.5">
+          <span className="text-[10px] font-semibold text-[#86868B] flex items-center gap-1">
+            <ArrowUpRight size={11} className="text-rose-600" />
+            Saídas Reais
+          </span>
+          <strong className="text-xs sm:text-sm font-bold font-mono text-rose-600 tabular-nums block">
+            -R$ {formatCurrency(monthlyTotals.expense)}
+          </strong>
+        </div>
+
+        <div className="space-y-0.5">
+          <span className="text-[10px] font-semibold text-[#86868B] flex items-center gap-1">
+            <Wallet size={11} className="text-[#1D1D1F]" />
+            Balanço Mensal
+          </span>
+          <strong
+            className={`text-xs sm:text-sm font-bold font-mono tabular-nums block ${
+              monthlyTotals.net >= 0 ? "text-emerald-600" : "text-rose-600"
+            }`}
+          >
+            {monthlyTotals.net >= 0 ? "+" : ""}R$ {formatCurrency(monthlyTotals.net)}
+          </strong>
+        </div>
+      </div>
+
+      {/* 3. GRID DO CALENDÁRIO COM GASTOS REAIS E INDICADORES DISCRETOS */}
       <div className="space-y-2">
-        {/* Dias da Semana */}
-        <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-bold text-[#86868B] uppercase tracking-wider pb-1">
-          {weekLabels.map((w, idx) => (
-            <span key={idx}>{w}</span>
+        {/* Cabeçalho dos Dias da Semana */}
+        <div className="grid grid-cols-7 gap-1 text-center font-semibold text-[11px] text-[#86868B] uppercase tracking-wider py-1">
+          {weekLabels.map((lbl) => (
+            <div key={lbl}>{lbl}</div>
           ))}
         </div>
 
-        {/* Grade de Dias */}
+        {/* Células dos Dias */}
         <div className="grid grid-cols-7 gap-1 sm:gap-2">
-          {/* Espaços antes do 1º dia */}
+          {/* Células vazias do início */}
           {Array.from({ length: firstDayOfWeek }).map((_, i) => (
-            <div key={`empty_${i}`} className="aspect-square rounded-2xl bg-transparent" />
+            <div key={`empty_${i}`} className="aspect-square opacity-0 pointer-events-none" />
           ))}
 
-          {/* Dias reais */}
+          {/* Dias reais do mês */}
           {Array.from({ length: daysInMonth }).map((_, i) => {
             const day = i + 1;
             const cell = calendarData.get(day);
             const isSelected = selectedDay === day;
             const isToday = isCurrentMonth && day === now.getDate();
-            const hasBills = (cell?.items.length || 0) > 0;
-            const hasRealizedSpend = (cell?.realizedSpent || 0) > 0;
+
+            const hasSpent = (cell?.realizedExpense || 0) > 0;
+            const hasIncome = (cell?.realizedIncome || 0) > 0;
+            const hasBills = (cell?.bills.length || 0) > 0;
 
             return (
               <button
@@ -386,46 +467,59 @@ export function SpendingCalendarHeatmap({
                   isSelected
                     ? "bg-[#1D1D1F] text-white border-black shadow-md ring-2 ring-black/10"
                     : isToday
-                    ? "bg-blue-50/90 text-blue-900 border-blue-300 font-bold"
+                    ? "bg-blue-50/80 text-blue-900 border-blue-300 font-bold"
                     : "bg-[#FAFAFC] hover:bg-[#F2F2F7] text-[#1D1D1F] border-black/[0.04]"
                 }`}
               >
-                {/* Número do Dia */}
-                <span className="text-xs sm:text-sm font-semibold leading-none mt-1">
+                {/* Linha Superior: Número do Dia */}
+                <span className="text-xs sm:text-sm font-semibold leading-none mt-0.5 sm:mt-1">
                   {day}
                 </span>
 
-                {/* Centro: Mostra o gasto real se houver, ou bolinha de status */}
-                <div className="flex flex-col items-center justify-center my-auto">
-                  {hasRealizedSpend ? (
+                {/* Centro: Mostra o gasto real se gastou naquele dia, ou entrada */}
+                <div className="flex flex-col items-center justify-center my-auto min-w-0 w-full px-0.5">
+                  {hasSpent ? (
                     <span
-                      className={`text-[9px] sm:text-[10px] font-mono font-bold leading-none ${
-                        isSelected ? "text-emerald-300" : "text-emerald-700"
+                      className={`text-[8.5px] sm:text-[10px] font-mono font-bold leading-none truncate max-w-full ${
+                        isSelected ? "text-rose-300" : "text-rose-600"
                       }`}
                     >
-                      R$ {Math.round(cell!.realizedSpent)}
+                      -R${Math.round(cell!.realizedExpense)}
                     </span>
-                  ) : hasBills ? (
-                    <div className="flex items-center gap-1">
-                      {cell?.hasPayday && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
-                      {cell?.hasCardInvoice && <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />}
-                      {cell?.items.some((it) => it.type === "expense" && !it.isCreditCharge) && (
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                      )}
-                    </div>
+                  ) : hasIncome ? (
+                    <span
+                      className={`text-[8.5px] sm:text-[10px] font-mono font-bold leading-none truncate max-w-full ${
+                        isSelected ? "text-emerald-300" : "text-emerald-600"
+                      }`}
+                    >
+                      +R${Math.round(cell!.realizedIncome)}
+                    </span>
                   ) : null}
                 </div>
 
-                {/* Rodapé do dia */}
-                <span className="h-1.5 w-1.5" />
+                {/* Rodapé: Pontos de Vencimento/Contas Programadas */}
+                <div className="flex items-center gap-0.5 mb-0.5 h-1.5">
+                  {cell?.hasPayday && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
+                  {cell?.hasCardInvoice && <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />}
+                  {cell?.bills.some((b) => b.type === "expense" && !b.isCreditCharge) && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                  )}
+                  {!hasBills && !hasSpent && !hasIncome && (
+                    <span className="w-1 h-1 rounded-full opacity-0" />
+                  )}
+                </div>
               </button>
             );
           })}
         </div>
 
         {/* Legenda Discreta */}
-        <div className="flex items-center justify-between text-[11px] text-[#86868B] pt-2 px-1">
+        <div className="flex items-center justify-between text-[11px] text-[#86868B] pt-2 px-1 flex-wrap gap-2">
           <div className="flex items-center gap-3">
+            <span className="flex items-center gap-1">
+              <span className="text-[10px] font-mono font-bold text-rose-600">-R$</span>
+              <span>Gasto do dia</span>
+            </span>
             <span className="flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-emerald-500" />
               <span>Salário / Renda</span>
@@ -439,118 +533,230 @@ export function SpendingCalendarHeatmap({
               <span>Fatura de Cartão</span>
             </span>
           </div>
-          <span className="hidden sm:inline font-mono text-[10px]">
-            Toque em um dia para ver
+          <span className="font-mono text-[10px] text-[#86868B]">
+            Toque em qualquer dia para inspecionar
           </span>
         </div>
       </div>
 
-      {/* 3. PAINEL DO DIA SELECIONADO (DETALHAMENTO CONCISO E CORRETO) */}
-      <div className="bg-[#FAFAFC] rounded-3xl p-4 sm:p-5 border border-black/[0.05] space-y-4">
-        <div className="flex items-center justify-between border-b border-black/[0.05] pb-3">
+      {/* 4. PAINEL DE DETALHAMENTO DO DIA SELECIONADO (EXTRATO REAL DE ENTRADAS & SAÍDAS) */}
+      <div className="bg-[#FAFAFC] rounded-3xl p-4 sm:p-6 border border-black/[0.05] space-y-5">
+        {/* Cabeçalho do Dia */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-black/[0.05] pb-3">
           <div>
             <span className="text-[10px] font-bold text-[#86868B] uppercase tracking-wider block">
-              Detalhamento da Data
+              Fechamento do Dia
             </span>
-            <h4 className="text-base font-bold text-[#1D1D1F]">
-              {selectedDay} de {MONTH_NAMES_PT[targetMonth]}
+            <h4 className="text-base sm:text-lg font-bold text-[#1D1D1F] capitalize">
+              {dayOfWeekName}, {selectedDay} de {MONTH_NAMES_PT[targetMonth]}
             </h4>
           </div>
 
-          <div className="text-right">
-            <span className="text-[10px] text-[#86868B] block">Gasto Realizado</span>
-            <strong className="text-sm font-bold font-mono text-emerald-600 tabular-nums">
-              R$ {formatCurrency(selectedDayData.realizedSpent)}
-            </strong>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                onDiscussWithAI(
+                  `Rubi, analise o meu dia ${selectedDay} de ${MONTH_NAMES_PT[targetMonth]}: entrou R$ ${formatCurrency(
+                    selectedDayData.realizedIncome
+                  )}, saiu R$ ${formatCurrency(selectedDayData.realizedExpense)}, com balanço de R$ ${formatCurrency(
+                    selectedDayData.dayNet
+                  )}. Qual o impacto na minha meta mensal?`
+                )
+              }
+              className="px-3 py-1.5 rounded-full bg-white hover:bg-[#F2F2F7] active:scale-95 text-xs font-semibold text-[#1D1D1F] border border-black/[0.08] shadow-2xs flex items-center gap-1.5 cursor-pointer transition-all"
+            >
+              <MessageSquare size={13} className="text-rose-500" />
+              <span>Consultar com Rubi (CFO)</span>
+            </button>
           </div>
         </div>
 
-        {/* Lista de Eventos Válidos da Data */}
-        {selectedDayData.items.length === 0 && selectedDayData.realizedSpent === 0 ? (
-          <div className="py-6 text-center space-y-1">
-            <CheckCircle2 size={22} className="mx-auto text-emerald-500" />
-            <p className="text-xs font-semibold text-[#1D1D1F]">Dia sem cobranças ou saídas</p>
-            <p className="text-[11px] text-[#86868B]">
-              Nenhum vencimento de conta ou fatura agendado para esta data.
-            </p>
+        {/* Três Cards de Balanço do Dia */}
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">
+          <div className="bg-white rounded-2xl p-3 border border-black/[0.05] shadow-2xs space-y-1">
+            <span className="text-[10px] font-semibold text-[#86868B] block">Entrou Hoje</span>
+            <strong className="text-sm sm:text-base font-bold font-mono text-emerald-600 tabular-nums block">
+              +R$ {formatCurrency(selectedDayData.realizedIncome)}
+            </strong>
+            <span className="text-[9.5px] text-[#86868B] block">
+              {selectedDayData.transactions.filter((t) => t.type === "income").length} entrada(s)
+            </span>
           </div>
-        ) : (
-          <div className="space-y-2 max-h-[300px] overflow-y-auto no-scrollbar">
-            {selectedDayData.items.map((item) => (
-              <div
-                key={item.id}
-                className="p-3 rounded-2xl bg-white border border-black/[0.05] shadow-2xs flex items-center justify-between text-xs"
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div
-                    className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                      item.type === "credit_invoice"
-                        ? "bg-indigo-50 text-indigo-700"
-                        : item.type === "income"
-                        ? "bg-emerald-50 text-emerald-700"
-                        : "bg-amber-50 text-amber-700"
+
+          <div className="bg-white rounded-2xl p-3 border border-black/[0.05] shadow-2xs space-y-1">
+            <span className="text-[10px] font-semibold text-[#86868B] block">Saiu Hoje</span>
+            <strong className="text-sm sm:text-base font-bold font-mono text-rose-600 tabular-nums block">
+              -R$ {formatCurrency(selectedDayData.realizedExpense)}
+            </strong>
+            <span className="text-[9.5px] text-[#86868B] block">
+              {selectedDayData.transactions.filter((t) => t.type === "expense").length} gasto(s)
+            </span>
+          </div>
+
+          <div className="bg-white rounded-2xl p-3 border border-black/[0.05] shadow-2xs space-y-1">
+            <span className="text-[10px] font-semibold text-[#86868B] block">Resultado do Dia</span>
+            <strong
+              className={`text-sm sm:text-base font-bold font-mono tabular-nums block ${
+                selectedDayData.dayNet > 0
+                  ? "text-emerald-600"
+                  : selectedDayData.dayNet < 0
+                  ? "text-rose-600"
+                  : "text-[#1D1D1F]"
+              }`}
+            >
+              {selectedDayData.dayNet > 0 ? "+" : ""}R$ {formatCurrency(selectedDayData.dayNet)}
+            </strong>
+            <span
+              className={`text-[9.5px] font-semibold inline-block px-1.5 py-0.2 rounded-full ${
+                selectedDayData.dayNet > 0
+                  ? "bg-emerald-50 text-emerald-700"
+                  : selectedDayData.dayNet < 0
+                  ? "bg-rose-50 text-rose-700"
+                  : "bg-black/5 text-[#86868B]"
+              }`}
+            >
+              {selectedDayData.dayNet > 0 ? "Superavitário" : selectedDayData.dayNet < 0 ? "Gasto no Dia" : "Neutro"}
+            </span>
+          </div>
+        </div>
+
+        {/* 4.1 EXTRATO DAS TRANSAÇÕES REAIS OCORRIDAS NESTE DIA */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between px-1">
+            <span className="text-xs font-bold text-[#1D1D1F] flex items-center gap-1.5">
+              <Receipt size={14} className="text-[#86868B]" />
+              Transações Realizadas nesta Data ({selectedDayData.transactions.length})
+            </span>
+          </div>
+
+          {selectedDayData.transactions.length === 0 ? (
+            <div className="p-4 rounded-2xl bg-white border border-black/[0.05] text-center space-y-1">
+              <CheckCircle2 size={18} className="mx-auto text-emerald-500" />
+              <p className="text-xs font-semibold text-[#1D1D1F]">Nenhum gasto ou entrada registrado neste dia</p>
+              <p className="text-[11px] text-[#86868B]">
+                Você manteve seu caixa estável sem saídas discricionárias nesta data.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-1.5 max-h-[220px] overflow-y-auto no-scrollbar">
+              {selectedDayData.transactions.map((tx) => (
+                <div
+                  key={tx.id}
+                  className="p-3 rounded-2xl bg-white border border-black/[0.05] shadow-2xs flex items-center justify-between text-xs"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div
+                      className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                        tx.type === "income" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
+                      }`}
+                    >
+                      {tx.type === "income" ? <ArrowDownLeft size={16} /> : <ArrowUpRight size={16} />}
+                    </div>
+
+                    <div className="min-w-0">
+                      <strong className="block font-semibold text-[#1D1D1F] truncate">
+                        {tx.title}
+                      </strong>
+                      <div className="flex items-center gap-1.5 text-[10px] text-[#86868B]">
+                        <span>{tx.category}</span>
+                        {(tx.cardName || tx.account) && (
+                          <>
+                            <span>•</span>
+                            <span className="truncate">{tx.cardName ? `Cartão ${tx.cardName}` : tx.account}</span>
+                          </>
+                        )}
+                        {tx.timeStr && (
+                          <>
+                            <span>•</span>
+                            <span>{tx.timeStr}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <strong
+                    className={`font-mono font-bold text-xs tabular-nums shrink-0 ${
+                      tx.type === "income" ? "text-emerald-600" : "text-rose-600"
                     }`}
                   >
-                    {item.type === "credit_invoice" ? (
-                      <CreditCard size={15} />
-                    ) : item.type === "income" ? (
-                      <TrendingUp size={15} />
-                    ) : (
-                      <Building2 size={15} />
+                    {tx.type === "income" ? "+" : "-"}R$ {formatCurrency(tx.amount)}
+                  </strong>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 4.2 COMPROMISSOS E VENCIMENTOS PROGRAMADOS PARA ESTE DIA */}
+        {selectedDayData.bills.length > 0 && (
+          <div className="space-y-2 pt-2 border-t border-black/[0.05]">
+            <span className="text-xs font-bold text-[#1D1D1F] flex items-center gap-1.5 px-1">
+              <Clock size={14} className="text-[#86868B]" />
+              Vencimentos Programados ({selectedDayData.bills.length})
+            </span>
+
+            <div className="space-y-1.5">
+              {selectedDayData.bills.map((bill) => (
+                <div
+                  key={bill.id}
+                  className="p-3 rounded-2xl bg-white border border-black/[0.05] shadow-2xs flex items-center justify-between text-xs"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div
+                      className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                        bill.type === "credit_invoice"
+                          ? "bg-indigo-50 text-indigo-700"
+                          : bill.type === "income"
+                          ? "bg-emerald-50 text-emerald-700"
+                          : "bg-amber-50 text-amber-700"
+                      }`}
+                    >
+                      {bill.type === "credit_invoice" ? (
+                        <CreditCard size={15} />
+                      ) : bill.type === "income" ? (
+                        <TrendingUp size={15} />
+                      ) : (
+                        <Building2 size={15} />
+                      )}
+                    </div>
+
+                    <div className="min-w-0">
+                      <strong className="block font-semibold text-[#1D1D1F] truncate">
+                        {bill.title}
+                      </strong>
+                      <span className="text-[10px] text-[#86868B]">
+                        {bill.isPaid
+                          ? "Quitada / Baixada ✅"
+                          : bill.isCreditCharge
+                          ? "Cobrança no Cartão de Crédito"
+                          : "Pendente de quitação"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <strong className="font-mono font-bold text-xs tabular-nums text-[#1D1D1F]">
+                      R$ {formatCurrency(bill.amount)}
+                    </strong>
+
+                    {!bill.isPaid && !bill.isCreditCharge && onRealizeItem && bill.sourceObj && (
+                      <button
+                        type="button"
+                        onClick={() => handlePay(bill)}
+                        disabled={actionLoadingId === bill.id}
+                        className="px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-[11px] transition-all cursor-pointer flex items-center gap-1 active:scale-95 disabled:opacity-50"
+                      >
+                        {actionLoadingId === bill.id ? "Baixando..." : "Baixar"}
+                      </button>
                     )}
                   </div>
-
-                  <div className="min-w-0">
-                    <strong className="block font-semibold text-[#1D1D1F] truncate">
-                      {item.title}
-                    </strong>
-                    <span className="text-[10px] text-[#86868B]">
-                      {item.isPaid
-                        ? "Quitada / Paga ✅"
-                        : item.isCreditCharge
-                        ? "No cartão • Fatura do mês"
-                        : "Pendente em conta corrente"}
-                    </span>
-                  </div>
                 </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  <strong className="font-mono font-bold text-xs tabular-nums text-[#1D1D1F]">
-                    R$ {formatCurrency(item.amount)}
-                  </strong>
-
-                  {/* Baixa com 1 Toque: Somente para contas reais de débito em conta corrente pendentes */}
-                  {!item.isCreditCharge && item.type === "expense" && !item.isPaid && onRealizeItem && (
-                    <button
-                      type="button"
-                      onClick={() => handlePay(item)}
-                      disabled={actionLoadingId === item.id}
-                      className="px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs active:scale-95 disabled:opacity-50"
-                    >
-                      <Check size={11} />
-                      <span>{actionLoadingId === item.id ? "Baixando..." : "Baixar"}</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
-
-        {/* Botão Perguntar ao Consultor */}
-        <div className="pt-2 border-t border-black/[0.05]">
-          <button
-            type="button"
-            onClick={() => {
-              const prompt = `Auditor, analise as movimentações do dia ${selectedDay} de ${MONTH_NAMES_PT[targetMonth]} (gasto real de R$ ${selectedDayData.realizedSpent.toFixed(2)}). Qual a sua recomendação contábil para manter a meta?`;
-              onDiscussWithAI(prompt);
-            }}
-            className="w-full py-2 px-3 rounded-xl bg-white hover:bg-[#F2F2F7] active:scale-95 text-[#1D1D1F] border border-black/[0.08] text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-          >
-            <MessageSquare size={13} className="text-blue-600" />
-            <span>Consultar Impacto deste Dia com o Auditor</span>
-          </button>
-        </div>
       </div>
     </div>
   );

@@ -20,6 +20,7 @@ export interface CharacterMeta {
   name: string;
   title: string;
   role: string;
+  quantFoundation: string;
   primaryColor: string;
   glowColor: string;
   accentBg: string;
@@ -31,46 +32,50 @@ export const WALLET_CHARACTERS: Record<WalletCharacterId, CharacterMeta> = {
   "wallet-rubi": {
     id: "wallet-rubi",
     name: "Rubi",
-    title: "CFO & Estrategista",
-    role: "Auditoria Executiva, Metas e Teto Diário",
+    title: "CFO & Fluxo de Caixa",
+    role: "Orçamento Diário, Teto Seguro e Fechamento do Mês",
+    quantFoundation: "Cashflow at Risk & Projeção Determinística de Caixa",
     primaryColor: "#EF4444",
     glowColor: "rgba(239, 68, 68, 0.4)",
     accentBg: "bg-rose-500/15 border-rose-500/30 text-rose-300",
     badgeText: "CFO",
-    description: "Foco no saldo projetado, disciplina de caixa e cumprimento rigoroso da meta de fim de mês.",
+    description: "Audita seu fluxo diário, calcula o teto de gastos seguro de hoje e assegura que seu saldo termine acima da meta estipulada.",
   },
   "wallet-sol": {
     id: "wallet-sol",
     name: "Sol",
-    title: "Guardiã da Reserva",
-    role: "Liquidez, Proteção de Caixa e Sobrevivência",
+    title: "Reserva & Proteção Antifrágil",
+    role: "Fundo de Emergência, Dias de Fôlego e Ralos",
+    quantFoundation: "Downside Risk (Sortino) & Value at Risk (VaR)",
     primaryColor: "#F59E0B",
     glowColor: "rgba(245, 158, 11, 0.4)",
     accentBg: "bg-amber-500/15 border-amber-500/30 text-amber-300",
-    badgeText: "Guardiã",
-    description: "Blindagem da conta corrente, prevenção contra juros e manutenção da reserva de emergência.",
+    badgeText: "Reserva",
+    description: "Blindagem contra imprevistos, monitoramento de dias de sobrevivência (runway) e caça a pequenos hábitos que drenam sua poupança.",
   },
   "wallet-nanquim": {
     id: "wallet-nanquim",
     name: "Nanquim",
-    title: "Arquiteto de Crédito",
-    role: "Cartões, Janela sem Juros e Rendimentos",
+    title: "Crédito & Arbitragem de Fatura",
+    role: "Melhor Cartão, Prazos sem Juros e Custo de Oportunidade",
+    quantFoundation: "Duration de Passivo & Float de Caixa vs CDI",
     primaryColor: "#3B82F6",
     glowColor: "rgba(59, 130, 246, 0.4)",
     accentBg: "bg-blue-500/15 border-blue-500/30 text-blue-300",
     badgeText: "Crédito",
-    description: "Otimização de datas de fechamento (+40 dias sem juros) e rendimento da conta corrente a 100% CDI.",
+    description: "Indica o melhor cartão para comprar hoje (ganhando até 40 dias de prazo) e compara se compensa desconto à vista ou deixar o saldo rendendo no CDI.",
   },
   "wallet-atlos": {
     id: "wallet-atlos",
     name: "Atlos",
-    title: "Mentor de Metas",
-    role: "Hábitos, Streaks de Disciplina e Conquistas",
+    title: "Metas & Multiplicação",
+    role: "Patrimônio, Rendimento Excedente e Eficiência de Metas",
+    quantFoundation: "Fronteira Eficiente (Markowitz) & Índice Sharpe Simplificado",
     primaryColor: "#10B981",
     glowColor: "rgba(16, 185, 129, 0.4)",
     accentBg: "bg-emerald-500/15 border-emerald-500/30 text-emerald-300",
     badgeText: "Metas",
-    description: "Gamificação dos gastos, corte de pequenos ralos diários e celebração de marcos financeiros.",
+    description: "Avalia a produtividade da sua sobra de caixa, orienta o direcionamento do excedente para metas e acelera a construção de patrimônio.",
   },
 };
 
