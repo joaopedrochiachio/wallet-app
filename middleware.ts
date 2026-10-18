@@ -1,8 +1,8 @@
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server.js";
+import type { NextRequest } from "next/server.js";
 
 // Padrões de varreduras maliciosas, sondagens de servidores, path traversal e injeções
-const SUSPICIOUS_PATH_PATTERNS = [
+export const SUSPICIOUS_PATH_PATTERNS = [
   /\.\./, // Path traversal (..)
   /%2e%2e/i, // Path traversal codificado
   /%252e%252e/i, // Path traversal com dupla codificação
@@ -23,7 +23,7 @@ const SUSPICIOUS_PATH_PATTERNS = [
   /\.(bak|config|sql|tar|gz|zip|sh|bat)$/i, // Dumps e scripts
 ];
 
-const MAX_URL_LENGTH = 2048;
+export const MAX_URL_LENGTH = 2048;
 
 function createSecurityResponse(body: string, status: number): NextResponse {
   const response = new NextResponse(body, { status });

@@ -39,10 +39,13 @@ export function validateCurrency(
   if (typeof value === "number") {
     num = value;
   } else if (typeof value === "string") {
-    const cleanStr = value
-      .replace(/\s+/g, "")
-      .replace(/\./g, "")
-      .replace(",", ".");
+    let cleanStr = value.replace(/R\$/gi, "").trim();
+    if (cleanStr.includes(",")) {
+      // Formato brasileiro: 1.500,50 -> remove separadores de milhar e troca vírgula por ponto
+      cleanStr = cleanStr.replace(/\s+/g, "").replace(/\./g, "").replace(",", ".");
+    } else {
+      cleanStr = cleanStr.replace(/\s+/g, "");
+    }
     num = parseFloat(cleanStr);
   } else {
     return {
@@ -85,9 +88,20 @@ export function validateCurrency(
  * Valida o dia do mês (1 a 31).
  */
 export function validateDayOfMonth(day: unknown): { isValid: boolean; value: number } {
-  const parsed = typeof day === "number" ? day : parseInt(String(day || ""), 10);
-  if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 31) {
-    return { isValid: true, value: parsed };
+  if (typeof day === "number") {
+    if (Number.isInteger(day) && day >= 1 && day <= 31) {
+      return { isValid: true, value: day };
+    }
+    return { isValid: false, value: 1 };
+  }
+  if (typeof day === "string") {
+    const trimmed = day.trim();
+    if (/^\d{1,2}$/.test(trimmed)) {
+      const parsed = parseInt(trimmed, 10);
+      if (parsed >= 1 && parsed <= 31) {
+        return { isValid: true, value: parsed };
+      }
+    }
   }
   return { isValid: false, value: 1 };
 }
@@ -96,9 +110,20 @@ export function validateDayOfMonth(day: unknown): { isValid: boolean; value: num
  * Valida número de parcelas (1 a 360).
  */
 export function validateInstallmentsCount(count: unknown): { isValid: boolean; value: number } {
-  const parsed = typeof count === "number" ? count : parseInt(String(count || ""), 10);
-  if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 360) {
-    return { isValid: true, value: parsed };
+  if (typeof count === "number") {
+    if (Number.isInteger(count) && count >= 1 && count <= 360) {
+      return { isValid: true, value: count };
+    }
+    return { isValid: false, value: 1 };
+  }
+  if (typeof count === "string") {
+    const trimmed = count.trim();
+    if (/^\d{1,3}$/.test(trimmed)) {
+      const parsed = parseInt(trimmed, 10);
+      if (parsed >= 1 && parsed <= 360) {
+        return { isValid: true, value: parsed };
+      }
+    }
   }
   return { isValid: false, value: 1 };
 }
@@ -165,7 +190,9 @@ export function sanitizePromptInput(input: unknown, maxLength = 1000): string {
   const sanitized = input
     .slice(0, maxLength)
     .replace(/<[^>]*>/g, "")
-    .replace(/(?:^|\n)\s*(?:system|assistant|instruction|user)\s*:/gi, "")
+    .replace(/!\[.*?\]\(.*?\)/gi, "[imagem removida]")
+    .replace(/(?:^|\n)\s*(?:system|assistant|instruction|user|developer|admin)\s*:/gi, "")
+    .replace(/={3,}|#{3,}|\*{3,}|_{3,}/g, " ")
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
     .trim();
 
