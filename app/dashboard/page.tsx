@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { formatAccountLabel } from "@/lib/utils/ledger";
+import { DailyBriefingCard } from "@/components/companion/DailyBriefingCard";
 
 export default function DashboardPage() {
   const {
@@ -116,6 +117,9 @@ export default function DashboardPage() {
       />
 
       <div className="max-w-4xl mx-auto space-y-8">
+        {/* 0. PAINEL DO DIA & APOIO FINANCEIRO PROATIVO (WALLET COMPANION) */}
+        <DailyBriefingCard />
+
         {/* 2. PILHA 3D DE CARTÕES E GRADE */}
         <section className="space-y-4">
           <div className="flex items-center justify-between px-1">

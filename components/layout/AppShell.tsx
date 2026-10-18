@@ -18,6 +18,8 @@ import { WalletProvider } from "@/context/WalletContext";
 import { AuthProvider } from "@/context/AuthContext";
 import { AuthRouteGuard } from "@/components/auth/AuthRouteGuard";
 import { WalletLogo } from "@/components/ui/WalletLogo";
+import { DynamicIsland } from "@/components/companion/DynamicIsland";
+import { FloatingCompanionDock } from "@/components/companion/FloatingCompanionDock";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -126,7 +128,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
               {/* ÁREA PRINCIPAL */}
               <main className="flex-1 h-full overflow-y-auto overflow-x-hidden w-full max-w-full min-w-0 pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-0 relative bg-[#F2F2F7] touch-scroll">
+                {/* ILHA INTERATIVA WALLET (Top Dynamic Island) */}
+                <DynamicIsland />
+
                 {children}
+
+                {/* ATALHO TOUCH FLUTUANTE WALLET */}
+                <FloatingCompanionDock />
               </main>
 
               {/* BOTTOM BAR (Mobile) */}

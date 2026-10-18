@@ -25,6 +25,8 @@ import {
   Compass,
   Plus,
   MessageSquare,
+  Users,
+  CalendarDays,
 } from "lucide-react";
 import { FormattedMessage } from "@/components/ai/FormattedMessage";
 import { FinancialHealthRing } from "@/components/ai/FinancialHealthRing";
@@ -37,6 +39,8 @@ import {
 import { InstallmentTimelineChart } from "@/components/ai/InstallmentTimelineChart";
 import { InteractivePatternCard } from "@/components/ai/InteractivePatternCard";
 import { SiriFinancialAssistant } from "@/components/ai/SiriFinancialAssistant";
+import { AgentTeamHub } from "@/components/companion/AgentTeamHub";
+import { InteractiveFinancialCalendar } from "@/components/companion/InteractiveFinancialCalendar";
 import { FinancialDiagnosis, SpecificExpenseAlert } from "@/app/api/ai/analyze/route";
 import { PurchaseSimulationResult } from "@/lib/services/financialContextService";
 import {
@@ -111,7 +115,7 @@ export default function AIAnalystPage() {
     getMonthlyProjection,
   } = useWallet();
 
-  const [activeTab, setActiveTab] = useState<"siri" | "diagnosis" | "chat">("siri");
+  const [activeTab, setActiveTab] = useState<"team" | "calendar" | "siri" | "diagnosis" | "chat">("team");
   const diagnosisSectionRef = useRef<HTMLDivElement>(null);
 
   // Meta de Saldo Alvo Estipulado para o Fechamento do Mês
@@ -966,11 +970,11 @@ export default function AIAnalystPage() {
   return (
     <div className="min-h-full w-full max-w-full overflow-x-hidden bg-[#F2F2F7] text-[#1D1D1F] font-sans selection:bg-[#1D1D1F] selection:text-white">
       {/* Container Central com Padding Dinâmico Apple */}
-      <div className="w-full max-w-4xl mx-auto px-3.5 sm:px-6 py-5 sm:py-8 space-y-6 min-w-0">
+      <div className="w-full max-w-4xl mx-auto px-2.5 sm:px-6 py-4 sm:py-8 space-y-5 sm:space-y-6 min-w-0">
         {/* =========================================================
             1. HEADER DIAGNÓSTICO FINANCEIRO
            ========================================================= */}
-        <header className="rounded-[28px] bg-white/90 backdrop-blur-xl border border-black/[0.05] p-4.5 sm:p-6 shadow-[0_4px_24px_rgba(0,0,0,0.02)] min-w-0 overflow-hidden">
+        <header className="rounded-[24px] sm:rounded-[28px] bg-white/90 backdrop-blur-xl border border-black/[0.05] p-4 sm:p-6 shadow-[0_4px_24px_rgba(0,0,0,0.02)] min-w-0 overflow-hidden">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="space-y-1.5 min-w-0">
               {/* Badge de Metadados Apple Style */}
@@ -999,7 +1003,7 @@ export default function AIAnalystPage() {
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-[#1D1D1F] truncate">
+                    <h1 className="text-lg sm:text-2xl font-semibold tracking-tight text-[#1D1D1F] truncate">
                       Diagnóstico Financeiro
                     </h1>
                     <div className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-[#1D1D1F] border border-white/10 text-white shadow-2xs">
@@ -1015,43 +1019,67 @@ export default function AIAnalystPage() {
             </div>
 
             {/* Segmented Control & Botão Recalcular */}
-            <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto pt-2 sm:pt-0">
-              <div className="flex items-center p-1 bg-[#E5E5EA]/75 backdrop-blur-md rounded-full border border-black/5">
+            <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto pt-1 sm:pt-0">
+              <div className="flex items-center p-1 bg-[#E5E5EA]/75 backdrop-blur-md rounded-full border border-black/5 overflow-x-auto max-w-full no-scrollbar">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("team")}
+                  className={`px-2.5 sm:px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                    activeTab === "team"
+                      ? "bg-white text-[#1D1D1F] shadow-[0_2px_8px_rgba(0,0,0,0.06)]"
+                      : "text-[#86868B] hover:text-[#1D1D1F]"
+                  }`}
+                >
+                  <Users size={12} className={activeTab === "team" ? "text-purple-600" : ""} />
+                  <span>Time</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("calendar")}
+                  className={`px-2.5 sm:px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                    activeTab === "calendar"
+                      ? "bg-white text-[#1D1D1F] shadow-[0_2px_8px_rgba(0,0,0,0.06)]"
+                      : "text-[#86868B] hover:text-[#1D1D1F]"
+                  }`}
+                >
+                  <CalendarDays size={12} className={activeTab === "calendar" ? "text-blue-600" : ""} />
+                  <span>Calendário</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => setActiveTab("siri")}
-                  className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  className={`px-2.5 sm:px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
                     activeTab === "siri"
                       ? "bg-white text-[#1D1D1F] shadow-[0_2px_8px_rgba(0,0,0,0.06)]"
                       : "text-[#86868B] hover:text-[#1D1D1F]"
                   }`}
                 >
                   <Sparkles size={12} className={activeTab === "siri" ? "text-purple-600" : ""} />
-                  <span>Siri & Diagnóstico</span>
+                  <span>Siri</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setActiveTab("chat")}
-                  className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  className={`px-2.5 sm:px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
                     activeTab === "chat"
                       ? "bg-white text-[#1D1D1F] shadow-[0_2px_8px_rgba(0,0,0,0.06)]"
                       : "text-[#86868B] hover:text-[#1D1D1F]"
                   }`}
                 >
                   <MessageSquare size={12} />
-                  <span className="hidden sm:inline">Conversar</span>
+                  <span>Chat</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setActiveTab("diagnosis")}
-                  className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  className={`px-2.5 sm:px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
                     activeTab === "diagnosis"
                       ? "bg-white text-[#1D1D1F] shadow-[0_2px_8px_rgba(0,0,0,0.06)]"
                       : "text-[#86868B] hover:text-[#1D1D1F]"
                   }`}
                 >
                   <Compass size={12} />
-                  <span className="hidden sm:inline">Visão Geral</span>
+                  <span>Diagnóstico</span>
                 </button>
               </div>
 
@@ -1072,7 +1100,26 @@ export default function AIAnalystPage() {
         {/* =========================================================
             2. CONTEÚDO PRINCIPAL (TABS)
            ========================================================= */}
-        {activeTab !== "chat" ? (
+        {activeTab === "team" && (
+          <div className="space-y-6 animate-in fade-in duration-300">
+            <AgentTeamHub
+              onSelectAgentForChat={(agentId, prompt) => {
+                setActiveTab("chat");
+                if (prompt) {
+                  void handleSendMessage(prompt);
+                }
+              }}
+            />
+          </div>
+        )}
+
+        {activeTab === "calendar" && (
+          <div className="space-y-6 animate-in fade-in duration-300">
+            <InteractiveFinancialCalendar />
+          </div>
+        )}
+
+        {(activeTab === "siri" || activeTab === "diagnosis") && (
           <div className="space-y-8 animate-in fade-in duration-300">
             {/* 1. ASSISTENTE DE VOZ & CONVERSA ESTILO APPLE INTELLIGENCE SIRI */}
             {activeTab === "siri" && (
@@ -1598,10 +1645,12 @@ export default function AIAnalystPage() {
             )}
             </div>
           </div>
-        ) : (
-          /* =========================================================
-             ABA 2: CHAT HISTÓRICO & SIMULADOR DE COMPRAS
-             ========================================================= */
+        )}
+
+        {/* =========================================================
+            ABA 3: CHAT HISTÓRICO & SIMULADOR DE COMPRAS
+           ========================================================= */}
+        {activeTab === "chat" && (
           <div className="space-y-5 animate-in fade-in duration-300">
             {/* 1. WIDGET DO SIMULADOR DE COMPRAS ESTILO APPLE SHEET */}
             <section className="bg-white rounded-[28px] p-5 sm:p-6 border border-black/[0.04] shadow-[0_8px_30px_rgba(0,0,0,0.03)] space-y-4">
