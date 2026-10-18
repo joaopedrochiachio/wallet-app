@@ -648,12 +648,20 @@ export function generateDailyCompanionAdvice(params: {
   const firstName = (params.userName || "Investidor").split(" ")[0];
   const persona = params.persona || "guardian";
 
-  // Identidade e Arquétipo do Assistente Wallet
+  // Identidade e Arquétipo do Assistente Wallet (Ecossistema Wallet com Personagens Originais)
   const agentProfiles: Record<string, { name: string; title: string }> = {
-    guardian: { name: "Sol", title: "Guardião de Liquidez & Finanças" },
-    optimizer: { name: "Rubi", title: "Estrategista de Metas & Rotina" },
-    builder: { name: "Nanquim", title: "Mentor de Patrimônio" },
-    scaler: { name: "Atlas", title: "Analista de Expansão" },
+    "wallet-rubi": { name: "Rubi", title: "CFO & Estrategista de Capital" },
+    "wallet-sol": { name: "Sol", title: "Guardiã da Reserva & Liquidez" },
+    "wallet-nanquim": { name: "Nanquim", title: "Arquiteto de Crédito & Faturas" },
+    "wallet-atlos": { name: "Atlos", title: "Mentor de Metas & Hábitos" },
+    rubi: { name: "Rubi", title: "CFO & Estrategista de Capital" },
+    sol: { name: "Sol", title: "Guardiã da Reserva & Liquidez" },
+    nanquim: { name: "Nanquim", title: "Arquiteto de Crédito & Faturas" },
+    atlos: { name: "Atlos", title: "Mentor de Metas & Hábitos" },
+    guardian: { name: "Sol", title: "Guardiã da Reserva & Liquidez" },
+    optimizer: { name: "Rubi", title: "CFO & Estrategista de Capital" },
+    builder: { name: "Nanquim", title: "Arquiteto de Crédito & Faturas" },
+    scaler: { name: "Atlos", title: "Mentor de Metas & Hábitos" },
   };
 
   const agent = agentProfiles[persona] || agentProfiles.guardian;

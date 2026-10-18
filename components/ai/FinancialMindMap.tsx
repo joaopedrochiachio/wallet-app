@@ -15,6 +15,10 @@ import {
   ShieldCheck,
   CalendarDays,
   MessageSquare,
+  X,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
 } from "lucide-react";
 import { FinancialDiagnosis } from "@/lib/services/financialDiagnosisService";
 
@@ -71,44 +75,43 @@ export function FinancialMindMap({
   onDiscussWithAI,
   onOpenSimulator,
 }: FinancialMindMapProps) {
-  // Tema visual: "cosmic" (estilo imagem 3 de constelações holográficas) ou "apple" (estilo Cupertino tátil imagem 1/2)
-  const [theme, setTheme] = useState<"cosmic" | "apple">("cosmic");
-  
   // Filtro de clusters
   const [activeFilter, setActiveFilter] = useState<"all" | "drains" | "cashflow" | "credit">("all");
   
   // Nó selecionado para inspeção detalhada
-  const [selectedNodeId, setSelectedNodeId] = useState<string>("core");
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>("core");
   
+  // Controle de Zoom
+  const [zoomLevel, setZoomLevel] = useState<number>(1);
   const [isExpandedFull, setIsExpandedFull] = useState<boolean>(false);
 
   const formatCurrency = (val: number) =>
     val.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  // 1. CONSTRUÇÃO DETERMINÍSTICA DO GRAFO MENTAL
+  // 1. CONSTRUÇÃO DO GRAFO COM COORDENADAS RESPONSIVAS (SAFE BOUNDS PARA MOBILE)
   const nodes = useMemo<MindMapNode[]>(() => {
     const list: MindMapNode[] = [];
 
-    // NÓ CENTRAL (O Núcleo de Saúde & Meta)
     const isTargetMet = effectiveProjectedFree >= targetEndMonthBalance;
     const margin = effectiveProjectedFree - targetEndMonthBalance;
 
+    // NÓ CENTRAL (Núcleo de Saúde & Meta)
     list.push({
       id: "core",
-      label: "Núcleo de Liquidez & Meta",
+      label: "Núcleo de Liquidez",
       category: "core",
       amount: effectiveProjectedFree,
       status: isTargetMet ? "healthy" : "warning",
       iconName: "Compass",
-      description: `Meta de R$ ${formatCurrency(targetEndMonthBalance)} para o dia 31`,
+      description: `Meta de R$ ${formatCurrency(targetEndMonthBalance)} para o fim do mês`,
       insight: isTargetMet
-        ? `Superando a meta com margem livre de R$ ${formatCurrency(Math.max(0, margin))}.`
-        : `Abaixo da meta por R$ ${formatCurrency(Math.abs(margin))}. Requer travas em gastos supérfluos.`,
+        ? `Meta cumprida com folga segura de R$ ${formatCurrency(Math.max(0, margin))}.`
+        : `Abaixo da meta por R$ ${formatCurrency(Math.abs(margin))}. Trave novos custos discricionários.`,
       x: 50,
       y: 50,
       details: {
         actionLabel: "Discutir Fechamento do Mês",
-        actionPrompt: `Auditor, como fechar o mês na meta de R$ ${targetEndMonthBalance.toFixed(2)} positivo com a maior folga possível?`,
+        actionPrompt: `Auditor, como fechar o mês na meta de R$ ${targetEndMonthBalance.toFixed(2)} positivo com folga máxima?`,
         subItems: [
           { name: "Saldo em Conta Hoje", value: mainBalance },
           { name: "Saldo Projetado Fechamento", value: effectiveProjectedFree },
@@ -117,7 +120,7 @@ export function FinancialMindMap({
       },
     });
 
-    // RAMO 1: RENDA & ENTRADAS (Superior Direito)
+    // RAMO 1: RENDA & ENTRADAS (Superior Direito - x: 74%, y: 24%)
     const totalIncome = monthIncome > 0 ? monthIncome : 2500;
     list.push({
       id: "node_income",
@@ -127,13 +130,13 @@ export function FinancialMindMap({
       amount: totalIncome,
       status: "healthy",
       iconName: "TrendingUp",
-      description: "Entradas realizadas e rendimento de conta",
-      insight: "Fluxo de receita alimentando a conta corrente para cobrir compromissos.",
-      x: 78,
-      y: 22,
+      description: "Receitas do mês e rendimento CDI",
+      insight: "Entradas alimentando a conta para quitação de compromissos.",
+      x: 75,
+      y: 24,
       details: {
         actionLabel: "Analisar Capacidade de Aporte",
-        actionPrompt: "Auditor, com base na minha renda deste mês, qual o valor ideal para direcionar a metas?",
+        actionPrompt: "Auditor, qual o valor ideal da minha renda para direcionar para metas este mês?",
         subItems: [
           { name: "Receitas do Mês", value: totalIncome },
           { name: "Rendimento Automático CDI", value: 6.37 },
@@ -141,64 +144,32 @@ export function FinancialMindMap({
       },
     });
 
-    // Subnó Renda: Rendimento CDI
-    list.push({
-      id: "sub_income_yield",
-      parentId: "node_income",
-      label: "Rendimento CDI",
-      category: "income",
-      amount: 6.37,
-      status: "healthy",
-      iconName: "Zap",
-      description: "Rendimento da conta corrente 100% CDI",
-      x: 92,
-      y: 12,
-    });
-
-    // RAMO 2: COMPROMISSOS FIXOS (Sobrevivência) (Inferior Direito)
-    const totalRecurring = recurringItems.reduce((acc, r) => acc + (r.amount || 0), 0);
-
+    // RAMO 2: CONTAS FIXAS & SOBREVIVÊNCIA (Inferior Direito - x: 74%, y: 76%)
+    const totalRecurring = recurringItems.reduce((acc: number, r: any) => acc + (r.amount || 0), 0);
     list.push({
       id: "node_fixed",
       parentId: "core",
-      label: "Contas Fixas & Sobrevivência",
+      label: "Contas Fixas",
       category: "fixed",
       amount: totalRecurring > 0 ? totalRecurring : monthExpense,
       status: "warning",
       iconName: "Building2",
-      description: `${recurringItems.length} despesas obrigatórias cadastradas`,
-      insight: "Contas essenciais que precisam ser honradas sem atraso na data certa.",
-      x: 80,
-      y: 78,
+      description: `${recurringItems.length} despesas obrigatórias`,
+      insight: "Contas essenciais que exigem quitação pontual.",
+      x: 75,
+      y: 76,
       details: {
         actionLabel: "Auditar Próximos Vencimentos",
         actionPrompt: "Auditor, liste as contas fixas pendentes desta semana e garanta que haverá saldo.",
-        subItems: recurringItems.slice(0, 4).map((r: any) => ({
+        subItems: recurringItems.slice(0, 3).map((r: any) => ({
           name: r.title,
           value: r.amount,
-          status: r.dueDay ? `Vence dia ${r.dueDay}` : "Recorrente",
+          status: r.dueDay ? `Dia ${r.dueDay}` : "Recorrente",
         })),
       },
     });
 
-    // Subnó Fixas: Próximas Contas
-    if (recurringItems.length > 0) {
-      const firstBill = recurringItems[0];
-      list.push({
-        id: "sub_fixed_bill",
-        parentId: "node_fixed",
-        label: firstBill.title,
-        category: "fixed",
-        amount: firstBill.amount,
-        status: "neutral",
-        iconName: "CalendarDays",
-        description: `Vencimento dia ${firstBill.dueDay || 10}`,
-        x: 93,
-        y: 88,
-      });
-    }
-
-    // RAMO 3: CARTÕES & CRÉDITO INTELIGENTE (Inferior Esquerdo)
+    // RAMO 3: CARTÕES & CRÉDITO (Inferior Esquerdo - x: 25%, y: 76%)
     const totalCardDebt = cards
       .filter((c: any) => c.type === "credit")
       .reduce((acc: number, c: any) => acc + (c.spent || c.balance || 0), 0);
@@ -206,18 +177,18 @@ export function FinancialMindMap({
     list.push({
       id: "node_credit",
       parentId: "core",
-      label: "Faturas & Crédito",
+      label: "Faturas & Cartões",
       category: "credit",
       amount: totalCardDebt,
       status: totalCardDebt > 1000 ? "warning" : "healthy",
       iconName: "CreditCard",
       description: `${cards.filter((c: any) => c.type === "credit").length} cartões ativos`,
-      insight: "O crédito posterga o desembolso e gera janela sem juros se pago integralmente.",
-      x: 22,
-      y: 80,
+      insight: "Faturas em aberto que vencem nos próximos ciclos.",
+      x: 25,
+      y: 76,
       details: {
         actionLabel: "Ver Janela Ótima sem Juros",
-        actionPrompt: "Auditor, qual o melhor cartão de crédito para compras nesta semana para ganhar mais prazo?",
+        actionPrompt: "Auditor, qual o melhor cartão para compras esta semana para ganhar mais prazo?",
         subItems: cards.map((c: any) => ({
           name: c.name,
           value: c.spent || 0,
@@ -226,41 +197,27 @@ export function FinancialMindMap({
       },
     });
 
-    // Subnó Cartão: Janela Ótima (+40 Dias)
-    list.push({
-      id: "sub_credit_window",
-      parentId: "node_credit",
-      label: "Janela +40 Dias",
-      category: "credit",
-      amount: totalCardDebt > 0 ? totalCardDebt : undefined,
-      status: "healthy",
-      iconName: "ShieldCheck",
-      description: "Estratégia de compra pós-fechamento",
-      x: 8,
-      y: 90,
-    });
-
-    // RAMO 4: RALOS & PADRÕES OCULTOS DETECTADOS PELA IA (Superior Esquerdo)
+    // RAMO 4: RALOS & HÁBITOS (Superior Esquerdo - x: 25%, y: 24%)
     const specificAlerts = diagnosis?.specificExpensesAlerts || [];
-    const totalDrains = specificAlerts.reduce((acc, a) => acc + (a.totalAmount || 0), 0);
+    const totalDrains = specificAlerts.reduce((acc: number, a: any) => acc + (a.totalAmount || 0), 0);
 
     list.push({
       id: "node_drains",
       parentId: "core",
-      label: "Radar de Ralos & Hábitos",
+      label: "Radar de Ralos",
       category: "drains",
       amount: totalDrains > 0 ? totalDrains : 340,
       status: totalDrains > 200 ? "alert" : "warning",
       iconName: "Flame",
-      description: `${specificAlerts.length || 2} hábitos com potencial de vazamento`,
-      insight: "Padrões invisíveis de micro-consumo detectados nos últimos 30 dias.",
-      x: 22,
-      y: 22,
+      description: `${specificAlerts.length || 2} hábitos com vazamento`,
+      insight: "Gastos repetitivos discricionários nos últimos 30 dias.",
+      x: 25,
+      y: 24,
       details: {
         actionLabel: "Auditar Vilões e Economizar",
         actionPrompt: "Auditor, quais os maiores ralos de consumo identificados e como cortar 20% deles?",
         subItems: specificAlerts.length > 0
-          ? specificAlerts.map((a) => ({
+          ? specificAlerts.slice(0, 3).map((a: any) => ({
               name: a.item,
               value: a.totalAmount,
               status: `${a.count || 2} compras`,
@@ -272,40 +229,25 @@ export function FinancialMindMap({
       },
     });
 
-    // Subnó Ralos: Maior Vilão Detectado
-    const topDrain = specificAlerts[0] || { item: "Delivery & Lanches", totalAmount: 240 };
-    list.push({
-      id: "sub_drains_top",
-      parentId: "node_drains",
-      label: topDrain.item,
-      category: "drains",
-      amount: topDrain.totalAmount,
-      status: "alert",
-      iconName: "Coffee",
-      description: "Maior impacto discricionário recente",
-      x: 8,
-      y: 10,
-    });
-
-    // RAMO 5: TETO DIÁRIO & RESERVA LIVRE (Topo Central)
+    // RAMO 5: TETO SEGURO DIÁRIO (Topo Central - x: 50%, y: 15%)
     list.push({
       id: "node_reserve",
       parentId: "core",
-      label: "Teto Seguro Diário",
+      label: "Teto Diário Seguro",
       category: "reserve",
       amount: safeDailyAllowance,
       status: safeDailyAllowance > 30 ? "healthy" : "warning",
       iconName: "Zap",
-      description: `R$ ${formatCurrency(safeDailyAllowance)}/dia para os próximos ${remainingDays} dias`,
-      insight: "Seu velocímetro de gasto diário para garantir a meta com tranquilidade.",
+      description: `R$ ${formatCurrency(safeDailyAllowance)}/dia restantes`,
+      insight: "Limite diário seguro de hoje para garantir o cumprimento da meta.",
       x: 50,
-      y: 12,
+      y: 15,
       details: {
         actionLabel: "Simular Gasto Hoje",
         actionPrompt: `Auditor, se eu gastar R$ 80 hoje, quanto cairá o meu teto diário seguro para os dias restantes?`,
         subItems: [
           { name: "Teto de Hoje", value: safeDailyAllowance },
-          { name: "Dias Restantes no Mês", value: remainingDays },
+          { name: "Dias Restantes", value: remainingDays },
           { name: "Margem de Folga Total", value: Math.max(0, margin) },
         ],
       },
@@ -325,244 +267,139 @@ export function FinancialMindMap({
     remainingDays,
   ]);
 
-  // Filtra nós de acordo com o preset ativo
   const filteredNodes = useMemo(() => {
     if (activeFilter === "all") return nodes;
     if (activeFilter === "drains") {
-      return nodes.filter(
-        (n) => n.id === "core" || n.category === "drains" || n.category === "reserve"
-      );
+      return nodes.filter((n) => n.id === "core" || n.category === "drains" || n.category === "reserve");
     }
     if (activeFilter === "cashflow") {
-      return nodes.filter(
-        (n) => n.id === "core" || n.category === "income" || n.category === "fixed"
-      );
+      return nodes.filter((n) => n.id === "core" || n.category === "income" || n.category === "fixed");
     }
     if (activeFilter === "credit") {
-      return nodes.filter(
-        (n) => n.id === "core" || n.category === "credit" || n.category === "reserve"
-      );
+      return nodes.filter((n) => n.id === "core" || n.category === "credit" || n.category === "reserve");
     }
     return nodes;
   }, [nodes, activeFilter]);
 
-  // Nó atualmente selecionado para inspeção
   const selectedNode = useMemo(() => {
-    return nodes.find((n) => n.id === selectedNodeId) || nodes[0];
+    return nodes.find((n) => n.id === selectedNodeId) || null;
   }, [nodes, selectedNodeId]);
 
-  // Ícone helper
-  const renderNodeIcon = (name: string, size = 16, className = "") => {
+  const renderNodeIcon = (name: string, size = 15) => {
     switch (name) {
       case "Compass":
-        return <Compass size={size} className={className} />;
+        return <Compass size={size} />;
       case "TrendingUp":
-        return <TrendingUp size={size} className={className} />;
+        return <TrendingUp size={size} />;
       case "Building2":
-        return <Building2 size={size} className={className} />;
+        return <Building2 size={size} />;
       case "CreditCard":
-        return <CreditCard size={size} className={className} />;
+        return <CreditCard size={size} />;
       case "Flame":
-        return <Flame size={size} className={className} />;
+        return <Flame size={size} />;
       case "Zap":
-        return <Zap size={size} className={className} />;
-      case "Coffee":
-        return <Coffee size={size} className={className} />;
-      case "ShieldCheck":
-        return <ShieldCheck size={size} className={className} />;
-      case "CalendarDays":
-        return <CalendarDays size={size} className={className} />;
+        return <Zap size={size} />;
       default:
-        return <Sparkles size={size} className={className} />;
+        return <Sparkles size={size} />;
     }
   };
 
-  // Cores por categoria para o tema cósmico e Apple
-  const getCategoryStyles = (category: MindMapNode["category"]) => {
-    if (theme === "cosmic") {
-      switch (category) {
-        case "core":
-          return {
-            bg: "bg-slate-900/90",
-            border: "border-cyan-400/80 shadow-[0_0_35px_rgba(34,211,238,0.45)]",
-            text: "text-cyan-200",
-            glow: "#22d3ee",
-            badge: "bg-cyan-500/20 text-cyan-300 border-cyan-400/40",
-          };
-        case "income":
-          return {
-            bg: "bg-emerald-950/80",
-            border: "border-emerald-400/70 shadow-[0_0_25px_rgba(52,211,153,0.35)]",
-            text: "text-emerald-200",
-            glow: "#34d399",
-            badge: "bg-emerald-500/20 text-emerald-300 border-emerald-400/40",
-          };
-        case "fixed":
-          return {
-            bg: "bg-amber-950/80",
-            border: "border-amber-400/70 shadow-[0_0_25px_rgba(251,191,36,0.35)]",
-            text: "text-amber-200",
-            glow: "#fbbf24",
-            badge: "bg-amber-500/20 text-amber-300 border-amber-400/40",
-          };
-        case "credit":
-          return {
-            bg: "bg-indigo-950/80",
-            border: "border-indigo-400/70 shadow-[0_0_25px_rgba(129,140,248,0.35)]",
-            text: "text-indigo-200",
-            glow: "#818cf8",
-            badge: "bg-indigo-500/20 text-indigo-300 border-indigo-400/40",
-          };
-        case "drains":
-          return {
-            bg: "bg-rose-950/80",
-            border: "border-rose-400/80 shadow-[0_0_25px_rgba(244,63,94,0.4)]",
-            text: "text-rose-200",
-            glow: "#f43f5e",
-            badge: "bg-rose-500/20 text-rose-300 border-rose-400/40",
-          };
-        case "reserve":
-          return {
-            bg: "bg-teal-950/80",
-            border: "border-teal-400/70 shadow-[0_0_25px_rgba(45,212,191,0.35)]",
-            text: "text-teal-200",
-            glow: "#2dd4bf",
-            badge: "bg-teal-500/20 text-teal-300 border-teal-400/40",
-          };
-      }
-    } else {
-      // Tema Apple Glass
-      switch (category) {
-        case "core":
-          return {
-            bg: "bg-white/95",
-            border: "border-black/20 shadow-[0_12px_40px_rgba(0,0,0,0.12)]",
-            text: "text-[#1D1D1F]",
-            glow: "#1D1D1F",
-            badge: "bg-[#1D1D1F] text-white",
-          };
-        case "income":
-          return {
-            bg: "bg-emerald-50/90",
-            border: "border-emerald-200 shadow-[0_8px_24px_rgba(16,185,129,0.12)]",
-            text: "text-emerald-950",
-            glow: "#10b981",
-            badge: "bg-emerald-100 text-emerald-800 border-emerald-300",
-          };
-        case "fixed":
-          return {
-            bg: "bg-amber-50/90",
-            border: "border-amber-200 shadow-[0_8px_24px_rgba(245,158,11,0.12)]",
-            text: "text-amber-950",
-            glow: "#f59e0b",
-            badge: "bg-amber-100 text-amber-800 border-amber-300",
-          };
-        case "credit":
-          return {
-            bg: "bg-indigo-50/90",
-            border: "border-indigo-200 shadow-[0_8px_24px_rgba(99,102,241,0.12)]",
-            text: "text-indigo-950",
-            glow: "#6366f1",
-            badge: "bg-indigo-100 text-indigo-800 border-indigo-300",
-          };
-        case "drains":
-          return {
-            bg: "bg-rose-50/90",
-            border: "border-rose-200 shadow-[0_8px_24px_rgba(239,68,68,0.12)]",
-            text: "text-rose-950",
-            glow: "#ef4444",
-            badge: "bg-rose-100 text-rose-800 border-rose-300",
-          };
-        case "reserve":
-          return {
-            bg: "bg-teal-50/90",
-            border: "border-teal-200 shadow-[0_8px_24px_rgba(20,184,166,0.12)]",
-            text: "text-teal-950",
-            glow: "#14b8a6",
-            badge: "bg-teal-100 text-teal-800 border-teal-300",
-          };
-      }
+  const getNodeStyles = (category: MindMapNode["category"]) => {
+    switch (category) {
+      case "core":
+        return {
+          bg: "bg-[#0F172A]",
+          border: "border-cyan-400/90 shadow-[0_0_30px_rgba(34,211,238,0.35)]",
+          glow: "#22d3ee",
+          badge: "bg-cyan-500/20 text-cyan-300 border-cyan-400/40",
+          iconBg: "bg-cyan-500/20 text-cyan-300 border-cyan-400/40",
+        };
+      case "income":
+        return {
+          bg: "bg-[#064E3B]/80",
+          border: "border-emerald-400/70 shadow-[0_0_20px_rgba(52,211,153,0.3)]",
+          glow: "#34d399",
+          badge: "bg-emerald-500/20 text-emerald-300 border-emerald-400/40",
+          iconBg: "bg-emerald-500/20 text-emerald-300 border-emerald-400/40",
+        };
+      case "fixed":
+        return {
+          bg: "bg-[#78350F]/80",
+          border: "border-amber-400/70 shadow-[0_0_20px_rgba(251,191,36,0.3)]",
+          glow: "#fbbf24",
+          badge: "bg-amber-500/20 text-amber-300 border-amber-400/40",
+          iconBg: "bg-amber-500/20 text-amber-300 border-amber-400/40",
+        };
+      case "credit":
+        return {
+          bg: "bg-[#1E1B4B]/80",
+          border: "border-indigo-400/70 shadow-[0_0_20px_rgba(129,140,248,0.3)]",
+          glow: "#818cf8",
+          badge: "bg-indigo-500/20 text-indigo-300 border-indigo-400/40",
+          iconBg: "bg-indigo-500/20 text-indigo-300 border-indigo-400/40",
+        };
+      case "drains":
+        return {
+          bg: "bg-[#881337]/80",
+          border: "border-rose-400/80 shadow-[0_0_25px_rgba(244,63,94,0.35)]",
+          glow: "#f43f5e",
+          badge: "bg-rose-500/20 text-rose-300 border-rose-400/40",
+          iconBg: "bg-rose-500/20 text-rose-300 border-rose-400/40",
+        };
+      case "reserve":
+        return {
+          bg: "bg-[#134E4A]/80",
+          border: "border-teal-400/70 shadow-[0_0_20px_rgba(45,212,191,0.3)]",
+          glow: "#2dd4bf",
+          badge: "bg-teal-500/20 text-teal-300 border-teal-400/40",
+          iconBg: "bg-teal-500/20 text-teal-300 border-teal-400/40",
+        };
     }
   };
 
   return (
     <div
-      className={`relative w-full rounded-[28px] sm:rounded-[36px] overflow-hidden border transition-all duration-300 ${
-        isExpandedFull ? "fixed inset-3 z-[110] max-h-[96vh]" : "min-h-[640px]"
-      } ${
-        theme === "cosmic"
-          ? "bg-[#07090E] border-cyan-500/20 text-white shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
-          : "bg-gradient-to-b from-white/95 to-[#F8F8FC]/90 backdrop-blur-2xl border-black/[0.08] text-[#1D1D1F] shadow-[0_12px_45px_rgba(0,0,0,0.06)]"
+      className={`relative w-full rounded-[28px] sm:rounded-[36px] overflow-hidden border border-cyan-500/20 bg-[#0B0D13] text-white transition-all duration-300 shadow-[0_20px_60px_rgba(0,0,0,0.6)] ${
+        isExpandedFull ? "fixed inset-2 sm:inset-4 z-[120] max-h-[96vh]" : "min-h-[580px] sm:min-h-[620px]"
       }`}
     >
-      {/* GLOW DE FUNDO & CONSTELAÇÃO CÓSMICA (Inspirado na Imagem 3) */}
-      {theme === "cosmic" && (
-        <div className="absolute inset-0 pointer-events-none overflow-hidden">
-          <div className="absolute inset-0 opacity-40 bg-[radial-gradient(circle_at_center,_#22d3ee_1px,_transparent_1px)] [background-size:24px_24px]" />
-          <div className="absolute top-1/4 left-1/3 w-96 h-96 bg-cyan-600/10 rounded-full blur-[100px]" />
-          <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-purple-600/10 rounded-full blur-[90px]" />
-          <div className="absolute top-1/2 right-1/3 w-64 h-64 bg-emerald-600/10 rounded-full blur-[80px]" />
-        </div>
-      )}
+      {/* GLOW DE FUNDO CÓSMICO SEM NENHUM QUADRICULADO OU PONTOS */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute top-1/4 left-1/3 w-80 h-80 bg-cyan-600/12 rounded-full blur-[100px]" />
+        <div className="absolute bottom-1/4 right-1/4 w-72 h-72 bg-purple-600/12 rounded-full blur-[90px]" />
+        <div className="absolute top-1/2 right-1/3 w-64 h-64 bg-emerald-600/10 rounded-full blur-[80px]" />
+      </div>
 
-      {/* HEADER DO MAPA MENTAL COM CONTROLES TÁTEIS */}
-      <div className="relative z-20 p-4 sm:p-5 flex flex-wrap items-center justify-between gap-3 border-b border-black/[0.06] backdrop-blur-md">
-        <div className="flex items-center gap-3">
-          <div
-            className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all ${
-              theme === "cosmic"
-                ? "bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 shadow-[0_0_15px_rgba(34,211,238,0.3)]"
-                : "bg-[#1D1D1F] text-white"
-            }`}
-          >
-            <Compass size={20} />
+      {/* HEADER DO MAPA MENTAL (RESPONSIVO PARA MOBILE) */}
+      <div className="relative z-20 p-3.5 sm:p-5 flex flex-wrap items-center justify-between gap-2.5 border-b border-white/10 backdrop-blur-md">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-9 h-9 rounded-xl bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 flex items-center justify-center shrink-0 shadow-[0_0_15px_rgba(34,211,238,0.3)]">
+            <Compass size={18} />
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm sm:text-base font-bold tracking-tight">
-                Mapa Mental Neural do Dinheiro
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <h3 className="text-xs sm:text-sm font-bold tracking-tight truncate">
+                Mapa Mental Neural
               </h3>
-              <span
-                className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
-                  theme === "cosmic"
-                    ? "bg-cyan-500/20 text-cyan-300 border border-cyan-400/30"
-                    : "bg-[#F2F2F7] text-[#1D1D1F]"
-                }`}
-              >
-                Grafo Interativo
+              <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-400/30">
+                Kiko Core
               </span>
             </div>
-            <p
-              className={`text-xs ${
-                theme === "cosmic" ? "text-slate-400" : "text-[#86868B]"
-              }`}
-            >
-              Toque em qualquer nó para abrir o diagnóstico do consultor ou simular impacto.
+            <p className="text-[10px] text-slate-400 truncate">
+              Toque em qualquer nó para inspecionar métricas e ações.
             </p>
           </div>
         </div>
 
-        {/* CONTROLES: FILTROS + ALTERNADOR DE TEMA + TELA CHEIA */}
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Filtros de Ramo */}
-          <div
-            className={`flex items-center gap-1 p-1 rounded-2xl text-[11px] font-semibold border ${
-              theme === "cosmic"
-                ? "bg-slate-900/80 border-slate-700/60"
-                : "bg-[#F2F2F7] border-black/5"
-            }`}
-          >
+        {/* CONTROLES: FILTROS + ZOOM + EXPANDIR */}
+        <div className="flex items-center gap-1.5 ml-auto">
+          {/* Filtros em Pílulas */}
+          <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-slate-900/90 border border-slate-700/80 text-[10px] font-semibold">
             <button
               type="button"
               onClick={() => setActiveFilter("all")}
-              className={`px-2.5 py-1 rounded-xl transition-all cursor-pointer ${
-                activeFilter === "all"
-                  ? theme === "cosmic"
-                    ? "bg-cyan-500 text-slate-950 font-bold shadow-xs"
-                    : "bg-white text-[#1D1D1F] shadow-xs"
-                  : theme === "cosmic"
-                  ? "text-slate-400 hover:text-white"
-                  : "text-[#86868B] hover:text-[#1D1D1F]"
+              className={`px-2 py-1 rounded-lg transition-all cursor-pointer ${
+                activeFilter === "all" ? "bg-cyan-500 text-slate-950 font-bold" : "text-slate-400 hover:text-white"
               }`}
             >
               Todos
@@ -570,197 +407,142 @@ export function FinancialMindMap({
             <button
               type="button"
               onClick={() => setActiveFilter("drains")}
-              className={`px-2.5 py-1 rounded-xl transition-all cursor-pointer ${
-                activeFilter === "drains"
-                  ? theme === "cosmic"
-                    ? "bg-rose-500 text-white font-bold"
-                    : "bg-white text-rose-700 shadow-xs"
-                  : theme === "cosmic"
-                  ? "text-slate-400 hover:text-white"
-                  : "text-[#86868B] hover:text-[#1D1D1F]"
+              className={`px-2 py-1 rounded-lg transition-all cursor-pointer ${
+                activeFilter === "drains" ? "bg-rose-500 text-white font-bold" : "text-slate-400 hover:text-white"
               }`}
             >
-              Ralos & Hábitos
+              Ralos
             </button>
             <button
               type="button"
               onClick={() => setActiveFilter("cashflow")}
-              className={`px-2.5 py-1 rounded-xl transition-all cursor-pointer ${
-                activeFilter === "cashflow"
-                  ? theme === "cosmic"
-                    ? "bg-emerald-500 text-slate-950 font-bold"
-                    : "bg-white text-emerald-800 shadow-xs"
-                  : theme === "cosmic"
-                  ? "text-slate-400 hover:text-white"
-                  : "text-[#86868B] hover:text-[#1D1D1F]"
+              className={`px-2 py-1 rounded-lg transition-all cursor-pointer ${
+                activeFilter === "cashflow" ? "bg-emerald-500 text-slate-950 font-bold" : "text-slate-400 hover:text-white"
               }`}
             >
-              Renda vs Fixas
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveFilter("credit")}
-              className={`px-2.5 py-1 rounded-xl transition-all cursor-pointer ${
-                activeFilter === "credit"
-                  ? theme === "cosmic"
-                    ? "bg-indigo-500 text-white font-bold"
-                    : "bg-white text-indigo-800 shadow-xs"
-                  : theme === "cosmic"
-                  ? "text-slate-400 hover:text-white"
-                  : "text-[#86868B] hover:text-[#1D1D1F]"
-              }`}
-            >
-              Crédito
+              Fluxo
             </button>
           </div>
 
-          {/* Alternador de Tema Visual (Cosmic vs Apple) */}
-          <div
-            className={`flex items-center p-1 rounded-2xl border text-[11px] font-semibold ${
-              theme === "cosmic"
-                ? "bg-slate-900/80 border-slate-700/60"
-                : "bg-[#F2F2F7] border-black/5"
-            }`}
-          >
+          {/* Zoom Controls */}
+          <div className="hidden sm:flex items-center gap-1 p-0.5 rounded-xl bg-slate-900/90 border border-slate-700/80 text-slate-400">
             <button
               type="button"
-              onClick={() => setTheme("cosmic")}
-              className={`px-2.5 py-1 rounded-xl transition-all flex items-center gap-1 cursor-pointer ${
-                theme === "cosmic"
-                  ? "bg-cyan-500/20 text-cyan-300 border border-cyan-400/40"
-                  : "text-[#86868B] hover:text-[#1D1D1F]"
-              }`}
-              title="Modo Constelação Cyber"
+              onClick={() => setZoomLevel((z) => Math.max(0.85, z - 0.1))}
+              className="p-1 hover:text-white transition-colors"
+              title="Reduzir zoom"
             >
-              <span>🌌</span>
-              <span className="hidden sm:inline">Constelação</span>
+              <ZoomOut size={13} />
             </button>
             <button
               type="button"
-              onClick={() => setTheme("apple")}
-              className={`px-2.5 py-1 rounded-xl transition-all flex items-center gap-1 cursor-pointer ${
-                theme === "apple"
-                  ? "bg-white text-[#1D1D1F] shadow-xs"
-                  : "text-slate-400 hover:text-white"
-              }`}
-              title="Modo Vidro Apple"
+              onClick={() => setZoomLevel(1)}
+              className="p-1 hover:text-white transition-colors"
+              title="Resetar zoom"
             >
-              <span>✨</span>
-              <span className="hidden sm:inline">Vidro</span>
+              <RotateCcw size={12} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setZoomLevel((z) => Math.min(1.2, z + 0.1))}
+              className="p-1 hover:text-white transition-colors"
+              title="Aumentar zoom"
+            >
+              <ZoomIn size={13} />
             </button>
           </div>
 
-          {/* Botão de Tela Cheia */}
+          {/* Tela Cheia */}
           <button
             type="button"
             onClick={() => setIsExpandedFull(!isExpandedFull)}
-            className={`p-2 rounded-xl border transition-all cursor-pointer ${
-              theme === "cosmic"
-                ? "bg-slate-900/80 border-slate-700 hover:text-cyan-300"
-                : "bg-white border-black/5 text-[#86868B] hover:text-[#1D1D1F]"
-            }`}
-            title={isExpandedFull ? "Reduzir tela" : "Expandir em tela cheia"}
+            className="p-1.5 rounded-xl bg-slate-900/90 border border-slate-700 text-slate-300 hover:text-cyan-300 transition-colors cursor-pointer"
+            title={isExpandedFull ? "Fechar tela cheia" : "Tela cheia"}
           >
-            {isExpandedFull ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+            {isExpandedFull ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
           </button>
         </div>
       </div>
 
-      {/* ÁREA INTERATIVA DO GRAFO SVG + NÓS HOLOGRÁFICOS */}
-      <div className="relative w-full h-[540px] sm:h-[580px] overflow-hidden select-none">
-        {/* LINHAS SINÁPTICAS CONECTORAS (SVG BEZIER) */}
+      {/* ÁREA INTERATIVA DO GRAFO SVG + NÓS (COM SCALING RESPONSIVO) */}
+      <div
+        className="relative w-full h-[480px] sm:h-[540px] overflow-hidden select-none"
+        style={{ transform: `scale(${zoomLevel})`, transformOrigin: "center center" }}
+      >
+        {/* LINHAS SINÁPTICAS (SVG BEZIER) */}
         <svg className="absolute inset-0 w-full h-full pointer-events-none z-0">
           <defs>
-            <linearGradient id="grad-cyan" x1="0%" y1="0%" x2="100%" y2="100%">
+            <linearGradient id="sin-cyan" x1="0%" y1="0%" x2="100%" y2="100%">
               <stop offset="0%" stopColor="#22d3ee" stopOpacity="0.8" />
-              <stop offset="100%" stopColor="#0284c7" stopOpacity="0.2" />
+              <stop offset="100%" stopColor="#0284c7" stopOpacity="0.3" />
             </linearGradient>
-            <linearGradient id="grad-emerald" x1="0%" y1="0%" x2="100%" y2="100%">
+            <linearGradient id="sin-emerald" x1="0%" y1="0%" x2="100%" y2="100%">
               <stop offset="0%" stopColor="#22d3ee" stopOpacity="0.7" />
               <stop offset="100%" stopColor="#10b981" stopOpacity="0.8" />
             </linearGradient>
-            <linearGradient id="grad-rose" x1="0%" y1="0%" x2="100%" y2="100%">
+            <linearGradient id="sin-rose" x1="0%" y1="0%" x2="100%" y2="100%">
               <stop offset="0%" stopColor="#22d3ee" stopOpacity="0.7" />
               <stop offset="100%" stopColor="#f43f5e" stopOpacity="0.8" />
             </linearGradient>
-            <linearGradient id="grad-amber" x1="0%" y1="0%" x2="100%" y2="100%">
+            <linearGradient id="sin-amber" x1="0%" y1="0%" x2="100%" y2="100%">
               <stop offset="0%" stopColor="#22d3ee" stopOpacity="0.7" />
               <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.8" />
             </linearGradient>
-            <linearGradient id="grad-indigo" x1="0%" y1="0%" x2="100%" y2="100%">
+            <linearGradient id="sin-indigo" x1="0%" y1="0%" x2="100%" y2="100%">
               <stop offset="0%" stopColor="#22d3ee" stopOpacity="0.7" />
               <stop offset="100%" stopColor="#6366f1" stopOpacity="0.8" />
             </linearGradient>
           </defs>
 
-          {/* Desenha as conexões entre nós */}
           {filteredNodes.map((node) => {
             if (!node.parentId) return null;
             const parent = filteredNodes.find((p) => p.id === node.parentId);
             if (!parent) return null;
 
-            const strokeColor =
-              theme === "cosmic"
-                ? node.category === "drains"
-                  ? "url(#grad-rose)"
-                  : node.category === "income"
-                  ? "url(#grad-emerald)"
-                  : node.category === "fixed"
-                  ? "url(#grad-amber)"
-                  : node.category === "credit"
-                  ? "url(#grad-indigo)"
-                  : "url(#grad-cyan)"
-                : node.category === "drains"
-                ? "rgba(244, 63, 94, 0.4)"
+            const strokeGrad =
+              node.category === "drains"
+                ? "url(#sin-rose)"
                 : node.category === "income"
-                ? "rgba(16, 185, 129, 0.4)"
+                ? "url(#sin-emerald)"
                 : node.category === "fixed"
-                ? "rgba(245, 158, 11, 0.4)"
+                ? "url(#sin-amber)"
                 : node.category === "credit"
-                ? "rgba(99, 102, 241, 0.4)"
-                : "rgba(0, 0, 0, 0.15)";
+                ? "url(#sin-indigo)"
+                : "url(#sin-cyan)";
 
-            const isHighlighted =
-              selectedNodeId === node.id || selectedNodeId === parent.id;
+            const isHighlighted = selectedNodeId === node.id || selectedNodeId === parent.id;
 
             return (
-              <g key={`link_${parent.id}_${node.id}`}>
+              <g key={`sin_${parent.id}_${node.id}`}>
                 <path
                   d={`M ${parent.x}% ${parent.y}% Q ${(parent.x + node.x) / 2}% ${
-                    (parent.y + node.y) / 2 + (node.category === "drains" ? -8 : 8)
+                    (parent.y + node.y) / 2 + (node.category === "drains" ? -6 : 6)
                   }%, ${node.x}% ${node.y}%`}
                   fill="none"
-                  stroke={strokeColor}
-                  strokeWidth={isHighlighted ? 3 : 1.75}
-                  strokeDasharray={node.id.startsWith("sub_") ? "4 4" : "none"}
+                  stroke={strokeGrad}
+                  strokeWidth={isHighlighted ? 2.5 : 1.5}
                   className="transition-all duration-300"
                 />
 
-                {theme === "cosmic" && (
-                  <circle
-                    r={isHighlighted ? 3 : 2}
-                    fill={node.category === "drains" ? "#f43f5e" : "#22d3ee"}
-                    className="animate-pulse"
-                  >
-                    <animateMotion
-                      path={`M ${parent.x}% ${parent.y}% Q ${(parent.x + node.x) / 2}% ${
-                        (parent.y + node.y) / 2 + (node.category === "drains" ? -8 : 8)
-                      }%, ${node.x}% ${node.y}%`}
-                      dur={isHighlighted ? "2.5s" : "4.5s"}
-                      repeatCount="indefinite"
-                    />
-                  </circle>
-                )}
+                <circle r={isHighlighted ? 2.5 : 1.5} fill="#22d3ee" className="animate-pulse">
+                  <animateMotion
+                    path={`M ${parent.x}% ${parent.y}% Q ${(parent.x + node.x) / 2}% ${
+                      (parent.y + node.y) / 2 + (node.category === "drains" ? -6 : 6)
+                    }%, ${node.x}% ${node.y}%`}
+                    dur={isHighlighted ? "2.5s" : "4.5s"}
+                    repeatCount="indefinite"
+                  />
+                </circle>
               </g>
             );
           })}
         </svg>
 
-        {/* NÓS RENDERIZADOS EM CAMADA INTERATIVA */}
+        {/* NÓS INTERATIVOS COM COORDENADAS RESPONSIVAS E PADDING SEGURO */}
         {filteredNodes.map((node) => {
           const isSelected = selectedNodeId === node.id;
           const isCore = node.category === "core";
-          const styles = getCategoryStyles(node.category);
+          const styles = getNodeStyles(node.category);
 
           return (
             <div
@@ -769,62 +551,45 @@ export function FinancialMindMap({
               style={{
                 left: `${node.x}%`,
                 top: `${node.y}%`,
-                transform: `translate(-50%, -50%) scale(${isSelected ? 1.08 : 1})`,
+                transform: `translate(-50%, -50%) scale(${isSelected ? 1.06 : 1})`,
               }}
-              className={`absolute z-10 cursor-pointer transition-all duration-300 group ${
-                isCore ? "p-3 sm:p-4 rounded-3xl" : "p-2.5 sm:p-3 rounded-2xl"
+              className={`absolute z-10 cursor-pointer transition-all duration-300 border backdrop-blur-xl ${
+                isCore
+                  ? "p-3 sm:p-4 rounded-3xl min-w-[140px] sm:min-w-[170px]"
+                  : "p-2 sm:p-2.5 rounded-2xl min-w-[110px] sm:min-w-[140px]"
               } ${styles.bg} ${styles.border} ${
-                isSelected
-                  ? "ring-2 ring-cyan-400 ring-offset-2 ring-offset-black"
-                  : "hover:scale-105"
+                isSelected ? "ring-2 ring-cyan-400 ring-offset-2 ring-offset-black" : "hover:scale-105"
               }`}
             >
               {isCore ? (
-                <div className="flex flex-col items-center text-center max-w-[170px] sm:max-w-[190px] space-y-1.5">
-                  <div
-                    className={`w-12 h-12 rounded-2xl flex items-center justify-center relative ${
-                      theme === "cosmic"
-                        ? "bg-cyan-500/20 text-cyan-300 border border-cyan-400 shadow-[0_0_25px_rgba(34,211,238,0.5)]"
-                        : "bg-[#1D1D1F] text-white shadow-md"
-                    }`}
-                  >
-                    <Compass size={24} className="animate-spin-slow" />
-                    <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-emerald-400 animate-ping" />
+                <div className="flex flex-col items-center text-center space-y-1">
+                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-cyan-500/20 text-cyan-300 border border-cyan-400/50 flex items-center justify-center relative shadow-[0_0_20px_rgba(34,211,238,0.4)]">
+                    <Compass size={22} />
+                    <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
                   </div>
-
                   <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider block opacity-75">
+                    <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider block opacity-75">
                       {node.label}
                     </span>
-                    <strong className="text-sm sm:text-base font-bold font-mono block tabular-nums">
+                    <strong className="text-xs sm:text-sm font-bold font-mono block tabular-nums text-white">
                       R$ {formatCurrency(node.amount || 0)}
                     </strong>
                   </div>
-
-                  <span
-                    className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${styles.badge}`}
-                  >
+                  <span className={`text-[8px] sm:text-[9px] font-bold px-2 py-0.5 rounded-full border ${styles.badge}`}>
                     Meta: R$ {formatCurrency(targetEndMonthBalance)}
                   </span>
                 </div>
               ) : (
-                <div className="flex items-center gap-2 max-w-[160px] sm:max-w-[180px]">
-                  <div
-                    className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border ${
-                      theme === "cosmic"
-                        ? "bg-slate-900 text-white border-slate-700"
-                        : "bg-white text-[#1D1D1F] border-black/10 shadow-2xs"
-                    }`}
-                  >
-                    {renderNodeIcon(node.iconName, 15)}
+                <div className="flex items-center gap-2">
+                  <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center shrink-0 border ${styles.iconBg}`}>
+                    {renderNodeIcon(node.iconName, 14)}
                   </div>
-
                   <div className="min-w-0">
-                    <span className="text-[10px] font-semibold block truncate leading-tight">
+                    <span className="text-[9px] sm:text-[10px] font-semibold block truncate leading-tight opacity-90">
                       {node.label}
                     </span>
                     {node.amount !== undefined && (
-                      <strong className="text-xs font-bold font-mono block truncate tabular-nums">
+                      <strong className="text-[11px] sm:text-xs font-bold font-mono block truncate tabular-nums text-white">
                         R$ {formatCurrency(node.amount)}
                       </strong>
                     )}
@@ -834,151 +599,103 @@ export function FinancialMindMap({
             </div>
           );
         })}
+      </div>
 
-        {/* PAINEL FLUTUANTE DE INSPEÇÃO DO NÓ SELECIONADO (HUD HOLOGRÁFICO) */}
-        {selectedNode && (
-          <div
-            className={`absolute bottom-3 left-3 right-3 sm:left-auto sm:right-4 sm:bottom-4 sm:w-80 rounded-2xl sm:rounded-3xl p-4 z-30 transition-all border backdrop-blur-xl animate-in slide-in-from-bottom duration-300 ${
-              theme === "cosmic"
-                ? "bg-slate-900/95 border-cyan-500/40 text-white shadow-[0_12px_40px_rgba(0,0,0,0.7)]"
-                : "bg-white/95 border-black/10 text-[#1D1D1F] shadow-[0_12px_36px_rgba(0,0,0,0.1)]"
-            }`}
-          >
-            <div className="flex items-center justify-between border-b border-black/[0.06] pb-2.5">
-              <div className="flex items-center gap-2">
-                <div
-                  className={`w-7 h-7 rounded-lg flex items-center justify-center border ${
-                    theme === "cosmic"
-                      ? "bg-cyan-500/20 text-cyan-300 border-cyan-400/40"
-                      : "bg-[#F2F2F7] text-[#1D1D1F] border-black/5"
-                  }`}
-                >
-                  {renderNodeIcon(selectedNode.iconName, 14)}
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold tracking-tight">{selectedNode.label}</h4>
-                  <span className="text-[10px] text-slate-400 block font-mono">
-                    {selectedNode.amount !== undefined
-                      ? `Impacto: R$ ${formatCurrency(selectedNode.amount)}`
-                      : "Métrica Estrutural"}
-                  </span>
-                </div>
+      {/* DRAWER RETRÁTIL DE INSPEÇÃO (NUNCA COBRE OS NÓS NO MOBILE) */}
+      {selectedNode && (
+        <div className="relative z-30 p-3.5 sm:p-4 bg-slate-950/95 border-t border-cyan-500/30 backdrop-blur-2xl transition-all animate-in slide-in-from-bottom duration-200">
+          <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 flex items-center justify-center">
+                {renderNodeIcon(selectedNode.iconName, 13)}
               </div>
+              <div>
+                <h4 className="text-xs sm:text-sm font-bold text-white tracking-tight">
+                  {selectedNode.label}
+                </h4>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  {selectedNode.amount !== undefined
+                    ? `Impacto: R$ ${formatCurrency(selectedNode.amount)}`
+                    : "Métrica Estrutural"}
+                </span>
+              </div>
+            </div>
 
+            <div className="flex items-center gap-2">
               <span
                 className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase ${
                   selectedNode.status === "healthy"
-                    ? "bg-emerald-500/20 text-emerald-400 border border-emerald-400/30"
+                    ? "bg-emerald-500/20 text-emerald-300 border border-emerald-400/30"
                     : selectedNode.status === "alert"
-                    ? "bg-rose-500/20 text-rose-400 border border-rose-400/30"
-                    : "bg-amber-500/20 text-amber-400 border border-amber-400/30"
+                    ? "bg-rose-500/20 text-rose-300 border border-rose-400/30"
+                    : "bg-amber-500/20 text-amber-300 border border-amber-400/30"
                 }`}
               >
                 {selectedNode.status || "OK"}
               </span>
-            </div>
 
-            <p className="text-[11px] leading-relaxed my-2.5 opacity-90">
-              {selectedNode.insight || selectedNode.description}
-            </p>
-
-            {/* Sub-itens auditados do nó se houver */}
-            {selectedNode.details?.subItems && (
-              <div className="space-y-1 mb-3 max-h-24 overflow-y-auto no-scrollbar">
-                {selectedNode.details.subItems.map((item, idx) => (
-                  <div
-                    key={idx}
-                    className={`flex items-center justify-between text-[10px] p-1.5 rounded-lg border ${
-                      theme === "cosmic"
-                        ? "bg-slate-950/60 border-slate-800"
-                        : "bg-[#FAFAFC] border-black/[0.04]"
-                    }`}
-                  >
-                    <span className="truncate max-w-[160px]">{item.name}</span>
-                    <strong className="font-mono tabular-nums">
-                      R$ {formatCurrency(item.value)}
-                    </strong>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Ações Rápidas Conectadas com o Chat e Simulador */}
-            <div className="flex items-center gap-2 pt-1 border-t border-black/[0.06]">
-              {selectedNode.details?.actionPrompt && (
-                <button
-                  type="button"
-                  onClick={() => onDiscussWithAI(selectedNode.details!.actionPrompt!)}
-                  className={`flex-1 py-1.5 px-2.5 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs active:scale-95 ${
-                    theme === "cosmic"
-                      ? "bg-cyan-500 hover:bg-cyan-400 text-slate-950"
-                      : "bg-[#1D1D1F] hover:bg-black text-white"
-                  }`}
-                >
-                  <MessageSquare size={12} />
-                  <span>Discutir no Chat</span>
-                </button>
-              )}
-
-              {onOpenSimulator && selectedNode.category === "drains" && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    onOpenSimulator({
-                      description: selectedNode.label,
-                      amount: selectedNode.amount || 100,
-                    })
-                  }
-                  className={`py-1.5 px-2.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer active:scale-95 ${
-                    theme === "cosmic"
-                      ? "bg-slate-800 hover:bg-slate-700 text-white border-slate-700"
-                      : "bg-[#F2F2F7] hover:bg-[#E5E5EA] text-[#1D1D1F] border-black/5"
-                  }`}
-                  title="Simular corte deste item"
-                >
-                  Simular Corte
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => setSelectedNodeId(null)}
+                className="w-6 h-6 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
+                title="Fechar inspeção"
+              >
+                <X size={12} />
+              </button>
             </div>
           </div>
-        )}
-      </div>
 
-      {/* FOOTER DO MAPA MENTAL COM GUIA DE INTERAÇÃO DIDÁTICA */}
-      <div
-        className={`p-3 px-5 text-[11px] flex flex-wrap items-center justify-between gap-2 border-t backdrop-blur-md ${
-          theme === "cosmic"
-            ? "bg-slate-950/80 border-slate-800 text-slate-400"
-            : "bg-white/80 border-black/5 text-[#86868B]"
-        }`}
-      >
-        <div className="flex items-center gap-3 flex-wrap">
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-cyan-400" />
-            <span>Núcleo & Meta</span>
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-emerald-400" />
-            <span>Renda</span>
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-amber-400" />
-            <span>Contas Fixas</span>
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-indigo-400" />
-            <span>Cartões</span>
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-rose-400" />
-            <span>Ralos (IA)</span>
-          </span>
+          <p className="text-[11px] leading-relaxed my-2 text-slate-300">
+            {selectedNode.insight || selectedNode.description}
+          </p>
+
+          {/* Sub-itens auditados */}
+          {selectedNode.details?.subItems && (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5 my-2">
+              {selectedNode.details.subItems.map((item, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center justify-between text-[10px] p-1.5 rounded-lg bg-slate-900/80 border border-slate-800"
+                >
+                  <span className="truncate max-w-[120px] text-slate-400">{item.name}</span>
+                  <strong className="font-mono text-white tabular-nums">
+                    R$ {formatCurrency(item.value)}
+                  </strong>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Botões de Ação */}
+          <div className="flex items-center gap-2 pt-2 border-t border-white/10">
+            {selectedNode.details?.actionPrompt && (
+              <button
+                type="button"
+                onClick={() => onDiscussWithAI(selectedNode.details!.actionPrompt!)}
+                className="flex-1 py-1.5 px-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs active:scale-95"
+              >
+                <MessageSquare size={13} />
+                <span>Discutir com o Consultor no Chat</span>
+              </button>
+            )}
+
+            {onOpenSimulator && selectedNode.category === "drains" && (
+              <button
+                type="button"
+                onClick={() =>
+                  onOpenSimulator({
+                    description: selectedNode.label,
+                    amount: selectedNode.amount || 100,
+                  })
+                }
+                className="py-1.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold border border-slate-700 transition-all cursor-pointer active:scale-95"
+              >
+                Simular Corte
+              </button>
+            )}
+          </div>
         </div>
-
-        <span className="font-mono text-[10px]">
-          Fórmula de Sobra: (Saldo + Renda) - (Fixas + Faturas) = R$ {formatCurrency(effectiveProjectedFree)}
-        </span>
-      </div>
+      )}
     </div>
   );
 }

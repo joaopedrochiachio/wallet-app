@@ -50,6 +50,7 @@ import { FinancialMindMap } from "@/components/ai/FinancialMindMap";
 import { SpendingCalendarHeatmap } from "@/components/ai/SpendingCalendarHeatmap";
 import { VisualPatternStorytelling } from "@/components/ai/VisualPatternStorytelling";
 import { AgentAvatar } from "@/components/companion/AgentAvatar";
+import { WalletCharacter, CharacterId } from "@/components/companion/WalletCharacters";
 import { InteractiveFinancialCalendar } from "@/components/companion/InteractiveFinancialCalendar";
 import { PurchaseSimulatorModal } from "@/components/companion/PurchaseSimulatorModal";
 import {
@@ -834,11 +835,11 @@ export default function AIAnalystPage() {
     return true;
   });
 
-  const personasList = [
-    { id: "optimizer", name: "Rubi", role: "CFO & Estrategista", icon: <Flame size={12} className="text-rose-500" /> },
-    { id: "guardian", name: "Sol", role: "Guardiã de Hábitos", icon: <Shield size={12} className="text-amber-500" /> },
-    { id: "builder", name: "Nanquim", role: "Faturas & Caixa", icon: <Compass size={12} className="text-blue-500" /> },
-    { id: "scaler", name: "Atlas", role: "Metas & Patrimônio", icon: <Zap size={12} className="text-emerald-500" /> },
+  const personasList: { id: CharacterId; name: string; role: string; shortRole: string }[] = [
+    { id: "wallet-rubi", name: "Rubi", role: "CFO & Estrategista", shortRole: "CFO" },
+    { id: "wallet-sol", name: "Sol", role: "Guardiã da Reserva", shortRole: "Reserva" },
+    { id: "wallet-nanquim", name: "Nanquim", role: "Arquiteto de Crédito", shortRole: "Crédito" },
+    { id: "wallet-atlos", name: "Atlos", role: "Metas & Patrimônio", shortRole: "Metas" },
   ];
 
   return (
@@ -993,31 +994,48 @@ export default function AIAnalystPage() {
                 </span>
               </div>
 
-              <div className="grid grid-cols-4 gap-1.5">
-                {personasList.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => setSelectedPersona(p.id)}
-                    className={`p-2 rounded-xl text-center transition-all cursor-pointer border flex flex-col items-center justify-center gap-0.5 active:scale-95 ${
-                      selectedPersona === p.id
-                        ? "bg-[#1D1D1F] text-white border-black shadow-xs"
-                        : "bg-[#F8F8FA] hover:bg-[#F2F2F7] text-[#1D1D1F] border-black/[0.04]"
-                    }`}
-                  >
-                    <div className="flex items-center gap-1 text-[11px] font-bold">
-                      {p.icon}
-                      <span>{p.name}</span>
-                    </div>
-                    <span
-                      className={`text-[9px] truncate max-w-full ${
-                        selectedPersona === p.id ? "text-white/70" : "text-[#86868B]"
+              <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
+                {personasList.map((p) => {
+                  const isSelected =
+                    selectedPersona === p.id ||
+                    selectedPersona.includes(p.id.replace("wallet-", "")) ||
+                    (p.id === "wallet-rubi" && selectedPersona === "optimizer") ||
+                    (p.id === "wallet-sol" && selectedPersona === "guardian") ||
+                    (p.id === "wallet-nanquim" && selectedPersona === "builder") ||
+                    (p.id === "wallet-atlos" && selectedPersona === "scaler");
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setSelectedPersona(p.id)}
+                      className={`p-1.5 sm:p-2 rounded-2xl text-center transition-all cursor-pointer border flex flex-col items-center justify-center gap-0.5 sm:gap-1 active:scale-95 ${
+                        isSelected
+                          ? "bg-[#1D1D1F] text-white border-black shadow-md ring-1 ring-black/20"
+                          : "bg-[#F8F8FA] hover:bg-[#F2F2F7] text-[#1D1D1F] border-black/[0.04]"
                       }`}
                     >
-                      {p.role.split(" ")[0]}
-                    </span>
-                  </button>
-                ))}
+                      <div className="h-8 w-8 sm:h-9 sm:w-9 flex items-center justify-center">
+                        <WalletCharacter
+                          id={p.id}
+                          size="sm"
+                          state={isSelected ? "falando" : "ocioso"}
+                          showBadge={false}
+                          className="pointer-events-none scale-85 sm:scale-90"
+                        />
+                      </div>
+                      <span className="text-[10px] sm:text-[11px] font-bold tracking-tight leading-tight">
+                        {p.name}
+                      </span>
+                      <span
+                        className={`text-[8.5px] sm:text-[9px] truncate max-w-full font-medium ${
+                          isSelected ? "text-white/70" : "text-[#86868B]"
+                        }`}
+                      >
+                        {p.shortRole}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -1286,19 +1304,19 @@ export default function AIAnalystPage() {
             {/* =======================================================
                 BARRA SELETORA DE MODOS DE ANÁLISE INTERATIVA (NOVO)
                ======================================================= */}
-            <div className="flex items-center p-1.5 bg-white/95 backdrop-blur-xl rounded-[22px] border border-black/[0.06] shadow-2xs overflow-x-auto no-scrollbar gap-1">
+            <div className="grid grid-cols-2 sm:grid-cols-4 p-1 sm:p-1.5 bg-white/95 backdrop-blur-xl rounded-2xl sm:rounded-[22px] border border-black/[0.06] shadow-xs gap-1">
               <button
                 type="button"
                 onClick={() => setActiveDossierTab("mindmap")}
-                className={`flex-1 min-w-[130px] py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95 ${
+                className={`w-full py-2 px-1.5 sm:px-2 rounded-xl text-[11px] sm:text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
                   activeDossierTab === "mindmap"
-                    ? "bg-[#1D1D1F] text-white shadow-xs"
+                    ? "bg-[#1D1D1F] text-white shadow-xs font-bold"
                     : "text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#F2F2F7]"
                 }`}
               >
                 <Compass size={14} className={activeDossierTab === "mindmap" ? "text-cyan-400" : ""} />
-                <span>Mapa Mental</span>
-                <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono ${
+                <span className="truncate">Mapa Mental</span>
+                <span className={`hidden md:inline-block text-[9px] px-1.5 py-0.2 rounded-full font-mono ${
                   activeDossierTab === "mindmap" ? "bg-cyan-500/30 text-cyan-200" : "bg-black/5 text-[#86868B]"
                 }`}>
                   Grafo
@@ -1308,51 +1326,51 @@ export default function AIAnalystPage() {
               <button
                 type="button"
                 onClick={() => setActiveDossierTab("calendar")}
-                className={`flex-1 min-w-[140px] py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95 ${
+                className={`w-full py-2 px-1.5 sm:px-2 rounded-xl text-[11px] sm:text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
                   activeDossierTab === "calendar"
-                    ? "bg-[#1D1D1F] text-white shadow-xs"
+                    ? "bg-[#1D1D1F] text-white shadow-xs font-bold"
                     : "text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#F2F2F7]"
                 }`}
               >
                 <CalendarDays size={14} className={activeDossierTab === "calendar" ? "text-blue-400" : ""} />
-                <span>Calendário</span>
-                <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono ${
+                <span className="truncate">Calendário</span>
+                <span className={`hidden md:inline-block text-[9px] px-1.5 py-0.2 rounded-full font-mono ${
                   activeDossierTab === "calendar" ? "bg-blue-500/30 text-blue-200" : "bg-black/5 text-[#86868B]"
                 }`}>
-                  Heatmap
+                  Fluxo
                 </span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setActiveDossierTab("storytelling")}
-                className={`flex-1 min-w-[130px] py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95 ${
+                className={`w-full py-2 px-1.5 sm:px-2 rounded-xl text-[11px] sm:text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
                   activeDossierTab === "storytelling"
-                    ? "bg-[#1D1D1F] text-white shadow-xs"
+                    ? "bg-[#1D1D1F] text-white shadow-xs font-bold"
                     : "text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#F2F2F7]"
                 }`}
               >
                 <Flame size={14} className={activeDossierTab === "storytelling" ? "text-rose-400" : ""} />
-                <span>Padrões</span>
-                <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono ${
+                <span className="truncate">Padrões</span>
+                <span className={`hidden md:inline-block text-[9px] px-1.5 py-0.2 rounded-full font-mono ${
                   activeDossierTab === "storytelling" ? "bg-rose-500/30 text-rose-200" : "bg-black/5 text-[#86868B]"
                 }`}>
-                  Didático
+                  IA
                 </span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setActiveDossierTab("overview")}
-                className={`flex-1 min-w-[120px] py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95 ${
+                className={`w-full py-2 px-1.5 sm:px-2 rounded-xl text-[11px] sm:text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
                   activeDossierTab === "overview"
-                    ? "bg-[#1D1D1F] text-white shadow-xs"
+                    ? "bg-[#1D1D1F] text-white shadow-xs font-bold"
                     : "text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#F2F2F7]"
                 }`}
               >
                 <Sparkles size={14} className={activeDossierTab === "overview" ? "text-amber-400" : ""} />
-                <span>Visão Geral</span>
-                <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono ${
+                <span className="truncate">Visão Geral</span>
+                <span className={`hidden md:inline-block text-[9px] px-1.5 py-0.2 rounded-full font-mono ${
                   activeDossierTab === "overview" ? "bg-amber-500/30 text-amber-200" : "bg-black/5 text-[#86868B]"
                 }`}>
                   {currentScore} pts
