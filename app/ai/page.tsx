@@ -46,6 +46,9 @@ import {
 } from "@/components/ai/CategorySpectrumBar";
 import { InstallmentTimelineChart } from "@/components/ai/InstallmentTimelineChart";
 import { InteractivePatternCard } from "@/components/ai/InteractivePatternCard";
+import { FinancialMindMap } from "@/components/ai/FinancialMindMap";
+import { SpendingCalendarHeatmap } from "@/components/ai/SpendingCalendarHeatmap";
+import { VisualPatternStorytelling } from "@/components/ai/VisualPatternStorytelling";
 import { AgentAvatar } from "@/components/companion/AgentAvatar";
 import { InteractiveFinancialCalendar } from "@/components/companion/InteractiveFinancialCalendar";
 import { PurchaseSimulatorModal } from "@/components/companion/PurchaseSimulatorModal";
@@ -215,6 +218,7 @@ export default function AIAnalystPage() {
   const [isSending, setIsSending] = useState(false);
   const [isHistoryDrawerOpen, setIsHistoryDrawerOpen] = useState(false);
   const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
+  const [activeDossierTab, setActiveDossierTab] = useState<"mindmap" | "calendar" | "storytelling" | "overview">("mindmap");
   const [payingBillId, setPayingBillId] = useState<string | null>(null);
 
   const chatBottomRef = useRef<HTMLDivElement>(null);
@@ -1275,260 +1279,272 @@ export default function AIAnalystPage() {
               COLUNA DIREITA: O DOSSIÊ DO AUDITOR (ANÁLISES E AÇÕES)
              ======================================================= */}
           <div
-            className={`lg:col-span-7 flex flex-col space-y-5 ${
+            className={`lg:col-span-7 flex flex-col space-y-4 ${
               mobilePane === "dossier" ? "block" : "hidden lg:flex"
             }`}
           >
-            {/* 1. ANEL DE SAÚDE CONTÁBIL & 3 KPIS AUDITADOS */}
-            <FinancialHealthRing
-              score={currentScore}
-              healthStatus={diagnosis?.healthStatus}
-              commitmentRatio={commitmentRatio}
-              commitmentCeiling={userProfile?.maxCommitmentAlertPercent || 60}
-              mainBalance={mainBalance}
-              totalInvoices={totalInvoices}
-              pendingBills={diagnosis?.cashflowWindow?.currentMonth.pendingBills ?? monthExpense}
-              targetEndMonthBalance={targetEndMonthBalance}
-              projectedFreeBalance={diagnosis?.targetAnalysis?.projectedEndMonthBalance ?? effectiveProjectedFree}
-              safeSpendingMargin={diagnosis?.targetAnalysis?.safeSpendingMargin ?? safeSpendingMargin}
-              missingAmount={diagnosis?.targetAnalysis?.missingAmount ?? missingAmount}
-              targetStatus={diagnosis?.targetAnalysis?.status ?? targetStatus}
-              onUpdateTarget={handleUpdateTarget}
-              executiveSummary={cleanExecutiveSummary(diagnosis?.executiveSummary)}
-              onOpenSimulator={() => setIsInlineSimOpen(true)}
-              onDiscussWithAI={(topic) => {
-                handleSendMessage(topic);
-              }}
-            />
+            {/* =======================================================
+                BARRA SELETORA DE MODOS DE ANÁLISE INTERATIVA (NOVO)
+               ======================================================= */}
+            <div className="flex items-center p-1.5 bg-white/95 backdrop-blur-xl rounded-[22px] border border-black/[0.06] shadow-2xs overflow-x-auto no-scrollbar gap-1">
+              <button
+                type="button"
+                onClick={() => setActiveDossierTab("mindmap")}
+                className={`flex-1 min-w-[130px] py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95 ${
+                  activeDossierTab === "mindmap"
+                    ? "bg-[#1D1D1F] text-white shadow-xs"
+                    : "text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#F2F2F7]"
+                }`}
+              >
+                <Compass size={14} className={activeDossierTab === "mindmap" ? "text-cyan-400" : ""} />
+                <span>Mapa Mental</span>
+                <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono ${
+                  activeDossierTab === "mindmap" ? "bg-cyan-500/30 text-cyan-200" : "bg-black/5 text-[#86868B]"
+                }`}>
+                  Grafo
+                </span>
+              </button>
 
-            {/* 2. PRÓXIMOS VENCIMENTOS COM BAIXA DIRETA EM 1 CLIQUE */}
-            <section className="bg-white rounded-[28px] p-5 border border-black/[0.05] shadow-[0_4px_24px_rgba(0,0,0,0.02)] space-y-3.5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <CalendarClock size={16} className="text-[#1D1D1F]" />
-                  <div>
-                    <h3 className="text-sm font-bold text-[#1D1D1F]">
-                      Próximos Vencimentos de Hoje em Diante
-                    </h3>
-                    <p className="text-[11px] text-[#86868B]">
-                      Avisos de contas futuras. Baixe com 1 toque sem sair da tela.
-                    </p>
-                  </div>
-                </div>
+              <button
+                type="button"
+                onClick={() => setActiveDossierTab("calendar")}
+                className={`flex-1 min-w-[140px] py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95 ${
+                  activeDossierTab === "calendar"
+                    ? "bg-[#1D1D1F] text-white shadow-xs"
+                    : "text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#F2F2F7]"
+                }`}
+              >
+                <CalendarDays size={14} className={activeDossierTab === "calendar" ? "text-blue-400" : ""} />
+                <span>Calendário</span>
+                <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono ${
+                  activeDossierTab === "calendar" ? "bg-blue-500/30 text-blue-200" : "bg-black/5 text-[#86868B]"
+                }`}>
+                  Heatmap
+                </span>
+              </button>
 
-                <button
-                  type="button"
-                  onClick={() => setIsCalendarModalOpen(true)}
-                  className="px-3 py-1.5 rounded-full bg-[#F2F2F7] hover:bg-[#E5E5EA] text-[#1D1D1F] text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs border border-black/5"
-                >
-                  <CalendarDays size={13} className="text-blue-600" />
-                  <span>Ver Calendário Completo</span>
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => setActiveDossierTab("storytelling")}
+                className={`flex-1 min-w-[130px] py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95 ${
+                  activeDossierTab === "storytelling"
+                    ? "bg-[#1D1D1F] text-white shadow-xs"
+                    : "text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#F2F2F7]"
+                }`}
+              >
+                <Flame size={14} className={activeDossierTab === "storytelling" ? "text-rose-400" : ""} />
+                <span>Padrões</span>
+                <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono ${
+                  activeDossierTab === "storytelling" ? "bg-rose-500/30 text-rose-200" : "bg-black/5 text-[#86868B]"
+                }`}>
+                  Didático
+                </span>
+              </button>
 
-              {upcomingEvents.length === 0 ? (
-                <div className="p-4 rounded-2xl bg-[#FAFAFC] text-center text-xs text-[#86868B] space-y-1">
-                  <CheckCircle2 size={20} className="mx-auto text-emerald-500" />
-                  <p>Nenhuma conta pendente para os próximos 7 dias. Tudo em dia!</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {upcomingEvents.slice(0, 4).map((event) => (
-                    <div
-                      key={event.id}
-                      className={`p-3 rounded-2xl border flex items-center justify-between text-xs transition-all ${
-                        event.isUrgent
-                          ? "bg-amber-50/60 border-amber-200/70 text-amber-900"
-                          : "bg-[#FAFAFC] border-black/[0.04] text-[#1D1D1F]"
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        {event.type === "credit_invoice" ? (
-                          <CreditCard size={15} className="shrink-0 text-indigo-600" />
-                        ) : (
-                          <Building2 size={15} className="shrink-0 text-[#86868B]" />
-                        )}
-                        <div className="min-w-0">
-                          <strong className="block font-semibold truncate text-[#1D1D1F]">
-                            {event.title}
-                          </strong>
-                          <span className="text-[10px] text-[#86868B]">
-                            {event.dueDate} ({event.daysRemaining === 0 ? "Vence hoje" : `em ${event.daysRemaining}d`})
-                          </span>
-                        </div>
-                      </div>
+              <button
+                type="button"
+                onClick={() => setActiveDossierTab("overview")}
+                className={`flex-1 min-w-[120px] py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95 ${
+                  activeDossierTab === "overview"
+                    ? "bg-[#1D1D1F] text-white shadow-xs"
+                    : "text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#F2F2F7]"
+                }`}
+              >
+                <Sparkles size={14} className={activeDossierTab === "overview" ? "text-amber-400" : ""} />
+                <span>Visão Geral</span>
+                <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono ${
+                  activeDossierTab === "overview" ? "bg-amber-500/30 text-amber-200" : "bg-black/5 text-[#86868B]"
+                }`}>
+                  {currentScore} pts
+                </span>
+              </button>
+            </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
-                        <strong className="font-mono text-xs font-bold text-[#1D1D1F]">
-                          R$ {formatCurrency(event.amount)}
-                        </strong>
+            {/* ABA 1: MAPA MENTAL NEURAL INTERATIVO */}
+            {activeDossierTab === "mindmap" && (
+              <FinancialMindMap
+                diagnosis={diagnosis}
+                cards={cards}
+                transactions={transactions}
+                recurringItems={recurringItems}
+                mainBalance={mainBalance}
+                monthIncome={monthIncome}
+                monthExpense={monthExpense}
+                targetEndMonthBalance={targetEndMonthBalance}
+                effectiveProjectedFree={effectiveProjectedFree}
+                safeDailyAllowance={safeSpendMetric.safeDailyAllowance}
+                remainingDays={safeSpendMetric.remainingDaysInMonth}
+                activePersona={selectedPersona}
+                onDiscussWithAI={(topic) => handleSendMessage(topic)}
+                onOpenSimulator={(params) => {
+                  if (params?.description) setSimDescription(params.description);
+                  if (params?.amount) setSimAmount(String(params.amount));
+                  setIsInlineSimOpen(true);
+                }}
+              />
+            )}
 
-                        {event.id.startsWith("recurring_") && (
-                          <button
-                            type="button"
-                            onClick={() => handlePayUpcomingItem(event.id)}
-                            disabled={payingBillId === event.id}
-                            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs active:scale-95 disabled:opacity-50"
-                          >
-                            <CheckCircle2 size={11} />
-                            <span>{payingBillId === event.id ? "Baixando..." : "Baixar"}</span>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
+            {/* ABA 2: CALENDÁRIO DE GASTOS COM HEATMAP */}
+            {activeDossierTab === "calendar" && (
+              <SpendingCalendarHeatmap
+                recurringItems={recurringItems}
+                cards={cards}
+                transactions={transactions}
+                mainBalance={mainBalance}
+                safeDailyAllowance={safeSpendMetric.safeDailyAllowance}
+                targetEndMonthBalance={targetEndMonthBalance}
+                monthlyProjection={currentMonthProj}
+                onRealizeItem={realizeRecurringItemNow}
+                onDiscussWithAI={(topic) => handleSendMessage(topic)}
+              />
+            )}
 
-            {/* 3. RADAR DE PADRÕES & RALOS (COM BOTÃO 'CONVERSAR SOBRE TAL COISA') */}
-            <section className="bg-white rounded-[28px] p-5 border border-black/[0.05] shadow-[0_4px_24px_rgba(0,0,0,0.02)] space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <UtensilsCrossed size={16} className="text-[#1D1D1F]" />
-                  <div>
-                    <h3 className="text-sm font-bold text-[#1D1D1F]">
-                      Radar de Padrões & Hábitos de Consumo
-                    </h3>
-                    <p className="text-[11px] text-[#86868B]">
-                      Identificação de ralos e assinaturas. Clique para discutir qualquer item com o auditor.
-                    </p>
-                  </div>
-                </div>
+            {/* ABA 3: STORYTELLING CONTÁBIL & PADRÕES DIDÁTICOS */}
+            {activeDossierTab === "storytelling" && (
+              <VisualPatternStorytelling
+                diagnosis={diagnosis}
+                targetEndMonthBalance={targetEndMonthBalance}
+                effectiveProjectedFree={effectiveProjectedFree}
+                safeDailyAllowance={safeSpendMetric.safeDailyAllowance}
+                mainBalance={mainBalance}
+                monthExpense={monthExpense}
+                onDiscussWithAI={(prompt) => handleSendMessage(prompt)}
+                onOpenSimulator={(params) => {
+                  if (params?.description) setSimDescription(params.description);
+                  if (params?.amount) setSimAmount(String(params.amount));
+                  setIsInlineSimOpen(true);
+                }}
+                onDismissPattern={handleDismissPattern}
+                onRefreshPatterns={handleFetchMorePatterns}
+                isSearchingPatterns={isSearchingPatterns}
+              />
+            )}
 
-                <div className="flex items-center gap-2 self-start sm:self-auto">
-                  <button
-                    type="button"
-                    onClick={handleFetchMorePatterns}
-                    disabled={isSearchingPatterns}
-                    className="text-[11px] font-semibold text-[#1D1D1F] bg-[#F2F2F7] hover:bg-[#E5E5EA] border border-black/[0.05] px-3 py-1 rounded-full transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                  >
-                    <RefreshCw size={11} className={isSearchingPatterns ? "animate-spin" : ""} />
-                    <span>{isSearchingPatterns ? "Auditando..." : "Buscar Novos"}</span>
-                  </button>
-                </div>
-              </div>
+            {/* ABA 4: VISÃO GERAL EXECUTIVA TRADICIONAL */}
+            {activeDossierTab === "overview" && (
+              <div className="space-y-5 animate-in fade-in duration-300">
+                {/* 1. ANEL DE SAÚDE CONTÁBIL & 3 KPIS AUDITADOS */}
+                <FinancialHealthRing
+                  score={currentScore}
+                  healthStatus={diagnosis?.healthStatus}
+                  commitmentRatio={commitmentRatio}
+                  commitmentCeiling={userProfile?.maxCommitmentAlertPercent || 60}
+                  mainBalance={mainBalance}
+                  totalInvoices={totalInvoices}
+                  pendingBills={diagnosis?.cashflowWindow?.currentMonth.pendingBills ?? monthExpense}
+                  targetEndMonthBalance={targetEndMonthBalance}
+                  projectedFreeBalance={diagnosis?.targetAnalysis?.projectedEndMonthBalance ?? effectiveProjectedFree}
+                  safeSpendingMargin={diagnosis?.targetAnalysis?.safeSpendingMargin ?? safeSpendingMargin}
+                  missingAmount={diagnosis?.targetAnalysis?.missingAmount ?? missingAmount}
+                  targetStatus={diagnosis?.targetAnalysis?.status ?? targetStatus}
+                  onUpdateTarget={handleUpdateTarget}
+                  executiveSummary={cleanExecutiveSummary(diagnosis?.executiveSummary)}
+                  onOpenSimulator={() => setIsInlineSimOpen(true)}
+                  onDiscussWithAI={(topic) => {
+                    handleSendMessage(topic);
+                  }}
+                />
 
-              {/* Clusters Filter */}
-              <div className="flex flex-wrap items-center gap-1.5 bg-[#F2F2F7] p-1 rounded-2xl w-fit border border-black/[0.04]">
-                <button
-                  type="button"
-                  onClick={() => setSelectedCluster("all")}
-                  className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                    selectedCluster === "all" ? "bg-white text-[#1D1D1F] shadow-xs" : "text-[#86868B]"
-                  }`}
-                >
-                  Todos ({visibleSpecificAlerts.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedCluster("alerts")}
-                  className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                    selectedCluster === "alerts" ? "bg-white text-rose-700 shadow-xs" : "text-[#86868B]"
-                  }`}
-                >
-                  Ralos ({visibleSpecificAlerts.filter((i) => i.totalAmount >= 120).length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedCluster("recurring")}
-                  className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                    selectedCluster === "recurring" ? "bg-white text-purple-700 shadow-xs" : "text-[#86868B]"
-                  }`}
-                >
-                  Assinaturas
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedCluster("habits")}
-                  className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                    selectedCluster === "habits" ? "bg-white text-amber-700 shadow-xs" : "text-[#86868B]"
-                  }`}
-                >
-                  Estilo de Vida
-                </button>
-              </div>
-
-              {patternsFeedback && (
-                <div className="p-2.5 rounded-xl bg-blue-50 text-blue-800 text-xs border border-blue-200">
-                  {patternsFeedback}
-                </div>
-              )}
-
-              {/* Cards de Padrão com 'Conversar sobre isto' */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {filteredPatterns.length === 0 ? (
-                  <div className="col-span-full p-6 text-center text-xs text-[#86868B] bg-[#FAFAFC] rounded-2xl">
-                    Nenhum alerta ou ralo financeiro neste filtro.
-                  </div>
-                ) : (
-                  filteredPatterns.map((alert) => (
-                    <div
-                      key={alert.item}
-                      className="p-4 rounded-2xl bg-[#FAFAFC] hover:bg-white border border-black/[0.05] hover:border-black/15 transition-all shadow-2xs space-y-2.5 flex flex-col justify-between"
-                    >
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white border border-black/5 text-[#1D1D1F]">
-                            {alert.habitCategory || "Despesa"}
-                          </span>
-                          <span className="text-xs font-mono font-bold text-rose-600">
-                            R$ {formatCurrency(alert.totalAmount)}
-                          </span>
-                        </div>
-                        <h4 className="text-sm font-bold text-[#1D1D1F]">{alert.item}</h4>
-                        <p className="text-[11px] text-[#86868B] leading-relaxed">
-                          {alert.message || (alert.count ? `${alert.count} lançamentos detectados neste ciclo.` : "Padrão de gasto identificado no ciclo.")}
+                {/* 2. PRÓXIMOS VENCIMENTOS COM BAIXA DIRETA EM 1 CLIQUE */}
+                <section className="bg-white rounded-[28px] p-5 border border-black/[0.05] shadow-[0_4px_24px_rgba(0,0,0,0.02)] space-y-3.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <CalendarClock size={16} className="text-[#1D1D1F]" />
+                      <div>
+                        <h3 className="text-sm font-bold text-[#1D1D1F]">
+                          Próximos Vencimentos de Hoje em Diante
+                        </h3>
+                        <p className="text-[11px] text-[#86868B]">
+                          Avisos de contas futuras. Baixe com 1 toque sem sair da tela.
                         </p>
                       </div>
-
-                      {/* Botão Unificado: Conversar sobre isto */}
-                      <div className="pt-2 border-t border-black/[0.04] flex items-center justify-between gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const question = `Auditor, quero analisar o alerta de "${alert.item}" (total de R$ ${alert.totalAmount.toFixed(2)}). Qual a sua recomendação contábil para otimizar isso?`;
-                            handleSendMessage(question);
-                          }}
-                          className="w-full py-1.5 px-3 rounded-xl bg-white hover:bg-[#F2F2F7] active:scale-95 text-[#1D1D1F] border border-black/[0.08] text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-                        >
-                          <MessageSquare size={12} className="text-blue-600" />
-                          <span>Conversar sobre isto</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleDismissPattern(alert.item)}
-                          className="p-1.5 rounded-lg text-[#86868B] hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                          title="Ignorar alerta"
-                        >
-                          <X size={13} />
-                        </button>
-                      </div>
                     </div>
-                  ))
+
+                    <button
+                      type="button"
+                      onClick={() => setActiveDossierTab("calendar")}
+                      className="px-3 py-1.5 rounded-full bg-[#F2F2F7] hover:bg-[#E5E5EA] text-[#1D1D1F] text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs border border-black/5"
+                    >
+                      <CalendarDays size={13} className="text-blue-600" />
+                      <span>Ver Calendário Completo</span>
+                    </button>
+                  </div>
+
+                  {upcomingEvents.length === 0 ? (
+                    <div className="p-4 rounded-2xl bg-[#FAFAFC] text-center text-xs text-[#86868B] space-y-1">
+                      <CheckCircle2 size={20} className="mx-auto text-emerald-500" />
+                      <p>Nenhuma conta pendente para os próximos 7 dias. Tudo em dia!</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {upcomingEvents.slice(0, 4).map((event) => (
+                        <div
+                          key={event.id}
+                          className={`p-3 rounded-2xl border flex items-center justify-between text-xs transition-all ${
+                            event.isUrgent
+                              ? "bg-amber-50/60 border-amber-200/70 text-amber-900"
+                              : "bg-[#FAFAFC] border-black/[0.04] text-[#1D1D1F]"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            {event.type === "credit_invoice" ? (
+                              <CreditCard size={15} className="shrink-0 text-indigo-600" />
+                            ) : (
+                              <Building2 size={15} className="shrink-0 text-[#86868B]" />
+                            )}
+                            <div className="min-w-0">
+                              <strong className="block font-semibold truncate text-[#1D1D1F]">
+                                {event.title}
+                              </strong>
+                              <span className="text-[10px] text-[#86868B]">
+                                {event.dueDate} ({event.daysRemaining === 0 ? "Vence hoje" : `em ${event.daysRemaining}d`})
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <strong className="font-mono text-xs font-bold text-[#1D1D1F]">
+                              R$ {formatCurrency(event.amount)}
+                            </strong>
+
+                            {event.id.startsWith("recurring_") && (
+                              <button
+                                type="button"
+                                onClick={() => handlePayUpcomingItem(event.id)}
+                                disabled={payingBillId === event.id}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs active:scale-95 disabled:opacity-50"
+                              >
+                                <CheckCircle2 size={11} />
+                                <span>{payingBillId === event.id ? "Baixando..." : "Baixar"}</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                {/* 3. FLUXO DE CAIXA & ESPECTRO DE GASTOS */}
+                <CashflowBarChart
+                  currentMonthName={diagnosis?.cashflowWindow?.currentMonth.monthName || "Mês Atual"}
+                  currentBalance={diagnosis?.cashflowWindow?.currentMonth.checkingBalance ?? mainBalance}
+                  currentPending={diagnosis?.cashflowWindow?.currentMonth.pendingBills ?? monthExpense}
+                  currentFree={diagnosis?.cashflowWindow?.currentMonth.projectedFreeBalance ?? mainBalance}
+                  nextMonthName={diagnosis?.cashflowWindow?.nextMonth.monthName || "Próximo Mês"}
+                  nextIncome={diagnosis?.cashflowWindow?.nextMonth.projectedIncome ?? monthlyIncome}
+                  nextExpenses={diagnosis?.cashflowWindow?.nextMonth.committedExpenses ?? totalInvoices}
+                  nextFree={diagnosis?.cashflowWindow?.nextMonth.projectedFreeBalance ?? (monthlyIncome - totalInvoices)}
+                />
+
+                {spectrumCategories.length > 0 && (
+                  <CategorySpectrumBar
+                    categories={spectrumCategories}
+                    selectedCategory={selectedCategoryFilter}
+                    onSelectCategory={setSelectedCategoryFilter}
+                  />
                 )}
               </div>
-            </section>
-
-            {/* 4. FLUXO DE CAIXA & ESPECTRO DE GASTOS */}
-            <CashflowBarChart
-              currentMonthName={diagnosis?.cashflowWindow?.currentMonth.monthName || "Mês Atual"}
-              currentBalance={diagnosis?.cashflowWindow?.currentMonth.checkingBalance ?? mainBalance}
-              currentPending={diagnosis?.cashflowWindow?.currentMonth.pendingBills ?? monthExpense}
-              currentFree={diagnosis?.cashflowWindow?.currentMonth.projectedFreeBalance ?? mainBalance}
-              nextMonthName={diagnosis?.cashflowWindow?.nextMonth.monthName || "Próximo Mês"}
-              nextIncome={diagnosis?.cashflowWindow?.nextMonth.projectedIncome ?? monthlyIncome}
-              nextExpenses={diagnosis?.cashflowWindow?.nextMonth.committedExpenses ?? totalInvoices}
-              nextFree={diagnosis?.cashflowWindow?.nextMonth.projectedFreeBalance ?? (monthlyIncome - totalInvoices)}
-            />
-
-            {spectrumCategories.length > 0 && (
-              <CategorySpectrumBar
-                categories={spectrumCategories}
-                selectedCategory={selectedCategoryFilter}
-                onSelectCategory={setSelectedCategoryFilter}
-              />
             )}
           </div>
         </div>
