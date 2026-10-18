@@ -98,9 +98,9 @@ export function QuickCaptureModal({ isOpen, onClose, onSuccess }: QuickCaptureMo
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex sm:items-center items-end justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[100] flex sm:items-center items-end justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
       <div
-        className="w-full max-w-lg rounded-t-[32px] sm:rounded-[32px] bg-white/95 backdrop-blur-2xl border border-black/[0.08] shadow-[0_24px_60px_rgba(0,0,0,0.18)] overflow-hidden flex flex-col relative animate-in slide-in-from-bottom sm:zoom-in-95 duration-200 max-h-[90dvh] pb-safe sm:pb-0"
+        className="w-full max-w-lg rounded-t-[32px] sm:rounded-[32px] bg-white/95 backdrop-blur-2xl border border-black/[0.08] shadow-[0_24px_60px_rgba(0,0,0,0.18)] overflow-hidden flex flex-col relative animate-in slide-in-from-bottom sm:zoom-in-95 duration-200 max-h-[92dvh] pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-0"
         onClick={(e) => e.stopPropagation()}
       >
         {/* iOS Pull Indicator para Mobile PWA */}
@@ -110,23 +110,23 @@ export function QuickCaptureModal({ isOpen, onClose, onSuccess }: QuickCaptureMo
         <div className="absolute top-0 inset-x-0 h-32 bg-gradient-to-b from-amber-500/10 via-orange-500/5 to-transparent pointer-events-none" />
 
         {/* Header do Modal */}
-        <div className="flex items-center justify-between p-6 pb-4 border-b border-black/[0.05] relative z-10">
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between p-4 sm:p-6 pb-3 sm:pb-4 border-b border-black/[0.05] relative z-10">
+          <div className="flex items-center gap-3 min-w-0">
             <AgentAvatar
               persona={userProfile.persona || "guardian"}
               state={justSaved ? "celebrating" : isSubmitting ? "thinking" : "idle"}
               size="md"
             />
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-1.5">
                 <span className="text-xs font-bold uppercase tracking-wider text-amber-600">
-                  Captura Rápida Wallet
+                  Captura Rápida
                 </span>
                 <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-100 text-amber-800">
                   Linguagem Natural
                 </span>
               </div>
-              <h2 className="text-base font-bold text-[#1D1D1F]">
+              <h2 className="text-sm sm:text-base font-bold text-[#1D1D1F] truncate">
                 Registrar gasto em segundos
               </h2>
             </div>
@@ -135,16 +135,16 @@ export function QuickCaptureModal({ isOpen, onClose, onSuccess }: QuickCaptureMo
           <button
             type="button"
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-black/5 hover:bg-black/10 text-[#86868B] hover:text-[#1D1D1F] flex items-center justify-center transition-colors cursor-pointer"
+            className="w-8 h-8 rounded-full bg-black/5 hover:bg-black/10 text-[#86868B] hover:text-[#1D1D1F] flex items-center justify-center transition-colors cursor-pointer shrink-0"
           >
             <X size={16} />
           </button>
         </div>
 
         {/* Conteúdo Principal */}
-        <div className="p-6 space-y-5 relative z-10">
+        <div className="p-4 sm:p-6 space-y-4 relative z-10 overflow-y-auto">
           {justSaved ? (
-            <div className="py-8 text-center space-y-3 animate-in zoom-in duration-300">
+            <div className="py-6 sm:py-8 text-center space-y-3 animate-in zoom-in duration-300">
               <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-inner">
                 <CheckCircle2 size={32} />
               </div>
@@ -160,8 +160,8 @@ export function QuickCaptureModal({ isOpen, onClose, onSuccess }: QuickCaptureMo
           ) : (
             <>
               {/* Chips de Atalho Rápido */}
-              <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-                <span className="text-[11px] font-semibold text-[#86868B] shrink-0">
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                <span className="text-[11px] font-semibold text-[#86868B] shrink-0 mr-1">
                   Exemplos:
                 </span>
                 {quickChips.map((chip) => (
@@ -169,7 +169,7 @@ export function QuickCaptureModal({ isOpen, onClose, onSuccess }: QuickCaptureMo
                     key={chip.label}
                     type="button"
                     onClick={() => handleQuickChip(chip.label)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#F2F2F7] hover:bg-[#E5E5EA] text-[#1D1D1F] text-xs font-medium transition-all shrink-0 cursor-pointer active:scale-95"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#F2F2F7] hover:bg-[#E5E5EA] text-[#1D1D1F] text-xs font-medium transition-all shrink-0 cursor-pointer active:scale-95 border border-black/5"
                   >
                     {chip.icon}
                     <span>{chip.label}</span>
@@ -186,7 +186,7 @@ export function QuickCaptureModal({ isOpen, onClose, onSuccess }: QuickCaptureMo
                     onChange={(e) => setInputText(e.target.value)}
                     placeholder="Ex: Almoço 38,50 no nubank ou Uber 22"
                     autoFocus
-                    className="w-full text-base sm:text-lg font-medium px-4 py-3.5 rounded-2xl bg-[#F2F2F7] border border-black/5 focus:bg-white focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 outline-none transition-all placeholder:text-[#A1A1A6]"
+                    className="w-full text-base sm:text-lg font-medium px-4 py-3 sm:py-3.5 rounded-2xl bg-[#F2F2F7] border border-black/5 focus:bg-white focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 outline-none transition-all placeholder:text-[#A1A1A6]"
                   />
                   {inputText.trim() && (
                     <button
@@ -199,43 +199,33 @@ export function QuickCaptureModal({ isOpen, onClose, onSuccess }: QuickCaptureMo
                   )}
                 </div>
 
-                {/* Prévia do Parse em Tempo Real */}
+                {/* Prévia do Parse Compacta e Elegante para Mobile */}
                 <div className="p-3.5 rounded-2xl bg-[#FAFAFC] border border-black/[0.04] space-y-2 text-xs">
                   <div className="flex items-center justify-between text-[#86868B] text-[11px] font-semibold uppercase tracking-wider">
                     <span>O que o assistente entendeu:</span>
                     {parsed.amount > 0 && (
-                      <span className="text-emerald-600 font-bold">Pronto para salvar</span>
+                      <span className="text-emerald-600 font-bold">✓ Pronto para salvar</span>
                     )}
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
-                    <div className="bg-white p-2 rounded-xl border border-black/5">
-                      <span className="text-[10px] text-[#86868B] block">Valor</span>
-                      <strong className="text-sm text-[#1D1D1F] font-mono tabular-nums">
-                        {parsed.amount > 0 ? `R$ ${parsed.amount.toFixed(2)}` : "R$ 0,00"}
-                      </strong>
-                    </div>
+                  <div className="flex items-baseline justify-between pt-0.5">
+                    <span className="text-xl sm:text-2xl font-bold font-mono text-[#1D1D1F] tabular-nums">
+                      {parsed.amount > 0 ? `R$ ${parsed.amount.toFixed(2)}` : "R$ 0,00"}
+                    </span>
+                    <span className="text-xs font-semibold text-[#86868B] truncate max-w-[150px]">
+                      {parsed.title}
+                    </span>
+                  </div>
 
-                    <div className="bg-white p-2 rounded-xl border border-black/5">
-                      <span className="text-[10px] text-[#86868B] block">Descrição</span>
-                      <strong className="text-xs text-[#1D1D1F] truncate block" title={parsed.title}>
-                        {parsed.title}
-                      </strong>
-                    </div>
-
-                    <div className="bg-white p-2 rounded-xl border border-black/5">
-                      <span className="text-[10px] text-[#86868B] block">Categoria</span>
-                      <strong className="text-xs text-[#1D1D1F] truncate block">
-                        {parsed.category}
-                      </strong>
-                    </div>
-
-                    <div className="bg-white p-2 rounded-xl border border-black/5">
-                      <span className="text-[10px] text-[#86868B] block">Conta / Cartão</span>
-                      <strong className="text-xs text-[#1D1D1F] truncate block">
-                        {parsed.account}
-                      </strong>
-                    </div>
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-black/[0.04]">
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-lg bg-white border border-black/5 text-[#1D1D1F]">
+                      <span>🏷️</span>
+                      <span>{parsed.category}</span>
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-lg bg-white border border-black/5 text-[#1D1D1F]">
+                      <CreditCard size={11} className="text-[#86868B]" />
+                      <span>{parsed.account}</span>
+                    </span>
                   </div>
                 </div>
 
@@ -243,7 +233,7 @@ export function QuickCaptureModal({ isOpen, onClose, onSuccess }: QuickCaptureMo
                 <button
                   type="submit"
                   disabled={parsed.amount <= 0 || isSubmitting}
-                  className={`w-full py-3.5 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                  className={`w-full py-3.5 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 transition-all cursor-pointer min-h-[48px] ${
                     parsed.amount > 0 && !isSubmitting
                       ? "bg-[#1D1D1F] hover:bg-black text-white shadow-md active:scale-[0.99]"
                       : "bg-[#E5E5EA] text-[#86868B] cursor-not-allowed"

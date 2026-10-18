@@ -6,6 +6,7 @@ import {
   calculateDailySafeSpend,
   getUpcomingFinancialEvents,
   getDailyCheckIns,
+  saveDailyCheckIn,
   calculateCheckInStreak,
   generateDailyCompanionAdvice,
   getBestCardToSpendToday,
@@ -39,13 +40,16 @@ export function DynamicIsland() {
     mainBalance,
     monthExpense,
     getMonthlyProjection,
+    realizeRecurringItemNow,
   } = useWallet();
 
   const [isExpanded, setIsExpanded] = useState(false);
-  const [activeTab, setActiveTab] = useState<"compra" | "consultor" | "avisos">("compra");
+  const [activeTab, setActiveTab] = useState<"hoje" | "consultor" | "avisos">("hoje");
   const [isQuickCaptureOpen, setIsQuickCaptureOpen] = useState(false);
   const [isSimulatorOpen, setIsSimulatorOpen] = useState(false);
-  const [checkIns] = useState(() => getDailyCheckIns());
+  const [payingId, setPayingId] = useState<string | null>(null);
+  const [checkIns, setCheckIns] = useState(() => getDailyCheckIns());
+  const [activeMoodSelected, setActiveMoodSelected] = useState<string | null>(null);
 
   const islandRef = useRef<HTMLDivElement>(null);
 
@@ -75,8 +79,8 @@ export function DynamicIsland() {
 
   const urgentEvents = upcomingEvents.filter((e) => e.isUrgent);
 
-  // Sequência de Check-in (apenas para exibição da tag no pill)
-  const { streak } = useMemo(() => {
+  // Sequência de Check-in
+  const { streak, todayCheckedIn } = useMemo(() => {
     return calculateCheckInStreak(checkIns);
   }, [checkIns]);
 
@@ -106,6 +110,21 @@ export function DynamicIsland() {
     streak,
   ]);
 
+  // Checar humor registrado hoje
+  useEffect(() => {
+    const today = new Date().toISOString().split("T")[0];
+    const rec = checkIns.find((c) => c.date === today);
+    if (rec) {
+      setActiveMoodSelected(rec.mood);
+    }
+  }, [checkIns]);
+
+  const handlePerformCheckIn = (mood: "in_control" | "unexpected_spend" | "tight_savings") => {
+    const saved = saveDailyCheckIn(mood);
+    setCheckIns(getDailyCheckIns());
+    setActiveMoodSelected(saved.mood);
+  };
+
   // Fechar ao clicar fora ou pressionar Esc
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -129,21 +148,35 @@ export function DynamicIsland() {
   const formatCurrency = (val: number) =>
     val.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+  const handlePayRecurringFromIsland = async (recurringItemId: string) => {
+    const item = recurringItems.find((r) => r.id === recurringItemId);
+    if (!item) return;
+    setPayingId(`recurring_${recurringItemId}`);
+    try {
+      const now = new Date();
+      await realizeRecurringItemNow(item, now.getFullYear(), now.getMonth());
+    } catch (err) {
+      console.error("Erro ao dar baixa via Dynamic Island:", err);
+    } finally {
+      setPayingId(null);
+    }
+  };
+
   return (
     <>
       {/* ILHA DINÂMICA FLUTUANTE (Top Apple/Wallet Dynamic Island) */}
       <div className="sticky top-[max(0.5rem,env(safe-area-inset-top))] z-50 w-full flex justify-center px-2.5 sm:px-4 pointer-events-none select-none">
         <div
           ref={islandRef}
-          className={`pointer-events-auto transition-all duration-300 ease-out border border-white/20 backdrop-blur-2xl shadow-[0_10px_35px_rgba(0,0,0,0.22)] ${
+          className={`pointer-events-auto transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] border border-white/[0.14] ring-1 ring-black/40 backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.35)] ${
             isExpanded
-              ? "w-full max-w-xl max-h-[85dvh] overflow-y-auto rounded-[24px] sm:rounded-[28px] bg-[#161618]/98 text-white p-4 sm:p-5"
-              : "h-10 px-3.5 sm:px-4 rounded-full bg-[#161618]/92 hover:bg-[#161618] text-white flex items-center justify-between gap-2.5 sm:gap-5 cursor-pointer hover:scale-[1.01] active:scale-[0.99] max-w-[calc(100vw-1.25rem)] sm:max-w-md"
+              ? "w-full max-w-xl max-h-[85dvh] overflow-y-auto rounded-[28px] sm:rounded-[32px] bg-[#161618]/98 text-white p-4 sm:p-5"
+              : "h-10 px-3.5 sm:px-4 rounded-full bg-[#161618]/94 hover:bg-[#161618] text-white flex items-center justify-between gap-2.5 sm:gap-4 cursor-pointer hover:scale-[1.01] active:scale-[0.99] max-w-[calc(100vw-1.25rem)] sm:max-w-md"
           }`}
           onClick={!isExpanded ? () => setIsExpanded(true) : undefined}
         >
           {/* ========================================================
-              MODO COMPACTO (Pílula Elegante e Sem Recortes Visuais)
+              MODO COMPACTO (Pílula Elegante Estilo iPhone 16 Pro)
              ======================================================== */}
           {!isExpanded ? (
             <div className="w-full flex items-center justify-between gap-2 sm:gap-3">
@@ -163,7 +196,7 @@ export function DynamicIsland() {
               {/* Teto Diário Seguro */}
               <div className="flex items-center gap-1 sm:gap-1.5 truncate">
                 <span className="text-[10px] sm:text-[11px] text-[#A1A1A6] font-medium">Hoje:</span>
-                <span className="text-[11px] sm:text-xs font-bold font-mono text-emerald-400">
+                <span className="text-[11px] sm:text-xs font-bold font-mono text-[#00E676] drop-shadow-[0_0_6px_rgba(0,230,118,0.4)]">
                   R$ {formatCurrency(safeSpendMetric.safeDailyAllowance)}
                 </span>
                 <span className="text-[10px] text-[#86868B] hidden sm:inline">/dia</span>
@@ -194,46 +227,46 @@ export function DynamicIsland() {
             </div>
           ) : (
             /* ========================================================
-                MODO EXPANDIDO (HUD de Comando Wallet - Informações Úteis)
+                MODO EXPANDIDO (Identidade Fiel ao Screenshot Apple)
                ======================================================== */
             <div className="space-y-4 animate-in fade-in duration-200">
-              {/* Header Expandido com Abas Únicas */}
+              {/* Header Expandido com Abas Estilo Apple */}
               <div className="flex items-center justify-between border-b border-white/10 pb-3 gap-2">
                 <div className="flex items-center gap-1 bg-white/10 p-1 rounded-full text-xs font-medium overflow-x-auto no-scrollbar max-w-full">
                   <button
                     type="button"
-                    onClick={() => setActiveTab("compra")}
-                    className={`px-2.5 sm:px-3 py-1 rounded-full transition-all cursor-pointer shrink-0 text-[11px] sm:text-xs ${
-                      activeTab === "compra"
+                    onClick={() => setActiveTab("hoje")}
+                    className={`px-3.5 py-1 rounded-full transition-all cursor-pointer shrink-0 text-xs ${
+                      activeTab === "hoje"
                         ? "bg-white text-black font-semibold shadow-xs"
                         : "text-white/70 hover:text-white"
                     }`}
                   >
-                    Melhor Compra
+                    Hoje
                   </button>
                   <button
                     type="button"
                     onClick={() => setActiveTab("consultor")}
-                    className={`px-2.5 sm:px-3 py-1 rounded-full transition-all cursor-pointer shrink-0 text-[11px] sm:text-xs ${
+                    className={`px-3 py-1 rounded-full transition-all cursor-pointer shrink-0 text-xs ${
                       activeTab === "consultor"
                         ? "bg-white text-black font-semibold shadow-xs"
                         : "text-white/70 hover:text-white"
                     }`}
                   >
-                    Consultor {companionAdvice.agentName}
+                    {companionAdvice.agentName}
                   </button>
                   <button
                     type="button"
                     onClick={() => setActiveTab("avisos")}
-                    className={`px-2.5 sm:px-3 py-1 rounded-full transition-all cursor-pointer relative shrink-0 text-[11px] sm:text-xs ${
+                    className={`px-3 py-1 rounded-full transition-all cursor-pointer relative shrink-0 text-xs flex items-center gap-1.5 ${
                       activeTab === "avisos"
                         ? "bg-white text-black font-semibold shadow-xs"
                         : "text-white/70 hover:text-white"
                     }`}
                   >
-                    <span>Faturas & Contas</span>
+                    <span>Avisos</span>
                     {upcomingEvents.length > 0 && (
-                      <span className="ml-1 px-1.5 py-0.2 text-[9px] rounded-full bg-amber-500 text-black font-bold">
+                      <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-amber-500 text-black font-bold">
                         {upcomingEvents.length}
                       </span>
                     )}
@@ -250,56 +283,22 @@ export function DynamicIsland() {
                 </button>
               </div>
 
-              {/* ABA 1: MELHOR COMPRA HOJE (INTELIGÊNCIA EXCLUSIVA - ZERO DUPLICAÇÃO) */}
-              {activeTab === "compra" && (
+              {/* ABA 1: HOJE (EXATAMENTE COMO NO SCREENSHOT DO USUÁRIO) */}
+              {activeTab === "hoje" && (
                 <div className="space-y-3.5 animate-in fade-in duration-150">
-                  {bestCard ? (
-                    <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-500/15 via-indigo-500/10 to-transparent border border-blue-500/20 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-blue-300 flex items-center gap-1.5">
-                          <CreditCard size={14} />
-                          <span>Recomendação de Compra Hoje</span>
-                        </span>
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-200">
-                          Fecha dia {bestCard.closingDay}
-                        </span>
+                  {/* Cartão de Gasto Seguro */}
+                  <div className="p-4 rounded-2xl bg-white/[0.06] border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="space-y-1">
+                      <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-[#A1A1A6] block">
+                        GASTO SEGURO DE HOJE
+                      </span>
+                      <div className="text-2xl sm:text-3xl font-bold font-mono text-[#00E676] drop-shadow-[0_0_8px_rgba(0,230,118,0.35)] tabular-nums">
+                        R$ {formatCurrency(safeSpendMetric.safeDailyAllowance)}
                       </div>
-
-                      <div className="space-y-0.5">
-                        <h3 className="text-base font-bold text-white">
-                          Use o {bestCard.cardName}
-                        </h3>
-                        <p className="text-xs text-[#A1A1A6] leading-relaxed">
-                          {bestCard.reason}
-                        </p>
-                      </div>
-
-                      <div className="flex items-center justify-between pt-1 border-t border-white/10 text-xs">
-                        <span className="text-[#86868B]">Limite Disponível:</span>
-                        <strong className="font-mono text-emerald-400">
-                          R$ {formatCurrency(bestCard.availableLimit)}
-                        </strong>
-                      </div>
+                      <p className="text-[11px] text-[#A1A1A6]">
+                        Restam {safeSpendMetric.remainingDaysInMonth} dias até o fechamento. Meta: R$ {formatCurrency(targetEndMonthBalance)}.
+                      </p>
                     </div>
-                  ) : (
-                    <div className="p-4 rounded-2xl bg-white/[0.06] border border-white/10 text-xs text-[#A1A1A6]">
-                      Nenhum cartão com ciclo ativo cadastrado. Cadastre um cartão de crédito para ativar as recomendações inteligentes.
-                    </div>
-                  )}
-
-                  {/* Ações de 1 Clique */}
-                  <div className="grid grid-cols-2 gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsExpanded(false);
-                        setIsQuickCaptureOpen(true);
-                      }}
-                      className="py-2.5 px-3 rounded-xl bg-white text-black font-bold text-xs flex items-center justify-center gap-1.5 hover:bg-white/90 transition-all cursor-pointer shadow-sm active:scale-95"
-                    >
-                      <Plus size={14} />
-                      <span>Lançar gasto rápido</span>
-                    </button>
 
                     <button
                       type="button"
@@ -307,18 +306,97 @@ export function DynamicIsland() {
                         setIsExpanded(false);
                         setIsSimulatorOpen(true);
                       }}
-                      className="py-2.5 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95 border border-white/10"
+                      className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-white text-xs font-semibold flex items-center justify-center gap-1.5 border border-white/10 transition-all cursor-pointer self-start sm:self-center shrink-0"
                     >
                       <Calculator size={14} />
-                      <span>Devo comprar isto?</span>
+                      <span>Simular compra</span>
                     </button>
+                  </div>
+
+                  {/* Card de Check-in do Dia */}
+                  <div className="p-3.5 sm:p-4 rounded-2xl bg-white/[0.04] border border-white/10 space-y-2.5">
+                    <span className="text-xs font-medium text-white/90 block">
+                      Check-in do dia: Como está seu foco hoje?
+                    </span>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handlePerformCheckIn("in_control")}
+                        className={`py-2 px-2 rounded-xl text-[11px] font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 ${
+                          activeMoodSelected === "in_control"
+                            ? "bg-emerald-500/25 border border-emerald-400 text-emerald-200 shadow-sm"
+                            : "bg-white/[0.05] hover:bg-white/10 text-white/80 border border-white/5"
+                        }`}
+                      >
+                        <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                        <span>No controle</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handlePerformCheckIn("unexpected_spend")}
+                        className={`py-2 px-2 rounded-xl text-[11px] font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 ${
+                          activeMoodSelected === "unexpected_spend"
+                            ? "bg-amber-500/25 border border-amber-400 text-amber-200 shadow-sm"
+                            : "bg-white/[0.05] hover:bg-white/10 text-white/80 border border-white/5"
+                        }`}
+                      >
+                        <span className="w-2 h-2 rounded-full bg-amber-400" />
+                        <span>Gastos extras</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handlePerformCheckIn("tight_savings")}
+                        className={`py-2 px-2 rounded-xl text-[11px] font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 ${
+                          activeMoodSelected === "tight_savings"
+                            ? "bg-blue-500/25 border border-blue-400 text-blue-200 shadow-sm"
+                            : "bg-white/[0.05] hover:bg-white/10 text-white/80 border border-white/5"
+                        }`}
+                      >
+                        <span className="w-2 h-2 rounded-full bg-blue-400" />
+                        <span>Poupando</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Links de Rodapé da Aba Hoje */}
+                  <div className="pt-2 border-t border-white/10 flex flex-wrap items-center justify-between text-xs text-[#A1A1A6] gap-2">
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsExpanded(false);
+                          setIsQuickCaptureOpen(true);
+                        }}
+                        className="text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        <Zap size={12} />
+                        <span>Captura Rápida</span>
+                      </button>
+                      <span>•</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsExpanded(false);
+                          setIsSimulatorOpen(true);
+                        }}
+                        className="text-purple-300 hover:text-purple-200 font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        <Sparkles size={12} />
+                        <span>Devo Comprar?</span>
+                      </button>
+                    </div>
+
+                    <span className="text-[10px] text-white/40">Pressione Esc para fechar</span>
                   </div>
                 </div>
               )}
 
-              {/* ABA 2: CONSULTOR (SÍNTESE ESTRATÉGICA E PERGUNTAS RÁPIDAS) */}
+              {/* ABA 2: CONSULTOR (SÍNTESE DO AGENTE E LINK DIRETO PARA O CHAT) */}
               {activeTab === "consultor" && (
-                <div className="space-y-3 animate-in fade-in duration-150">
+                <div className="space-y-3.5 animate-in fade-in duration-150">
                   <div className="p-4 rounded-2xl bg-white/[0.06] border border-white/10 flex items-start gap-3.5">
                     <AgentAvatar
                       persona={userProfile.persona || "guardian"}
@@ -340,10 +418,10 @@ export function DynamicIsland() {
                     </div>
                   </div>
 
-                  {/* Atalhos de Pergunta Estratégica */}
+                  {/* Atalhos com Link Direto para o Wallet+ Chat */}
                   <div className="space-y-1.5">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-[#86868B] block">
-                      Perguntas Rápidas ao Assistente:
+                      Perguntas Rápidas ao Auditor:
                     </span>
                     <div className="grid grid-cols-1 gap-1.5">
                       <Link
@@ -364,10 +442,16 @@ export function DynamicIsland() {
                       </Link>
                     </div>
                   </div>
+
+                  {/* Rodapé da Aba Consultor */}
+                  <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[11px] text-[#86868B]">
+                    <span className="text-white/60">Wallet Intelligence</span>
+                    <span className="text-[10px] text-white/40">Pressione Esc para fechar</span>
+                  </div>
                 </div>
               )}
 
-              {/* ABA 3: AVISOS (FATURAS E VENCIMENTOS PRÓXIMOS) */}
+              {/* ABA 3: AVISOS (FATURAS E VENCIMENTOS PRÓXIMOS COM BAIXA DIRETA) */}
               {activeTab === "avisos" && (
                 <div className="space-y-2.5 animate-in fade-in duration-150 max-h-56 overflow-y-auto pr-1">
                   {upcomingEvents.length === 0 ? (
@@ -403,20 +487,37 @@ export function DynamicIsland() {
                           </div>
                         </div>
 
-                        <strong className="font-mono text-white text-sm">
-                          R$ {formatCurrency(event.amount)}
-                        </strong>
+                        <div className="flex items-center gap-2">
+                          <strong className="font-mono text-white text-sm">
+                            R$ {formatCurrency(event.amount)}
+                          </strong>
+
+                          {event.id.startsWith("recurring_") && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handlePayRecurringFromIsland(event.id.replace("recurring_", ""));
+                              }}
+                              disabled={payingId === event.id}
+                              className="px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-400/30 text-[10px] font-semibold flex items-center gap-1 transition-all active:scale-95 cursor-pointer"
+                            >
+                              <CheckCircle2 size={11} />
+                              <span>{payingId === event.id ? "Baixando..." : "Baixar"}</span>
+                            </button>
+                          )}
+                        </div>
                       </div>
                     ))
                   )}
+
+                  {/* Rodapé da Aba Avisos */}
+                  <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[11px] text-[#86868B]">
+                    <span className="text-white/60">Wallet Intelligence</span>
+                    <span className="text-[10px] text-white/40">Pressione Esc para fechar</span>
+                  </div>
                 </div>
               )}
-
-              {/* Rodapé da Ilha */}
-              <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[11px] text-[#86868B]">
-                <span className="text-white/60">Wallet Intelligence</span>
-                <span className="text-[10px] text-white/40">Pressione Esc para fechar</span>
-              </div>
             </div>
           )}
         </div>
@@ -434,3 +535,4 @@ export function DynamicIsland() {
     </>
   );
 }
+
