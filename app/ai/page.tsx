@@ -220,6 +220,15 @@ export default function AIAnalystPage() {
   const [isHistoryDrawerOpen, setIsHistoryDrawerOpen] = useState(false);
   const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
   const [activeDossierTab, setActiveDossierTab] = useState<"mindmap" | "calendar" | "storytelling" | "overview">("mindmap");
+
+  // Permite que o Niko abra diretamente a agenda financeira completa.
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const requestedView = new URLSearchParams(window.location.search).get("view");
+      if (requestedView === "calendar") setActiveDossierTab("calendar");
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
   const [payingBillId, setPayingBillId] = useState<string | null>(null);
 
   const chatBottomRef = useRef<HTMLDivElement>(null);

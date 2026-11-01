@@ -1,35 +1,72 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useRef } from "react";
-import { useWallet } from "@/context/WalletContext";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import {
-  calculateDailySafeSpend,
-  getUpcomingFinancialEvents,
-  getDailyCheckIns,
-  saveDailyCheckIn,
-  calculateCheckInStreak,
-  generateDailyCompanionAdvice,
-  getBestCardToSpendToday,
-} from "@/lib/services/dailyCompanionService";
-import { AgentAvatar } from "./AgentAvatar";
-import { QuickCaptureModal } from "./QuickCaptureModal";
-import { PurchaseSimulatorModal } from "./PurchaseSimulatorModal";
-import {
-  Sparkles,
+  AlertTriangle,
+  ArrowDownLeft,
+  ArrowUpRight,
+  Building2,
+  Calculator,
+  CalendarClock,
+  Check,
+  CheckCircle2,
   ChevronDown,
   ChevronUp,
-  AlertTriangle,
-  Zap,
-  Plus,
   CreditCard,
-  Calculator,
-  ArrowRight,
-  ShieldCheck,
-  CheckCircle2,
-  Building2,
-  ArrowDownLeft,
+  ExternalLink,
+  Globe2,
+  MessageCircle,
+  Newspaper,
+  PencilLine,
+  RefreshCw,
+  Target,
+  Zap,
 } from "lucide-react";
-import Link from "next/link";
+import { useWallet } from "@/context/WalletContext";
+import {
+  calculateCheckInStreak,
+  calculateDailySafeSpend,
+  generateDailyCompanionAdvice,
+  getBestCardToSpendToday,
+  getDailyCheckIns,
+  getUpcomingFinancialEvents,
+  saveDailyCheckIn,
+} from "@/lib/services/dailyCompanionService";
+import type { MarketBriefing } from "@/types/market";
+import { AgentAvatar, type AgentAvatarState } from "./AgentAvatar";
+import { PurchaseSimulatorModal } from "./PurchaseSimulatorModal";
+import { QuickCaptureModal } from "./QuickCaptureModal";
+
+type ActiveTab = "hoje" | "agenda" | "radar";
+type CheckInMood = "in_control" | "unexpected_spend" | "tight_savings";
+
+const FOCUS_STORAGE_KEY = "wallet_niko_daily_focus_v1";
+
+function localDateKey(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function formatCurrency(value: number) {
+  return value.toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function formatQuote(value: number, kind: "currency" | "index") {
+  if (kind === "currency") {
+    return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 4 });
+  }
+  return Math.round(value).toLocaleString("pt-BR");
+}
+
+function greetingForNow() {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Bom dia";
+  if (hour < 18) return "Boa tarde";
+  return "Boa noite";
+}
 
 export function DynamicIsland() {
   const {
@@ -44,478 +81,371 @@ export function DynamicIsland() {
   } = useWallet();
 
   const [isExpanded, setIsExpanded] = useState(false);
-  const [activeTab, setActiveTab] = useState<"hoje" | "consultor" | "avisos">("hoje");
+  const [activeTab, setActiveTab] = useState<ActiveTab>("hoje");
   const [isQuickCaptureOpen, setIsQuickCaptureOpen] = useState(false);
   const [isSimulatorOpen, setIsSimulatorOpen] = useState(false);
   const [payingId, setPayingId] = useState<string | null>(null);
   const [checkIns, setCheckIns] = useState(() => getDailyCheckIns());
-  const [activeMoodSelected, setActiveMoodSelected] = useState<string | null>(null);
-
+  const [personalFocus, setPersonalFocus] = useState("");
+  const [focusSaved, setFocusSaved] = useState(false);
+  const [market, setMarket] = useState<MarketBriefing | null>(null);
+  const [marketLoading, setMarketLoading] = useState(true);
+  const [marketError, setMarketError] = useState(false);
   const islandRef = useRef<HTMLDivElement>(null);
 
-  // Projeção e Margem Diária
-  const currentMonthProj = getMonthlyProjection(0);
-  const effectiveProjectedFree =
-    currentMonthProj?.projectedFreeBalance ?? (mainBalance - monthExpense);
+  const currentMonthProjection = getMonthlyProjection(0);
+  const projectedFreeBalance =
+    currentMonthProjection?.projectedFreeBalance ?? mainBalance - monthExpense;
   const targetEndMonthBalance = userProfile?.targetMonthEndBalance || 700;
+  const safeSpend = useMemo(
+    () =>
+      calculateDailySafeSpend({
+        projectedFreeBalance,
+        targetEndMonthBalance,
+      }),
+    [projectedFreeBalance, targetEndMonthBalance]
+  );
 
-  const safeSpendMetric = useMemo(() => {
-    return calculateDailySafeSpend({
-      projectedFreeBalance: effectiveProjectedFree,
+  const upcomingEvents = useMemo(
+    () =>
+      getUpcomingFinancialEvents({
+        cards,
+        recurringItems,
+        transactions,
+        cardInvoiceProjections: currentMonthProjection?.cardInvoices,
+        onlyExpenses: false,
+      }),
+    [cards, recurringItems, transactions, currentMonthProjection?.cardInvoices]
+  );
+  const urgentEvents = upcomingEvents.filter((event) => event.isUrgent);
+  const nextEvent = upcomingEvents[0];
+  const { streak } = useMemo(() => calculateCheckInStreak(checkIns), [checkIns]);
+  const bestCard = useMemo(() => getBestCardToSpendToday({ cards }), [cards]);
+  const firstName = (userProfile.name || "você").split(" ")[0];
+  const gapToTarget = Math.max(0, targetEndMonthBalance - projectedFreeBalance);
+
+  const advice = useMemo(
+    () =>
+      generateDailyCompanionAdvice({
+        userName: userProfile.name,
+        projectedFreeBalance,
+        targetEndMonthBalance,
+        safeDailyAllowance: safeSpend.safeDailyAllowance,
+        upcomingEventsCount: upcomingEvents.length,
+        streakCount: streak,
+        persona: userProfile.persona || "guardian",
+      }),
+    [
+      userProfile.name,
+      userProfile.persona,
+      projectedFreeBalance,
       targetEndMonthBalance,
-    });
-  }, [effectiveProjectedFree, targetEndMonthBalance]);
+      safeSpend.safeDailyAllowance,
+      upcomingEvents.length,
+      streak,
+    ]
+  );
 
-  // Próximos Vencimentos (Apenas contas pendentes e futuras de hoje em diante)
-  const upcomingEvents = useMemo(() => {
-    return getUpcomingFinancialEvents({
-      cards,
-      recurringItems,
-      transactions,
-      cardInvoiceProjections: currentMonthProj?.cardInvoices,
-      onlyExpenses: true,
-    });
-  }, [cards, recurringItems, transactions, currentMonthProj?.cardInvoices]);
+  const loadMarket = useCallback(async () => {
+    setMarketLoading(true);
+    setMarketError(false);
+    try {
+      const response = await fetch("/api/market/briefing", { cache: "no-store" });
+      if (!response.ok) throw new Error("Radar indisponível");
+      setMarket((await response.json()) as MarketBriefing);
+    } catch {
+      setMarketError(true);
+    } finally {
+      setMarketLoading(false);
+    }
+  }, []);
 
-  const urgentEvents = upcomingEvents.filter((e) => e.isUrgent);
-
-  // Sequência de Check-in
-  const { streak, todayCheckedIn } = useMemo(() => {
-    return calculateCheckInStreak(checkIns);
-  }, [checkIns]);
-
-  // Inteligência do Melhor Cartão Hoje
-  const bestCard = useMemo(() => {
-    return getBestCardToSpendToday({ cards });
-  }, [cards]);
-
-  // Conselho e Personalidade do Agente
-  const companionAdvice = useMemo(() => {
-    return generateDailyCompanionAdvice({
-      userName: userProfile.name,
-      projectedFreeBalance: effectiveProjectedFree,
-      targetEndMonthBalance,
-      safeDailyAllowance: safeSpendMetric.safeDailyAllowance,
-      upcomingEventsCount: upcomingEvents.length,
-      streakCount: streak,
-      persona: userProfile.persona || "guardian",
-    });
-  }, [
-    userProfile.name,
-    userProfile.persona,
-    effectiveProjectedFree,
-    targetEndMonthBalance,
-    safeSpendMetric.safeDailyAllowance,
-    upcomingEvents.length,
-    streak,
-  ]);
-
-  // Checar humor registrado hoje
   useEffect(() => {
-    const today = new Date().toISOString().split("T")[0];
-    const rec = checkIns.find((c) => c.date === today);
-    if (rec) {
-      setActiveMoodSelected(rec.mood);
-    }
-  }, [checkIns]);
-
-  const handlePerformCheckIn = (mood: "in_control" | "unexpected_spend" | "tight_savings") => {
-    const saved = saveDailyCheckIn(mood);
-    setCheckIns(getDailyCheckIns());
-    setActiveMoodSelected(saved.mood);
-  };
-
-  // Fechar ao clicar fora ou pressionar Esc
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (islandRef.current && !islandRef.current.contains(event.target as Node)) {
-        setIsExpanded(false);
-      }
-    }
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setIsExpanded(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    document.addEventListener("keydown", handleKeyDown);
+    const initialLoad = window.setTimeout(() => void loadMarket(), 0);
+    const interval = window.setInterval(() => void loadMarket(), 5 * 60 * 1000);
     return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("keydown", handleKeyDown);
+      window.clearTimeout(initialLoad);
+      window.clearInterval(interval);
+    };
+  }, [loadMarket]);
+
+  const activeMood = useMemo(() => {
+    const todayCheckIn = checkIns.find((record) => record.date === localDateKey());
+    return (todayCheckIn?.mood as CheckInMood | undefined) || null;
+  }, [checkIns]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        const stored = JSON.parse(window.localStorage.getItem(FOCUS_STORAGE_KEY) || "{}") as {
+          date?: string;
+          value?: string;
+        };
+        if (stored.date === localDateKey()) setPersonalFocus(stored.value || "");
+      } catch {
+        setPersonalFocus("");
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const handleOutside = (event: MouseEvent) => {
+      if (islandRef.current && !islandRef.current.contains(event.target as Node)) setIsExpanded(false);
+    };
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsExpanded(false);
+    };
+    document.addEventListener("mousedown", handleOutside);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleOutside);
+      document.removeEventListener("keydown", handleKey);
     };
   }, []);
 
-  const formatCurrency = (val: number) =>
-    val.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const saveFocus = () => {
+    const value = personalFocus.trim().slice(0, 100);
+    setPersonalFocus(value);
+    try {
+      window.localStorage.setItem(FOCUS_STORAGE_KEY, JSON.stringify({ date: localDateKey(), value }));
+      setFocusSaved(true);
+      window.setTimeout(() => setFocusSaved(false), 1600);
+    } catch {
+      setFocusSaved(false);
+    }
+  };
 
-  const handlePayRecurringFromIsland = async (recurringItemId: string) => {
-    const item = recurringItems.find((r) => r.id === recurringItemId);
+  const performCheckIn = (mood: CheckInMood) => {
+    const saved = saveDailyCheckIn(mood);
+    setCheckIns(getDailyCheckIns());
+    void saved;
+  };
+
+  const payEvent = async (eventId: string) => {
+    const recurringItemId = eventId.replace("recurring_", "");
+    const item = recurringItems.find((candidate) => candidate.id === recurringItemId);
     if (!item) return;
-    setPayingId(`recurring_${recurringItemId}`);
+    setPayingId(eventId);
     try {
       const now = new Date();
       await realizeRecurringItemNow(item, now.getFullYear(), now.getMonth());
-    } catch (err) {
-      console.error("Erro ao dar baixa via Dynamic Island:", err);
     } finally {
       setPayingId(null);
     }
   };
 
+  const openQuickCapture = () => {
+    setIsExpanded(false);
+    setIsQuickCaptureOpen(true);
+  };
+
+  const openSimulator = () => {
+    setIsExpanded(false);
+    setIsSimulatorOpen(true);
+  };
+
   return (
     <>
-      {/* ILHA DINÂMICA FLUTUANTE (Top Apple/Wallet Dynamic Island) */}
       <div className="sticky top-[max(0.5rem,env(safe-area-inset-top))] z-50 w-full flex justify-center px-2.5 sm:px-4 pointer-events-none select-none">
         <div
           ref={islandRef}
+          onClick={!isExpanded ? () => setIsExpanded(true) : undefined}
           className={`pointer-events-auto transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] border border-white/[0.14] ring-1 ring-black/40 backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.35)] ${
             isExpanded
-              ? "w-full max-w-xl max-h-[85dvh] overflow-y-auto rounded-[28px] sm:rounded-[32px] bg-[#161618]/98 text-white p-4 sm:p-5"
-              : "h-10 px-3.5 sm:px-4 rounded-full bg-[#161618]/94 hover:bg-[#161618] text-white flex items-center justify-between gap-2.5 sm:gap-4 cursor-pointer hover:scale-[1.01] active:scale-[0.99] max-w-[calc(100vw-1.25rem)] sm:max-w-md"
+              ? "w-full max-w-2xl max-h-[86dvh] overflow-y-auto rounded-[28px] sm:rounded-[32px] bg-[#161618]/98 text-white p-4 sm:p-5"
+              : "h-10 px-3.5 sm:px-4 rounded-full bg-[#161618]/94 hover:bg-[#161618] text-white flex items-center cursor-pointer hover:scale-[1.01] active:scale-[0.99] max-w-[calc(100vw-1.25rem)] sm:max-w-lg"
           }`}
-          onClick={!isExpanded ? () => setIsExpanded(true) : undefined}
         >
-          {/* ========================================================
-              MODO COMPACTO (Pílula Elegante Estilo iPhone 16 Pro)
-             ======================================================== */}
           {!isExpanded ? (
-            <div className="w-full flex items-center justify-between gap-2 sm:gap-3">
-              {/* Avatar do Guardião */}
-              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                <AgentAvatar
-                  persona={userProfile.persona || "guardian"}
-                  state={companionAdvice.avatarState}
-                  size="sm"
-                  showBadge={false}
-                />
-                <span className="text-xs font-semibold tracking-tight text-white/90 hidden sm:inline">
-                  {companionAdvice.agentName}
-                </span>
-              </div>
-
-              {/* Teto Diário Seguro */}
-              <div className="flex items-center gap-1 sm:gap-1.5 truncate">
-                <span className="text-[10px] sm:text-[11px] text-[#A1A1A6] font-medium">Hoje:</span>
-                <span className="text-[11px] sm:text-xs font-bold font-mono text-[#00E676] drop-shadow-[0_0_6px_rgba(0,230,118,0.4)]">
-                  R$ {formatCurrency(safeSpendMetric.safeDailyAllowance)}
-                </span>
-                <span className="text-[10px] text-[#86868B] hidden sm:inline">/dia</span>
-              </div>
-
-              {/* Tag de Alerta ou Melhor Cartão */}
-              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                {urgentEvents.length > 0 ? (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/30 animate-pulse">
-                    <AlertTriangle size={10} />
-                    <span>{urgentEvents.length} a vencer</span>
-                  </span>
-                ) : bestCard ? (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white/10 text-white/80 hidden sm:inline-flex">
-                    <CreditCard size={10} className="text-blue-300" />
-                    <span>{bestCard.cardName}</span>
-                  </span>
-                ) : streak > 0 ? (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white/10 text-white/80">
-                    <span>🔥 {streak}d</span>
-                  </span>
-                ) : null}
-
-                <div className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-white/60">
-                  <ChevronDown size={12} />
-                </div>
-              </div>
-            </div>
+            <CompactIsland
+              adviceState={advice.avatarState}
+              persona={userProfile.persona || "guardian"}
+              safeAllowance={safeSpend.safeDailyAllowance}
+              urgentCount={urgentEvents.length}
+              currency={market?.currency || null}
+            />
           ) : (
-            /* ========================================================
-                MODO EXPANDIDO (Identidade Fiel ao Screenshot Apple)
-               ======================================================== */
             <div className="space-y-4 animate-in fade-in duration-200">
-              {/* Header Expandido com Abas Estilo Apple */}
               <div className="flex items-center justify-between border-b border-white/10 pb-3 gap-2">
-                <div className="flex items-center gap-1 bg-white/10 p-1 rounded-full text-xs font-medium overflow-x-auto no-scrollbar max-w-full">
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab("hoje")}
-                    className={`px-3.5 py-1 rounded-full transition-all cursor-pointer shrink-0 text-xs ${
-                      activeTab === "hoje"
-                        ? "bg-white text-black font-semibold shadow-xs"
-                        : "text-white/70 hover:text-white"
-                    }`}
-                  >
-                    Hoje
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab("consultor")}
-                    className={`px-3 py-1 rounded-full transition-all cursor-pointer shrink-0 text-xs ${
-                      activeTab === "consultor"
-                        ? "bg-white text-black font-semibold shadow-xs"
-                        : "text-white/70 hover:text-white"
-                    }`}
-                  >
-                    {companionAdvice.agentName}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab("avisos")}
-                    className={`px-3 py-1 rounded-full transition-all cursor-pointer relative shrink-0 text-xs flex items-center gap-1.5 ${
-                      activeTab === "avisos"
-                        ? "bg-white text-black font-semibold shadow-xs"
-                        : "text-white/70 hover:text-white"
-                    }`}
-                  >
-                    <span>Avisos</span>
-                    {upcomingEvents.length > 0 && (
-                      <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-amber-500 text-black font-bold">
-                        {upcomingEvents.length}
-                      </span>
-                    )}
-                  </button>
+                <div className="flex items-center gap-1 bg-white/10 p-1 rounded-full text-xs font-medium">
+                  <TabButton label="Hoje" active={activeTab === "hoje"} onClick={() => setActiveTab("hoje")} />
+                  <TabButton label="Agenda" count={upcomingEvents.length} active={activeTab === "agenda"} onClick={() => setActiveTab("agenda")} />
+                  <TabButton label="Radar" live active={activeTab === "radar"} onClick={() => setActiveTab("radar")} />
                 </div>
-
-                <button
-                  type="button"
-                  onClick={() => setIsExpanded(false)}
-                  className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
-                  title="Recolher ilha"
-                >
+                <button type="button" onClick={() => setIsExpanded(false)} className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center cursor-pointer" aria-label="Recolher Niko">
                   <ChevronUp size={14} />
                 </button>
               </div>
 
-              {/* ABA 1: HOJE (EXATAMENTE COMO NO SCREENSHOT DO USUÁRIO) */}
               {activeTab === "hoje" && (
                 <div className="space-y-3.5 animate-in fade-in duration-150">
-                  {/* Cartão de Gasto Seguro */}
-                  <div className="p-4 rounded-2xl bg-white/[0.06] border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="space-y-1">
-                      <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-[#A1A1A6] block">
-                        GASTO SEGURO DE HOJE
-                      </span>
-                      <div className="text-2xl sm:text-3xl font-bold font-mono text-[#00E676] drop-shadow-[0_0_8px_rgba(0,230,118,0.35)] tabular-nums">
-                        R$ {formatCurrency(safeSpendMetric.safeDailyAllowance)}
-                      </div>
-                      <p className="text-[11px] text-[#A1A1A6]">
-                        Restam {safeSpendMetric.remainingDaysInMonth} dias até o fechamento. Meta: R$ {formatCurrency(targetEndMonthBalance)}.
-                      </p>
+                  <div className="rounded-2xl bg-gradient-to-br from-white/[0.09] to-white/[0.04] border border-white/10 p-4 flex items-start gap-3.5">
+                    <AgentAvatar persona={userProfile.persona || "guardian"} state={advice.avatarState} size="lg" />
+                    <div className="min-w-0 flex-1">
+                      <span className="text-[10px] uppercase tracking-[0.14em] text-cyan-300 font-bold">{greetingForNow()}, {firstName} · Niko está atento</span>
+                      <h3 className="text-sm sm:text-base font-bold text-white mt-1">{advice.headline}</h3>
+                      <p className="text-xs text-white/60 leading-relaxed mt-1">{advice.advice}</p>
                     </div>
+                  </div>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsExpanded(false);
-                        setIsSimulatorOpen(true);
-                      }}
-                      className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-white text-xs font-semibold flex items-center justify-center gap-1.5 border border-white/10 transition-all cursor-pointer self-start sm:self-center shrink-0"
-                    >
-                      <Calculator size={14} />
-                      <span>Simular compra</span>
+                  <div className="grid grid-cols-3 gap-2">
+                    <MiniMetric label="Livre hoje" value={`R$ ${formatCurrency(safeSpend.safeDailyAllowance)}`} tone="emerald" />
+                    <MiniMetric label="Fecha o mês" value={`R$ ${formatCurrency(projectedFreeBalance)}`} tone={gapToTarget > 0 ? "amber" : "blue"} />
+                    <MiniMetric label="Próximo evento" value={nextEvent ? `${nextEvent.daysRemaining === 0 ? "Hoje" : `${nextEvent.daysRemaining}d`} · R$ ${Math.round(nextEvent.amount)}` : "Agenda livre"} tone="white" />
+                  </div>
+
+                  <div className={`rounded-2xl border p-3.5 ${urgentEvents.length > 0 || gapToTarget > 0 ? "bg-amber-500/10 border-amber-400/25" : "bg-emerald-500/10 border-emerald-400/20"}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-2.5 min-w-0">
+                        {urgentEvents.length > 0 || gapToTarget > 0 ? <AlertTriangle size={16} className="text-amber-300 mt-0.5 shrink-0" /> : <CheckCircle2 size={16} className="text-emerald-300 mt-0.5 shrink-0" />}
+                        <div>
+                          <span className="text-[10px] uppercase tracking-wider font-bold text-white/50">Ação recomendada agora</span>
+                          <p className="text-xs text-white/90 mt-0.5 leading-relaxed">
+                            {urgentEvents.length > 0
+                              ? `${urgentEvents[0].title} vence ${urgentEvents[0].daysRemaining === 0 ? "hoje" : "amanhã"}. Garanta R$ ${formatCurrency(urgentEvents[0].amount)} na conta.`
+                              : gapToTarget > 0
+                                ? `Proteja R$ ${formatCurrency(gapToTarget)} até o fechamento. Evite uma nova compra fora do planejado hoje.`
+                                : bestCard
+                                  ? `${bestCard.cardName} oferece o melhor prazo agora, com R$ ${formatCurrency(bestCard.availableLimit)} de limite disponível.`
+                                  : "Nenhuma urgência detectada. Você pode seguir o teto diário sem pressionar a meta."}
+                          </p>
+                        </div>
+                      </div>
+                      {urgentEvents[0]?.id.startsWith("recurring_") && (
+                        <button type="button" onClick={() => void payEvent(urgentEvents[0].id)} disabled={payingId === urgentEvents[0].id} className="px-2.5 py-1.5 rounded-xl bg-white text-black text-[10px] font-bold shrink-0 disabled:opacity-50 cursor-pointer">
+                          {payingId === urgentEvents[0].id ? "Salvando" : "Dar baixa"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl bg-white/[0.04] border border-white/10 p-3.5 space-y-2.5">
+                    <div className="flex items-center gap-2">
+                      <PencilLine size={13} className="text-violet-300" />
+                      <span className="text-xs font-semibold text-white/90">Seu foco pessoal de hoje</span>
+                      {focusSaved && <span className="ml-auto text-[10px] text-emerald-300 flex items-center gap-1"><Check size={10} />Salvo</span>}
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        value={personalFocus}
+                        onChange={(event) => setPersonalFocus(event.target.value)}
+                        onKeyDown={(event) => { if (event.key === "Enter") saveFocus(); }}
+                        maxLength={100}
+                        placeholder="Ex.: treino às 19h, ligar para minha mãe..."
+                        className="min-w-0 flex-1 rounded-xl bg-white/[0.07] border border-white/10 px-3 py-2 text-xs text-white placeholder:text-white/30 outline-none focus:border-violet-400/60"
+                      />
+                      <button type="button" onClick={saveFocus} className="px-3 rounded-xl bg-violet-500/20 border border-violet-400/25 text-violet-200 text-xs font-semibold cursor-pointer">Guardar</button>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <MoodButton label="No controle" color="emerald" active={activeMood === "in_control"} onClick={() => performCheckIn("in_control")} />
+                      <MoodButton label="Gastei fora" color="amber" active={activeMood === "unexpected_spend"} onClick={() => performCheckIn("unexpected_spend")} />
+                      <MoodButton label="Modo reserva" color="blue" active={activeMood === "tight_savings"} onClick={() => performCheckIn("tight_savings")} />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <ActionButton icon={<Zap size={13} />} label="Capturar gasto" onClick={openQuickCapture} tone="amber" />
+                    <ActionButton icon={<Calculator size={13} />} label="Simular compra" onClick={openSimulator} tone="violet" />
+                    <Link href="/ai" onClick={() => setIsExpanded(false)} className="rounded-xl bg-cyan-500/10 hover:bg-cyan-500/15 border border-cyan-400/20 px-2 py-2.5 text-[10px] sm:text-xs font-semibold text-cyan-200 flex items-center justify-center gap-1.5">
+                      <MessageCircle size={13} />Conversar
+                    </Link>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === "agenda" && (
+                <div className="space-y-3 animate-in fade-in duration-150">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-bold">Próximos 7 dias</h3>
+                      <p className="text-[11px] text-white/45">Contas, faturas e entradas previstas em ordem de prioridade.</p>
+                    </div>
+                    <Link href="/ai?view=calendar" onClick={() => setIsExpanded(false)} className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-[10px] font-semibold flex items-center gap-1.5 shrink-0">
+                      <CalendarClock size={12} />Calendário completo
+                    </Link>
+                  </div>
+                  {upcomingEvents.length === 0 ? (
+                    <div className="py-8 rounded-2xl bg-white/[0.04] border border-white/10 text-center">
+                      <CheckCircle2 size={24} className="mx-auto text-emerald-300" />
+                      <p className="text-xs text-white/70 mt-2">Agenda livre nos próximos 7 dias.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5 max-h-[330px] overflow-y-auto no-scrollbar">
+                      {upcomingEvents.map((event) => (
+                        <div key={event.id} className={`p-3 rounded-2xl border flex items-center justify-between gap-3 ${event.isUrgent ? "bg-amber-500/10 border-amber-400/25" : "bg-white/[0.04] border-white/10"}`}>
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${event.type === "planned_income" ? "bg-emerald-500/15 text-emerald-300" : event.type === "credit_invoice" ? "bg-indigo-500/15 text-indigo-300" : "bg-amber-500/15 text-amber-300"}`}>
+                              {event.type === "planned_income" ? <ArrowDownLeft size={15} /> : event.type === "credit_invoice" ? <CreditCard size={15} /> : <Building2 size={15} />}
+                            </div>
+                            <div className="min-w-0">
+                              <strong className="block text-xs font-semibold truncate">{event.title}</strong>
+                              <span className="text-[10px] text-white/45">{event.dueDate} · {event.daysRemaining === 0 ? "hoje" : event.daysRemaining === 1 ? "amanhã" : `em ${event.daysRemaining} dias`}</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <strong className={`font-mono text-xs ${event.type === "planned_income" ? "text-emerald-300" : "text-white"}`}>{event.type === "planned_income" ? "+" : "−"}R$ {formatCurrency(event.amount)}</strong>
+                            {event.id.startsWith("recurring_") && (
+                              <button type="button" onClick={() => void payEvent(event.id)} disabled={payingId === event.id} className="px-2 py-1 rounded-lg bg-emerald-500/15 text-emerald-200 border border-emerald-400/20 text-[10px] font-semibold cursor-pointer disabled:opacity-50">
+                                {payingId === event.id ? "..." : event.type === "planned_income" ? "Receber" : "Baixar"}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="rounded-2xl bg-white/[0.04] border border-white/10 p-3 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2"><Target size={14} className="text-cyan-300" /><span className="text-[11px] text-white/65">Meta de fechamento</span></div>
+                    <strong className={`font-mono text-xs ${gapToTarget > 0 ? "text-amber-300" : "text-emerald-300"}`}>{gapToTarget > 0 ? `Faltam R$ ${formatCurrency(gapToTarget)}` : `Folga R$ ${formatCurrency(projectedFreeBalance - targetEndMonthBalance)}`}</strong>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === "radar" && (
+                <div className="space-y-3.5 animate-in fade-in duration-150">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-1.5"><Globe2 size={14} className="text-cyan-300" /><h3 className="text-sm font-bold">Radar de mercado</h3></div>
+                      <p className="text-[11px] text-white/45">Câmbio, bolsa e manchetes que podem mexer com o seu dinheiro.</p>
+                    </div>
+                    <button type="button" onClick={() => void loadMarket()} disabled={marketLoading} className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/15 flex items-center justify-center cursor-pointer disabled:opacity-50" aria-label="Atualizar radar">
+                      <RefreshCw size={13} className={marketLoading ? "animate-spin" : ""} />
                     </button>
                   </div>
 
-                  {/* Card de Check-in do Dia */}
-                  <div className="p-3.5 sm:p-4 rounded-2xl bg-white/[0.04] border border-white/10 space-y-2.5">
-                    <span className="text-xs font-medium text-white/90 block">
-                      Check-in do dia: Como está seu foco hoje?
-                    </span>
-
-                    <div className="grid grid-cols-3 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handlePerformCheckIn("in_control")}
-                        className={`py-2 px-2 rounded-xl text-[11px] font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 ${
-                          activeMoodSelected === "in_control"
-                            ? "bg-emerald-500/25 border border-emerald-400 text-emerald-200 shadow-sm"
-                            : "bg-white/[0.05] hover:bg-white/10 text-white/80 border border-white/5"
-                        }`}
-                      >
-                        <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                        <span>No controle</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handlePerformCheckIn("unexpected_spend")}
-                        className={`py-2 px-2 rounded-xl text-[11px] font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 ${
-                          activeMoodSelected === "unexpected_spend"
-                            ? "bg-amber-500/25 border border-amber-400 text-amber-200 shadow-sm"
-                            : "bg-white/[0.05] hover:bg-white/10 text-white/80 border border-white/5"
-                        }`}
-                      >
-                        <span className="w-2 h-2 rounded-full bg-amber-400" />
-                        <span>Gastos extras</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handlePerformCheckIn("tight_savings")}
-                        className={`py-2 px-2 rounded-xl text-[11px] font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 ${
-                          activeMoodSelected === "tight_savings"
-                            ? "bg-blue-500/25 border border-blue-400 text-blue-200 shadow-sm"
-                            : "bg-white/[0.05] hover:bg-white/10 text-white/80 border border-white/5"
-                        }`}
-                      >
-                        <span className="w-2 h-2 rounded-full bg-blue-400" />
-                        <span>Poupando</span>
-                      </button>
-                    </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <QuoteCard label="Dólar comercial" symbol="USD/BRL" quote={market?.currency || null} kind="currency" loading={marketLoading && !market} />
+                    <QuoteCard label="Bolsa brasileira" symbol="IBOV" quote={market?.index || null} kind="index" loading={marketLoading && !market} />
                   </div>
 
-                  {/* Links de Rodapé da Aba Hoje */}
-                  <div className="pt-2 border-t border-white/10 flex flex-wrap items-center justify-between text-xs text-[#A1A1A6] gap-2">
-                    <div className="flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsExpanded(false);
-                          setIsQuickCaptureOpen(true);
-                        }}
-                        className="text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-1 transition-colors cursor-pointer"
-                      >
-                        <Zap size={12} />
-                        <span>Captura Rápida</span>
-                      </button>
-                      <span>•</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsExpanded(false);
-                          setIsSimulatorOpen(true);
-                        }}
-                        className="text-purple-300 hover:text-purple-200 font-semibold flex items-center gap-1 transition-colors cursor-pointer"
-                      >
-                        <Sparkles size={12} />
-                        <span>Devo Comprar?</span>
-                      </button>
+                  <div className="rounded-2xl bg-white/[0.04] border border-white/10 overflow-hidden">
+                    <div className="px-3.5 py-2.5 border-b border-white/10 flex items-center gap-2">
+                      <Newspaper size={13} className="text-violet-300" />
+                      <span className="text-xs font-semibold">Notícias do mercado</span>
+                      <span className="ml-auto text-[9px] text-white/35">últimas 24h</span>
                     </div>
-
-                    <span className="text-[10px] text-white/40">Pressione Esc para fechar</span>
-                  </div>
-                </div>
-              )}
-
-              {/* ABA 2: CONSULTOR (SÍNTESE DO AGENTE E LINK DIRETO PARA O CHAT) */}
-              {activeTab === "consultor" && (
-                <div className="space-y-3.5 animate-in fade-in duration-150">
-                  <div className="p-4 rounded-2xl bg-white/[0.06] border border-white/10 flex items-start gap-3.5">
-                    <AgentAvatar
-                      persona={userProfile.persona || "guardian"}
-                      state={companionAdvice.avatarState}
-                      size="lg"
-                    />
-                    <div className="space-y-1 min-w-0 flex-1">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-amber-300">
-                          {companionAdvice.agentName} • {companionAdvice.agentTitle}
-                        </span>
+                    {marketError && !market ? (
+                      <div className="p-5 text-center text-xs text-white/50">Não foi possível atualizar o radar agora. Tente novamente em instantes.</div>
+                    ) : marketLoading && !market ? (
+                      <div className="p-5 text-center text-xs text-white/50">Buscando o mercado...</div>
+                    ) : market?.news.length ? (
+                      <div className="divide-y divide-white/[0.07] max-h-[260px] overflow-y-auto no-scrollbar">
+                        {market.news.slice(0, 5).map((item) => (
+                          <a key={item.id} href={item.url} target="_blank" rel="noreferrer" className="p-3.5 flex items-start justify-between gap-3 hover:bg-white/[0.04] transition-colors">
+                            <div className="min-w-0">
+                              <strong className="text-xs font-medium text-white/90 leading-snug line-clamp-2">{item.title}</strong>
+                              <span className="text-[9px] text-white/35 mt-1 block">{item.source}{item.publishedAt ? ` · ${new Date(item.publishedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}` : ""}</span>
+                            </div>
+                            <ExternalLink size={11} className="text-white/30 mt-0.5 shrink-0" />
+                          </a>
+                        ))}
                       </div>
-                      <h4 className="text-sm font-semibold text-white">
-                        {companionAdvice.headline}
-                      </h4>
-                      <p className="text-xs text-[#A1A1A6] leading-relaxed">
-                        {companionAdvice.advice}
-                      </p>
-                    </div>
+                    ) : (
+                      <div className="p-5 text-center text-xs text-white/50">Sem manchetes novas neste momento.</div>
+                    )}
                   </div>
-
-                  {/* Atalhos com Link Direto para o Wallet+ Chat */}
-                  <div className="space-y-1.5">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#86868B] block">
-                      Perguntas Rápidas ao Auditor:
-                    </span>
-                    <div className="grid grid-cols-1 gap-1.5">
-                      <Link
-                        href="/ai"
-                        onClick={() => setIsExpanded(false)}
-                        className="p-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-xs text-white/90 flex items-center justify-between transition-colors cursor-pointer border border-white/5"
-                      >
-                        <span>💡 Onde posso cortar gastos nesta semana?</span>
-                        <ArrowRight size={12} className="text-[#86868B]" />
-                      </Link>
-                      <Link
-                        href="/ai"
-                        onClick={() => setIsExpanded(false)}
-                        className="p-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-xs text-white/90 flex items-center justify-between transition-colors cursor-pointer border border-white/5"
-                      >
-                        <span>📊 Como fechar na meta de R$ {formatCurrency(targetEndMonthBalance)} positivo?</span>
-                        <ArrowRight size={12} className="text-[#86868B]" />
-                      </Link>
-                    </div>
-                  </div>
-
-                  {/* Rodapé da Aba Consultor */}
-                  <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[11px] text-[#86868B]">
-                    <span className="text-white/60">Wallet Intelligence</span>
-                    <span className="text-[10px] text-white/40">Pressione Esc para fechar</span>
-                  </div>
-                </div>
-              )}
-
-              {/* ABA 3: AVISOS (FATURAS E VENCIMENTOS PRÓXIMOS COM BAIXA DIRETA) */}
-              {activeTab === "avisos" && (
-                <div className="space-y-2.5 animate-in fade-in duration-150 max-h-56 overflow-y-auto pr-1">
-                  {upcomingEvents.length === 0 ? (
-                    <div className="py-6 text-center text-xs text-[#86868B] space-y-1">
-                      <CheckCircle2 size={24} className="mx-auto text-emerald-400" />
-                      <p>Nenhuma fatura ou conta vencendo nos próximos 7 dias.</p>
-                    </div>
-                  ) : (
-                    upcomingEvents.map((event) => (
-                      <div
-                        key={event.id}
-                        className={`p-3 rounded-xl border flex items-center justify-between text-xs ${
-                          event.isUrgent
-                            ? "bg-amber-500/15 border-amber-400/30 text-amber-200"
-                            : "bg-white/[0.04] border-white/10 text-white"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5">
-                          {event.type === "credit_invoice" ? (
-                            <CreditCard size={15} className="shrink-0 text-indigo-400" />
-                          ) : event.type === "planned_income" ? (
-                            <ArrowDownLeft size={15} className="shrink-0 text-emerald-400" />
-                          ) : (
-                            <Building2 size={15} className="shrink-0 text-[#A1A1A6]" />
-                          )}
-                          <div>
-                            <strong className="block text-white font-medium">
-                              {event.title}
-                            </strong>
-                            <span className="text-[10px] text-[#A1A1A6]">
-                              {event.dueDate} ({event.daysRemaining === 0 ? "Vence hoje" : event.daysRemaining === 1 ? "Amanhã" : `Em ${event.daysRemaining} dias`})
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <strong className="font-mono text-white text-sm">
-                            R$ {formatCurrency(event.amount)}
-                          </strong>
-
-                          {event.id.startsWith("recurring_") && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handlePayRecurringFromIsland(event.id.replace("recurring_", ""));
-                              }}
-                              disabled={payingId === event.id}
-                              className="px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-400/30 text-[10px] font-semibold flex items-center gap-1 transition-all active:scale-95 cursor-pointer"
-                            >
-                              <CheckCircle2 size={11} />
-                              <span>{payingId === event.id ? "Baixando..." : "Baixar"}</span>
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))
-                  )}
-
-                  {/* Rodapé da Aba Avisos */}
-                  <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[11px] text-[#86868B]">
-                    <span className="text-white/60">Wallet Intelligence</span>
-                    <span className="text-[10px] text-white/40">Pressione Esc para fechar</span>
-                  </div>
+                  <p className="text-[9px] text-white/30 leading-relaxed">Cotações informativas, sujeitas a atraso. O Niko organiza contexto; não substitui recomendação de investimento.</p>
                 </div>
               )}
             </div>
@@ -523,16 +453,69 @@ export function DynamicIsland() {
         </div>
       </div>
 
-      {/* Modais Globais */}
-      <QuickCaptureModal
-        isOpen={isQuickCaptureOpen}
-        onClose={() => setIsQuickCaptureOpen(false)}
-      />
-      <PurchaseSimulatorModal
-        isOpen={isSimulatorOpen}
-        onClose={() => setIsSimulatorOpen(false)}
-      />
+      <QuickCaptureModal isOpen={isQuickCaptureOpen} onClose={() => setIsQuickCaptureOpen(false)} />
+      <PurchaseSimulatorModal isOpen={isSimulatorOpen} onClose={() => setIsSimulatorOpen(false)} />
     </>
   );
 }
 
+function CompactIsland({ adviceState, persona, safeAllowance, urgentCount, currency }: { adviceState: AgentAvatarState; persona: string; safeAllowance: number; urgentCount: number; currency: MarketBriefing["currency"] }) {
+  return (
+    <div className="w-full flex items-center justify-between gap-2 sm:gap-3">
+      <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <AgentAvatar persona={persona} state={adviceState} size="sm" showBadge={false} />
+        <span className="text-xs font-semibold hidden sm:inline">Niko</span>
+      </div>
+      <div className="flex items-center gap-1.5 min-w-0">
+        <span className="text-[10px] text-white/45">Livre hoje</span>
+        <strong className="text-[11px] sm:text-xs font-mono text-emerald-300 truncate">R$ {formatCurrency(safeAllowance)}</strong>
+      </div>
+      <div className="flex items-center gap-1.5 shrink-0">
+        {urgentCount > 0 ? (
+          <span className="inline-flex items-center gap-1 text-[9px] sm:text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/25"><AlertTriangle size={9} />{urgentCount} urgente{urgentCount > 1 ? "s" : ""}</span>
+        ) : currency ? (
+          <span className="hidden sm:inline-flex items-center gap-1 text-[10px] text-white/65 px-2 py-0.5 rounded-full bg-white/[0.07]"><Globe2 size={9} className="text-cyan-300" />USD {currency.value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+        ) : null}
+        <div className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-white/60"><ChevronDown size={12} /></div>
+      </div>
+    </div>
+  );
+}
+
+function TabButton({ label, active, onClick, count, live }: { label: string; active: boolean; onClick: () => void; count?: number; live?: boolean }) {
+  return (
+    <button type="button" onClick={onClick} className={`px-3 sm:px-3.5 py-1 rounded-full transition-all cursor-pointer text-[11px] sm:text-xs flex items-center gap-1.5 ${active ? "bg-white text-black font-semibold" : "text-white/65 hover:text-white"}`}>
+      {label}
+      {typeof count === "number" && count > 0 && <span className={`text-[9px] px-1.5 rounded-full ${active ? "bg-black/10" : "bg-amber-500 text-black"}`}>{count}</span>}
+      {live && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
+    </button>
+  );
+}
+
+function MiniMetric({ label, value, tone }: { label: string; value: string; tone: "emerald" | "amber" | "blue" | "white" }) {
+  const colors = { emerald: "text-emerald-300", amber: "text-amber-300", blue: "text-blue-300", white: "text-white" };
+  return <div className="rounded-2xl bg-white/[0.05] border border-white/10 p-2.5 min-w-0"><span className="text-[9px] text-white/40 block truncate">{label}</span><strong className={`text-[10px] sm:text-xs font-mono block mt-1 truncate ${colors[tone]}`}>{value}</strong></div>;
+}
+
+function MoodButton({ label, color, active, onClick }: { label: string; color: "emerald" | "amber" | "blue"; active: boolean; onClick: () => void }) {
+  const activeColors = { emerald: "bg-emerald-500/20 border-emerald-400/40 text-emerald-200", amber: "bg-amber-500/20 border-amber-400/40 text-amber-200", blue: "bg-blue-500/20 border-blue-400/40 text-blue-200" };
+  const dots = { emerald: "bg-emerald-400", amber: "bg-amber-400", blue: "bg-blue-400" };
+  return <button type="button" onClick={onClick} className={`rounded-xl border py-1.5 px-1 text-[9px] sm:text-[10px] font-semibold flex items-center justify-center gap-1.5 cursor-pointer ${active ? activeColors[color] : "bg-white/[0.04] border-white/[0.07] text-white/55"}`}><span className={`w-1.5 h-1.5 rounded-full ${dots[color]}`} />{label}</button>;
+}
+
+function ActionButton({ icon, label, onClick, tone }: { icon: React.ReactNode; label: string; onClick: () => void; tone: "amber" | "violet" }) {
+  const colors = tone === "amber" ? "bg-amber-500/10 border-amber-400/20 text-amber-200" : "bg-violet-500/10 border-violet-400/20 text-violet-200";
+  return <button type="button" onClick={onClick} className={`rounded-xl border px-2 py-2.5 text-[10px] sm:text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer ${colors}`}>{icon}{label}</button>;
+}
+
+function QuoteCard({ label, symbol, quote, kind, loading }: { label: string; symbol: string; quote: MarketBriefing["currency"]; kind: "currency" | "index"; loading: boolean }) {
+  const positive = (quote?.changePercent || 0) >= 0;
+  return (
+    <div className="rounded-2xl bg-white/[0.05] border border-white/10 p-3.5">
+      <div className="flex items-center justify-between gap-2"><span className="text-[10px] text-white/45">{label}</span><span className="text-[9px] font-mono text-white/30">{symbol}</span></div>
+      {loading ? <div className="h-6 w-24 bg-white/10 rounded animate-pulse mt-2" /> : quote ? (
+        <><strong className="text-lg sm:text-xl font-mono text-white block mt-1">{formatQuote(quote.value, kind)}</strong><span className={`text-[10px] font-semibold flex items-center gap-1 mt-1 ${positive ? "text-emerald-300" : "text-rose-300"}`}>{positive ? <ArrowUpRight size={10} /> : <ArrowDownLeft size={10} />}{positive ? "+" : ""}{quote.changePercent.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}% hoje</span></>
+      ) : <span className="text-xs text-white/40 block mt-2">Indisponível</span>}
+    </div>
+  );
+}
