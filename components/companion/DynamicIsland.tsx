@@ -251,10 +251,10 @@ export function DynamicIsland() {
         <div
           ref={islandRef}
           onClick={!isExpanded ? () => setIsExpanded(true) : undefined}
-          className={`pointer-events-auto transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] border border-white/[0.14] ring-1 ring-black/40 backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.35)] ${
+          className={`pointer-events-auto transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] border backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.16)] ${
             isExpanded
-              ? "w-full max-w-2xl max-h-[86dvh] overflow-y-auto rounded-[28px] sm:rounded-[32px] bg-[#161618]/98 text-white p-4 sm:p-5"
-              : "h-10 px-3.5 sm:px-4 rounded-full bg-[#161618]/94 hover:bg-[#161618] text-white flex items-center cursor-pointer hover:scale-[1.01] active:scale-[0.99] max-w-[calc(100vw-1.25rem)] sm:max-w-lg"
+              ? "w-full max-w-2xl max-h-[86dvh] overflow-y-auto rounded-[28px] sm:rounded-[32px] bg-white/98 text-[#1D1D1F] p-4 sm:p-5 border-black/[0.07] ring-1 ring-black/[0.04]"
+              : "h-10 px-3.5 sm:px-4 rounded-full bg-[#161618]/94 hover:bg-[#161618] text-white flex items-center cursor-pointer hover:scale-[1.01] active:scale-[0.99] max-w-[calc(100vw-1.25rem)] sm:max-w-lg border-white/[0.14] ring-1 ring-black/40"
           }`}
         >
           {!isExpanded ? (
@@ -267,25 +267,25 @@ export function DynamicIsland() {
             />
           ) : (
             <div className="space-y-4 animate-in fade-in duration-200">
-              <div className="flex items-center justify-between border-b border-white/10 pb-3 gap-2">
-                <div className="flex items-center gap-1 bg-white/10 p-1 rounded-full text-xs font-medium">
+              <div className="flex items-center justify-between border-b border-black/[0.06] pb-3 gap-2">
+                <div className="flex items-center gap-1 bg-[#F2F2F7] p-1 rounded-full text-xs font-medium">
                   <TabButton label="Hoje" active={activeTab === "hoje"} onClick={() => setActiveTab("hoje")} />
                   <TabButton label="Agenda" count={upcomingEvents.length} active={activeTab === "agenda"} onClick={() => setActiveTab("agenda")} />
                   <TabButton label="Radar" live active={activeTab === "radar"} onClick={() => setActiveTab("radar")} />
                 </div>
-                <button type="button" onClick={() => setIsExpanded(false)} className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center cursor-pointer" aria-label="Recolher Niko">
+                <button type="button" onClick={() => setIsExpanded(false)} className="w-7 h-7 rounded-full bg-[#F2F2F7] hover:bg-[#E5E5EA] text-[#636366] flex items-center justify-center cursor-pointer" aria-label="Recolher Niko">
                   <ChevronUp size={14} />
                 </button>
               </div>
 
               {activeTab === "hoje" && (
                 <div className="space-y-3.5 animate-in fade-in duration-150">
-                  <div className="rounded-2xl bg-gradient-to-br from-white/[0.09] to-white/[0.04] border border-white/10 p-4 flex items-start gap-3.5">
+                  <div className="rounded-2xl bg-gradient-to-br from-[#FAFAFC] to-white border border-black/[0.06] p-4 flex items-start gap-3.5">
                     <AgentAvatar persona={userProfile.persona || "guardian"} state={advice.avatarState} size="lg" />
                     <div className="min-w-0 flex-1">
-                      <span className="text-[10px] uppercase tracking-[0.14em] text-cyan-300 font-bold">{greetingForNow()}, {firstName} · Niko está atento</span>
-                      <h3 className="text-sm sm:text-base font-bold text-white mt-1">{advice.headline}</h3>
-                      <p className="text-xs text-white/60 leading-relaxed mt-1">{advice.advice}</p>
+                      <span className="text-[10px] uppercase tracking-[0.14em] text-blue-600 font-bold">{greetingForNow()}, {firstName} · Niko está atento</span>
+                      <h3 className="text-sm sm:text-base font-bold text-[#1D1D1F] mt-1">{advice.headline}</h3>
+                      <p className="text-xs text-[#86868B] leading-relaxed mt-1">{advice.advice}</p>
                     </div>
                   </div>
 
@@ -295,13 +295,13 @@ export function DynamicIsland() {
                     <MiniMetric label="Próximo evento" value={nextEvent ? `${nextEvent.daysRemaining === 0 ? "Hoje" : `${nextEvent.daysRemaining}d`} · R$ ${Math.round(nextEvent.amount)}` : "Agenda livre"} tone="white" />
                   </div>
 
-                  <div className={`rounded-2xl border p-3.5 ${urgentEvents.length > 0 || gapToTarget > 0 ? "bg-amber-500/10 border-amber-400/25" : "bg-emerald-500/10 border-emerald-400/20"}`}>
+                  <div className={`rounded-2xl border p-3.5 ${urgentEvents.length > 0 || gapToTarget > 0 ? "bg-amber-50 border-amber-200" : "bg-emerald-50 border-emerald-200"}`}>
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-start gap-2.5 min-w-0">
-                        {urgentEvents.length > 0 || gapToTarget > 0 ? <AlertTriangle size={16} className="text-amber-300 mt-0.5 shrink-0" /> : <CheckCircle2 size={16} className="text-emerald-300 mt-0.5 shrink-0" />}
+                        {urgentEvents.length > 0 || gapToTarget > 0 ? <AlertTriangle size={16} className="text-amber-600 mt-0.5 shrink-0" /> : <CheckCircle2 size={16} className="text-emerald-600 mt-0.5 shrink-0" />}
                         <div>
-                          <span className="text-[10px] uppercase tracking-wider font-bold text-white/50">Ação recomendada agora</span>
-                          <p className="text-xs text-white/90 mt-0.5 leading-relaxed">
+                          <span className="text-[10px] uppercase tracking-wider font-bold text-[#86868B]">Ação recomendada agora</span>
+                          <p className="text-xs text-[#1D1D1F] mt-0.5 leading-relaxed">
                             {urgentEvents.length > 0
                               ? `${urgentEvents[0].title} vence ${urgentEvents[0].daysRemaining === 0 ? "hoje" : "amanhã"}. Garanta R$ ${formatCurrency(urgentEvents[0].amount)} na conta.`
                               : gapToTarget > 0
@@ -313,18 +313,18 @@ export function DynamicIsland() {
                         </div>
                       </div>
                       {urgentEvents[0]?.id.startsWith("recurring_") && (
-                        <button type="button" onClick={() => void payEvent(urgentEvents[0].id)} disabled={payingId === urgentEvents[0].id} className="px-2.5 py-1.5 rounded-xl bg-white text-black text-[10px] font-bold shrink-0 disabled:opacity-50 cursor-pointer">
+                        <button type="button" onClick={() => void payEvent(urgentEvents[0].id)} disabled={payingId === urgentEvents[0].id} className="px-2.5 py-1.5 rounded-xl bg-[#1D1D1F] text-white text-[10px] font-bold shrink-0 disabled:opacity-50 cursor-pointer">
                           {payingId === urgentEvents[0].id ? "Salvando" : "Dar baixa"}
                         </button>
                       )}
                     </div>
                   </div>
 
-                  <div className="rounded-2xl bg-white/[0.04] border border-white/10 p-3.5 space-y-2.5">
+                  <div className="rounded-2xl bg-[#FAFAFC] border border-black/[0.06] p-3.5 space-y-2.5">
                     <div className="flex items-center gap-2">
-                      <PencilLine size={13} className="text-violet-300" />
-                      <span className="text-xs font-semibold text-white/90">Seu foco pessoal de hoje</span>
-                      {focusSaved && <span className="ml-auto text-[10px] text-emerald-300 flex items-center gap-1"><Check size={10} />Salvo</span>}
+                      <PencilLine size={13} className="text-violet-600" />
+                      <span className="text-xs font-semibold text-[#1D1D1F]">Seu foco pessoal de hoje</span>
+                      {focusSaved && <span className="ml-auto text-[10px] text-emerald-600 flex items-center gap-1"><Check size={10} />Salvo</span>}
                     </div>
                     <div className="flex gap-2">
                       <input
@@ -333,9 +333,9 @@ export function DynamicIsland() {
                         onKeyDown={(event) => { if (event.key === "Enter") saveFocus(); }}
                         maxLength={100}
                         placeholder="Ex.: treino às 19h, ligar para minha mãe..."
-                        className="min-w-0 flex-1 rounded-xl bg-white/[0.07] border border-white/10 px-3 py-2 text-xs text-white placeholder:text-white/30 outline-none focus:border-violet-400/60"
+                        className="min-w-0 flex-1 rounded-xl bg-white border border-black/[0.08] px-3 py-2 text-xs text-[#1D1D1F] placeholder:text-[#AEAEB2] outline-none focus:border-violet-400"
                       />
-                      <button type="button" onClick={saveFocus} className="px-3 rounded-xl bg-violet-500/20 border border-violet-400/25 text-violet-200 text-xs font-semibold cursor-pointer">Guardar</button>
+                      <button type="button" onClick={saveFocus} className="px-3 rounded-xl bg-violet-50 border border-violet-200 text-violet-700 text-xs font-semibold cursor-pointer">Guardar</button>
                     </div>
                     <div className="grid grid-cols-3 gap-1.5">
                       <MoodButton label="No controle" color="emerald" active={activeMood === "in_control"} onClick={() => performCheckIn("in_control")} />
@@ -347,7 +347,7 @@ export function DynamicIsland() {
                   <div className="grid grid-cols-3 gap-2">
                     <ActionButton icon={<Zap size={13} />} label="Capturar gasto" onClick={openQuickCapture} tone="amber" />
                     <ActionButton icon={<Calculator size={13} />} label="Simular compra" onClick={openSimulator} tone="violet" />
-                    <Link href="/ai" onClick={() => setIsExpanded(false)} className="rounded-xl bg-cyan-500/10 hover:bg-cyan-500/15 border border-cyan-400/20 px-2 py-2.5 text-[10px] sm:text-xs font-semibold text-cyan-200 flex items-center justify-center gap-1.5">
+                    <Link href="/ai" onClick={() => setIsExpanded(false)} className="rounded-xl bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2 py-2.5 text-[10px] sm:text-xs font-semibold text-blue-700 flex items-center justify-center gap-1.5">
                       <MessageCircle size={13} />Conversar
                     </Link>
                   </div>
@@ -359,34 +359,34 @@ export function DynamicIsland() {
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <h3 className="text-sm font-bold">Próximos 7 dias</h3>
-                      <p className="text-[11px] text-white/45">Contas, faturas e entradas previstas em ordem de prioridade.</p>
+                      <p className="text-[11px] text-[#86868B]">Contas, faturas e entradas previstas em ordem de prioridade.</p>
                     </div>
-                    <Link href="/ai?view=calendar" onClick={() => setIsExpanded(false)} className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-[10px] font-semibold flex items-center gap-1.5 shrink-0">
+                    <Link href="/ai?view=calendar" onClick={() => setIsExpanded(false)} className="px-3 py-1.5 rounded-xl bg-[#F2F2F7] hover:bg-[#E5E5EA] text-[#1D1D1F] text-[10px] font-semibold flex items-center gap-1.5 shrink-0">
                       <CalendarClock size={12} />Calendário completo
                     </Link>
                   </div>
                   {upcomingEvents.length === 0 ? (
-                    <div className="py-8 rounded-2xl bg-white/[0.04] border border-white/10 text-center">
-                      <CheckCircle2 size={24} className="mx-auto text-emerald-300" />
-                      <p className="text-xs text-white/70 mt-2">Agenda livre nos próximos 7 dias.</p>
+                    <div className="py-8 rounded-2xl bg-[#FAFAFC] border border-black/[0.06] text-center">
+                      <CheckCircle2 size={24} className="mx-auto text-emerald-600" />
+                      <p className="text-xs text-[#636366] mt-2">Agenda livre nos próximos 7 dias.</p>
                     </div>
                   ) : (
                     <div className="space-y-1.5 max-h-[330px] overflow-y-auto no-scrollbar">
                       {upcomingEvents.map((event) => (
-                        <div key={event.id} className={`p-3 rounded-2xl border flex items-center justify-between gap-3 ${event.isUrgent ? "bg-amber-500/10 border-amber-400/25" : "bg-white/[0.04] border-white/10"}`}>
+                        <div key={event.id} className={`p-3 rounded-2xl border flex items-center justify-between gap-3 ${event.isUrgent ? "bg-amber-50 border-amber-200" : "bg-[#FAFAFC] border-black/[0.06]"}`}>
                           <div className="flex items-center gap-2.5 min-w-0">
-                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${event.type === "planned_income" ? "bg-emerald-500/15 text-emerald-300" : event.type === "credit_invoice" ? "bg-indigo-500/15 text-indigo-300" : "bg-amber-500/15 text-amber-300"}`}>
+                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${event.type === "planned_income" ? "bg-emerald-50 text-emerald-600" : event.type === "credit_invoice" ? "bg-indigo-50 text-indigo-600" : "bg-amber-50 text-amber-600"}`}>
                               {event.type === "planned_income" ? <ArrowDownLeft size={15} /> : event.type === "credit_invoice" ? <CreditCard size={15} /> : <Building2 size={15} />}
                             </div>
                             <div className="min-w-0">
                               <strong className="block text-xs font-semibold truncate">{event.title}</strong>
-                              <span className="text-[10px] text-white/45">{event.dueDate} · {event.daysRemaining === 0 ? "hoje" : event.daysRemaining === 1 ? "amanhã" : `em ${event.daysRemaining} dias`}</span>
+                              <span className="text-[10px] text-[#86868B]">{event.dueDate} · {event.daysRemaining === 0 ? "hoje" : event.daysRemaining === 1 ? "amanhã" : `em ${event.daysRemaining} dias`}</span>
                             </div>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
-                            <strong className={`font-mono text-xs ${event.type === "planned_income" ? "text-emerald-300" : "text-white"}`}>{event.type === "planned_income" ? "+" : "−"}R$ {formatCurrency(event.amount)}</strong>
+                            <strong className={`font-mono text-xs ${event.type === "planned_income" ? "text-emerald-600" : "text-[#1D1D1F]"}`}>{event.type === "planned_income" ? "+" : "−"}R$ {formatCurrency(event.amount)}</strong>
                             {event.id.startsWith("recurring_") && (
-                              <button type="button" onClick={() => void payEvent(event.id)} disabled={payingId === event.id} className="px-2 py-1 rounded-lg bg-emerald-500/15 text-emerald-200 border border-emerald-400/20 text-[10px] font-semibold cursor-pointer disabled:opacity-50">
+                              <button type="button" onClick={() => void payEvent(event.id)} disabled={payingId === event.id} className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-semibold cursor-pointer disabled:opacity-50">
                                 {payingId === event.id ? "..." : event.type === "planned_income" ? "Receber" : "Baixar"}
                               </button>
                             )}
@@ -395,9 +395,9 @@ export function DynamicIsland() {
                       ))}
                     </div>
                   )}
-                  <div className="rounded-2xl bg-white/[0.04] border border-white/10 p-3 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2"><Target size={14} className="text-cyan-300" /><span className="text-[11px] text-white/65">Meta de fechamento</span></div>
-                    <strong className={`font-mono text-xs ${gapToTarget > 0 ? "text-amber-300" : "text-emerald-300"}`}>{gapToTarget > 0 ? `Faltam R$ ${formatCurrency(gapToTarget)}` : `Folga R$ ${formatCurrency(projectedFreeBalance - targetEndMonthBalance)}`}</strong>
+                  <div className="rounded-2xl bg-[#FAFAFC] border border-black/[0.06] p-3 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2"><Target size={14} className="text-blue-600" /><span className="text-[11px] text-[#636366]">Meta de fechamento</span></div>
+                    <strong className={`font-mono text-xs ${gapToTarget > 0 ? "text-amber-700" : "text-emerald-700"}`}>{gapToTarget > 0 ? `Faltam R$ ${formatCurrency(gapToTarget)}` : `Folga R$ ${formatCurrency(projectedFreeBalance - targetEndMonthBalance)}`}</strong>
                   </div>
                 </div>
               )}
@@ -406,10 +406,10 @@ export function DynamicIsland() {
                 <div className="space-y-3.5 animate-in fade-in duration-150">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <div className="flex items-center gap-1.5"><Globe2 size={14} className="text-cyan-300" /><h3 className="text-sm font-bold">Radar de mercado</h3></div>
-                      <p className="text-[11px] text-white/45">Câmbio, bolsa e manchetes que podem mexer com o seu dinheiro.</p>
+                      <div className="flex items-center gap-1.5"><Globe2 size={14} className="text-blue-600" /><h3 className="text-sm font-bold">Radar de mercado</h3></div>
+                      <p className="text-[11px] text-[#86868B]">Câmbio, bolsa e manchetes que podem mexer com o seu dinheiro.</p>
                     </div>
-                    <button type="button" onClick={() => void loadMarket()} disabled={marketLoading} className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/15 flex items-center justify-center cursor-pointer disabled:opacity-50" aria-label="Atualizar radar">
+                    <button type="button" onClick={() => void loadMarket()} disabled={marketLoading} className="w-8 h-8 rounded-xl bg-[#F2F2F7] hover:bg-[#E5E5EA] flex items-center justify-center cursor-pointer disabled:opacity-50" aria-label="Atualizar radar">
                       <RefreshCw size={13} className={marketLoading ? "animate-spin" : ""} />
                     </button>
                   </div>
@@ -419,33 +419,33 @@ export function DynamicIsland() {
                     <QuoteCard label="Bolsa brasileira" symbol="IBOV" quote={market?.index || null} kind="index" loading={marketLoading && !market} />
                   </div>
 
-                  <div className="rounded-2xl bg-white/[0.04] border border-white/10 overflow-hidden">
-                    <div className="px-3.5 py-2.5 border-b border-white/10 flex items-center gap-2">
-                      <Newspaper size={13} className="text-violet-300" />
+                  <div className="rounded-2xl bg-[#FAFAFC] border border-black/[0.06] overflow-hidden">
+                    <div className="px-3.5 py-2.5 border-b border-black/[0.06] flex items-center gap-2">
+                      <Newspaper size={13} className="text-violet-600" />
                       <span className="text-xs font-semibold">Notícias do mercado</span>
-                      <span className="ml-auto text-[9px] text-white/35">últimas 24h</span>
+                      <span className="ml-auto text-[9px] text-[#86868B]">últimas 24h</span>
                     </div>
                     {marketError && !market ? (
-                      <div className="p-5 text-center text-xs text-white/50">Não foi possível atualizar o radar agora. Tente novamente em instantes.</div>
+                      <div className="p-5 text-center text-xs text-[#86868B]">Não foi possível atualizar o radar agora. Tente novamente em instantes.</div>
                     ) : marketLoading && !market ? (
-                      <div className="p-5 text-center text-xs text-white/50">Buscando o mercado...</div>
+                      <div className="p-5 text-center text-xs text-[#86868B]">Buscando o mercado...</div>
                     ) : market?.news.length ? (
-                      <div className="divide-y divide-white/[0.07] max-h-[260px] overflow-y-auto no-scrollbar">
+                      <div className="divide-y divide-black/[0.06] max-h-[260px] overflow-y-auto no-scrollbar">
                         {market.news.slice(0, 5).map((item) => (
-                          <a key={item.id} href={item.url} target="_blank" rel="noreferrer" className="p-3.5 flex items-start justify-between gap-3 hover:bg-white/[0.04] transition-colors">
+                          <a key={item.id} href={item.url} target="_blank" rel="noreferrer" className="p-3.5 flex items-start justify-between gap-3 hover:bg-[#F2F2F7] transition-colors">
                             <div className="min-w-0">
-                              <strong className="text-xs font-medium text-white/90 leading-snug line-clamp-2">{item.title}</strong>
-                              <span className="text-[9px] text-white/35 mt-1 block">{item.source}{item.publishedAt ? ` · ${new Date(item.publishedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}` : ""}</span>
+                              <strong className="text-xs font-medium text-[#1D1D1F] leading-snug line-clamp-2">{item.title}</strong>
+                              <span className="text-[9px] text-[#86868B] mt-1 block">{item.source}{item.publishedAt ? ` · ${new Date(item.publishedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}` : ""}</span>
                             </div>
-                            <ExternalLink size={11} className="text-white/30 mt-0.5 shrink-0" />
+                            <ExternalLink size={11} className="text-[#AEAEB2] mt-0.5 shrink-0" />
                           </a>
                         ))}
                       </div>
                     ) : (
-                      <div className="p-5 text-center text-xs text-white/50">Sem manchetes novas neste momento.</div>
+                      <div className="p-5 text-center text-xs text-[#86868B]">Sem manchetes novas neste momento.</div>
                     )}
                   </div>
-                  <p className="text-[9px] text-white/30 leading-relaxed">Cotações informativas, sujeitas a atraso. O Niko organiza contexto; não substitui recomendação de investimento.</p>
+                  <p className="text-[9px] text-[#86868B] leading-relaxed">Cotações informativas, sujeitas a atraso. O Niko organiza contexto; não substitui recomendação de investimento.</p>
                 </div>
               )}
             </div>
@@ -484,38 +484,38 @@ function CompactIsland({ adviceState, persona, safeAllowance, urgentCount, curre
 
 function TabButton({ label, active, onClick, count, live }: { label: string; active: boolean; onClick: () => void; count?: number; live?: boolean }) {
   return (
-    <button type="button" onClick={onClick} className={`px-3 sm:px-3.5 py-1 rounded-full transition-all cursor-pointer text-[11px] sm:text-xs flex items-center gap-1.5 ${active ? "bg-white text-black font-semibold" : "text-white/65 hover:text-white"}`}>
+    <button type="button" onClick={onClick} className={`px-3 sm:px-3.5 py-1 rounded-full transition-all cursor-pointer text-[11px] sm:text-xs flex items-center gap-1.5 ${active ? "bg-[#1D1D1F] text-white font-semibold shadow-sm" : "text-[#86868B] hover:text-[#1D1D1F]"}`}>
       {label}
-      {typeof count === "number" && count > 0 && <span className={`text-[9px] px-1.5 rounded-full ${active ? "bg-black/10" : "bg-amber-500 text-black"}`}>{count}</span>}
+      {typeof count === "number" && count > 0 && <span className={`text-[9px] px-1.5 rounded-full ${active ? "bg-white/15" : "bg-amber-100 text-amber-800"}`}>{count}</span>}
       {live && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
     </button>
   );
 }
 
 function MiniMetric({ label, value, tone }: { label: string; value: string; tone: "emerald" | "amber" | "blue" | "white" }) {
-  const colors = { emerald: "text-emerald-300", amber: "text-amber-300", blue: "text-blue-300", white: "text-white" };
-  return <div className="rounded-2xl bg-white/[0.05] border border-white/10 p-2.5 min-w-0"><span className="text-[9px] text-white/40 block truncate">{label}</span><strong className={`text-[10px] sm:text-xs font-mono block mt-1 truncate ${colors[tone]}`}>{value}</strong></div>;
+  const colors = { emerald: "text-emerald-700", amber: "text-amber-700", blue: "text-blue-700", white: "text-[#1D1D1F]" };
+  return <div className="rounded-2xl bg-[#FAFAFC] border border-black/[0.06] p-2.5 min-w-0"><span className="text-[9px] text-[#86868B] block truncate">{label}</span><strong className={`text-[10px] sm:text-xs font-mono block mt-1 truncate ${colors[tone]}`}>{value}</strong></div>;
 }
 
 function MoodButton({ label, color, active, onClick }: { label: string; color: "emerald" | "amber" | "blue"; active: boolean; onClick: () => void }) {
-  const activeColors = { emerald: "bg-emerald-500/20 border-emerald-400/40 text-emerald-200", amber: "bg-amber-500/20 border-amber-400/40 text-amber-200", blue: "bg-blue-500/20 border-blue-400/40 text-blue-200" };
+  const activeColors = { emerald: "bg-emerald-50 border-emerald-300 text-emerald-700", amber: "bg-amber-50 border-amber-300 text-amber-700", blue: "bg-blue-50 border-blue-300 text-blue-700" };
   const dots = { emerald: "bg-emerald-400", amber: "bg-amber-400", blue: "bg-blue-400" };
-  return <button type="button" onClick={onClick} className={`rounded-xl border py-1.5 px-1 text-[9px] sm:text-[10px] font-semibold flex items-center justify-center gap-1.5 cursor-pointer ${active ? activeColors[color] : "bg-white/[0.04] border-white/[0.07] text-white/55"}`}><span className={`w-1.5 h-1.5 rounded-full ${dots[color]}`} />{label}</button>;
+  return <button type="button" onClick={onClick} className={`rounded-xl border py-1.5 px-1 text-[9px] sm:text-[10px] font-semibold flex items-center justify-center gap-1.5 cursor-pointer ${active ? activeColors[color] : "bg-white border-black/[0.06] text-[#86868B]"}`}><span className={`w-1.5 h-1.5 rounded-full ${dots[color]}`} />{label}</button>;
 }
 
 function ActionButton({ icon, label, onClick, tone }: { icon: React.ReactNode; label: string; onClick: () => void; tone: "amber" | "violet" }) {
-  const colors = tone === "amber" ? "bg-amber-500/10 border-amber-400/20 text-amber-200" : "bg-violet-500/10 border-violet-400/20 text-violet-200";
+  const colors = tone === "amber" ? "bg-amber-50 border-amber-200 text-amber-700" : "bg-violet-50 border-violet-200 text-violet-700";
   return <button type="button" onClick={onClick} className={`rounded-xl border px-2 py-2.5 text-[10px] sm:text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer ${colors}`}>{icon}{label}</button>;
 }
 
 function QuoteCard({ label, symbol, quote, kind, loading }: { label: string; symbol: string; quote: MarketBriefing["currency"]; kind: "currency" | "index"; loading: boolean }) {
   const positive = (quote?.changePercent || 0) >= 0;
   return (
-    <div className="rounded-2xl bg-white/[0.05] border border-white/10 p-3.5">
-      <div className="flex items-center justify-between gap-2"><span className="text-[10px] text-white/45">{label}</span><span className="text-[9px] font-mono text-white/30">{symbol}</span></div>
-      {loading ? <div className="h-6 w-24 bg-white/10 rounded animate-pulse mt-2" /> : quote ? (
-        <><strong className="text-lg sm:text-xl font-mono text-white block mt-1">{formatQuote(quote.value, kind)}</strong><span className={`text-[10px] font-semibold flex items-center gap-1 mt-1 ${positive ? "text-emerald-300" : "text-rose-300"}`}>{positive ? <ArrowUpRight size={10} /> : <ArrowDownLeft size={10} />}{positive ? "+" : ""}{quote.changePercent.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}% hoje</span></>
-      ) : <span className="text-xs text-white/40 block mt-2">Indisponível</span>}
+    <div className="rounded-2xl bg-[#FAFAFC] border border-black/[0.06] p-3.5">
+      <div className="flex items-center justify-between gap-2"><span className="text-[10px] text-[#86868B]">{label}</span><span className="text-[9px] font-mono text-[#AEAEB2]">{symbol}</span></div>
+      {loading ? <div className="h-6 w-24 bg-black/[0.06] rounded animate-pulse mt-2" /> : quote ? (
+        <><strong className="text-lg sm:text-xl font-mono text-[#1D1D1F] block mt-1">{formatQuote(quote.value, kind)}</strong><span className={`text-[10px] font-semibold flex items-center gap-1 mt-1 ${positive ? "text-emerald-600" : "text-rose-600"}`}>{positive ? <ArrowUpRight size={10} /> : <ArrowDownLeft size={10} />}{positive ? "+" : ""}{quote.changePercent.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}% hoje</span></>
+      ) : <span className="text-xs text-[#86868B] block mt-2">Indisponível</span>}
     </div>
   );
 }

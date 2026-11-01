@@ -34,6 +34,8 @@ export interface CardItem {
   balance?: number;
   /** Saldo existente antes do primeiro lançamento. O saldo atual é derivado do livro-caixa. */
   openingBalance?: number;
+  /** Versão da conciliação usada para migrar o saldo legado sem reaplicar o histórico. */
+  ledgerBalanceVersion?: number;
   invoiceAmount?: number;
   limit: number;
   spent: number;
@@ -57,7 +59,7 @@ export interface Transaction {
   description: string;
   paymentMethod: string;
   cardId?: string | null;
-  kind?: "regular" | "invoice_payment" | "invoice_settlement";
+  kind?: "regular" | "invoice_payment" | "invoice_settlement" | "balance_reconciliation";
   relatedCardId?: string | null;
   groupId?: string | null;
   recurringItemId?: string | null;
@@ -128,4 +130,3 @@ export interface NewCardInput {
     chipGradient: string;
   };
 }
-

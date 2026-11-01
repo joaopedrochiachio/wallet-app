@@ -15,13 +15,11 @@ import {
   browserLocalPersistence,
   setPersistence,
   sendPasswordResetEmail,
-  deleteUser,
   reauthenticateWithPopup,
   reauthenticateWithCredential,
   EmailAuthProvider,
 } from "firebase/auth";
 import { auth } from "@/lib/firebase";
-import { deleteUserDataFromFirestore } from "@/lib/services/userService";
 import { clearUserLocalCaches } from "@/lib/services/aiChatService";
 
 interface AuthContextType {
@@ -239,11 +237,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw err;
     }
 
-    // 2. Com a autenticação recente comprovada, apaga os dados no Firestore
-    await deleteUserDataFromFirestore(currentUid);
+    // 2. O servidor deriva o UID do token e remove recursivamente todos os dados.
+    const idToken = await currentUser.getIdToken(true);
+    const response = await fetch("/api/account", {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${idToken}` },
+      cache: "no-store",
+    });
+    const result = (await response.json().catch(() => null)) as
+      | { success?: boolean; code?: string; error?: string }
+      | null;
 
-    // 3. E finalmente exclui a conta no Firebase Auth
-    await deleteUser(currentUser);
+    if (!response.ok || !result?.success) {
+      const error = new Error(result?.error || "Não foi possível excluir a conta por completo.");
+      if (result?.code === "REAUTHENTICATION_REQUIRED") {
+        (error as Error & { code: string }).code = "auth/requires-recent-login";
+      }
+      throw error;
+    }
+
+    // 3. Remove resíduos sensíveis do dispositivo e encerra a sessão local.
+    clearUserLocalCaches(currentUid);
+    await firebaseSignOut(auth).catch(() => undefined);
     setUser(null);
   };
 

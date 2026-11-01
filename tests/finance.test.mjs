@@ -2,10 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   calculateCheckingBalance,
+  calculateCheckingBalanceBefore,
   calculateCreditInvoice,
   calculateInvoiceSchedule,
   calculateMonthlyAccountFlow,
   calculateProjectedBalance,
+  getCheckingBalanceMigration,
+  CURRENT_LEDGER_BALANCE_VERSION,
   getInvoiceDueDate,
   getCardInvoiceRecurringDetails,
   getCardInvoiceDetailsForMonth,
@@ -25,6 +28,7 @@ import {
   isSameOrBeforeCalendarDay,
   getPendingDueOccurrences,
 } from "../lib/utils/timeProgression.ts";
+import { auditFinancialIntegrity } from "../lib/services/financialIntegrityService.ts";
 
 const colorScheme = {
   gradient: "",
@@ -64,6 +68,102 @@ test("salário recebido menos contas PIX define o saldo real", () => {
     { amount: 800, type: "despesa", account: "Débito/Pix", cardId: checking.id },
   ]);
   assert.equal(result, 3000);
+});
+
+test("cardId é prioritário e impede compra no crédito de sair também da conta", () => {
+  const result = calculateCheckingBalance(
+    { ...checking, openingBalance: 500 },
+    [
+      {
+        id: "credit-purchase",
+        amount: 260,
+        type: "despesa",
+        account: "Débito/Pix",
+        cardId: credit.id,
+      },
+    ]
+  );
+
+  assert.equal(result, 500);
+});
+
+test("migração de saldo preserva o snapshot legado sem reaplicar o histórico", () => {
+  const legacyAccount = {
+    ...checking,
+    balance: 213.41,
+    openingBalance: undefined,
+  };
+  const ledger = [
+    { id: "income", amount: 3227.95, type: "receita", account: checking.name, cardId: checking.id },
+    { id: "expense", amount: 3617.47, type: "despesa", account: checking.name, cardId: checking.id },
+  ];
+
+  const migration = getCheckingBalanceMigration(legacyAccount, ledger);
+  assert.deepEqual(migration, {
+    openingBalance: 602.93,
+    ledgerBalanceVersion: CURRENT_LEDGER_BALANCE_VERSION,
+  });
+  assert.equal(
+    Math.round(calculateCheckingBalance({ ...legacyAccount, ...migration }, ledger) * 100) / 100,
+    213.41
+  );
+});
+
+test("migração repara conta atingida pela regra antiga de saldo inicial zero", () => {
+  const affectedAccount = {
+    ...checking,
+    balance: 213.41,
+    openingBalance: 0,
+  };
+  const ledger = [
+    { id: "income", amount: 3227.95, type: "receita", account: checking.name, cardId: checking.id },
+    { id: "expense", amount: 3617.47, type: "despesa", account: checking.name, cardId: checking.id },
+  ];
+
+  const migration = getCheckingBalanceMigration(affectedAccount, ledger);
+  assert.equal(migration?.openingBalance, 602.93);
+  assert.equal(migration?.ledgerBalanceVersion, CURRENT_LEDGER_BALANCE_VERSION);
+  assert.equal(
+    Math.round(calculateCheckingBalance({ ...affectedAccount, ...migration }, ledger) * 100) / 100,
+    213.41
+  );
+});
+
+test("migração v3 repara conta que já recebeu a versão anterior sem o saldo legado", () => {
+  const affectedAccount = {
+    ...checking,
+    balance: 213.41,
+    openingBalance: 0,
+    ledgerBalanceVersion: 2,
+  };
+  const ledger = [
+    { id: "income", amount: 6082.26, type: "receita", account: checking.name, cardId: checking.id },
+    { id: "expense", amount: 6150.59, type: "despesa", account: checking.name, cardId: checking.id },
+  ];
+
+  const migration = getCheckingBalanceMigration(affectedAccount, ledger);
+  assert.equal(migration?.openingBalance, 281.74);
+  assert.equal(migration?.ledgerBalanceVersion, CURRENT_LEDGER_BALANCE_VERSION);
+  assert.equal(
+    Math.round(calculateCheckingBalance({ ...affectedAccount, ...migration }, ledger) * 100) / 100,
+    213.41
+  );
+});
+
+test("migração não altera conta já nativa do livro-caixa", () => {
+  const nativeAccount = {
+    ...checking,
+    balance: 1000,
+    openingBalance: 1000,
+  };
+  const ledger = [
+    { id: "expense", amount: 200, type: "despesa", account: checking.name, cardId: checking.id },
+  ];
+
+  assert.deepEqual(getCheckingBalanceMigration(nativeAccount, ledger), {
+    openingBalance: 1000,
+    ledgerBalanceVersion: CURRENT_LEDGER_BALANCE_VERSION,
+  });
 });
 
 test("consolidado atual usa apenas o que entrou e saiu da conta", () => {
@@ -174,6 +274,84 @@ test("saldo do mês anterior é transportado como saldo inicial do próximo mês
   assert.equal(month2Opening, 4500);
   const month2Projected = calculateProjectedBalance(month2Opening, 6000, 4000);
   assert.equal(month2Projected, 6500);
+});
+
+test("saldo anterior ao primeiro dia de outubro inclui todo o fechamento de setembro", () => {
+  const account = { ...checking, openingBalance: 260 };
+  const ledger = [
+    { id: "sep-income", amount: 3227.95, type: "receita", account: checking.name, cardId: checking.id, occurredAt: new Date(2026, 8, 5, 12) },
+    { id: "sep-expense", amount: 2885.02, type: "despesa", account: checking.name, cardId: checking.id, occurredAt: new Date(2026, 8, 28, 12) },
+    { id: "oct-expense", amount: 100, type: "despesa", account: checking.name, cardId: checking.id, occurredAt: new Date(2026, 9, 2, 12) },
+  ];
+
+  assert.equal(
+    Math.round(calculateCheckingBalanceBefore(account, ledger, new Date(2026, 9, 1)) * 100) / 100,
+    602.93
+  );
+});
+
+test("auditor confirma transporte e equações quando o livro-caixa fecha", () => {
+  const transactions = [
+    { id: "income", title: "Salário", amount: 1000, type: "receita", account: checking.name, cardId: checking.id, occurredAt: new Date(2026, 9, 5, 12) },
+    { id: "expense", title: "Aluguel", amount: 300, type: "despesa", account: checking.name, cardId: checking.id, occurredAt: new Date(2026, 9, 10, 12) },
+  ];
+  const audit = auditFinancialIntegrity({
+    cards: [{ ...checking, balance: 900 }],
+    transactions,
+    recurringItems: [],
+    targetYear: 2026,
+    targetMonth: 9,
+    expectedOpeningBalance: 200,
+    currentCheckingBalance: 900,
+    projection: {
+      openingBalance: 200,
+      actualIncomeTotal: 1000,
+      actualOutflowTotal: 300,
+      actualClosingBalance: 900,
+      plannedIncomesTotal: 0,
+      pendingCommitted: 0,
+      projectedFreeBalance: 900,
+    },
+  });
+
+  assert.equal(audit.status, "ok");
+  assert.equal(audit.issues.length, 0);
+});
+
+test("auditor bloqueia falsa conciliação de recorrência duplicada", () => {
+  const duplicated = [
+    { id: "one", title: "Conta", amount: 100, type: "despesa", account: checking.name, cardId: checking.id, recurringItemId: "rec-1", periodKey: "2026-10", occurredAt: new Date(2026, 9, 10, 12) },
+    { id: "two", title: "Conta", amount: 100, type: "despesa", account: checking.name, cardId: checking.id, recurringItemId: "rec-1", periodKey: "2026-10", occurredAt: new Date(2026, 9, 10, 12) },
+  ];
+  const audit = auditFinancialIntegrity({
+    cards: [checking],
+    transactions: duplicated,
+    recurringItems: [{
+      id: "rec-1",
+      title: "Conta",
+      amount: 100,
+      account: checking.name,
+      cardId: checking.id,
+      category: "Casa",
+      dueDay: 10,
+      active: true,
+      realizedPeriods: ["2026-10"],
+    }],
+    targetYear: 2026,
+    targetMonth: 9,
+    projection: {
+      openingBalance: 500,
+      actualIncomeTotal: 0,
+      actualOutflowTotal: 200,
+      actualClosingBalance: 300,
+      plannedIncomesTotal: 0,
+      pendingCommitted: 0,
+      projectedFreeBalance: 300,
+    },
+  });
+
+  assert.equal(audit.status, "error");
+  assert.ok(audit.issues.some((issue) => issue.code === "duplicate_occurrence"));
 });
 
 test("createSafeMiddayDate e isSameOrBeforeCalendarDay operam imunes a desvios de fuso horário", () => {

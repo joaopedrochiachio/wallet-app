@@ -33,6 +33,8 @@ export interface AccountFlow {
   outflow: number;
 }
 
+export const CURRENT_LEDGER_BALANCE_VERSION = 3;
+
 function normalizeText(value: string): string {
   return value.trim().toLocaleLowerCase("pt-BR");
 }
@@ -54,8 +56,12 @@ export function matchesLedgerCard(
   account: string,
   cardId?: string | null
 ): boolean {
-  return card.id === cardId ||
-    card.id === account ||
+  // Quando o lançamento já possui o identificador estável, ele é a fonte de
+  // verdade. Usar também o rótulo permitiria contar a mesma movimentação em
+  // duas contas quando dados legados têm nome e cardId divergentes.
+  if (cardId) return card.id === cardId;
+
+  return card.id === account ||
     normalizeText(card.name) === normalizeText(account) ||
     (card.type === "checking" && account === "Débito/Pix");
 }
@@ -72,6 +78,66 @@ export function calculateCheckingBalance(card: CardItem, entries: LedgerEntry[])
     (balance, entry) => balance + (entry.type === "receita" ? entry.amount : -entry.amount),
     openingBalance
   );
+}
+
+/** Saldo consolidado imediatamente antes de uma data de corte. */
+export function calculateCheckingBalanceBefore(
+  card: CardItem,
+  entries: LedgerEntry[],
+  exclusiveEnd: Date
+): number {
+  const entriesBeforeCutoff = entries.filter((entry) => {
+    const occurredAt = getLedgerEntryDate(entry);
+    return occurredAt !== null && occurredAt.getTime() < exclusiveEnd.getTime();
+  });
+  return calculateCheckingBalance(card, entriesBeforeCutoff);
+}
+
+/**
+ * Converte uma conta do modelo antigo, no qual `balance` já era atualizado a
+ * cada lançamento, para o livro-caixa atual. O saldo legado é tratado como um
+ * snapshot conciliado e nunca pode receber o histórico uma segunda vez.
+ *
+ * A versão inicial da migração gravava `openingBalance = 0` quando havia
+ * lançamentos. Contas atingidas por essa regra também são reparadas aqui.
+ */
+export function getCheckingBalanceMigration(
+  card: CardItem,
+  entries: LedgerEntry[]
+): Pick<CardItem, "openingBalance" | "ledgerBalanceVersion"> | null {
+  if (
+    card.type !== "checking" ||
+    card.ledgerBalanceVersion === CURRENT_LEDGER_BALANCE_VERSION
+  ) {
+    return null;
+  }
+
+  const accountEntries = entries.filter(
+    (entry) =>
+      isActualEntry(entry) &&
+      matchesLedgerCard(card, entry.account, entry.cardId)
+  );
+  const legacySnapshot = Number.isFinite(card.balance) ? Number(card.balance) : 0;
+  const wasAffectedByZeroOpeningMigration =
+    card.openingBalance === 0 &&
+    accountEntries.length > 0 &&
+    Math.abs(legacySnapshot) >= 0.005;
+
+  let openingBalance = card.openingBalance ?? legacySnapshot;
+
+  if (card.openingBalance === undefined || wasAffectedByZeroOpeningMigration) {
+    const ledgerNetFlow = accountEntries.reduce(
+      (total, entry) =>
+        total + (entry.type === "receita" ? entry.amount : -entry.amount),
+      0
+    );
+    openingBalance = legacySnapshot - ledgerNetFlow;
+  }
+
+  return {
+    openingBalance: Math.round(openingBalance * 100) / 100,
+    ledgerBalanceVersion: CURRENT_LEDGER_BALANCE_VERSION,
+  };
 }
 
 export interface CardInvoiceRecurringItemDetail {
@@ -636,6 +702,7 @@ export function calculateMonthlyAccountFlow(
 
   return accountEntries.reduce<AccountFlow>(
     (flow, entry) => {
+      if (entry.kind === "balance_reconciliation") return flow;
       if (entry.type === "receita") flow.income += entry.amount;
       else flow.outflow += entry.amount;
       return flow;

@@ -17,7 +17,11 @@ import {
 
 import { redactPersonalData } from "../lib/services/privacyService.ts";
 import { checkRateLimit, clearRateLimitStore } from "../lib/utils/rateLimiter.ts";
-import { clearUserLocalCaches, loadInitialDiagnosisSync } from "../lib/services/aiChatService.ts";
+import {
+  clearUserLocalCaches,
+  loadInitialDiagnosisSync,
+  savePersistentDiagnosis,
+} from "../lib/services/aiChatService.ts";
 import { SUSPICIOUS_PATH_PATTERNS, MAX_URL_LENGTH, middleware } from "../middleware.ts";
 
 test("sanitizeTextInput remove tags HTML, scripts e caracteres perigosos", () => {
@@ -268,9 +272,10 @@ test("sanitizePromptInput neutraliza tentativas de prompt injection e delimitado
   assert.equal(truncated.length, 200);
 });
 
-test("Isolamento estrito de diagnostico entre usuarios e limpeza de caches", () => {
+test("Diagnostico sensivel ignora localStorage e permanece apenas em memoria", async () => {
   // Simula mock de window e localStorage
   const store = new Map();
+  const originalWindow = global.window;
   global.window = {
     localStorage: {
       getItem: (k) => store.get(k) || null,
@@ -279,23 +284,28 @@ test("Isolamento estrito de diagnostico entre usuarios e limpeza de caches", () 
     },
   };
 
-  // Usuário A salva diagnóstico na chave global e na sua chave
-  store.set("wallet_ai_diagnosis", JSON.stringify({ summary: "Diagnostico do Usuario A" }));
-  store.set("wallet_ai_diagnosis_userA", JSON.stringify({ summary: "Diagnostico do Usuario A" }));
+  try {
+    // Resíduos de versões antigas nunca podem ser carregados.
+    store.set("wallet_ai_diagnosis", JSON.stringify({ summary: "Diagnostico legado" }));
+    store.set("wallet_ai_diagnosis_userA", JSON.stringify({ summary: "Diagnostico legado" }));
+    assert.equal(loadInitialDiagnosisSync("userA"), null);
+    assert.equal(store.has("wallet_ai_diagnosis_userA"), false);
+    assert.equal(store.has("wallet_ai_diagnosis"), false);
 
-  // Usuário B faz login: não deve herdar o diagnóstico do Usuário A!
-  const diagUserB = loadInitialDiagnosisSync("userB");
-  assert.equal(diagUserB, null, "Usuario B NUNCA deve carregar diagnostico vazado do Usuario A");
+    // Visitantes usam somente memória da aba, sem gravar conteúdo no navegador.
+    await savePersistentDiagnosis(
+      { summary: "Diagnostico volatil" },
+      { timestamp: "2026-10-31T12:00:00.000Z" }
+    );
+    const volatileDiagnosis = loadInitialDiagnosisSync();
+    assert.equal(volatileDiagnosis?.diagnosis.summary, "Diagnostico volatil");
+    assert.equal(store.has("wallet_ai_diagnosis"), false);
 
-  // Usuário A carrega seu próprio diagnóstico
-  const diagUserA = loadInitialDiagnosisSync("userA");
-  assert.ok(diagUserA !== null);
-  assert.equal(diagUserA.diagnosis.summary, "Diagnostico do Usuario A");
-
-  // Limpeza de cache do usuário A (logout / sanitização)
-  clearUserLocalCaches("userA");
-  assert.equal(store.has("wallet_ai_diagnosis_userA"), false);
-  assert.equal(store.has("wallet_ai_diagnosis"), false);
+    clearUserLocalCaches();
+    assert.equal(loadInitialDiagnosisSync(), null);
+  } finally {
+    global.window = originalWindow;
+  }
 });
 
 test("validateCurrency validacao avancada de moeda brasileira, R$, limites e arredondamentos seguros", () => {
@@ -436,7 +446,7 @@ test("middleware protecao Anti-CSRF bloqueia requisicoes de mutacao cross-origin
   const resSameOrigin = middleware(reqSameOrigin);
   assert.equal(resSameOrigin.status, 200);
 
-  // 3. Mutação cross-origin COM Bearer token (API client legítimo) -> PERMITIDA
+  // 3. Origin externo continua bloqueado mesmo com Bearer token.
   const reqWithAuth = new NextRequest("http://localhost:3000/api/ai/chat", {
     method: "POST",
     headers: {
@@ -446,7 +456,39 @@ test("middleware protecao Anti-CSRF bloqueia requisicoes de mutacao cross-origin
     },
   });
   const resWithAuth = middleware(reqWithAuth);
-  assert.equal(resWithAuth.status, 200);
+  assert.equal(resWithAuth.status, 403);
+
+  // 4. Clientes de servidor/cron não enviam Origin e continuam permitidos.
+  const reqServerClient = new NextRequest("http://localhost:3000/api/time-progression", {
+    method: "POST",
+    headers: {
+      host: "localhost:3000",
+      authorization: "Bearer legitimate-cron-token",
+    },
+  });
+  const resServerClient = middleware(reqServerClient);
+  assert.equal(resServerClient.status, 200);
+});
+
+test("exclusao LGPD ocorre no servidor, recursivamente e com autenticacao recente", () => {
+  const adminService = fs.readFileSync(
+    path.resolve(process.cwd(), "lib/services/accountAdminService.ts"),
+    "utf-8"
+  );
+  const accountRoute = fs.readFileSync(
+    path.resolve(process.cwd(), "app/api/account/route.ts"),
+    "utf-8"
+  );
+  const clientService = fs.readFileSync(
+    path.resolve(process.cwd(), "lib/services/userService.ts"),
+    "utf-8"
+  );
+
+  assert.ok(adminService.includes("recursiveDelete(userRef)"));
+  assert.ok(adminService.indexOf("recursiveDelete(userRef)") < adminService.indexOf("deleteUser(uid)"));
+  assert.ok(accountRoute.includes("verifyServerAuth(request)"));
+  assert.ok(accountRoute.includes("RECENT_AUTH_MAX_AGE_SECONDS"));
+  assert.ok(!clientService.includes("deleteUserDataFromFirestore"));
 });
 
 test("Configuracao de cabecalhos de seguranca (next.config.ts) valida CSP completo, COOP, CORP e HSTS", () => {
@@ -498,4 +540,3 @@ test("checkRateLimit saturacao de rajada, isolamento entre chaves e recuperacao 
   assert.equal(user2Res.allowed, true);
   assert.equal(user2Res.remaining, limit - 1);
 });
-

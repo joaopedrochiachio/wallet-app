@@ -1,14 +1,10 @@
-import { db } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 import { UserProfile } from "@/types";
 import {
   doc,
   getDoc,
   setDoc,
   onSnapshot,
-  collection,
-  getDocs,
-  deleteDoc,
-  writeBatch,
 } from "firebase/firestore";
 
 function sanitizeData<T>(data: T): T {
@@ -85,108 +81,28 @@ export async function recordLgpdConsent(
 }
 
 /**
- * Exclui definitivamente todos os dados do usuário no Firestore (LGPD Art. 18, VI / Apple Guideline)
- * Remove perfil, cartões, lançamentos, despesas fixas, metas e históricos de IA.
- */
-export async function deleteUserDataFromFirestore(userId: string): Promise<void> {
-  if (!userId) return;
-
-  const subcollections = [
-    "cards",
-    "transactions",
-    "recurring",
-    "goals",
-    "ai_chat",
-    "ai_diagnosis",
-    "processed_occurrences",
-  ];
-
-  for (const subcol of subcollections) {
-    try {
-      const colRef = collection(db, "users", userId, subcol);
-      const snap = await getDocs(colRef);
-      if (!snap.empty) {
-        const batch = writeBatch(db);
-        snap.docs.forEach((d) => batch.delete(d.ref));
-        await batch.commit();
-      }
-    } catch (err) {
-      console.warn(`Aviso ao excluir subcoleção ${subcol} do usuário ${userId}:`, err);
-    }
-  }
-
-  // Remove também o documento mestre do usuário
-  const userDocRef = doc(db, "users", userId);
-  await deleteDoc(userDocRef);
-
-  // Limpa rigorosamente todo o cache local do dispositivo (LGPD Art. 18, VI)
-  if (typeof window !== "undefined") {
-    try {
-      const keysToRemove = [
-        `wallet_ai_chat_history_${userId}`,
-        `wallet_ai_chat_sessions_${userId}`,
-        `wallet_ai_diagnosis_${userId}`,
-        `wallet_ai_diagnosis_${userId}_timestamp`,
-        `wallet_ai_diagnosis_${userId}_model`,
-        `wallet_ai_diagnosis_${userId}_persona`,
-        `wallet_ai_diagnosis_${userId}_aiTone`,
-        `wallet_ai_dismissed_patterns_${userId}`,
-        `wallet_ai_needs_reanalysis_${userId}`,
-        `wallet_ai_pending_persona_${userId}`,
-        "wallet_ai_diagnosis",
-        "wallet_ai_diagnosis_timestamp",
-        "wallet_ai_model",
-        "wallet_ai_diagnosis_persona",
-        "wallet_ai_diagnosis_aiTone",
-        "wallet_ai_needs_reanalysis",
-        "wallet_ai_pending_persona",
-        "wallet_login_failed_attempts",
-      ];
-      keysToRemove.forEach((k) => window.localStorage.removeItem(k));
-    } catch {
-      // Ignora erro de limpeza local
-    }
-  }
-}
-
-/**
- * Exporta todos os dados do usuário em formato JSON estruturado (Portabilidade LGPD Art. 18, V)
+ * Solicita ao servidor a exportação completa, inclusive das subcoleções que o
+ * SDK web não pode ler diretamente (ai_usage e ai_logs).
  */
 export async function exportUserDataJson(userId: string): Promise<Record<string, unknown>> {
   if (!userId) throw new Error("Usuário não identificado para exportação de dados.");
-
-  const profile = await getUserProfile(userId);
-
-  const subcollections = [
-    "cards",
-    "transactions",
-    "recurring",
-    "goals",
-    "ai_diagnosis",
-  ];
-
-  const exportedData: Record<string, unknown> = {
-    exportMetadata: {
-      exportedAt: new Date().toISOString(),
-      lawReference: "LGPD - Lei 13.709/2018 (Artigo 18, V - Portabilidade de Dados)",
-      platform: "Wallet App",
-    },
-    userProfile: profile,
-  };
-
-  for (const subcol of subcollections) {
-    try {
-      const colRef = collection(db, "users", userId, subcol);
-      const snap = await getDocs(colRef);
-      exportedData[subcol] = snap.docs.map((d) => ({
-        id: d.id,
-        ...d.data(),
-      }));
-    } catch (err) {
-      console.warn(`Aviso ao exportar subcoleção ${subcol}:`, err);
-      exportedData[subcol] = [];
-    }
+  const currentUser = auth.currentUser;
+  if (!currentUser || currentUser.uid !== userId) {
+    throw new Error("Sessão inválida para exportação de dados.");
   }
 
-  return exportedData;
+  const idToken = await currentUser.getIdToken();
+  const response = await fetch("/api/account", {
+    method: "GET",
+    headers: { Authorization: `Bearer ${idToken}` },
+    cache: "no-store",
+  });
+  const result = (await response.json().catch(() => null)) as
+    | { success?: boolean; data?: Record<string, unknown>; error?: string }
+    | null;
+
+  if (!response.ok || !result?.success || !result.data) {
+    throw new Error(result?.error || "Não foi possível exportar todos os dados da conta.");
+  }
+  return result.data;
 }

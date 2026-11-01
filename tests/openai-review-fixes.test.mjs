@@ -52,7 +52,7 @@ test("1. Autenticação: rejeição de token com assinatura forjada e aceitaçã
   // @ts-expect-error Mock para teste
   setAdminAuthForTesting({
     verifyIdToken: async (token, checkRevoked) => {
-      assert.ok(typeof checkRevoked === "boolean" || checkRevoked === undefined);
+      assert.equal(checkRevoked, true, "Rotas sensíveis devem rejeitar tokens revogados");
       if (token === validToken) {
         return {
           uid: "legitimate-user-123",

@@ -130,7 +130,7 @@ export function LgpdTermsModal({
               <span>5. Armazenamento, Segurança e Regras de Isolamento</span>
             </h3>
             <p className="text-[#636366]">
-              Seus dados são armazenados na nuvem do Google Cloud Firebase (Cloud Firestore) protegidos por regras de segurança no nível do banco de dados (<em>Security Rules</em>), garantindo que apenas a sua conta autenticada tenha permissão de leitura e escrita nos seus próprios documentos. Toda a transmissão de dados é criptografada de ponta a ponta com certificados TLS/HTTPS modernos.
+              Seus dados são armazenados na nuvem do Google Cloud Firebase (Cloud Firestore) protegidos por regras de segurança no nível do banco de dados (<em>Security Rules</em>), garantindo que apenas a sua conta autenticada tenha permissão de leitura e escrita nos seus próprios documentos. A transmissão é protegida em trânsito por TLS/HTTPS. Conversas e diagnósticos financeiros não são mantidos no armazenamento persistente do navegador.
             </p>
           </div>
 

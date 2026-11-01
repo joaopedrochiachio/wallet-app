@@ -7,6 +7,7 @@ import { useAuth } from "@/context/AuthContext";
 import { saveUserProfile } from "@/lib/services/userService";
 import { saveCardToFirestore } from "@/lib/services/cardsService";
 import { sanitizeTextInput, validateCurrency } from "@/lib/utils/security";
+import { CURRENT_LEDGER_BALANCE_VERSION } from "@/lib/utils/ledger";
 import { FinancialPersonaId, CardItem } from "@/types";
 import {
   ShieldCheck,
@@ -156,6 +157,7 @@ export default function OnboardingPage() {
         type: "checking",
         balance: cleanAmount,
         openingBalance: cleanAmount,
+        ledgerBalanceVersion: CURRENT_LEDGER_BALANCE_VERSION,
         limit: 0,
         spent: 0,
         invoiceAmount: 0,
@@ -454,7 +456,7 @@ export default function OnboardingPage() {
       </div>
 
       <div className="text-xs text-[#86868B]">
-        Seus dados permanecem criptografados e acessíveis apenas pelo seu Wallet ID.
+        Seus dados são transmitidos por HTTPS e protegidos pelo seu Wallet ID.
       </div>
     </div>
   );

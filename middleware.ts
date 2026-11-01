@@ -55,10 +55,10 @@ export function middleware(request: NextRequest) {
   if (pathname.startsWith("/api/") && !["GET", "HEAD", "OPTIONS"].includes(request.method)) {
     const origin = request.headers.get("origin");
     const host = request.headers.get("host");
-    const hasAuth = Boolean(request.headers.get("authorization"));
 
-    // Se não for autenticado via Bearer Token e houver Origin de outro domínio, bloqueia requisição cross-origin não autorizada
-    if (!hasAuth && origin && host) {
+    // Bearer token não substitui a validação de origem. Clientes de servidor
+    // normalmente não enviam Origin; navegadores devem permanecer same-origin.
+    if (origin && host) {
       try {
         const originUrl = new URL(origin);
         if (originUrl.host !== host) {

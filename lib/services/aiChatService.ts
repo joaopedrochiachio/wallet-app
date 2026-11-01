@@ -25,6 +25,24 @@ const DIAGNOSIS_KEY = "wallet_ai_diagnosis";
 const DIAGNOSIS_TIMESTAMP_KEY = "wallet_ai_diagnosis_timestamp";
 const DIAGNOSIS_MODEL_KEY = "wallet_ai_model";
 
+interface CachedDiagnosis {
+  diagnosis: unknown;
+  timestamp: string | null;
+  modelUsed?: string;
+  persona?: string;
+  aiTone?: string;
+}
+
+// Conteúdo financeiro sensível permanece apenas em memória no navegador.
+// A persistência durável de usuários autenticados acontece exclusivamente no Firestore.
+const memoryChatHistory = new Map<string, StoredChatMessage[]>();
+const memoryChatSessions = new Map<string, ChatSession[]>();
+const memoryDiagnoses = new Map<string, CachedDiagnosis>();
+
+function getMemoryKey(userId?: string | null): string {
+  return userId || "guest";
+}
+
 function getStorageKey(userId?: string | null): string {
   return `${LOCAL_STORAGE_PREFIX}${userId || "guest"}`;
 }
@@ -33,11 +51,36 @@ function getSessionsStorageKey(userId?: string | null): string {
   return `${CHAT_SESSIONS_PREFIX}${userId || "guest"}`;
 }
 
+function purgeLegacySensitiveStorage(userId?: string | null): void {
+  if (typeof window === "undefined") return;
+  const diagnosisKey = getDiagnosisStorageKey(userId);
+  const keys = [
+    getStorageKey(userId),
+    getSessionsStorageKey(userId),
+    diagnosisKey,
+    `${diagnosisKey}_timestamp`,
+    `${diagnosisKey}_model`,
+    `${diagnosisKey}_persona`,
+    `${diagnosisKey}_aiTone`,
+    DIAGNOSIS_KEY,
+    DIAGNOSIS_TIMESTAMP_KEY,
+    DIAGNOSIS_MODEL_KEY,
+    "wallet_ai_diagnosis_persona",
+    "wallet_ai_diagnosis_aiTone",
+  ];
+  try {
+    keys.forEach((key) => window.localStorage.removeItem(key));
+  } catch {
+    // A remoção é uma migração defensiva; o armazenamento pode estar indisponível.
+  }
+}
+
 /**
- * Carrega o histórico de mensagens do chat salvo (do Firestore com fallback para localStorage)
+ * Carrega o histórico do Firestore com fallback apenas para memória da aba.
  */
 export async function loadChatHistory(userId?: string | null): Promise<StoredChatMessage[]> {
-  const localKey = getStorageKey(userId);
+  const memoryKey = getMemoryKey(userId);
+  purgeLegacySensitiveStorage(userId);
 
   // 1. Tenta carregar do Firestore se usuário estiver logado
   if (userId) {
@@ -47,34 +90,17 @@ export async function loadChatHistory(userId?: string | null): Promise<StoredCha
       if (snapshot.exists()) {
         const data = snapshot.data();
         if (Array.isArray(data?.messages)) {
-          // Atualiza também o cache local
-          try {
-            window.localStorage.setItem(localKey, JSON.stringify(data.messages));
-          } catch {
-            // Silencioso em caso de quota
-          }
-          return data.messages as StoredChatMessage[];
+          const messages = data.messages as StoredChatMessage[];
+          memoryChatHistory.set(memoryKey, messages);
+          return messages;
         }
       }
     } catch (err) {
-      console.warn("Aviso ao carregar histórico do chat do Firestore, recorrendo ao cache local:", err);
+      console.warn("Aviso ao carregar histórico do chat do Firestore, recorrendo à memória:", err);
     }
   }
 
-  // 2. Fallback para localStorage
-  try {
-    const raw = window.localStorage.getItem(localKey);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        return parsed as StoredChatMessage[];
-      }
-    }
-  } catch (err) {
-    console.warn("Falha ao recuperar histórico local do chat:", err);
-  }
-
-  return [];
+  return memoryChatHistory.get(memoryKey) ?? [];
 }
 
 /**
@@ -84,17 +110,10 @@ export async function saveChatHistory(
   messages: StoredChatMessage[],
   userId?: string | null
 ): Promise<void> {
-  const localKey = getStorageKey(userId);
-
   // Mantém no máximo as 50 mensagens mais recentes para economia de espaço
   const trimmed = messages.slice(-50);
-
-  // 1. Salva imediatamente no localStorage
-  try {
-    window.localStorage.setItem(localKey, JSON.stringify(trimmed));
-  } catch (err) {
-    console.warn("Falha ao salvar chat no localStorage:", err);
-  }
+  memoryChatHistory.set(getMemoryKey(userId), trimmed);
+  purgeLegacySensitiveStorage(userId);
 
   // 2. Sincroniza com Firestore se autenticado
   if (userId) {
@@ -118,13 +137,8 @@ export async function saveChatHistory(
  * Limpa todo o histórico de mensagens do chat
  */
 export async function clearChatHistory(userId?: string | null): Promise<void> {
-  const localKey = getStorageKey(userId);
-
-  try {
-    window.localStorage.removeItem(localKey);
-  } catch {
-    // Silencioso
-  }
+  memoryChatHistory.delete(getMemoryKey(userId));
+  purgeLegacySensitiveStorage(userId);
 
   if (userId) {
     try {
@@ -155,7 +169,8 @@ export function createChatSession(initialTitle?: string): ChatSession {
  * (Com migração automática se o usuário possuir histórico anterior sem sessões)
  */
 export async function loadChatSessions(userId?: string | null): Promise<ChatSession[]> {
-  const sessionsKey = getSessionsStorageKey(userId);
+  const memoryKey = getMemoryKey(userId);
+  purgeLegacySensitiveStorage(userId);
 
   // 1. Tenta carregar do Firestore se autenticado
   if (userId) {
@@ -165,12 +180,9 @@ export async function loadChatSessions(userId?: string | null): Promise<ChatSess
       if (snap.exists()) {
         const data = snap.data();
         if (Array.isArray(data?.sessions) && data.sessions.length > 0) {
-          try {
-            window.localStorage.setItem(sessionsKey, JSON.stringify(data.sessions));
-          } catch {
-            // Silencioso
-          }
-          return data.sessions as ChatSession[];
+          const sessions = data.sessions as ChatSession[];
+          memoryChatSessions.set(memoryKey, sessions);
+          return sessions;
         }
       }
     } catch (err) {
@@ -178,18 +190,8 @@ export async function loadChatSessions(userId?: string | null): Promise<ChatSess
     }
   }
 
-  // 2. Tenta carregar do localStorage
-  try {
-    const raw = window.localStorage.getItem(sessionsKey);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed as ChatSession[];
-      }
-    }
-  } catch (err) {
-    console.warn("Falha ao ler sessões do localStorage:", err);
-  }
+  const cachedSessions = memoryChatSessions.get(memoryKey);
+  if (cachedSessions && cachedSessions.length > 0) return cachedSessions;
 
   // 3. Migração automática: se não existem sessões, mas há histórico legado único, migra para a primeira sessão
   try {
@@ -228,17 +230,10 @@ export async function saveChatSessions(
   sessions: ChatSession[],
   userId?: string | null
 ): Promise<void> {
-  const sessionsKey = getSessionsStorageKey(userId);
-
   // Mantém no máximo 30 conversas para economizar espaço
   const trimmed = sessions.slice(0, 30);
-
-  // 1. Salva localmente
-  try {
-    window.localStorage.setItem(sessionsKey, JSON.stringify(trimmed));
-  } catch (err) {
-    console.warn("Falha ao salvar sessões no localStorage:", err);
-  }
+  memoryChatSessions.set(getMemoryKey(userId), trimmed);
+  purgeLegacySensitiveStorage(userId);
 
   // 2. Se houver mensagens na sessão ativa, sincroniza também com o histórico legado
   if (trimmed.length > 0 && trimmed[0].messages.length > 0) {
@@ -285,8 +280,8 @@ function getDiagnosisStorageKey(userId?: string | null): string {
 }
 
 /**
- * Lê o diagnóstico salvo do localStorage de forma instantânea e síncrona
- * Usado para inicializar o estado no primeiro render sem "piscar" tela vazia
+ * Lê apenas o diagnóstico mantido em memória durante a aba atual.
+ * Nenhum conteúdo financeiro é recuperado do armazenamento persistente do navegador.
  */
 export function loadInitialDiagnosisSync(
   userId?: string | null
@@ -297,45 +292,12 @@ export function loadInitialDiagnosisSync(
   persona?: string;
   aiTone?: string;
 } | null {
-  if (typeof window === "undefined") return null;
-
-  try {
-    const userKey = getDiagnosisStorageKey(userId);
-    let raw = window.localStorage.getItem(userKey);
-    let timestamp = window.localStorage.getItem(`${userKey}_timestamp`);
-    let modelUsed = window.localStorage.getItem(`${userKey}_model`) || undefined;
-    let persona = window.localStorage.getItem(`${userKey}_persona`) || undefined;
-    let aiTone = window.localStorage.getItem(`${userKey}_aiTone`) || undefined;
-
-    // Fallback para chave geral apenas para sessão anônima/visitante (sem userId).
-    // Previne vazamento de diagnóstico entre diferentes usuários em computadores compartilhados.
-    if (!raw && !userId) {
-      raw = window.localStorage.getItem(DIAGNOSIS_KEY);
-      timestamp = window.localStorage.getItem(DIAGNOSIS_TIMESTAMP_KEY);
-      modelUsed = window.localStorage.getItem(DIAGNOSIS_MODEL_KEY) || undefined;
-      persona = window.localStorage.getItem("wallet_ai_diagnosis_persona") || undefined;
-      aiTone = window.localStorage.getItem("wallet_ai_diagnosis_aiTone") || undefined;
-    }
-
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return {
-        diagnosis: parsed,
-        timestamp: timestamp || null,
-        modelUsed,
-        persona,
-        aiTone,
-      };
-    }
-  } catch (err) {
-    console.warn("Falha ao ler diagnóstico local síncrono:", err);
-  }
-
-  return null;
+  purgeLegacySensitiveStorage(userId);
+  return memoryDiagnoses.get(getMemoryKey(userId)) ?? null;
 }
 
 /**
- * Salva o diagnóstico financeiro persistente no storage local e Firestore
+ * Mantém o diagnóstico em memória e persiste no Firestore quando autenticado.
  */
 export async function savePersistentDiagnosis(
   diagnosis: unknown,
@@ -355,36 +317,14 @@ export async function savePersistentDiagnosis(
     cleanDiagnosis = diagnosis;
   }
 
-  // 1. Salva imediatamente no localStorage (isolado com escopo estrito do usuário)
-  if (typeof window !== "undefined") {
-    try {
-      const userKey = getDiagnosisStorageKey(userId);
-      const jsonStr = JSON.stringify(cleanDiagnosis);
-
-      window.localStorage.setItem(userKey, jsonStr);
-      window.localStorage.setItem(`${userKey}_timestamp`, meta.timestamp);
-      if (meta.modelUsed) {
-        window.localStorage.setItem(`${userKey}_model`, meta.modelUsed);
-      }
-      if (meta.persona) {
-        window.localStorage.setItem(`${userKey}_persona`, meta.persona);
-      }
-      if (meta.aiTone) {
-        window.localStorage.setItem(`${userKey}_aiTone`, meta.aiTone);
-      }
-
-      // Grava em chave legada não-escopada apenas se NÃO houver usuário autenticado (modo convidado)
-      if (!userId) {
-        window.localStorage.setItem(DIAGNOSIS_KEY, jsonStr);
-        window.localStorage.setItem(DIAGNOSIS_TIMESTAMP_KEY, meta.timestamp);
-        if (meta.modelUsed) {
-          window.localStorage.setItem(DIAGNOSIS_MODEL_KEY, meta.modelUsed);
-        }
-      }
-    } catch (err) {
-      console.warn("Falha ao salvar diagnóstico localmente:", err);
-    }
-  }
+  memoryDiagnoses.set(getMemoryKey(userId), {
+    diagnosis: cleanDiagnosis,
+    timestamp: meta.timestamp,
+    modelUsed: meta.modelUsed,
+    persona: meta.persona,
+    aiTone: meta.aiTone,
+  });
+  purgeLegacySensitiveStorage(userId);
 
   // 2. Persiste na nuvem do Cloud Firestore se logado
   if (userId) {
@@ -404,7 +344,7 @@ export async function savePersistentDiagnosis(
 }
 
 /**
- * Carrega o diagnóstico financeiro salvo (Firestore com fallback para localStorage)
+ * Carrega o diagnóstico do Firestore com fallback apenas para memória da aba.
  */
 export async function loadPersistentDiagnosis(
   userId?: string | null
@@ -423,36 +363,16 @@ export async function loadPersistentDiagnosis(
       if (snap.exists()) {
         const data = snap.data();
         if (data?.diagnosis) {
-          // Atualiza cache local sincronizado
-          if (typeof window !== "undefined") {
-            try {
-              const userKey = getDiagnosisStorageKey(userId);
-              const jsonStr = JSON.stringify(data.diagnosis);
-              window.localStorage.setItem(userKey, jsonStr);
-              if (data.timestamp) window.localStorage.setItem(`${userKey}_timestamp`, data.timestamp);
-              if (data.modelUsed) window.localStorage.setItem(`${userKey}_model`, data.modelUsed);
-              if (data.persona) {
-                window.localStorage.setItem(`${userKey}_persona`, data.persona);
-                window.localStorage.setItem("wallet_ai_diagnosis_persona", data.persona);
-              }
-              if (data.aiTone) {
-                window.localStorage.setItem(`${userKey}_aiTone`, data.aiTone);
-                window.localStorage.setItem("wallet_ai_diagnosis_aiTone", data.aiTone);
-              }
-              window.localStorage.setItem(DIAGNOSIS_KEY, jsonStr);
-              if (data.timestamp) window.localStorage.setItem(DIAGNOSIS_TIMESTAMP_KEY, data.timestamp);
-              if (data.modelUsed) window.localStorage.setItem(DIAGNOSIS_MODEL_KEY, data.modelUsed);
-            } catch {
-              // Silencioso
-            }
-          }
-          return {
+          const cachedDiagnosis = {
             diagnosis: data.diagnosis,
             timestamp: data.timestamp || null,
             modelUsed: data.modelUsed || undefined,
             persona: data.persona || undefined,
             aiTone: data.aiTone || undefined,
           };
+          memoryDiagnoses.set(getMemoryKey(userId), cachedDiagnosis);
+          purgeLegacySensitiveStorage(userId);
+          return cachedDiagnosis;
         }
       }
     } catch (err) {
@@ -460,7 +380,7 @@ export async function loadPersistentDiagnosis(
     }
   }
 
-  // 2. Fallback para cache local instantâneo
+  // 2. Fallback para cache volátil da aba
   return loadInitialDiagnosisSync(userId);
 }
 
@@ -537,9 +457,14 @@ export function clearDismissedPatterns(userId?: string | null): void {
 }
 
 /**
- * Limpa todos os caches locais em localStorage vinculados ao usuário ao encerrar a sessão (Logout/Sanitização)
+ * Limpa caches voláteis e remove chaves legadas sensíveis do navegador.
  */
 export function clearUserLocalCaches(userId?: string | null): void {
+  const memoryKey = getMemoryKey(userId);
+  memoryChatHistory.delete(memoryKey);
+  memoryChatSessions.delete(memoryKey);
+  memoryDiagnoses.delete(memoryKey);
+
   if (typeof window === "undefined") return;
   try {
     const keysToRemove = [
@@ -573,4 +498,3 @@ export function clearUserLocalCaches(userId?: string | null): void {
     console.warn("Erro ao limpar caches locais do usuário:", err);
   }
 }
-

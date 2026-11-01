@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useWallet, TransactionItem } from "@/context/WalletContext";
 import {
   Plus,
@@ -44,6 +44,7 @@ import {
   validateInstallmentsCount,
 } from "@/lib/utils/security";
 import { RecurrenceType, RecurringItem } from "@/types";
+import { auditFinancialIntegrity } from "@/lib/services/financialIntegrityService";
 
 export default function PlanningPage() {
   const {
@@ -147,6 +148,41 @@ export default function PlanningPage() {
   const currentMonth5thBusinessDay = get5thBusinessDay(targetYear, targetMonth);
 
   const projection = getMonthlyProjection(selectedMonthIndex, planningMonths);
+  const previousProjection = selectedMonthIndex > 0
+    ? getMonthlyProjection(selectedMonthIndex - 1, planningMonths)
+    : null;
+  const currentCheckingBalance = cards
+    .filter((card) => card.type === "checking")
+    .reduce((total, card) => total + (card.balance || 0), 0);
+  const expectedOpeningBalance = previousProjection
+    ? activeMonthObj.isCurrent || activeMonthObj.isPast
+      ? previousProjection.actualClosingBalance
+      : previousProjection.projectedFreeBalance
+    : undefined;
+  const integrityAudit = useMemo(
+    () =>
+      auditFinancialIntegrity({
+        cards,
+        transactions,
+        recurringItems,
+        projection,
+        targetYear,
+        targetMonth,
+        expectedOpeningBalance,
+        currentCheckingBalance: activeMonthObj.isCurrent ? currentCheckingBalance : undefined,
+      }),
+    [
+      activeMonthObj.isCurrent,
+      cards,
+      currentCheckingBalance,
+      expectedOpeningBalance,
+      projection,
+      recurringItems,
+      targetMonth,
+      targetYear,
+      transactions,
+    ]
+  );
 
   const formatCurrency = (val: number) =>
     val.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -226,6 +262,11 @@ export default function PlanningPage() {
     .reduce((acc, r) => acc + r.amount, 0);
 
   const monthNetSurplus = projection.projectedIncome - projection.totalCommitted;
+
+  // O saldo atual já contém tudo o que entrou e saiu. Reconstruir o início do
+  // mês permite conferir o realizado sem aplicar os lançamentos duas vezes.
+  const reconciledMonthOpeningBalance = projection.openingBalance;
+  const reconciledCurrentBalance = projection.actualClosingBalance;
 
   const totalAvailable = projection.openingBalance + projection.projectedIncome;
   const freePercentage =
@@ -921,7 +962,7 @@ export default function PlanningPage() {
                   : `Saldo vindo de ${planningMonths[selectedMonthIndex - 1]?.short}:`}
             </span>
             <span className="text-xs font-semibold text-[#1D1D1F] font-mono tabular-nums">
-              R$ {formatCurrency(projection.openingBalance)}
+              R$ {formatCurrency(activeMonthObj.isCurrent ? projection.actualClosingBalance : projection.openingBalance)}
             </span>
           </div>
 
@@ -1096,7 +1137,7 @@ export default function PlanningPage() {
             {/* 4. Saldo Livre Projetado Final */}
             <div className="pt-5 sm:pt-0 sm:pl-6 space-y-1">
               <span className="text-xs font-semibold text-[#1D1D1F] tracking-tight">
-                Saldo final em conta
+                Saldo final projetado
               </span>
               <div
                 className={`text-2xl sm:text-3xl font-bold tracking-tight font-mono tabular-nums ${
@@ -1107,7 +1148,7 @@ export default function PlanningPage() {
               </div>
               <p className="text-xs text-[#86868B] pt-0.5">
                 {activeMonthObj.isCurrent
-                  ? `R$ ${formatCurrency(projection.openingBalance)} em conta · ${freePercentage}% livre`
+                  ? `R$ ${formatCurrency(reconciledCurrentBalance)} em conta agora · ${freePercentage}% livre`
                   : activeMonthObj.isPast
                     ? `Resultado consolidado de ${activeMonthObj.name}`
                     : `Saldo herdado + sobra do mês`}
@@ -1115,24 +1156,40 @@ export default function PlanningPage() {
             </div>
           </div>
 
-          {/* Equação do Fluxo de Caixa (Validação 100% Matemática e Visual) */}
-          <div className="pt-3 border-t border-black/[0.04] flex flex-wrap items-center justify-between gap-2 text-xs text-[#86868B]">
+          {/* Realizado e previsto são conferidos em equações independentes. */}
+          <div className="pt-3 border-t border-black/[0.04] space-y-2 text-xs text-[#86868B]">
+            {activeMonthObj.isCurrent && (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-semibold text-[#1D1D1F]">Saldo conciliado hoje:</span>
+                <span>início do mês (R$ {formatCurrency(reconciledMonthOpeningBalance)})</span>
+                <span>+</span>
+                <span>entradas recebidas (R$ {formatCurrency(projection.actualIncomeTotal)})</span>
+                <span>−</span>
+                <span>saídas pagas (R$ {formatCurrency(projection.actualOutflowTotal)})</span>
+                <span>=</span>
+                <strong className="text-[#1D1D1F] font-semibold font-mono tabular-nums">
+                  R$ {formatCurrency(reconciledCurrentBalance)}
+                </strong>
+              </div>
+            )}
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="font-semibold text-[#1D1D1F]">Conferência do caixa:</span>
+              <span className="font-semibold text-[#1D1D1F]">
+                {activeMonthObj.isCurrent ? "Projeção do fechamento:" : "Conferência do caixa:"}
+              </span>
               <span>
                 {activeMonthObj.isCurrent
-                  ? "Saldo em conta hoje"
+                  ? "saldo em conta hoje"
                   : `Saldo vindo de ${planningMonths[selectedMonthIndex - 1]?.short || "mês anterior"}`}{" "}
-                (R$ {formatCurrency(projection.openingBalance)})
+                  (R$ {formatCurrency(activeMonthObj.isCurrent ? projection.actualClosingBalance : projection.openingBalance)})
               </span>
               <span>+</span>
               <span>
-                {activeMonthObj.isCurrent ? "Entradas pendentes" : "Entradas previstas"}{" "}
+                {activeMonthObj.isCurrent ? "entradas pendentes" : "Entradas previstas"}{" "}
                 (R$ {formatCurrency(activeMonthObj.isCurrent ? projection.plannedIncomesTotal : projection.projectedIncome)})
               </span>
               <span>−</span>
               <span>
-                {activeMonthObj.isCurrent ? "Compromissos pendentes" : "Compromissos"}{" "}
+                {activeMonthObj.isCurrent ? "compromissos pendentes" : "Compromissos"}{" "}
                 (R$ {formatCurrency(activeMonthObj.isCurrent ? projection.pendingCommitted : projection.totalCommitted)})
               </span>
               <span>=</span>
@@ -1140,9 +1197,34 @@ export default function PlanningPage() {
                 R$ {formatCurrency(projection.projectedFreeBalance)}
               </strong>
             </div>
-            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/70 shrink-0">
-              ✓ Valores conferidos
-            </span>
+            <div className="flex flex-wrap items-start gap-2">
+              <span
+                className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border shrink-0 ${
+                  integrityAudit.status === "ok"
+                    ? "text-emerald-700 bg-emerald-50 border-emerald-200/70"
+                    : integrityAudit.status === "warning"
+                      ? "text-amber-700 bg-amber-50 border-amber-200/70"
+                      : "text-rose-700 bg-rose-50 border-rose-200/70"
+                }`}
+              >
+                {integrityAudit.status === "ok"
+                  ? "✓ Livro-caixa conferido"
+                  : integrityAudit.status === "warning"
+                    ? `⚠ ${integrityAudit.warningCount} alerta(s) na base`
+                    : `! ${integrityAudit.errorCount} erro(s) na base`}
+              </span>
+              {integrityAudit.issues.slice(0, 2).map((issue) => (
+                <span key={issue.code} className="text-[11px] text-[#6E6E73]">
+                  {issue.message}
+                </span>
+              ))}
+            </div>
+            {integrityAudit.status === "ok" && activeMonthObj.isCurrent && reconciledCurrentBalance < 0 && (
+              <p className="text-[11px] text-rose-700">
+                O transporte entre meses está correto. O negativo vem das saídas já realizadas neste mês;
+                revise os lançamentos em “Movimentações realizadas” abaixo.
+              </p>
+            )}
           </div>
         </div>
 

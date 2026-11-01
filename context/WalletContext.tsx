@@ -45,6 +45,7 @@ import {
 } from "@/lib/utils/dateUtils";
 import {
   calculateCheckingBalance,
+  calculateCheckingBalanceBefore,
   calculateCreditInvoice,
   calculateInvoiceSchedule,
   calculateInvoiceScheduleWithCredits,
@@ -55,6 +56,8 @@ import {
   matchesLedgerCard,
   getCardInvoiceRecurringDetails,
   isInvoicePaymentOrSettlement,
+  getCheckingBalanceMigration,
+  CURRENT_LEDGER_BALANCE_VERSION,
 } from "@/lib/utils/ledger";
 import {
   GoalItem,
@@ -95,7 +98,7 @@ export interface TransactionItem {
   recurrenceType?: RecurrenceType;
   recurrenceDay?: number;
   installmentsCount?: number;
-  kind?: "regular" | "invoice_payment" | "invoice_settlement";
+  kind?: "regular" | "invoice_payment" | "invoice_settlement" | "balance_reconciliation";
   relatedCardId?: string | null;
   groupId?: string | null;
   recurringItemId?: string | null;
@@ -132,9 +135,11 @@ export interface MonthProjection {
   totalCommitted: number;
   actualIncomeTotal: number;
   actualOutflowTotal: number;
+  balanceReconciliationTotal: number;
   pendingCommitted: number;
   projectedFreeBalance: number;
   openingBalance: number;
+  actualClosingBalance: number;
   cardInvoices: CardInvoiceProjection[];
   totalInvoicesScheduled: number;
   totalInvoicesPending: number;
@@ -162,6 +167,7 @@ interface WalletContextType {
   deleteCard: (cardId: string) => void;
   updateUserProfile: (profile: Partial<UserProfile>) => void;
   addTransaction: (tx: Omit<TransactionItem, "id">) => Promise<void>;
+  reconcileCheckingBalance: (cardId: string, targetBalance: number) => Promise<number>;
   updateTransaction: (id: string, updates: TransactionUpdateInput) => Promise<void>;
   payInvoice: (cardId: string, customAmount?: number) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
@@ -312,20 +318,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     return () => unsub();
   }, [user]);
 
-  // Migra contas antigas para o modelo de livro-caixa. Se já existem
-  // lançamentos, eles passam a representar todo o saldo; sem lançamentos,
-  // o saldo antigo é preservado como saldo inicial.
+  // Migra e repara contas antigas sem reaplicar o histórico sobre um saldo que
+  // já havia sido atualizado pelo modelo legado.
   useEffect(() => {
     if (!user || cardsLoadedFor !== user.uid || transactionsLoadedFor !== user.uid) return;
-    const legacyCheckingCards = cards.filter(
-      (card) => card.type === "checking" && card.openingBalance === undefined
-    );
-    legacyCheckingCards.forEach((card) => {
-      const hasLedgerEntries = transactions.some((transaction) =>
-        matchesLedgerCard(card, transaction.account, transaction.cardId)
-      );
-      const openingBalance = hasLedgerEntries ? 0 : card.balance ?? 0;
-      updateCardFieldsInFirestore(user.uid, card.id, { openingBalance }).catch((error) =>
+    cards.filter((card) => card.type === "checking").forEach((card) => {
+      const migration = getCheckingBalanceMigration(card, transactions);
+      if (!migration) return;
+      updateCardFieldsInFirestore(user.uid, card.id, migration).catch((error) =>
         console.error("Erro ao migrar saldo inicial para o Firestore:", error)
       );
     });
@@ -586,6 +586,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       invoiceAmount: 0,
       balance: input.type === "checking" ? input.balance ?? 0 : 0,
       openingBalance: input.type === "checking" ? input.balance ?? 0 : 0,
+      ledgerBalanceVersion:
+        input.type === "checking" ? CURRENT_LEDGER_BALANCE_VERSION : undefined,
     };
     setCards((prev) => [...prev, newCard]);
     setActiveCardId(newCardId);
@@ -702,6 +704,45 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     },
     [user, cards, recurringItems, resolveCardId]
   );
+
+  /**
+   * Concilia o saldo informado pelo usuário sem apagar o histórico. A diferença
+   * vira uma movimentação técnica separada de renda e despesa do mês.
+   */
+  const reconcileCheckingBalance = useCallback(async (
+    cardId: string,
+    targetBalance: number
+  ): Promise<number> => {
+    if (!user) throw new Error("Entre na sua conta para conciliar o saldo.");
+    if (!Number.isFinite(targetBalance)) throw new Error("Informe um saldo válido.");
+
+    const checkingCard = cards.find((card) => card.id === cardId && card.type === "checking");
+    if (!checkingCard) throw new Error("Conta corrente não encontrada.");
+
+    const currentBalance = calculateCheckingBalance(checkingCard, transactions);
+    const difference = Math.round((targetBalance - currentBalance) * 100) / 100;
+    if (Math.abs(difference) < 0.005) return 0;
+
+    const now = new Date();
+    await addTransactionFirestore(
+      {
+        amount: Math.abs(difference),
+        type: difference > 0 ? "in" : "out",
+        category: "Conciliação de saldo",
+        description: "Ajuste na conta",
+        paymentMethod: checkingCard.name,
+        cardId: checkingCard.id,
+        kind: "balance_reconciliation",
+        recurringItemId: null,
+        periodKey: getPeriodKey(now.getFullYear(), now.getMonth()),
+        date: now.toISOString(),
+        occurredAt: now,
+      },
+      user.uid
+    );
+
+    return difference;
+  }, [cards, transactions, user]);
 
   const payInvoice = useCallback(async (cardId: string, customAmount?: number) => {
     const targetCard = enrichedCards.find((c) => c.id === cardId);
@@ -1011,12 +1052,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     // Renda cadastrada no perfil (apenas referência cadastral, não entra automático no fluxo)
     const baseIncome = userProfile.monthlyIncomeBase || 0;
 
-    let runningBalance = mainBalance;
+    let runningBalance = 0;
     let projectionResult: MonthProjection = null!;
 
     for (let idx = 0; idx <= safeIndex; idx++) {
       const m = months[idx];
       const targetPeriodKey = getPeriodKey(m.year, m.monthIndex);
+      const periodStart = new Date(m.year, m.monthIndex, 1, 0, 0, 0, 0);
       const isPastMonth = Boolean(m.isPast || (currentMonthIdx >= 0 && idx < currentMonthIdx));
       const isCurrentMonth = Boolean(m.isCurrent || (currentMonthIdx >= 0 ? idx === currentMonthIdx : idx === 0));
 
@@ -1041,16 +1083,29 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       });
 
       const actualIncomeTotal = transactionsInTargetMonth
+        .filter((transaction) => transaction.kind !== "balance_reconciliation")
         .filter((transaction) => transaction.type === "receita" && cards.some((card) =>
           card.type === "checking" && matchesLedgerCard(card, transaction.account, transaction.cardId)
         ))
         .reduce((total, transaction) => total + transaction.amount, 0);
 
       const actualOutflowTotal = transactionsInTargetMonth
+        .filter((transaction) => transaction.kind !== "balance_reconciliation")
         .filter((transaction) => transaction.type === "despesa" && cards.some((card) =>
           card.type === "checking" && matchesLedgerCard(card, transaction.account, transaction.cardId)
         ))
         .reduce((total, transaction) => total + transaction.amount, 0);
+
+      const balanceReconciliationTotal = transactionsInTargetMonth
+        .filter((transaction) => transaction.kind === "balance_reconciliation")
+        .filter((transaction) => cards.some((card) =>
+          card.type === "checking" && matchesLedgerCard(card, transaction.account, transaction.cardId)
+        ))
+        .reduce(
+          (total, transaction) =>
+            total + (transaction.type === "receita" ? transaction.amount : -transaction.amount),
+          0
+        );
 
       // Contas recorrentes e pagamentos futuros ativos no débito
       const recurringDebitTotal = isPastMonth
@@ -1153,21 +1208,42 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
       // Saldo inicial do mês e saldo projetado
       let openingBalance = 0;
+      let actualClosingBalance = 0;
       let projectedFreeBalance = 0;
 
       if (isPastMonth) {
-        openingBalance = actualIncomeTotal;
-        projectedFreeBalance = actualIncomeTotal - actualOutflowTotal;
+        openingBalance = cards
+          .filter((card) => card.type === "checking")
+          .reduce(
+            (total, card) =>
+              total + calculateCheckingBalanceBefore(card, transactions, periodStart),
+            0
+          );
+        actualClosingBalance = openingBalance + balanceReconciliationTotal + actualIncomeTotal - actualOutflowTotal;
+        projectedFreeBalance = actualClosingBalance;
+        runningBalance = projectedFreeBalance;
       } else if (isCurrentMonth) {
-        openingBalance = mainBalance;
-        projectedFreeBalance = calculateProjectedBalance(openingBalance, plannedIncomesTotal, pendingCommitted);
+        openingBalance = cards
+          .filter((card) => card.type === "checking")
+          .reduce(
+            (total, card) =>
+              total + calculateCheckingBalanceBefore(card, transactions, periodStart),
+            0
+          );
+        actualClosingBalance = openingBalance + balanceReconciliationTotal + actualIncomeTotal - actualOutflowTotal;
+        projectedFreeBalance = calculateProjectedBalance(
+          actualClosingBalance,
+          plannedIncomesTotal,
+          pendingCommitted
+        );
         runningBalance = projectedFreeBalance;
       } else {
         openingBalance = runningBalance;
+        actualClosingBalance = openingBalance + balanceReconciliationTotal + actualIncomeTotal - actualOutflowTotal;
         projectedFreeBalance = calculateProjectedBalance(
-          openingBalance,
-          actualIncomeTotal + plannedIncomesTotal,
-          totalCommitted
+          actualClosingBalance,
+          plannedIncomesTotal,
+          pendingCommitted
         );
         runningBalance = projectedFreeBalance;
       }
@@ -1185,9 +1261,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           totalCommitted,
           actualIncomeTotal,
           actualOutflowTotal,
+          balanceReconciliationTotal,
           pendingCommitted,
           projectedFreeBalance,
           openingBalance,
+          actualClosingBalance,
           cardInvoices,
           totalInvoicesScheduled,
           totalInvoicesPending,
@@ -1198,7 +1276,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
 
     return projectionResult;
-  }, [userProfile.monthlyIncomeBase, mainBalance, recurringItems, cards, transactions]);
+  }, [userProfile.monthlyIncomeBase, recurringItems, cards, transactions]);
 
   const contextValue = useMemo(
     () => ({
@@ -1221,6 +1299,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       deleteCard,
       updateUserProfile,
       addTransaction,
+      reconcileCheckingBalance,
       updateTransaction,
       payInvoice,
       deleteTransaction,
@@ -1260,6 +1339,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       deleteCard,
       updateUserProfile,
       addTransaction,
+      reconcileCheckingBalance,
       updateTransaction,
       payInvoice,
       deleteTransaction,

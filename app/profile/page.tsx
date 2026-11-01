@@ -571,7 +571,7 @@ export default function ProfilePage() {
             {/* Barra de Ação Inferior */}
             <div className="p-4 sm:p-5 bg-[#FAFAFC] border-t border-black/[0.05] flex items-center justify-between">
               <span className="text-[11px] text-[#86868B]">
-                Suas informações são salvas com criptografia local e no Firestore
+                Conversas e diagnósticos da IA ficam protegidos no Firestore, não no armazenamento local
               </span>
               <button
                 type="submit"

@@ -46,7 +46,9 @@ export async function verifyServerAuth(
   try {
     const adminAuth = getAdminAuth();
     // Valida criptograficamente assinatura (RS256), audiência, emissor e expiração via Google Public Keys em cache (instantâneo).
-    const decodedToken = await adminAuth.verifyIdToken(token);
+    // O segundo argumento ativa a consulta de revogação/usuário desabilitado.
+    // Sem ele, um token revogado continuaria válido até a expiração natural.
+    const decodedToken = await adminAuth.verifyIdToken(token, true);
 
     if (!decodedToken.uid || typeof decodedToken.uid !== "string" || decodedToken.uid.trim().length === 0) {
       return {

@@ -169,7 +169,7 @@ export function MonthlyMovementOverview({
   ];
 
   return (
-    <section ref={sectionRef} className="space-y-3 pt-2" data-testid="monthly-movement-overview">
+    <section id="monthly-movement-overview" ref={sectionRef} className="space-y-3 pt-2" data-testid="monthly-movement-overview">
       {/* 1. Header Editorial da Seção */}
       <div className="flex flex-col gap-1 px-1 sm:flex-row sm:items-baseline sm:justify-between">
         <div>

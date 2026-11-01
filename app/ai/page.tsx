@@ -46,7 +46,7 @@ import {
 } from "@/components/ai/CategorySpectrumBar";
 import { InstallmentTimelineChart } from "@/components/ai/InstallmentTimelineChart";
 import { InteractivePatternCard } from "@/components/ai/InteractivePatternCard";
-import { FinancialMindMap } from "@/components/ai/FinancialMindMap";
+import { FinancialOffice } from "@/components/ai/FinancialOffice";
 import { SpendingCalendarHeatmap } from "@/components/ai/SpendingCalendarHeatmap";
 import { VisualPatternStorytelling } from "@/components/ai/VisualPatternStorytelling";
 import { AgentAvatar } from "@/components/companion/AgentAvatar";
@@ -248,6 +248,11 @@ export default function AIAnalystPage() {
 
   const creditCards = cards.filter((c) => c.type === "credit");
   const activeSimCardId = simCardId || (creditCards[0]?.id ?? "");
+
+  const officeMonthlyProjections = useMemo(
+    () => [0, 1, 2, 3, 4, 5].map((monthIndex) => getMonthlyProjection(monthIndex)),
+    [getMonthlyProjection]
+  );
 
   // Conselho e Personalidade do Agente Auditor
   const companionAdvice = useMemo(() => {
@@ -889,7 +894,7 @@ export default function AIAnalystPage() {
         <header className="rounded-[28px] bg-white border border-black/[0.05] p-4 sm:p-5 shadow-[0_4px_24px_rgba(0,0,0,0.02)] flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-3.5 min-w-0">
             <div className="w-11 h-11 rounded-2xl bg-[#1D1D1F] text-white flex items-center justify-center shadow-xs shrink-0">
-              <Compass size={20} className="text-white" />
+              <Building2 size={20} className="text-white" />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
@@ -903,11 +908,11 @@ export default function AIAnalystPage() {
                 </div>
                 <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#F2F2F7] text-[11px] font-semibold text-[#1D1D1F] border border-black/[0.05]">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span>Auditoria Executiva em Tempo Real</span>
+                  <span>Central financeira pessoal</span>
                 </div>
               </div>
               <p className="text-xs text-[#86868B] truncate mt-0.5">
-                Consultoria contábil inteligente e diagnóstico de fluxo de caixa em tela unificada.
+                Conta, cartões, agenda, hábitos e metas organizados em uma visão de trabalho.
               </p>
             </div>
           </div>
@@ -970,7 +975,7 @@ export default function AIAnalystPage() {
               className="px-3.5 py-1.5 rounded-full bg-white hover:bg-[#F2F2F7] active:scale-95 border border-black/[0.08] text-xs font-semibold text-[#1D1D1F] flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs disabled:opacity-50"
             >
               <RefreshCw size={12} className={isAnalyzing ? "animate-spin text-[#1D1D1F]" : "text-[#86868B]"} />
-              <span className="hidden sm:inline">{isAnalyzing ? "Auditando..." : "Auditar Agora"}</span>
+              <span className="hidden sm:inline">{isAnalyzing ? "Atualizando..." : "Atualizar dados"}</span>
             </button>
           </div>
         </header>
@@ -1015,7 +1020,7 @@ export default function AIAnalystPage() {
               COLUNA ESQUERDA: O CONSULTOR / COPILOT CONVERSACIONAL
              ======================================================= */}
           <div
-            className={`lg:col-span-5 flex flex-col space-y-4 ${
+            className={`${activeDossierTab === "mindmap" ? "lg:col-span-4" : "lg:col-span-5"} flex flex-col space-y-4 ${
               mobilePane === "chat" ? "block" : "hidden lg:flex"
             }`}
           >
@@ -1362,7 +1367,7 @@ export default function AIAnalystPage() {
               COLUNA DIREITA: O DOSSIÊ DO AUDITOR (ANÁLISES E AÇÕES)
              ======================================================= */}
           <div
-            className={`lg:col-span-7 flex flex-col space-y-4 ${
+            className={`${activeDossierTab === "mindmap" ? "lg:col-span-8" : "lg:col-span-7"} flex flex-col space-y-4 ${
               mobilePane === "dossier" ? "block" : "hidden lg:flex"
             }`}
           >
@@ -1379,12 +1384,12 @@ export default function AIAnalystPage() {
                     : "text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#F2F2F7]"
                 }`}
               >
-                <Compass size={14} className={activeDossierTab === "mindmap" ? "text-cyan-400" : ""} />
-                <span className="truncate">Mapa Mental</span>
+                <Building2 size={14} className={activeDossierTab === "mindmap" ? "text-emerald-400" : ""} />
+                <span className="truncate">Escritório</span>
                 <span className={`hidden md:inline-block text-[9px] px-1.5 py-0.2 rounded-full font-mono ${
-                  activeDossierTab === "mindmap" ? "bg-cyan-500/30 text-cyan-200" : "bg-black/5 text-[#86868B]"
+                  activeDossierTab === "mindmap" ? "bg-emerald-500/30 text-emerald-100" : "bg-black/5 text-[#86868B]"
                 }`}>
-                  Grafo
+                  Equipe
                 </span>
               </button>
 
@@ -1402,7 +1407,7 @@ export default function AIAnalystPage() {
                 <span className={`hidden md:inline-block text-[9px] px-1.5 py-0.2 rounded-full font-mono ${
                   activeDossierTab === "calendar" ? "bg-blue-500/30 text-blue-200" : "bg-black/5 text-[#86868B]"
                 }`}>
-                  Fluxo
+                  Agenda
                 </span>
               </button>
 
@@ -1420,7 +1425,7 @@ export default function AIAnalystPage() {
                 <span className={`hidden md:inline-block text-[9px] px-1.5 py-0.2 rounded-full font-mono ${
                   activeDossierTab === "storytelling" ? "bg-rose-500/30 text-rose-200" : "bg-black/5 text-[#86868B]"
                 }`}>
-                  IA
+                  Gastos
                 </span>
               </button>
 
@@ -1433,36 +1438,32 @@ export default function AIAnalystPage() {
                     : "text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#F2F2F7]"
                 }`}
               >
-                <Sparkles size={14} className={activeDossierTab === "overview" ? "text-amber-400" : ""} />
-                <span className="truncate">Visão Geral</span>
+                <Shield size={14} className={activeDossierTab === "overview" ? "text-blue-400" : ""} />
+                <span className="truncate">Resumo</span>
                 <span className={`hidden md:inline-block text-[9px] px-1.5 py-0.2 rounded-full font-mono ${
-                  activeDossierTab === "overview" ? "bg-amber-500/30 text-amber-200" : "bg-black/5 text-[#86868B]"
+                  activeDossierTab === "overview" ? "bg-blue-500/30 text-blue-100" : "bg-black/5 text-[#86868B]"
                 }`}>
                   {currentScore} pts
                 </span>
               </button>
             </div>
 
-            {/* ABA 1: MAPA MENTAL NEURAL INTERATIVO */}
+            {/* ABA 1: ESCRITÓRIO VIVO DOS AGENTES WALLET+ */}
             {activeDossierTab === "mindmap" && (
-              <FinancialMindMap
-                diagnosis={diagnosis}
+              <FinancialOffice
                 cards={cards}
                 transactions={transactions}
                 recurringItems={recurringItems}
-                mainBalance={mainBalance}
-                monthIncome={monthIncome}
-                monthExpense={monthExpense}
+                goals={goals}
+                monthlyProjections={officeMonthlyProjections}
+                diagnosis={diagnosis}
                 targetEndMonthBalance={targetEndMonthBalance}
-                effectiveProjectedFree={effectiveProjectedFree}
-                safeDailyAllowance={safeSpendMetric.safeDailyAllowance}
-                remainingDays={safeSpendMetric.remainingDaysInMonth}
-                activePersona={selectedPersona}
-                onDiscussWithAI={(topic) => handleSendMessage(topic)}
-                onOpenSimulator={(params) => {
-                  if (params?.description) setSimDescription(params.description);
-                  if (params?.amount) setSimAmount(String(params.amount));
-                  setIsInlineSimOpen(true);
+                isAnalyzing={isAnalyzing}
+                onRefresh={runDiagnosis}
+                onDiscussWithAI={(prompt, agentId) => {
+                  if (agentId) setSelectedPersona(agentId);
+                  setMobilePane("chat");
+                  handleSendMessage(prompt);
                 }}
               />
             )}

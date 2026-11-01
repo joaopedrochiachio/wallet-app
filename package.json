@@ -7,17 +7,17 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --experimental-strip-types --test --test-isolation=none tests/finance.test.mjs tests/ai-analyst.test.mjs tests/security-privacy.test.mjs tests/agent-manager.test.mjs tests/openai-migration.test.mjs tests/openai-review-fixes.test.mjs tests/daily-companion.test.mjs tests/financial-calendar.test.mjs",
+    "test": "node --experimental-strip-types --test --test-isolation=none tests/finance.test.mjs tests/ai-analyst.test.mjs tests/security-privacy.test.mjs tests/agent-manager.test.mjs tests/openai-migration.test.mjs tests/openai-review-fixes.test.mjs tests/daily-companion.test.mjs tests/financial-calendar.test.mjs tests/agent-office.test.mjs",
     "test:finance": "node --experimental-strip-types --test tests/finance.test.mjs"
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.1",
     "clsx": "^2.1.1",
-    "firebase": "^12.19.0",
+    "firebase": "13.1.0",
     "firebase-admin": "^14.5.0",
     "lucide-react": "^1.45.0",
-    "next": "16.3.5",
-    "openai": "^7.23.0",
+    "next": "16.4.3",
+    "openai": "7.47.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "tailwind-merge": "^3.6.0"
@@ -29,8 +29,13 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.3.5",
+    "eslint-config-next": "16.4.3",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "1.14.7",
+    "source-map-js": "1.2.2",
+    "zod": "4.6.7"
   }
 }
