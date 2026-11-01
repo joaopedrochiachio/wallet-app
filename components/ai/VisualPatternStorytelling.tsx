@@ -1,27 +1,22 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import {
-  Sparkles,
-  TrendingUp,
   AlertTriangle,
-  Flame,
-  Coffee,
-  ShoppingBag,
-  CreditCard,
-  Zap,
-  ArrowRight,
-  ShieldCheck,
-  CheckCircle2,
-  HelpCircle,
-  MessageSquare,
-  X,
+  ArrowUpRight,
   Calculator,
-  Sliders,
-  Percent,
+  CheckCircle2,
+  ChevronDown,
+  Flame,
+  MessageCircle,
   RefreshCw,
+  Sparkles,
+  Target,
+  TrendingUp,
+  X,
 } from "lucide-react";
-import { FinancialDiagnosis, SpecificExpenseAlert } from "@/lib/services/financialDiagnosisService";
+import type { TransactionItem } from "@/context/WalletContext";
+import type { FinancialDiagnosis, SpecificExpenseAlert } from "@/lib/services/financialDiagnosisService";
 
 interface VisualPatternStorytellingProps {
   diagnosis: FinancialDiagnosis | null;
@@ -30,11 +25,33 @@ interface VisualPatternStorytellingProps {
   safeDailyAllowance: number;
   mainBalance: number;
   monthExpense: number;
+  transactions?: TransactionItem[];
   onDiscussWithAI: (prompt: string) => void;
   onOpenSimulator?: (params?: { description?: string; amount?: number }) => void;
   onDismissPattern?: (item: string) => void;
   onRefreshPatterns?: () => void;
   isSearchingPatterns?: boolean;
+}
+
+type Cluster = "all" | "drains" | "recurring" | "habits";
+
+function formatCurrency(value: number) {
+  return value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function normalize(value: string) {
+  return (value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+function isRelatedTransaction(transaction: TransactionItem, alert: SpecificExpenseAlert) {
+  const category = normalize(transaction.category);
+  const alertCategory = normalize(alert.habitCategory || "");
+  const title = normalize(transaction.title);
+  const item = normalize(alert.item);
+  return Boolean(
+    (category && alertCategory && (category.includes(alertCategory) || alertCategory.includes(category))) ||
+    item.split(/\s+|&|\//).filter((token) => token.length > 3).some((token) => title.includes(token))
+  );
 }
 
 export function VisualPatternStorytelling({
@@ -44,412 +61,166 @@ export function VisualPatternStorytelling({
   safeDailyAllowance,
   mainBalance,
   monthExpense,
+  transactions = [],
   onDiscussWithAI,
   onOpenSimulator,
   onDismissPattern,
   onRefreshPatterns,
   isSearchingPatterns,
 }: VisualPatternStorytellingProps) {
-  const [selectedCluster, setSelectedCluster] = useState<"all" | "drains" | "recurring" | "habits">("all");
-  const [simulatedCutPercent, setSimulatedCutPercent] = useState<number>(20);
+  const [selectedCluster, setSelectedCluster] = useState<Cluster>("all");
+  const [simulatedCutPercent, setSimulatedCutPercent] = useState(20);
+  const [expandedItem, setExpandedItem] = useState<string | null>(null);
 
-  const formatCurrency = (val: number) =>
-    val.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-  const targetStatus = effectiveProjectedFree >= targetEndMonthBalance ? "on_track" : "at_risk";
-  const safeMargin = Math.max(0, effectiveProjectedFree - targetEndMonthBalance);
-  const missingAmount = Math.max(0, targetEndMonthBalance - effectiveProjectedFree);
-
-  // Lista de alertas de despesas específicas
-  const rawAlerts = diagnosis?.specificExpensesAlerts || [];
-
-  // Padrões consolidados padrão caso a IA não tenha retornado nada ainda
-  const displayAlerts: SpecificExpenseAlert[] = useMemo(() => {
-    if (rawAlerts.length > 0) return rawAlerts;
-    return [
-      {
-        item: "Delivery & Alimentação Externa",
-        totalAmount: 284.5,
-        count: 5,
-        habitCategory: "Alimentação",
-        alertType: "warning",
-        message: "5 pedidos identificados nas últimas semanas. Representa o maior gasto variável discricionário.",
-      },
-      {
-        item: "Assinaturas e Streaming",
-        totalAmount: 119.8,
-        count: 3,
-        habitCategory: "Serviços Digitais",
-        alertType: "info",
-        message: "3 serviços de mídia debitados mensalmente. Verifique se todos estão em uso ativo.",
-      },
-      {
-        item: "Micro-compras & Transporte por App",
-        totalAmount: 94.2,
-        count: 4,
-        habitCategory: "Transporte",
-        alertType: "info",
-        message: "Pequenos deslocamentos frequentes somam valor relevante no fim do mês.",
-      },
+  const displayAlerts = useMemo<SpecificExpenseAlert[]>(() => {
+    const rawAlerts = diagnosis?.specificExpensesAlerts || [];
+    const fallbackAlerts: SpecificExpenseAlert[] = [
+      { item: "Delivery & Alimentação Externa", totalAmount: 284.5, count: 5, habitCategory: "Alimentação", alertType: "warning", message: "Pedidos recorrentes concentram o maior gasto variável discricionário do ciclo." },
+      { item: "Assinaturas e Streaming", totalAmount: 119.8, count: 3, habitCategory: "Serviços Digitais", alertType: "info", message: "Serviços mensais podem ser revistos conforme o uso real." },
+      { item: "Microcompras & Transporte por App", totalAmount: 94.2, count: 4, habitCategory: "Transporte", alertType: "info", message: "Deslocamentos pequenos e frequentes ganharam relevância no fechamento." },
     ];
-  }, [rawAlerts]);
+    const source = rawAlerts.length > 0 ? rawAlerts : fallbackAlerts;
+    return [...source].sort((a, b) => b.totalAmount - a.totalAmount);
+  }, [diagnosis?.specificExpensesAlerts]);
 
-  // Filtragem de clusters
   const filteredAlerts = useMemo(() => {
-    if (selectedCluster === "all") return displayAlerts;
-    if (selectedCluster === "drains") {
-      return displayAlerts.filter((a) => a.totalAmount >= 100 || a.alertType === "alert");
-    }
-    if (selectedCluster === "recurring") {
-      return displayAlerts.filter(
-        (a) =>
-          a.habitCategory?.toLowerCase().includes("serviço") ||
-          a.habitCategory?.toLowerCase().includes("assinatura")
-      );
-    }
-    if (selectedCluster === "habits") {
-      return displayAlerts.filter(
-        (a) =>
-          a.habitCategory?.toLowerCase().includes("alimentação") ||
-          a.habitCategory?.toLowerCase().includes("transporte")
-      );
-    }
+    if (selectedCluster === "drains") return displayAlerts.filter((alert) => alert.totalAmount >= 100 || alert.alertType === "alert");
+    if (selectedCluster === "recurring") return displayAlerts.filter((alert) => /servico|assinatura|streaming|recorr/.test(normalize(`${alert.habitCategory} ${alert.item}`)));
+    if (selectedCluster === "habits") return displayAlerts.filter((alert) => /aliment|transporte|delivery|rotina|lazer/.test(normalize(`${alert.habitCategory} ${alert.item}`)));
     return displayAlerts;
   }, [displayAlerts, selectedCluster]);
 
-  // Economia total em potencial com o corte simulado
-  const totalDrainsAmount = displayAlerts.reduce((acc, a) => acc + (a.totalAmount || 0), 0);
+  const totalDrainsAmount = displayAlerts.reduce((sum, alert) => sum + alert.totalAmount, 0);
   const potentialSavings = (totalDrainsAmount * simulatedCutPercent) / 100;
   const newProjectedBalance = effectiveProjectedFree + potentialSavings;
+  const targetStatus = effectiveProjectedFree >= targetEndMonthBalance ? "on_track" : "at_risk";
+  const safeMargin = Math.max(0, effectiveProjectedFree - targetEndMonthBalance);
+  const spotlights = filteredAlerts.slice(0, 3);
+  const remaining = filteredAlerts.slice(3);
+
+  const getTransactionTags = (alert: SpecificExpenseAlert) => {
+    const related = transactions.filter((transaction) => transaction.type === "despesa" && isRelatedTransaction(transaction, alert)).sort((a, b) => b.amount - a.amount).slice(0, 3);
+    if (related.length > 0) return related.map((transaction) => transaction.title);
+    return [alert.item, `${alert.count || 1} lançamento${(alert.count || 1) > 1 ? "s" : ""}`, alert.habitCategory || "Despesa"];
+  };
+
+  const discussPattern = (alert: SpecificExpenseAlert) => {
+    onDiscussWithAI(`Niko, aprofunde o padrão "${alert.item}", que soma R$ ${alert.totalAmount.toFixed(2)}. Mostre as transações relacionadas e proponha um plano prático de redução para o próximo ciclo.`);
+  };
 
   return (
-    <div className="w-full space-y-6 animate-in fade-in duration-300">
-      {/* 1. HERO CARD: O VEREDITO DO CICLO EM FORMATO VISUAL DIDÁTICO */}
-      <section className="rounded-[28px] sm:rounded-[36px] bg-gradient-to-br from-white via-white/95 to-[#F8F8FC] border border-black/[0.06] shadow-[0_4px_24px_rgba(0,0,0,0.03)] p-5 sm:p-7 space-y-5 relative overflow-hidden">
-        {/* Glow decorativo */}
-        <div
-          className={`absolute top-0 right-0 w-80 h-80 rounded-full blur-3xl pointer-events-none -z-0 ${
-            targetStatus === "on_track"
-              ? "bg-gradient-to-br from-emerald-400/10 via-teal-400/5 to-transparent"
-              : "bg-gradient-to-br from-amber-400/10 via-rose-400/5 to-transparent"
-          }`}
-        />
-
-        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-black/[0.05] pb-5">
-          <div className="flex items-center gap-3">
-            <div
-              className={`w-11 h-11 rounded-2xl flex items-center justify-center shadow-xs shrink-0 ${
-                targetStatus === "on_track"
-                  ? "bg-emerald-600 text-white"
-                  : "bg-amber-600 text-white"
-              }`}
-            >
-              {targetStatus === "on_track" ? (
-                <CheckCircle2 size={22} />
-              ) : (
-                <AlertTriangle size={22} />
-              )}
-            </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="text-lg sm:text-xl font-bold tracking-tight text-[#1D1D1F]">
-                  Diagnóstico Contábil de Hábitos & Metas
-                </h3>
-                <span
-                  className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
-                    targetStatus === "on_track"
-                      ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
-                      : "bg-amber-50 text-amber-800 border border-amber-200"
-                  }`}
-                >
-                  {targetStatus === "on_track" ? "Meta Atingida no Fechamento" : "Atenção no Fechamento"}
-                </span>
-              </div>
-              <p className="text-xs text-[#86868B] mt-0.5">
-                Storytelling executivo com base no seu livro-caixa e compromissos futuros.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                const prompt = `Auditor, analise detalhadamente meu panorama financeiro: saldo projetado de R$ ${effectiveProjectedFree.toFixed(2)} vs meta de R$ ${targetEndMonthBalance.toFixed(2)}. Quais as 3 melhores ações para acelerar minha reserva?`;
-                onDiscussWithAI(prompt);
-              }}
-              className="px-3.5 py-1.5 rounded-full bg-[#1D1D1F] hover:bg-black text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-xs active:scale-95 cursor-pointer"
-            >
-              <MessageSquare size={13} />
-              <span>Aprofundar no Chat</span>
-            </button>
-          </div>
-        </div>
-
-        {/* 3 PILARES DO VEREDITO EXECUTIVO */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 relative z-10">
-          {/* Pilar 1: Meta & Folga */}
-          <div className="p-4 rounded-2xl bg-[#FAFAFC] border border-black/[0.04] space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-[#86868B] uppercase tracking-wider">
-                1. Saldo no Fechamento
-              </span>
-              <span
-                className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
-                  targetStatus === "on_track"
-                    ? "bg-emerald-100 text-emerald-800"
-                    : "bg-amber-100 text-amber-800"
-                }`}
-              >
-                {targetStatus === "on_track" ? `+R$ ${formatCurrency(safeMargin)} Livre` : `-R$ ${formatCurrency(missingAmount)}`}
-              </span>
-            </div>
-            <strong className="text-xl font-bold font-mono text-[#1D1D1F] block tabular-nums">
-              R$ {formatCurrency(effectiveProjectedFree)}
-            </strong>
-            <p className="text-xs text-[#86868B] leading-relaxed">
-              {targetStatus === "on_track"
-                ? `Você está projetado para bater a meta de R$ ${formatCurrency(targetEndMonthBalance)} com sobra segura para o mês.`
-                : `Faltam R$ ${formatCurrency(missingAmount)} para atingir a meta estipulada de fechar com R$ ${formatCurrency(targetEndMonthBalance)}.`}
-            </p>
-          </div>
-
-          {/* Pilar 2: Teto Diário Seguro */}
-          <div className="p-4 rounded-2xl bg-[#FAFAFC] border border-black/[0.04] space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-[#86868B] uppercase tracking-wider">
-                2. Velocímetro Diário
-              </span>
-              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
-                Hoje
-              </span>
-            </div>
-            <strong className="text-xl font-bold font-mono text-emerald-600 block tabular-nums">
-              R$ {formatCurrency(safeDailyAllowance)}/dia
-            </strong>
-            <p className="text-xs text-[#86868B] leading-relaxed">
-              Gastando até esse valor por dia nos dias restantes, sua meta de R$ {formatCurrency(targetEndMonthBalance)} permanece 100% blindada.
-            </p>
-          </div>
-
-          {/* Pilar 3: Blindagem da Conta */}
-          <div className="p-4 rounded-2xl bg-[#FAFAFC] border border-black/[0.04] space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-[#86868B] uppercase tracking-wider">
-                3. Blindagem de Caixa
-              </span>
-              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800">
-                Crédito vs Conta
-              </span>
-            </div>
-            <strong className="text-xl font-bold font-mono text-[#1D1D1F] block tabular-nums">
-              R$ {formatCurrency(mainBalance)}
-            </strong>
-            <p className="text-xs text-[#86868B] leading-relaxed">
-              Mantenha o saldo em conta reservado para as faturas e contas fixas imediatas antes de assumir novos parcelamentos.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* 2. SIMULADOR DIDÁTICO DE OTIMIZAÇÃO ("O QUE ACONTECE SE EU CORTAR?") */}
-      <section className="rounded-[28px] bg-white border border-black/[0.06] p-5 sm:p-6 shadow-[0_4px_24px_rgba(0,0,0,0.02)] space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center">
-              <Calculator size={18} />
-            </div>
-            <div>
-              <h4 className="text-sm font-bold text-[#1D1D1F]">
-                Simulador Dinâmico: O Poder de Pequenos Cortes
-              </h4>
-              <p className="text-[11px] text-[#86868B]">
-                Arraste o slider para ver o impacto imediato de economizar nos ralos identificados.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-[#86868B]">Redução em Ralos:</span>
-            <span className="px-2.5 py-1 rounded-xl bg-[#1D1D1F] text-white font-mono font-bold text-xs">
-              {simulatedCutPercent}%
-            </span>
-          </div>
-        </div>
-
-        {/* Slider tátil */}
-        <div className="space-y-2">
-          <input
-            type="range"
-            min={5}
-            max={50}
-            step={5}
-            value={simulatedCutPercent}
-            onChange={(e) => setSimulatedCutPercent(Number(e.target.value))}
-            className="w-full h-2 bg-[#E5E5EA] rounded-lg appearance-none cursor-pointer accent-[#1D1D1F]"
-          />
-          <div className="flex justify-between text-[10px] text-[#86868B] font-mono">
-            <span>5% (Ajuste Leve)</span>
-            <span>20% (Recomendado)</span>
-            <span>50% (Corte Radical)</span>
-          </div>
-        </div>
-
-        {/* Resultado Didático da Simulação */}
-        <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-50/80 to-teal-50/60 border border-emerald-200/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="space-y-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">
-              Economia Extra Calculada
-            </span>
-            <div className="flex items-baseline gap-2">
-              <strong className="text-xl font-bold font-mono text-emerald-700 tabular-nums">
-                +R$ {formatCurrency(potentialSavings)}
-              </strong>
-              <span className="text-xs text-emerald-900 font-medium">
-                de folga no mês
-              </span>
-            </div>
-            <p className="text-xs text-emerald-950">
-              Seu saldo de fechamento saltaria de <strong>R$ {formatCurrency(effectiveProjectedFree)}</strong> para{" "}
-              <strong className="text-emerald-700">R$ {formatCurrency(newProjectedBalance)}</strong>.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              const prompt = `Auditor, se eu cortar ${simulatedCutPercent}% dos meus gastos com delivery e pequenos ralos, como posso aplicar a economia de R$ ${potentialSavings.toFixed(2)} para acelerar minhas metas?`;
-              onDiscussWithAI(prompt);
-            }}
-            className="px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold transition-all shadow-xs active:scale-95 cursor-pointer whitespace-nowrap self-start sm:self-auto"
-          >
-            Aplicar Estratégia no Chat
-          </button>
-        </div>
-      </section>
-
-      {/* 3. RADAR DE PADRÕES ESPECÍFICOS & HÁBITOS DE CONSUMO */}
-      <section className="rounded-[28px] sm:rounded-[36px] bg-white border border-black/[0.06] p-5 sm:p-7 shadow-[0_4px_24px_rgba(0,0,0,0.02)] space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+    <div className="w-full space-y-4 animate-in fade-in duration-300">
+      <section className="relative overflow-hidden rounded-[32px] border border-black/[0.05] bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.03)] sm:p-6">
+        <div className={`pointer-events-none absolute -right-24 -top-24 h-64 w-64 rounded-full blur-3xl ${targetStatus === "on_track" ? "bg-emerald-300/15" : "bg-amber-300/15"}`} />
+        <div className="relative grid gap-6 lg:grid-cols-[1.15fr_1fr] lg:items-center">
           <div>
             <div className="flex items-center gap-2">
-              <Flame size={18} className="text-rose-500" />
-              <h3 className="text-base font-bold text-[#1D1D1F]">
-                Hábitos Invisíveis & Ralos Identificados
-              </h3>
+              <span className={`flex h-9 w-9 items-center justify-center rounded-[13px] text-white ${targetStatus === "on_track" ? "bg-emerald-600" : "bg-amber-500"}`}>
+                {targetStatus === "on_track" ? <CheckCircle2 size={17} /> : <AlertTriangle size={17} />}
+              </span>
+              <span className="rounded-full bg-[#F2F2F7] px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.1em] text-[#6E6E73]">Diagnóstico de hábitos</span>
             </div>
-            <p className="text-xs text-[#86868B] mt-0.5">
-              Micro-análises detectadas no seu comportamento de compras.
+            <h2 className="mt-4 max-w-xl text-2xl font-semibold tracking-tight text-slate-900 sm:text-[28px]">
+              {targetStatus === "on_track" ? "Sua meta está protegida — agora otimize os excessos." : "Pequenos ralos estão pressionando seu fechamento."}
+            </h2>
+            <p className="mt-2 max-w-xl text-[12px] leading-relaxed text-[#6E6E73]">
+              Priorizamos impacto real e escondemos o ruído. Abra somente o hábito que merece sua atenção agora.
             </p>
+            <div className="mt-5 flex flex-wrap items-center gap-2">
+              <button type="button" onClick={() => onDiscussWithAI(`Niko, analise meu saldo projetado de R$ ${effectiveProjectedFree.toFixed(2)} contra a meta de R$ ${targetEndMonthBalance.toFixed(2)} e priorize três ações.`)} className="inline-flex items-center gap-1.5 rounded-full bg-[#1D1D1F] px-3.5 py-2 text-[10px] font-semibold text-white transition-transform active:scale-95"><MessageCircle size={12} /> Aprofundar com Niko</button>
+              {onOpenSimulator && <button type="button" onClick={() => onOpenSimulator()} className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-[10px] font-semibold text-[#6E6E73] transition-colors hover:bg-[#F2F2F7] hover:text-[#1D1D1F]"><Calculator size={12} /> Simular uma compra</button>}
+            </div>
           </div>
 
-          {/* Filtros de Cluster */}
-          <div className="flex items-center gap-1.5 bg-[#F2F2F7] p-1 rounded-2xl border border-black/5 self-start sm:self-auto">
-            <button
-              type="button"
-              onClick={() => setSelectedCluster("all")}
-              className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                selectedCluster === "all" ? "bg-white text-[#1D1D1F] shadow-xs" : "text-[#86868B]"
-              }`}
-            >
-              Todos ({displayAlerts.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelectedCluster("drains")}
-              className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                selectedCluster === "drains" ? "bg-white text-rose-700 shadow-xs" : "text-[#86868B]"
-              }`}
-            >
-              Maiores Ralos
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelectedCluster("habits")}
-              className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                selectedCluster === "habits" ? "bg-white text-amber-700 shadow-xs" : "text-[#86868B]"
-              }`}
-            >
-              Rotina & Alimentação
-            </button>
+          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[22px] border border-black/[0.05] bg-black/[0.05]">
+            <Metric label="Saldo projetado" value={`R$ ${formatCurrency(effectiveProjectedFree)}`} tone={targetStatus === "on_track" ? "green" : "amber"} icon={<Target size={13} />} />
+            <Metric label="Teto seguro hoje" value={`R$ ${formatCurrency(safeDailyAllowance)}`} tone="blue" icon={<Sparkles size={13} />} />
+            <Metric label="Saldo em conta" value={`R$ ${formatCurrency(mainBalance)}`} tone="neutral" icon={<TrendingUp size={13} />} />
+            <Metric label="Ralos mapeados" value={`R$ ${formatCurrency(totalDrainsAmount)}`} tone="rose" icon={<Flame size={13} />} />
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-[30px] border border-black/[0.05] bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.03)] sm:p-6">
+        <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr] lg:items-center">
+          <div>
+            <div className="flex items-center justify-between gap-3">
+              <div><h3 className="text-sm font-semibold tracking-tight text-slate-900">Simulador de cortes</h3><p className="mt-0.5 text-[10px] text-[#86868B]">Ajuste a intensidade e veja a tendência no próprio controle.</p></div>
+              <span className="rounded-full bg-[#1D1D1F] px-2.5 py-1 text-[10px] font-semibold tabular-nums text-white">{simulatedCutPercent}%</span>
+            </div>
+            <div className="mt-5">
+              <input type="range" min={5} max={50} step={5} value={simulatedCutPercent} onChange={(event) => setSimulatedCutPercent(Number(event.target.value))} className="h-2 w-full cursor-pointer appearance-none rounded-full bg-[#E5E5EA] accent-[#1D1D1F]" aria-label="Percentual de corte nos ralos" />
+              <div className="mt-2 flex justify-between text-[9px] text-[#AEAEB2]"><span>Ajuste leve · 5%</span><span>Recomendado · 20%</span><span>Intenso · 50%</span></div>
+            </div>
+          </div>
+
+          <div className="relative overflow-hidden rounded-[22px] bg-[#F2F8F4] p-4">
+            <svg viewBox="0 0 240 66" className="absolute inset-x-0 bottom-0 h-16 w-full text-emerald-500/20" preserveAspectRatio="none" aria-hidden="true">
+              <path d="M0 58 C35 54 40 50 68 49 C100 48 110 36 140 38 C170 40 180 20 240 8 L240 66 L0 66 Z" fill="currentColor" />
+              <path d="M0 58 C35 54 40 50 68 49 C100 48 110 36 140 38 C170 40 180 20 240 8" fill="none" stroke="#34C759" strokeWidth="2" />
+            </svg>
+            <div className="relative">
+              <span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-emerald-800">Tendência de folga mensal</span>
+              <strong className="mt-1 block text-2xl font-semibold tracking-tight tabular-nums text-emerald-700">+R$ {formatCurrency(potentialSavings)}</strong>
+              <p className="mt-1 text-[10px] text-emerald-900/75">Fechamento estimado em <span className="font-semibold tabular-nums">R$ {formatCurrency(newProjectedBalance)}</span>.</p>
+              <button type="button" onClick={() => onDiscussWithAI(`Niko, transforme um corte de ${simulatedCutPercent}% nos ralos, equivalente a R$ ${potentialSavings.toFixed(2)}, em um plano executável.`)} className="mt-4 inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-800 hover:text-emerald-950">Aplicar estratégia no chat <ArrowUpRight size={11} /></button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-[30px] border border-black/[0.05] bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.03)] sm:p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div><div className="flex items-center gap-2"><Flame size={17} className="text-rose-500" /><h3 className="text-base font-semibold tracking-tight text-slate-900">Hábitos invisíveis & ralos</h3></div><p className="mt-1 text-[11px] text-[#86868B]">Os três maiores impactos ficam em foco. O restante aparece sob demanda.</p></div>
+          <div className="flex flex-wrap items-center gap-1 rounded-[14px] bg-[#F2F2F7] p-1">
+            {([['all', 'Todos'], ['drains', 'Críticos'], ['recurring', 'Recorrentes'], ['habits', 'Rotina']] as Array<[Cluster, string]>).map(([value, label]) => <button key={value} type="button" onClick={() => setSelectedCluster(value)} className={`rounded-[10px] px-2.5 py-1.5 text-[10px] font-semibold transition-all ${selectedCluster === value ? "bg-white text-[#1D1D1F] shadow-sm" : "text-[#86868B] hover:text-[#1D1D1F]"}`}>{label}</button>)}
+            {onRefreshPatterns && <button type="button" onClick={onRefreshPatterns} disabled={isSearchingPatterns} title="Buscar novos padrões" className="rounded-[10px] p-1.5 text-[#86868B] hover:bg-white hover:text-[#1D1D1F] disabled:opacity-40"><RefreshCw size={12} className={isSearchingPatterns ? "animate-spin" : ""} /></button>}
           </div>
         </div>
 
-        {/* Grade de Cartões Didáticos de Padrão */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 pt-2">
-          {filteredAlerts.map((alert) => {
-            const percentOfMargin =
-              safeMargin > 0 ? Math.round((alert.totalAmount / safeMargin) * 100) : 100;
+        {spotlights.length > 0 ? (
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            {spotlights.map((alert, index) => {
+              const impactBase = Math.max(safeMargin, monthExpense * 0.25, 1);
+              const impact = Math.min(100, Math.round((alert.totalAmount / impactBase) * 100));
+              return (
+                <article key={alert.item} className="group relative overflow-hidden rounded-[22px] border border-black/[0.05] bg-[#FAFAFA] p-4 transition-all hover:-translate-y-0.5 hover:bg-white hover:shadow-[0_10px_30px_rgba(0,0,0,0.06)]">
+                  <div className="flex items-center justify-between"><span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-[#86868B]">Impacto #{index + 1}</span>{onDismissPattern && <button type="button" onClick={() => onDismissPattern(alert.item)} title="Descartar alerta" className="rounded-full p-1 text-[#C7C7CC] opacity-0 transition-all hover:bg-rose-50 hover:text-rose-600 group-hover:opacity-100"><X size={12} /></button>}</div>
+                  <h4 className="mt-3 line-clamp-2 min-h-10 text-sm font-semibold leading-snug tracking-tight text-slate-900">{alert.item}</h4>
+                  <strong className="mt-2 block text-xl font-semibold tracking-tight tabular-nums text-rose-600">R$ {formatCurrency(alert.totalAmount)}</strong>
+                  <div className="mt-3 flex flex-wrap gap-1.5">{getTransactionTags(alert).map((tag) => <span key={tag} className="max-w-full truncate rounded-full border border-black/[0.05] bg-white px-2 py-1 text-[9px] font-medium text-[#6E6E73]">{tag}</span>)}</div>
+                  <div className="mt-4"><div className="mb-1.5 flex justify-between text-[9px] text-[#86868B]"><span>Impacto na margem</span><span className="font-semibold tabular-nums text-slate-900">{impact}%</span></div><div className="h-1.5 overflow-hidden rounded-full bg-black/[0.05]"><div className="h-full rounded-full bg-rose-500" style={{ width: `${impact}%` }} /></div></div>
+                  <button type="button" onClick={() => discussPattern(alert)} className="mt-4 inline-flex items-center gap-1 text-[10px] font-semibold text-blue-600 transition-colors hover:text-blue-800"><MessageCircle size={11} /> Discutir com consultor <ArrowUpRight size={10} /></button>
+                </article>
+              );
+            })}
+          </div>
+        ) : <div className="mt-5 rounded-[20px] bg-[#F5F5F7] p-6 text-center text-[11px] text-[#86868B]">Nenhum padrão corresponde a este filtro.</div>}
 
-            return (
-              <div
-                key={alert.item}
-                className="rounded-2xl p-4 bg-[#FAFAFC] hover:bg-white border border-black/[0.05] hover:border-black/15 transition-all shadow-2xs space-y-3 flex flex-col justify-between group"
-              >
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white border border-black/5 text-[#1D1D1F]">
-                      {alert.habitCategory || "Despesa"}
-                    </span>
-                    <strong className="text-sm font-mono font-bold text-rose-600 tabular-nums">
-                      R$ {formatCurrency(alert.totalAmount)}
-                    </strong>
-                  </div>
-
-                  <div>
-                    <h4 className="text-sm font-bold text-[#1D1D1F] group-hover:text-black">
-                      {alert.item}
-                    </h4>
-                    <p className="text-xs text-[#86868B] leading-relaxed mt-1">
-                      {alert.message}
-                    </p>
-                  </div>
-
-                  {/* Impacto didático */}
-                  <div className="p-2 rounded-xl bg-white border border-black/[0.04] text-[11px] text-[#6E6E73] space-y-1">
-                    <div className="flex items-center justify-between text-[10px]">
-                      <span>Impacto na Margem Livre:</span>
-                      <strong className="font-bold text-[#1D1D1F]">{percentOfMargin}%</strong>
-                    </div>
-                    <div className="w-full bg-[#E5E5EA] h-1.5 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-rose-500 rounded-full"
-                        style={{ width: `${Math.min(100, percentOfMargin)}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Ações Rápidas Conectadas ao Chat */}
-                <div className="pt-2 border-t border-black/[0.04] flex items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const prompt = `Auditor, quero analisar detalhadamente o alerta de "${alert.item}" (total de R$ ${alert.totalAmount.toFixed(2)}). Qual o plano prático para reduzir esse custo no próximo ciclo?`;
-                      onDiscussWithAI(prompt);
-                    }}
-                    className="w-full py-1.5 px-3 rounded-xl bg-white hover:bg-[#F2F2F7] active:scale-95 text-[#1D1D1F] border border-black/[0.08] text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-                  >
-                    <MessageSquare size={12} className="text-blue-600" />
-                    <span>Discutir com Consultor</span>
-                  </button>
-
-                  {onDismissPattern && (
-                    <button
-                      type="button"
-                      onClick={() => onDismissPattern(alert.item)}
-                      className="p-1.5 rounded-lg text-[#86868B] hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                      title="Descartar este alerta"
-                    >
-                      <X size={13} />
+        {remaining.length > 0 && (
+          <div className="mt-5 overflow-hidden rounded-[20px] border border-black/[0.05]">
+            <div className="border-b border-black/[0.05] bg-[#FAFAFA] px-4 py-2.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-[#86868B]">Outros sinais · toque para expandir</div>
+            <div className="divide-y divide-black/[0.05]">
+              {remaining.map((alert) => {
+                const expanded = expandedItem === alert.item;
+                return (
+                  <div key={alert.item}>
+                    <button type="button" onClick={() => setExpandedItem(expanded ? null : alert.item)} className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-[#FAFAFA]">
+                      <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" /><span className="min-w-0 flex-1"><strong className="block truncate text-[11px] font-medium text-slate-900">{alert.item}</strong><span className="text-[9px] text-[#86868B]">{alert.habitCategory || "Despesa"} · {alert.count || 1} ocorrências</span></span><strong className="text-[11px] font-semibold tabular-nums text-slate-900">R$ {formatCurrency(alert.totalAmount)}</strong><ChevronDown size={13} className={`text-[#86868B] transition-transform ${expanded ? "rotate-180" : ""}`} />
                     </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+                    {expanded && <div className="animate-in slide-in-from-top-1 border-t border-black/[0.04] bg-[#FAFAFA] px-4 py-3"><div className="flex flex-wrap gap-1.5">{getTransactionTags(alert).map((tag) => <span key={tag} className="rounded-full bg-white px-2 py-1 text-[9px] text-[#6E6E73] shadow-sm">{tag}</span>)}</div><p className="mt-2 text-[10px] leading-relaxed text-[#6E6E73]">{alert.message}</p><div className="mt-3 flex items-center justify-between"><button type="button" onClick={() => discussPattern(alert)} className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-600"><MessageCircle size={11} /> Discutir com consultor</button>{onDismissPattern && <button type="button" onClick={() => onDismissPattern(alert.item)} className="text-[9px] font-medium text-[#86868B] hover:text-rose-600">Descartar sinal</button>}</div></div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </section>
     </div>
   );
+}
+
+function Metric({ label, value, tone, icon }: { label: string; value: string; tone: "green" | "amber" | "blue" | "rose" | "neutral"; icon: React.ReactNode }) {
+  const colors = { green: "text-emerald-700", amber: "text-amber-700", blue: "text-blue-700", rose: "text-rose-600", neutral: "text-slate-900" };
+  return <div className="bg-[#FAFAFA] p-4"><div className="flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-[#86868B]">{icon}{label}</div><strong className={`mt-2 block text-[15px] font-semibold tracking-tight tabular-nums ${colors[tone]}`}>{value}</strong></div>;
 }

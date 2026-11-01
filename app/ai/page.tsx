@@ -21,17 +21,10 @@ import {
   Coins,
   ArrowUpRight,
   ShieldCheck,
-  Zap,
-  Sliders,
-  Compass,
   Plus,
-  MessageSquare,
-  Users,
   CalendarDays,
   X,
-  ArrowRight,
   Building2,
-  ArrowDownLeft,
   Flame,
   Shield,
   History,
@@ -49,14 +42,12 @@ import { InteractivePatternCard } from "@/components/ai/InteractivePatternCard";
 import { FinancialOffice } from "@/components/ai/FinancialOffice";
 import { SpendingCalendarHeatmap } from "@/components/ai/SpendingCalendarHeatmap";
 import { VisualPatternStorytelling } from "@/components/ai/VisualPatternStorytelling";
-import { AgentAvatar } from "@/components/companion/AgentAvatar";
-import { WalletCharacter, CharacterId, WALLET_CHARACTERS, normalizeCharacterId } from "@/components/companion/WalletCharacters";
+import { normalizeCharacterId } from "@/components/companion/WalletCharacters";
 import { InteractiveFinancialCalendar } from "@/components/companion/InteractiveFinancialCalendar";
 import { PurchaseSimulatorModal } from "@/components/companion/PurchaseSimulatorModal";
 import {
   calculateDailySafeSpend,
   getUpcomingFinancialEvents,
-  generateDailyCompanionAdvice,
   calculateWeeklySpendingVelocity,
   getBestCardToSpendToday,
 } from "@/lib/services/dailyCompanionService";
@@ -120,6 +111,12 @@ interface ChatMessage {
   simulationResult?: PurchaseSimulationResult | null;
 }
 
+interface CopilotContext {
+  eyebrow: string;
+  title: string;
+  detail?: string;
+}
+
 export default function AIAnalystPage() {
   const { user } = useAuth();
   const {
@@ -134,9 +131,6 @@ export default function AIAnalystPage() {
     getMonthlyProjection,
     realizeRecurringItemNow,
   } = useWallet();
-
-  // Modo Mobile: Alternador entre Consultor (Chat) e Dossiê (Análises)
-  const [mobilePane, setMobilePane] = useState<"chat" | "dossier">("chat");
 
   // Auditor Persona Ativa
   const [selectedPersona, setSelectedPersona] = useState<string>(
@@ -218,6 +212,8 @@ export default function AIAnalystPage() {
   const [inputMessage, setInputMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isHistoryDrawerOpen, setIsHistoryDrawerOpen] = useState(false);
+  const [isCopilotOpen, setIsCopilotOpen] = useState(false);
+  const [copilotContext, setCopilotContext] = useState<CopilotContext | null>(null);
   const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
   const [activeDossierTab, setActiveDossierTab] = useState<"mindmap" | "calendar" | "storytelling" | "overview">("mindmap");
 
@@ -233,6 +229,19 @@ export default function AIAnalystPage() {
 
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!isCopilotOpen) return;
+    const focusTimer = window.setTimeout(() => chatInputRef.current?.focus(), 260);
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsCopilotOpen(false);
+    };
+    window.addEventListener("keydown", handleEscape);
+    return () => {
+      window.clearTimeout(focusTimer);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [isCopilotOpen]);
 
   // Sessão atual ativa
   const currentSession =
@@ -253,26 +262,6 @@ export default function AIAnalystPage() {
     () => [0, 1, 2, 3, 4, 5].map((monthIndex) => getMonthlyProjection(monthIndex)),
     [getMonthlyProjection]
   );
-
-  // Conselho e Personalidade do Agente Auditor
-  const companionAdvice = useMemo(() => {
-    return generateDailyCompanionAdvice({
-      userName: userProfile.name,
-      projectedFreeBalance: effectiveProjectedFree,
-      targetEndMonthBalance,
-      safeDailyAllowance: safeSpendMetric.safeDailyAllowance,
-      upcomingEventsCount: upcomingEvents.length,
-      streakCount: 0,
-      persona: selectedPersona,
-    });
-  }, [
-    userProfile.name,
-    selectedPersona,
-    effectiveProjectedFree,
-    targetEndMonthBalance,
-    safeSpendMetric.safeDailyAllowance,
-    upcomingEvents.length,
-  ]);
 
   const runDiagnosis = useCallback(async () => {
     setIsAnalyzing(true);
@@ -522,12 +511,10 @@ export default function AIAnalystPage() {
   const handleSendMessage = async (textToSend?: string, simulationPayload?: unknown) => {
     const text = (textToSend || inputMessage).trim();
     if (!text && !simulationPayload) return;
-
-    // Se estiver no mobile e no dossiê, transfere suavemente para o chat
-    setMobilePane("chat");
+    setIsCopilotOpen(true);
 
     const userMsg: ChatMessage = {
-      id: Date.now().toString(),
+      id: globalThis.crypto.randomUUID(),
       role: "user",
       content: text,
       timestamp: new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
@@ -631,7 +618,7 @@ export default function AIAnalystPage() {
 
       if (data && data.success && data.message) {
         const assistantMsg: ChatMessage = {
-          id: (Date.now() + 1).toString(),
+          id: globalThis.crypto.randomUUID(),
           role: "assistant",
           content: data.message,
           timestamp: new Date().toLocaleTimeString("pt-BR", {
@@ -660,7 +647,7 @@ export default function AIAnalystPage() {
       }
     } catch (err: unknown) {
       const errorMsg: ChatMessage = {
-        id: (Date.now() + 1).toString(),
+        id: globalThis.crypto.randomUUID(),
         role: "assistant",
         content: `Dificuldade temporária na auditoria: ${
           err instanceof Error ? err.message : "Tente novamente em instantes"
@@ -675,6 +662,15 @@ export default function AIAnalystPage() {
     } finally {
       setIsSending(false);
     }
+  };
+
+  const openCopilotWithContext = (
+    context: CopilotContext,
+    prompt: string
+  ) => {
+    setCopilotContext(context);
+    setIsCopilotOpen(true);
+    void handleSendMessage(prompt);
   };
 
   const handleNewChat = () => {
@@ -877,21 +873,16 @@ export default function AIAnalystPage() {
     return true;
   });
 
-  const personasList: { id: CharacterId; name: string; role: string; shortRole: string }[] = [
-    { id: "wallet-rubi", name: "Rubi", role: "CFO & Fluxo de Caixa", shortRole: "CFO & Caixa" },
-    { id: "wallet-sol", name: "Sol", role: "Reserva & Proteção", shortRole: "Reserva & Fôlego" },
-    { id: "wallet-nanquim", name: "Nanquim", role: "Crédito & Faturas", shortRole: "Crédito & Fatura" },
-    { id: "wallet-atlos", name: "Atlos", role: "Metas & Multiplicação", shortRole: "Metas & Aportes" },
-  ];
-
   return (
-    <div className="min-h-full w-full bg-[#F2F2F7] text-[#1D1D1F] font-sans selection:bg-[#1D1D1F] selection:text-white pb-12">
-      <div className="w-full max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-5">
+    <div className="relative min-h-full w-full overflow-x-hidden bg-[linear-gradient(180deg,#F5F6F8_0%,#EFF1F4_46%,#F5F5F7_100%)] pb-12 font-sans text-[#1D1D1F] selection:bg-[#1D1D1F] selection:text-white">
+      <div className="pointer-events-none absolute -left-48 top-28 h-[520px] w-[520px] rounded-full bg-emerald-200/20 blur-[110px]" />
+      <div className="pointer-events-none absolute -right-56 top-[420px] h-[620px] w-[620px] rounded-full bg-blue-200/20 blur-[130px]" />
+      <div className="relative z-10 mx-auto w-full max-w-[1440px] space-y-5 px-3 py-4 sm:px-6 sm:py-6">
         
         {/* =========================================================
             1. HEADER EXECUTIVO WALLET+ COM APPLE WHITE IDENTITY
            ========================================================= */}
-        <header className="rounded-[28px] bg-white border border-black/[0.05] p-4 sm:p-5 shadow-[0_4px_24px_rgba(0,0,0,0.02)] flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <header className="flex flex-col justify-between gap-4 rounded-[28px] border border-white/80 bg-white/78 p-4 shadow-[0_16px_50px_rgba(27,38,33,0.055)] backdrop-blur-2xl md:flex-row md:items-center sm:p-5">
           <div className="flex items-center gap-3.5 min-w-0">
             <div className="w-11 h-11 rounded-2xl bg-[#1D1D1F] text-white flex items-center justify-center shadow-xs shrink-0">
               <Building2 size={20} className="text-white" />
@@ -981,160 +972,50 @@ export default function AIAnalystPage() {
         </header>
 
         {/* =========================================================
-            2. SEGMENT CONTROLLER MOBILE (< lg)
-            Permite alternar entre o Chat e o Dossiê sem perder estado
+            2. WORKSPACE WALLET+: ESCRITÓRIO PRIMEIRO, NIKO COMO APOIO
            ========================================================= */}
-        <div className="lg:hidden flex items-center p-1 bg-[#E5E5EA]/80 backdrop-blur-md rounded-2xl border border-black/5">
-          <button
-            type="button"
-            onClick={() => setMobilePane("chat")}
-            className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-              mobilePane === "chat"
-                ? "bg-white text-[#1D1D1F] shadow-xs"
-                : "text-[#86868B] hover:text-[#1D1D1F]"
-            }`}
-          >
-            <MessageSquare size={13} />
-            <span>Consultor & Chat</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setMobilePane("dossier")}
-            className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-              mobilePane === "dossier"
-                ? "bg-white text-[#1D1D1F] shadow-xs"
-                : "text-[#86868B] hover:text-[#1D1D1F]"
-            }`}
-          >
-            <Compass size={13} />
-            <span>Dossiê do Auditor ({diagnosis?.healthScore || 82} pts)</span>
-          </button>
-        </div>
+        <div className="flex flex-col gap-5">
 
-        {/* =========================================================
-            3. WORKSPACE INTEGRADO EM TELA ÚNICA (2 COLUNAS NO DESKTOP)
-           ========================================================= */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-
-          {/* =======================================================
-              COLUNA ESQUERDA: O CONSULTOR / COPILOT CONVERSACIONAL
-             ======================================================= */}
-          <div
-            className={`${activeDossierTab === "mindmap" ? "lg:col-span-4" : "lg:col-span-5"} flex flex-col space-y-4 ${
-              mobilePane === "chat" ? "block" : "hidden lg:flex"
-            }`}
-          >
-            {/* 1. SELETOR DE ARQUÉTIPO / AUDITOR ESPECIALISTA */}
-            <div className="bg-white rounded-[24px] p-3 border border-black/[0.05] shadow-[0_4px_20px_rgba(0,0,0,0.02)] space-y-2">
-              <div className="flex items-center justify-between px-1">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-[#86868B]">
-                  Especialista em Atendimento
+          {/* NIKO COPILOT: UMA ÚNICA CAMADA GLOBAL, FORA DO FLUXO DA PÁGINA */}
+          {isCopilotOpen && (
+            <>
+              <button
+                type="button"
+                aria-label="Fechar Niko Copilot"
+                onClick={() => setIsCopilotOpen(false)}
+                className="fixed inset-0 z-[120] cursor-default bg-black/20 backdrop-blur-md animate-in fade-in duration-200"
+              />
+              <section
+                role="dialog"
+                aria-modal="true"
+                aria-label="Niko Copilot"
+                className="fixed inset-y-0 right-0 z-[130] flex w-full max-w-[500px] flex-col border-l border-black/[0.06] bg-white/95 p-4 shadow-[-24px_0_70px_rgba(0,0,0,0.14)] backdrop-blur-2xl animate-in slide-in-from-right duration-300 sm:bottom-3 sm:right-3 sm:top-16 sm:rounded-[32px] sm:border sm:p-5"
+              >
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-emerald-700">
+                  Niko Copilot · contexto ativo
                 </span>
-                <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                  Pronto para análise
-                </span>
+                <h2 className="mt-1 text-lg font-semibold tracking-tight text-[#1D1D1F]">
+                  Converse sem sair da análise
+                </h2>
+                <p className="mt-0.5 text-[11px] text-[#6E6E73]">
+                  Niko mantém o card e os números que abriram esta conversa.
+                </p>
               </div>
-
-              <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
-                {personasList.map((p) => {
-                  const isSelected =
-                    selectedPersona === p.id ||
-                    selectedPersona.includes(p.id.replace("wallet-", "")) ||
-                    (p.id === "wallet-rubi" && selectedPersona === "optimizer") ||
-                    (p.id === "wallet-sol" && selectedPersona === "guardian") ||
-                    (p.id === "wallet-nanquim" && selectedPersona === "builder") ||
-                    (p.id === "wallet-atlos" && selectedPersona === "scaler");
-                  return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => setSelectedPersona(p.id)}
-                      className={`p-1.5 sm:p-2 rounded-2xl text-center transition-all cursor-pointer border flex flex-col items-center justify-center gap-0.5 sm:gap-1 active:scale-95 ${
-                        isSelected
-                          ? "bg-[#1D1D1F] text-white border-black shadow-md ring-1 ring-black/20"
-                          : "bg-[#F8F8FA] hover:bg-[#F2F2F7] text-[#1D1D1F] border-black/[0.04]"
-                      }`}
-                    >
-                      <div className="h-8 w-8 sm:h-9 sm:w-9 flex items-center justify-center">
-                        <WalletCharacter
-                          id={p.id}
-                          size="sm"
-                          state={isSelected ? "falando" : "ocioso"}
-                          showBadge={false}
-                          className="pointer-events-none scale-85 sm:scale-90"
-                        />
-                      </div>
-                      <span className="text-[10px] sm:text-[11px] font-bold tracking-tight leading-tight">
-                        {p.name}
-                      </span>
-                      <span
-                        className={`text-[8.5px] sm:text-[9px] truncate max-w-full font-medium ${
-                          isSelected ? "text-white/70" : "text-[#86868B]"
-                        }`}
-                      >
-                        {p.shortRole}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+              <button type="button" onClick={() => setIsCopilotOpen(false)} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#F2F2F7] text-[#6E6E73] transition-colors hover:bg-[#E5E5EA] hover:text-[#1D1D1F]" aria-label="Fechar Copilot"><X size={14} /></button>
             </div>
 
-            {/* 2. CARD DO AUDITOR ATIVO & PARECER DE HOJE */}
-            {(() => {
-              const activeCharId = normalizeCharacterId(selectedPersona);
-              const activeCharMeta = WALLET_CHARACTERS[activeCharId] || WALLET_CHARACTERS["wallet-rubi"];
-              return (
-                <div className="bg-white rounded-[24px] p-4 border border-black/[0.05] shadow-[0_4px_20px_rgba(0,0,0,0.02)] space-y-2.5">
-                  <div className="flex items-start gap-3">
-                    <AgentAvatar
-                      persona={selectedPersona}
-                      state={companionAdvice.avatarState}
-                      size="md"
-                    />
-                    <div className="min-w-0 flex-1 space-y-0.5">
-                      <div className="flex items-center justify-between flex-wrap gap-1">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <span className="text-xs font-bold text-[#1D1D1F] truncate">
-                            {activeCharMeta.name}
-                          </span>
-                          <span className="text-[10px] font-bold px-2 py-0.2 rounded-full bg-[#1D1D1F] text-white">
-                            {activeCharMeta.badgeText}
-                          </span>
-                        </div>
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold">
-                          Teto R$ {formatCurrency(safeSpendMetric.safeDailyAllowance)}/d
-                        </span>
-                      </div>
-                      <p className="text-[10.5px] text-[#86868B] font-medium leading-tight">
-                        {activeCharMeta.role}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Parecer do Auditor Especialista */}
-                  <div className="bg-[#F8F8FA] rounded-2xl p-3 border border-black/[0.04] space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#86868B]">
-                        Parecer de Hoje
-                      </span>
-                      <span className="text-[9.5px] font-mono text-blue-600 font-medium truncate max-w-[190px]">
-                        {activeCharMeta.quantFoundation}
-                      </span>
-                    </div>
-                    <p className="text-xs text-[#1D1D1F] font-semibold leading-snug">
-                      {companionAdvice.headline}
-                    </p>
-                    <p className="text-[11px] text-[#86868B] leading-relaxed">
-                      {companionAdvice.advice}
-                    </p>
-                  </div>
+            {copilotContext && (
+              <div className="mb-3 rounded-[18px] border border-black/[0.05] bg-[linear-gradient(135deg,#F5F5F7,#FFFFFF)] p-3.5 shadow-[0_2px_10px_rgba(0,0,0,0.025)]">
+                <div className="flex items-start gap-3">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[11px] bg-[#1D1D1F] text-white"><Sparkles size={14} /></span>
+                  <div className="min-w-0"><span className="text-[8px] font-semibold uppercase tracking-[0.12em] text-[#86868B]">{copilotContext.eyebrow}</span><strong className="mt-0.5 block text-[11px] font-semibold text-slate-900">{copilotContext.title}</strong>{copilotContext.detail && <p className="mt-0.5 text-[9px] text-[#86868B]">{copilotContext.detail}</p>}</div>
                 </div>
-              );
-            })()}
+              </div>
+            )}
 
-            {/* 3. CARROSSEL DE PROMPTS RÁPIDOS DE AUDITORIA */}
+            {/* ATALHOS DE CONVERSA */}
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
               {quickPrompts.map((prompt, idx) => (
                 <button
@@ -1148,8 +1029,8 @@ export default function AIAnalystPage() {
               ))}
             </div>
 
-            {/* 4. FEED DE CONVERSA ESTILO APPLE MESSAGES */}
-            <div className="bg-white rounded-[28px] border border-black/[0.05] shadow-[0_8px_30px_rgba(0,0,0,0.03)] h-[560px] flex flex-col justify-between overflow-hidden">
+            {/* FEED DE CONVERSA */}
+            <div className="mt-3 flex min-h-0 flex-1 flex-col justify-between overflow-hidden rounded-[24px] border border-black/[0.06] bg-white">
               {/* Header da conversa ativa */}
               <div className="p-3.5 px-4 border-b border-black/[0.05] flex items-center justify-between text-xs">
                 <div className="flex items-center gap-2 min-w-0">
@@ -1194,7 +1075,7 @@ export default function AIAnalystPage() {
                         Como posso ajudar na sua auditoria?
                       </h4>
                       <p className="text-[11px] text-[#86868B]">
-                        Pergunte sobre limites de gastos, planeje cortes ou clique em "Conversar sobre isto" em qualquer indicador ao lado.
+                        Pergunte sobre limites de gastos, planeje cortes ou clique em &ldquo;Conversar sobre isto&rdquo; em qualquer indicador ao lado.
                       </p>
                     </div>
                   </div>
@@ -1360,93 +1241,96 @@ export default function AIAnalystPage() {
                 </button>
               </form>
             </div>
-          </div>
+              </section>
+            </>
+          )}
 
 
           {/* =======================================================
               COLUNA DIREITA: O DOSSIÊ DO AUDITOR (ANÁLISES E AÇÕES)
              ======================================================= */}
-          <div
-            className={`${activeDossierTab === "mindmap" ? "lg:col-span-8" : "lg:col-span-7"} flex flex-col space-y-4 ${
-              mobilePane === "dossier" ? "block" : "hidden lg:flex"
-            }`}
-          >
-            {/* =======================================================
-                BARRA SELETORA DE MODOS DE ANÁLISE INTERATIVA (NOVO)
-               ======================================================= */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 p-1 sm:p-1.5 bg-white/95 backdrop-blur-xl rounded-2xl sm:rounded-[22px] border border-black/[0.06] shadow-xs gap-1">
+          <div className="order-1 flex flex-col space-y-4">
+            {/* QUATRO AMBIENTES DE TRABALHO */}
+            <nav
+              aria-label="Ambientes do Wallet+"
+              className="grid grid-cols-2 gap-2 rounded-[28px] border border-black/[0.06] bg-white p-2 shadow-[0_8px_28px_rgba(0,0,0,0.025)] lg:grid-cols-4"
+            >
               <button
                 type="button"
                 onClick={() => setActiveDossierTab("mindmap")}
-                className={`w-full py-2 px-1.5 sm:px-2 rounded-xl text-[11px] sm:text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
+                className={`group min-h-[86px] rounded-[21px] border p-3 text-left transition-all active:scale-[.98] ${
                   activeDossierTab === "mindmap"
-                    ? "bg-[#1D1D1F] text-white shadow-xs font-bold"
-                    : "text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#F2F2F7]"
+                    ? "border-[#1D1D1F] bg-[#1D1D1F] text-white shadow-lg"
+                    : "border-transparent bg-[#F5F6F3] text-[#1D1D1F] hover:border-black/10 hover:bg-[#EFF2ED]"
                 }`}
               >
-                <Building2 size={14} className={activeDossierTab === "mindmap" ? "text-emerald-400" : ""} />
-                <span className="truncate">Escritório</span>
-                <span className={`hidden md:inline-block text-[9px] px-1.5 py-0.2 rounded-full font-mono ${
-                  activeDossierTab === "mindmap" ? "bg-emerald-500/30 text-emerald-100" : "bg-black/5 text-[#86868B]"
-                }`}>
-                  Equipe
+                <span className="flex items-center justify-between">
+                  <span className={`flex h-8 w-8 items-center justify-center rounded-xl ${activeDossierTab === "mindmap" ? "bg-white/10 text-emerald-300" : "bg-white text-emerald-700 shadow-sm"}`}>
+                    <Building2 size={15} />
+                  </span>
+                  <span className={`font-mono text-[9px] ${activeDossierTab === "mindmap" ? "text-white/45" : "text-[#AEAEB2]"}`}>01</span>
                 </span>
+                <strong className="mt-2 block text-[12px]">Escritório</strong>
+                <span className={`mt-0.5 block text-[9px] ${activeDossierTab === "mindmap" ? "text-white/60" : "text-[#86868B]"}`}>Agentes e análises em andamento</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setActiveDossierTab("calendar")}
-                className={`w-full py-2 px-1.5 sm:px-2 rounded-xl text-[11px] sm:text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
+                className={`group min-h-[86px] rounded-[21px] border p-3 text-left transition-all active:scale-[.98] ${
                   activeDossierTab === "calendar"
-                    ? "bg-[#1D1D1F] text-white shadow-xs font-bold"
-                    : "text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#F2F2F7]"
+                    ? "border-[#1D1D1F] bg-[#1D1D1F] text-white shadow-lg"
+                    : "border-transparent bg-[#F4F7FC] text-[#1D1D1F] hover:border-black/10 hover:bg-[#EDF3FB]"
                 }`}
               >
-                <CalendarDays size={14} className={activeDossierTab === "calendar" ? "text-blue-400" : ""} />
-                <span className="truncate">Calendário</span>
-                <span className={`hidden md:inline-block text-[9px] px-1.5 py-0.2 rounded-full font-mono ${
-                  activeDossierTab === "calendar" ? "bg-blue-500/30 text-blue-200" : "bg-black/5 text-[#86868B]"
-                }`}>
-                  Agenda
+                <span className="flex items-center justify-between">
+                  <span className={`flex h-8 w-8 items-center justify-center rounded-xl ${activeDossierTab === "calendar" ? "bg-white/10 text-blue-300" : "bg-white text-blue-700 shadow-sm"}`}>
+                    <CalendarDays size={15} />
+                  </span>
+                  <span className={`font-mono text-[9px] ${activeDossierTab === "calendar" ? "text-white/45" : "text-[#AEAEB2]"}`}>02</span>
                 </span>
+                <strong className="mt-2 block text-[12px]">Agenda financeira</strong>
+                <span className={`mt-0.5 block text-[9px] ${activeDossierTab === "calendar" ? "text-white/60" : "text-[#86868B]"}`}>Entradas, contas e vencimentos</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setActiveDossierTab("storytelling")}
-                className={`w-full py-2 px-1.5 sm:px-2 rounded-xl text-[11px] sm:text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
+                className={`group min-h-[86px] rounded-[21px] border p-3 text-left transition-all active:scale-[.98] ${
                   activeDossierTab === "storytelling"
-                    ? "bg-[#1D1D1F] text-white shadow-xs font-bold"
-                    : "text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#F2F2F7]"
+                    ? "border-[#1D1D1F] bg-[#1D1D1F] text-white shadow-lg"
+                    : "border-transparent bg-[#FBF5F3] text-[#1D1D1F] hover:border-black/10 hover:bg-[#F9EFEB]"
                 }`}
               >
-                <Flame size={14} className={activeDossierTab === "storytelling" ? "text-rose-400" : ""} />
-                <span className="truncate">Padrões</span>
-                <span className={`hidden md:inline-block text-[9px] px-1.5 py-0.2 rounded-full font-mono ${
-                  activeDossierTab === "storytelling" ? "bg-rose-500/30 text-rose-200" : "bg-black/5 text-[#86868B]"
-                }`}>
-                  Gastos
+                <span className="flex items-center justify-between">
+                  <span className={`flex h-8 w-8 items-center justify-center rounded-xl ${activeDossierTab === "storytelling" ? "bg-white/10 text-rose-300" : "bg-white text-rose-700 shadow-sm"}`}>
+                    <Flame size={15} />
+                  </span>
+                  <span className={`font-mono text-[9px] ${activeDossierTab === "storytelling" ? "text-white/45" : "text-[#AEAEB2]"}`}>03</span>
                 </span>
+                <strong className="mt-2 block text-[12px]">Padrões</strong>
+                <span className={`mt-0.5 block text-[9px] ${activeDossierTab === "storytelling" ? "text-white/60" : "text-[#86868B]"}`}>Hábitos, excessos e oportunidades</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setActiveDossierTab("overview")}
-                className={`w-full py-2 px-1.5 sm:px-2 rounded-xl text-[11px] sm:text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
+                className={`group min-h-[86px] rounded-[21px] border p-3 text-left transition-all active:scale-[.98] ${
                   activeDossierTab === "overview"
-                    ? "bg-[#1D1D1F] text-white shadow-xs font-bold"
-                    : "text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#F2F2F7]"
+                    ? "border-[#1D1D1F] bg-[#1D1D1F] text-white shadow-lg"
+                    : "border-transparent bg-[#F5F4FA] text-[#1D1D1F] hover:border-black/10 hover:bg-[#F0EEF8]"
                 }`}
               >
-                <Shield size={14} className={activeDossierTab === "overview" ? "text-blue-400" : ""} />
-                <span className="truncate">Resumo</span>
-                <span className={`hidden md:inline-block text-[9px] px-1.5 py-0.2 rounded-full font-mono ${
-                  activeDossierTab === "overview" ? "bg-blue-500/30 text-blue-100" : "bg-black/5 text-[#86868B]"
-                }`}>
-                  {currentScore} pts
+                <span className="flex items-center justify-between">
+                  <span className={`flex h-8 w-8 items-center justify-center rounded-xl ${activeDossierTab === "overview" ? "bg-white/10 text-violet-300" : "bg-white text-violet-700 shadow-sm"}`}>
+                    <Shield size={15} />
+                  </span>
+                  <span className={`font-mono text-[9px] ${activeDossierTab === "overview" ? "text-white/45" : "text-[#AEAEB2]"}`}>04</span>
                 </span>
+                <strong className="mt-2 block text-[12px]">Visão geral</strong>
+                <span className={`mt-0.5 block text-[9px] ${activeDossierTab === "overview" ? "text-white/60" : "text-[#86868B]"}`}>Saúde da conta · {currentScore} pontos</span>
               </button>
-            </div>
+            </nav>
 
             {/* ABA 1: ESCRITÓRIO VIVO DOS AGENTES WALLET+ */}
             {activeDossierTab === "mindmap" && (
@@ -1462,8 +1346,8 @@ export default function AIAnalystPage() {
                 onRefresh={runDiagnosis}
                 onDiscussWithAI={(prompt, agentId) => {
                   if (agentId) setSelectedPersona(agentId);
-                  setMobilePane("chat");
-                  handleSendMessage(prompt);
+                  const agentNames: Record<string, string> = { "wallet-rubi": "Rubi · Caixa", "wallet-sol": "Sol · Hábitos", "wallet-nanquim": "Nanquim · Crédito", "wallet-atlos": "Atlos · Metas" };
+                  openCopilotWithContext({ eyebrow: "Escritório Wallet+", title: agentNames[agentId || ""] || "Análise da equipe", detail: "Contexto enviado diretamente pela mesa do agente." }, prompt);
                 }}
               />
             )}
@@ -1479,7 +1363,7 @@ export default function AIAnalystPage() {
                 targetEndMonthBalance={targetEndMonthBalance}
                 monthlyProjection={currentMonthProj}
                 onRealizeItem={realizeRecurringItemNow}
-                onDiscussWithAI={(topic) => handleSendMessage(topic)}
+                onDiscussWithAI={(topic) => openCopilotWithContext({ eyebrow: "Agenda financeira", title: "Entrada, conta ou vencimento selecionado", detail: "Niko recebeu o contexto do calendário." }, topic)}
               />
             )}
 
@@ -1492,10 +1376,13 @@ export default function AIAnalystPage() {
                 safeDailyAllowance={safeSpendMetric.safeDailyAllowance}
                 mainBalance={mainBalance}
                 monthExpense={monthExpense}
-                onDiscussWithAI={(prompt) => handleSendMessage(prompt)}
+                transactions={transactions}
+                onDiscussWithAI={(prompt) => openCopilotWithContext({ eyebrow: "Diagnóstico de hábitos", title: "Padrão de gasto selecionado", detail: "Impacto, transações relacionadas e estratégia de redução." }, prompt)}
                 onOpenSimulator={(params) => {
                   if (params?.description) setSimDescription(params.description);
                   if (params?.amount) setSimAmount(String(params.amount));
+                  setCopilotContext({ eyebrow: "Simulador", title: params?.description || "Impacto de uma nova compra", detail: "A decisão será comparada com sua meta e sua margem real." });
+                  setIsCopilotOpen(true);
                   setIsInlineSimOpen(true);
                 }}
                 onDismissPattern={handleDismissPattern}
@@ -1504,135 +1391,96 @@ export default function AIAnalystPage() {
               />
             )}
 
-            {/* ABA 4: VISÃO GERAL EXECUTIVA TRADICIONAL */}
+            {/* ABA 4: VISÃO GERAL EM BENTO GRID, COM HIERARQUIA APPLE */}
             {activeDossierTab === "overview" && (
-              <div className="space-y-5 animate-in fade-in duration-300">
-                {/* 1. ANEL DE SAÚDE CONTÁBIL & 3 KPIS AUDITADOS */}
-                <FinancialHealthRing
-                  score={currentScore}
-                  healthStatus={diagnosis?.healthStatus}
-                  commitmentRatio={commitmentRatio}
-                  commitmentCeiling={userProfile?.maxCommitmentAlertPercent || 60}
-                  mainBalance={mainBalance}
-                  totalInvoices={totalInvoices}
-                  pendingBills={diagnosis?.cashflowWindow?.currentMonth.pendingBills ?? monthExpense}
-                  targetEndMonthBalance={targetEndMonthBalance}
-                  projectedFreeBalance={diagnosis?.targetAnalysis?.projectedEndMonthBalance ?? effectiveProjectedFree}
-                  safeSpendingMargin={diagnosis?.targetAnalysis?.safeSpendingMargin ?? safeSpendingMargin}
-                  missingAmount={diagnosis?.targetAnalysis?.missingAmount ?? missingAmount}
-                  targetStatus={diagnosis?.targetAnalysis?.status ?? targetStatus}
-                  onUpdateTarget={handleUpdateTarget}
-                  executiveSummary={cleanExecutiveSummary(diagnosis?.executiveSummary)}
-                  onOpenSimulator={() => setIsInlineSimOpen(true)}
-                  onDiscussWithAI={(topic) => {
-                    handleSendMessage(topic);
-                  }}
-                />
+              <div className="grid grid-cols-12 gap-4 animate-in fade-in duration-300">
+                <div className="col-span-12">
+                  <FinancialHealthRing
+                    score={currentScore}
+                    healthStatus={diagnosis?.healthStatus}
+                    commitmentRatio={commitmentRatio}
+                    commitmentCeiling={userProfile?.maxCommitmentAlertPercent || 60}
+                    mainBalance={mainBalance}
+                    totalInvoices={totalInvoices}
+                    pendingBills={diagnosis?.cashflowWindow?.currentMonth.pendingBills ?? monthExpense}
+                    targetEndMonthBalance={targetEndMonthBalance}
+                    projectedFreeBalance={diagnosis?.targetAnalysis?.projectedEndMonthBalance ?? effectiveProjectedFree}
+                    safeSpendingMargin={diagnosis?.targetAnalysis?.safeSpendingMargin ?? safeSpendingMargin}
+                    missingAmount={diagnosis?.targetAnalysis?.missingAmount ?? missingAmount}
+                    targetStatus={diagnosis?.targetAnalysis?.status ?? targetStatus}
+                    onUpdateTarget={handleUpdateTarget}
+                    executiveSummary={cleanExecutiveSummary(diagnosis?.executiveSummary)}
+                    onOpenSimulator={() => { setCopilotContext({ eyebrow: "Simulador", title: "Impacto de uma nova compra", detail: "Use os dados reais da conta para testar a decisão." }); setIsCopilotOpen(true); setIsInlineSimOpen(true); }}
+                    onDiscussWithAI={(topic) => openCopilotWithContext({ eyebrow: "Visão geral", title: "Saúde financeira & meta", detail: `${currentScore} pontos · saldo projetado de R$ ${formatCurrency(effectiveProjectedFree)}` }, topic)}
+                  />
+                </div>
 
-                {/* 2. PRÓXIMOS VENCIMENTOS COM BAIXA DIRETA EM 1 CLIQUE */}
-                <section className="bg-white rounded-[28px] p-5 border border-black/[0.05] shadow-[0_4px_24px_rgba(0,0,0,0.02)] space-y-3.5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <CalendarClock size={16} className="text-[#1D1D1F]" />
-                      <div>
-                        <h3 className="text-sm font-bold text-[#1D1D1F]">
-                          Próximos Vencimentos de Hoje em Diante
-                        </h3>
-                        <p className="text-[11px] text-[#86868B]">
-                          Avisos de contas futuras. Baixe com 1 toque sem sair da tela.
-                        </p>
-                      </div>
-                    </div>
+                <div className="col-span-12 lg:col-span-7">
+                  <CashflowBarChart
+                    currentMonthName={diagnosis?.cashflowWindow?.currentMonth.monthName || "Mês atual"}
+                    currentBalance={diagnosis?.cashflowWindow?.currentMonth.checkingBalance ?? mainBalance}
+                    currentPending={diagnosis?.cashflowWindow?.currentMonth.pendingBills ?? monthExpense}
+                    currentFree={diagnosis?.cashflowWindow?.currentMonth.projectedFreeBalance ?? mainBalance}
+                    nextMonthName={diagnosis?.cashflowWindow?.nextMonth.monthName || "Próximo mês"}
+                    nextIncome={diagnosis?.cashflowWindow?.nextMonth.projectedIncome ?? monthlyIncome}
+                    nextExpenses={diagnosis?.cashflowWindow?.nextMonth.committedExpenses ?? totalInvoices}
+                    nextFree={diagnosis?.cashflowWindow?.nextMonth.projectedFreeBalance ?? (monthlyIncome - totalInvoices)}
+                  />
+                </div>
 
-                    <button
-                      type="button"
-                      onClick={() => setActiveDossierTab("calendar")}
-                      className="px-3 py-1.5 rounded-full bg-[#F2F2F7] hover:bg-[#E5E5EA] text-[#1D1D1F] text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs border border-black/5"
-                    >
-                      <CalendarDays size={13} className="text-blue-600" />
-                      <span>Ver Calendário Completo</span>
-                    </button>
+                <section className="col-span-12 flex min-h-[360px] flex-col rounded-[30px] border border-black/[0.05] bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.03)] lg:col-span-5">
+                  <div className="flex items-start justify-between gap-3 border-b border-black/[0.05] pb-4">
+                    <div className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-[13px] bg-[#F2F2F7] text-[#1D1D1F]"><CalendarClock size={16} /></span><div><h3 className="text-sm font-semibold tracking-tight text-slate-900">Próximos vencimentos</h3><p className="text-[10px] text-[#86868B]">Lembretes e baixas rápidas.</p></div></div>
+                    <button type="button" onClick={() => setActiveDossierTab("calendar")} className="rounded-full p-2 text-blue-600 transition-colors hover:bg-blue-50" title="Abrir agenda completa"><CalendarDays size={14} /></button>
                   </div>
 
                   {upcomingEvents.length === 0 ? (
-                    <div className="p-4 rounded-2xl bg-[#FAFAFC] text-center text-xs text-[#86868B] space-y-1">
-                      <CheckCircle2 size={20} className="mx-auto text-emerald-500" />
-                      <p>Nenhuma conta pendente para os próximos 7 dias. Tudo em dia!</p>
-                    </div>
+                    <div className="flex flex-1 flex-col items-center justify-center text-center text-[11px] text-[#86868B]"><CheckCircle2 size={22} className="mb-2 text-emerald-500" /><p>Nenhuma conta pendente nos próximos dias.</p></div>
                   ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                      {upcomingEvents.slice(0, 4).map((event) => (
-                        <div
-                          key={event.id}
-                          className={`p-3 rounded-2xl border flex items-center justify-between text-xs transition-all ${
-                            event.isUrgent
-                              ? "bg-amber-50/60 border-amber-200/70 text-amber-900"
-                              : "bg-[#FAFAFC] border-black/[0.04] text-[#1D1D1F]"
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            {event.type === "credit_invoice" ? (
-                              <CreditCard size={15} className="shrink-0 text-indigo-600" />
-                            ) : (
-                              <Building2 size={15} className="shrink-0 text-[#86868B]" />
-                            )}
-                            <div className="min-w-0">
-                              <strong className="block font-semibold truncate text-[#1D1D1F]">
-                                {event.title}
-                              </strong>
-                              <span className="text-[10px] text-[#86868B]">
-                                {event.dueDate} ({event.daysRemaining === 0 ? "Vence hoje" : `em ${event.daysRemaining}d`})
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-2 shrink-0">
-                            <strong className="font-mono text-xs font-bold text-[#1D1D1F]">
-                              R$ {formatCurrency(event.amount)}
-                            </strong>
-
-                            {event.id.startsWith("recurring_") && (
-                              <button
-                                type="button"
-                                onClick={() => handlePayUpcomingItem(event.id)}
-                                disabled={payingBillId === event.id}
-                                className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs active:scale-95 disabled:opacity-50"
-                              >
-                                <CheckCircle2 size={11} />
-                                <span>{payingBillId === event.id ? "Baixando..." : "Baixar"}</span>
-                              </button>
-                            )}
-                          </div>
+                    <div className="mt-2 divide-y divide-black/[0.05]">
+                      {upcomingEvents.slice(0, 5).map((event) => (
+                        <div key={event.id} className="group flex items-center gap-3 py-3">
+                          <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-[11px] ${event.isUrgent ? "bg-amber-50 text-amber-700" : "bg-[#F2F2F7] text-indigo-600"}`}>{event.type === "credit_invoice" ? <CreditCard size={14} /> : <Building2 size={14} />}</span>
+                          <div className="min-w-0 flex-1"><strong className="block truncate text-[11px] font-medium text-slate-900">{event.title}</strong><span className="text-[9px] text-[#86868B]">{event.daysRemaining === 0 ? "vence hoje" : `em ${event.daysRemaining}d`} · {event.dueDate}</span></div>
+                          <div className="text-right"><strong className="block text-[11px] font-semibold tabular-nums text-slate-900">R$ {formatCurrency(event.amount)}</strong>{event.id.startsWith("recurring_") && <button type="button" onClick={() => handlePayUpcomingItem(event.id)} disabled={payingBillId === event.id} className="mt-1 text-[9px] font-semibold text-blue-600 opacity-70 transition-opacity hover:opacity-100 disabled:opacity-40">{payingBillId === event.id ? "Baixando…" : "Baixar"}</button>}</div>
                         </div>
                       ))}
                     </div>
                   )}
                 </section>
 
-                {/* 3. FLUXO DE CAIXA & ESPECTRO DE GASTOS */}
-                <CashflowBarChart
-                  currentMonthName={diagnosis?.cashflowWindow?.currentMonth.monthName || "Mês Atual"}
-                  currentBalance={diagnosis?.cashflowWindow?.currentMonth.checkingBalance ?? mainBalance}
-                  currentPending={diagnosis?.cashflowWindow?.currentMonth.pendingBills ?? monthExpense}
-                  currentFree={diagnosis?.cashflowWindow?.currentMonth.projectedFreeBalance ?? mainBalance}
-                  nextMonthName={diagnosis?.cashflowWindow?.nextMonth.monthName || "Próximo Mês"}
-                  nextIncome={diagnosis?.cashflowWindow?.nextMonth.projectedIncome ?? monthlyIncome}
-                  nextExpenses={diagnosis?.cashflowWindow?.nextMonth.committedExpenses ?? totalInvoices}
-                  nextFree={diagnosis?.cashflowWindow?.nextMonth.projectedFreeBalance ?? (monthlyIncome - totalInvoices)}
-                />
-
                 {spectrumCategories.length > 0 && (
-                  <CategorySpectrumBar
-                    categories={spectrumCategories}
-                    selectedCategory={selectedCategoryFilter}
-                    onSelectCategory={setSelectedCategoryFilter}
-                  />
+                  <div className="col-span-12">
+                    <CategorySpectrumBar
+                      categories={spectrumCategories}
+                      selectedCategory={selectedCategoryFilter}
+                      onSelectCategory={setSelectedCategoryFilter}
+                      transactions={transactions}
+                      insights={visibleSpecificAlerts}
+                      onDiscussWithAI={(prompt) => openCopilotWithContext({ eyebrow: "Gastos por categoria", title: selectedCategoryFilter || spectrumCategories[0]?.category || "Categoria", detail: "Lançamentos e concentração de gastos." }, prompt)}
+                    />
+                  </div>
                 )}
               </div>
             )}
           </div>
         </div>
       </div>
+
+      {!isCopilotOpen && (
+        <button
+          type="button"
+          onClick={() => {
+            setCopilotContext(null);
+            setIsCopilotOpen(true);
+          }}
+          className="fixed bottom-5 right-5 z-[90] flex items-center gap-2.5 rounded-full border border-white/70 bg-[#1D1D1F]/95 py-2.5 pl-3 pr-4 text-white shadow-[0_14px_36px_rgba(0,0,0,0.22)] backdrop-blur-xl transition-all hover:-translate-y-0.5 hover:bg-black active:scale-95 sm:bottom-7 sm:right-7"
+          aria-label="Abrir Niko Copilot"
+        >
+          <span className="relative flex h-7 w-7 items-center justify-center rounded-full bg-white/10"><Sparkles size={14} /><span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full border-2 border-[#1D1D1F] bg-emerald-400" /></span>
+          <span className="text-left"><strong className="block text-[10px] font-semibold leading-none">Niko Copilot</strong><span className="mt-1 block text-[8px] text-white/55">Pergunte sobre esta tela</span></span>
+        </button>
+      )}
 
       {/* =========================================================
           MODAIS GLOBAIS INTEGRADOS (SEM SAIR DA TELA UNIFICADA)
@@ -1664,7 +1512,7 @@ export default function AIAnalystPage() {
 
       {/* 2. Drawer de Histórico de Conversas */}
       {isHistoryDrawerOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[160] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
           <div className="w-full max-w-md rounded-[28px] bg-white border border-black/[0.08] shadow-[0_24px_60px_rgba(0,0,0,0.2)] p-5 space-y-4 max-h-[85dvh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-black/[0.06] pb-3">
               <div className="flex items-center gap-2">

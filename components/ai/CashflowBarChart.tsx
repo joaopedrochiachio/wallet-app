@@ -1,13 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import {
-  ArrowDownRight,
-  ArrowUpRight,
-  CalendarRange,
-  CheckCircle2,
-  Rows3,
-} from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, CalendarRange, Rows3 } from "lucide-react";
 
 interface CashflowBarChartProps {
   currentMonthName: string;
@@ -27,11 +21,7 @@ interface CashflowBarChartProps {
 }
 
 function formatCurrency(value: number) {
-  return value.toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-    minimumFractionDigits: 2,
-  });
+  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2 });
 }
 
 export function CashflowBarChart({
@@ -46,243 +36,93 @@ export function CashflowBarChart({
   fortnightData,
 }: CashflowBarChartProps) {
   const [viewMode, setViewMode] = useState<"monthly" | "fortnight">("monthly");
-  const nextMarginPercent =
-    nextIncome > 0 ? Math.round((Math.max(0, nextFree) / nextIncome) * 100) : 0;
-  const currentMarginPercent =
-    currentBalance > 0
-      ? Math.round((Math.max(0, currentFree) / currentBalance) * 100)
-      : 0;
   const freeDelta = nextFree - currentFree;
-  const firstFortnightBills =
-    fortnightData?.firstFortnightBills ?? currentPending * 0.6;
-  const secondFortnightBills =
-    fortnightData?.secondFortnightBills ?? currentPending * 0.4;
+  const firstFortnightBills = fortnightData?.firstFortnightBills ?? currentPending * 0.6;
+  const secondFortnightBills = fortnightData?.secondFortnightBills ?? currentPending * 0.4;
   const firstFortnightIncome = fortnightData?.firstFortnightIncome ?? 0;
   const secondFortnightIncome = fortnightData?.secondFortnightIncome ?? 0;
 
   return (
-    <section className="overflow-hidden rounded-[28px] border border-black/[0.05] bg-white shadow-[0_8px_30px_rgba(0,0,0,0.03)]">
-      <header className="flex flex-col gap-3 border-b border-black/[0.05] px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#1D1D1F] text-white">
-            <Rows3 size={15} />
-          </div>
+    <section className="flex h-full min-h-[360px] flex-col overflow-hidden rounded-[30px] border border-black/[0.05] bg-white shadow-[0_2px_12px_rgba(0,0,0,0.03)]">
+      <header className="flex flex-col gap-3 border-b border-black/[0.05] px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-[13px] bg-[#1D1D1F] text-white"><Rows3 size={16} /></div>
           <div>
-            <h2 className="text-sm font-bold tracking-tight text-[#1D1D1F]">
-              Fluxo de caixa
-            </h2>
-            <p className="text-[11px] text-[#86868B]">
-              O que entrou, o que já está comprometido e o que permanece livre.
-            </p>
+            <h2 className="text-sm font-semibold tracking-tight text-slate-900">Fluxo de caixa</h2>
+            <p className="text-[11px] text-[#86868B]">Comparativo compacto entre o ciclo atual e o próximo.</p>
           </div>
         </div>
-
         <div className="flex self-start rounded-xl bg-[#F2F2F7] p-1 sm:self-auto">
-          <ViewButton active={viewMode === "monthly"} onClick={() => setViewMode("monthly")}>
-            Por mês
-          </ViewButton>
-          <ViewButton active={viewMode === "fortnight"} onClick={() => setViewMode("fortnight")}>
-            Por quinzena
-          </ViewButton>
+          <ViewButton active={viewMode === "monthly"} onClick={() => setViewMode("monthly")}>Mensal</ViewButton>
+          <ViewButton active={viewMode === "fortnight"} onClick={() => setViewMode("fortnight")}>Quinzenas</ViewButton>
         </div>
       </header>
 
       {viewMode === "monthly" ? (
-        <div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[590px] border-collapse text-left">
-              <thead>
-                <tr className="border-b border-black/[0.05] bg-[#FAFAFA]">
-                  <th className="px-5 py-3 text-[9px] font-bold uppercase tracking-[0.08em] text-[#86868B] sm:px-7">
-                    Movimento
-                  </th>
-                  <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-[0.08em] text-[#86868B]">
-                    {currentMonthName} · atual
-                  </th>
-                  <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-[0.08em] text-[#86868B]">
-                    {nextMonthName} · programado
-                  </th>
-                  <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-[0.08em] text-[#86868B]">
-                    Leitura
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <FlowRow
-                  label="Saldo / entradas"
-                  current={currentBalance}
-                  next={nextIncome}
-                  status="Base do período"
-                  tone="blue"
-                />
-                <FlowRow
-                  label="Contas / compromissos"
-                  current={currentPending}
-                  next={nextExpenses}
-                  status={nextExpenses > nextIncome ? "Acima das entradas" : "Dentro das entradas"}
-                  tone="red"
-                />
-                <FlowRow
-                  label="Saldo livre"
-                  current={currentFree}
-                  next={nextFree}
-                  status={freeDelta >= 0 ? "Tendência de melhora" : "Tendência de queda"}
-                  tone={nextFree >= 0 ? "green" : "red"}
-                  strong
-                />
-                <tr>
-                  <td className="px-5 py-3.5 text-[10px] font-semibold text-[#555] sm:px-7">
-                    Margem livre
-                  </td>
-                  <td className="px-4 py-3.5 font-mono text-[10px] text-[#555]">
-                    {currentMarginPercent}%
-                  </td>
-                  <td className="px-4 py-3.5 font-mono text-[10px] font-bold text-emerald-700">
-                    {nextMarginPercent}%
-                  </td>
-                  <td className="px-4 py-3.5 text-[9px] text-[#86868B]">
-                    Percentual disponível após compromissos
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+        <div className="flex flex-1 flex-col p-4 sm:p-5">
+          <div className="grid flex-1 gap-3 sm:grid-cols-2">
+            <MonthPanel title={currentMonthName} eyebrow="Ciclo atual" incomeLabel="Saldo em conta" income={currentBalance} expense={currentPending} free={currentFree} accent="#007AFF" />
+            <MonthPanel title={nextMonthName} eyebrow="Próximo ciclo" incomeLabel="Entradas previstas" income={nextIncome} expense={nextExpenses} free={nextFree} accent="#34C759" />
           </div>
-
-          <div className="flex flex-col gap-2 border-t border-black/[0.05] bg-[#FAFAFA] px-5 py-3.5 text-[10px] sm:flex-row sm:items-center sm:justify-between sm:px-7">
-            <span className="flex items-center gap-2 text-[#555]">
-              {freeDelta >= 0 ? (
-                <ArrowUpRight size={13} className="text-emerald-600" />
-              ) : (
-                <ArrowDownRight size={13} className="text-rose-600" />
-              )}
-              O próximo ciclo varia {formatCurrency(Math.abs(freeDelta))} em relação ao atual.
+          <div className="mt-4 flex items-center justify-between gap-4 rounded-[16px] bg-[#F5F5F7] px-3.5 py-3">
+            <span className="flex items-center gap-2 text-[10px] text-[#555]">
+              {freeDelta >= 0 ? <ArrowUpRight size={14} className="text-emerald-600" /> : <ArrowDownRight size={14} className="text-rose-600" />}
+              O próximo ciclo {freeDelta >= 0 ? "ganha" : "perde"} {formatCurrency(Math.abs(freeDelta))} de margem.
             </span>
-            <span className="font-mono font-bold text-[#1D1D1F]">
-              Saldo previsto: {formatCurrency(nextFree)}
-            </span>
+            <strong className={`whitespace-nowrap text-[11px] font-semibold tabular-nums ${nextFree >= 0 ? "text-emerald-700" : "text-rose-600"}`}>{formatCurrency(nextFree)} livres</strong>
           </div>
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[560px] border-collapse text-left">
-            <thead>
-              <tr className="border-b border-black/[0.05] bg-[#FAFAFA]">
-                {['Período', 'Entradas', 'Contas', 'Saldo do período', 'Situação'].map((label) => (
-                  <th key={label} className="px-5 py-3 text-[9px] font-bold uppercase tracking-[0.08em] text-[#86868B] first:sm:px-7">
-                    {label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              <FortnightRow
-                label="Dias 01 a 15"
-                income={firstFortnightIncome}
-                bills={firstFortnightBills}
-                highlighted={firstFortnightBills >= secondFortnightBills}
-              />
-              <FortnightRow
-                label="Dias 16 ao fim"
-                income={secondFortnightIncome}
-                bills={secondFortnightBills}
-                highlighted={secondFortnightBills > firstFortnightBills}
-              />
-            </tbody>
-          </table>
+        <div className="grid flex-1 gap-3 p-4 sm:grid-cols-2 sm:p-5">
+          <FortnightPanel label="Dias 01 a 15" income={firstFortnightIncome} bills={firstFortnightBills} />
+          <FortnightPanel label="Dias 16 ao fim" income={secondFortnightIncome} bills={secondFortnightBills} />
         </div>
       )}
     </section>
   );
 }
 
-function ViewButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
+function MonthPanel({ title, eyebrow, incomeLabel, income, expense, free, accent }: { title: string; eyebrow: string; incomeLabel: string; income: number; expense: number; free: number; accent: string }) {
+  const base = Math.max(income, expense, 1);
+  const margin = income > 0 ? Math.round((Math.max(0, free) / income) * 100) : 0;
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-lg px-3 py-1.5 text-[10px] font-semibold transition-all ${
-        active ? "bg-white text-[#1D1D1F] shadow-sm" : "text-[#86868B] hover:text-[#1D1D1F]"
-      }`}
-    >
-      {children}
-    </button>
+    <div className="rounded-[22px] border border-black/[0.05] bg-[#FAFAFA] p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div><span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-[#86868B]">{eyebrow}</span><h3 className="mt-0.5 text-sm font-semibold tracking-tight text-slate-900">{title}</h3></div>
+        <span className="rounded-full bg-white px-2 py-1 text-[9px] font-semibold tabular-nums text-[#6E6E73] shadow-sm">{margin}% livre</span>
+      </div>
+      <div className="mt-5 space-y-3">
+        <MetricLine label={incomeLabel} value={income} width={(income / base) * 100} color={accent} />
+        <MetricLine label="Compromissos" value={expense} width={(expense / base) * 100} color="#FF3B30" />
+      </div>
+      <div className="mt-5 border-t border-black/[0.05] pt-3">
+        <span className="text-[9px] font-semibold uppercase tracking-[0.1em] text-[#86868B]">Saldo livre</span>
+        <strong className={`mt-1 block text-xl font-semibold tracking-tight tabular-nums ${free >= 0 ? "text-emerald-700" : "text-rose-600"}`}>{formatCurrency(free)}</strong>
+      </div>
+    </div>
   );
 }
 
-function FlowRow({
-  label,
-  current,
-  next,
-  status,
-  tone,
-  strong = false,
-}: {
-  label: string;
-  current: number;
-  next: number;
-  status: string;
-  tone: "blue" | "red" | "green";
-  strong?: boolean;
-}) {
-  const color =
-    tone === "blue" ? "text-blue-700" : tone === "red" ? "text-rose-600" : "text-emerald-700";
-
+function MetricLine({ label, value, width, color }: { label: string; value: number; width: number; color: string }) {
   return (
-    <tr className="border-b border-black/[0.045] last:border-b-0 hover:bg-[#FAFAFA]">
-      <td className={`px-5 py-3.5 text-[10px] text-[#1D1D1F] sm:px-7 ${strong ? "font-bold" : "font-semibold"}`}>
-        {label}
-      </td>
-      <td className={`px-4 py-3.5 font-mono text-[10px] ${color} ${strong ? "font-bold" : ""}`}>
-        {formatCurrency(current)}
-      </td>
-      <td className={`px-4 py-3.5 font-mono text-[10px] ${color} font-bold`}>
-        {formatCurrency(next)}
-      </td>
-      <td className="px-4 py-3.5">
-        <span className="rounded-full bg-[#F2F2F7] px-2 py-1 text-[8.5px] font-semibold text-[#6E6E73]">
-          {status}
-        </span>
-      </td>
-    </tr>
+    <div>
+      <div className="mb-1.5 flex items-center justify-between gap-2"><span className="text-[10px] text-[#6E6E73]">{label}</span><strong className="text-[10px] font-semibold tabular-nums text-slate-900">{formatCurrency(value)}</strong></div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-black/[0.05]"><div className="h-full rounded-full transition-all duration-700" style={{ width: `${Math.min(100, Math.max(2, width))}%`, backgroundColor: color }} /></div>
+    </div>
   );
 }
 
-function FortnightRow({
-  label,
-  income,
-  bills,
-  highlighted,
-}: {
-  label: string;
-  income: number;
-  bills: number;
-  highlighted: boolean;
-}) {
+function FortnightPanel({ label, income, bills }: { label: string; income: number; bills: number }) {
   const balance = income - bills;
-
   return (
-    <tr className="border-b border-black/[0.045] last:border-b-0">
-      <td className="px-5 py-4 text-[10px] font-bold text-[#1D1D1F] first:sm:px-7">
-        <span className="flex items-center gap-2"><CalendarRange size={12} />{label}</span>
-      </td>
-      <td className="px-5 py-4 font-mono text-[10px] text-blue-700">{formatCurrency(income)}</td>
-      <td className="px-5 py-4 font-mono text-[10px] text-rose-600">{formatCurrency(bills)}</td>
-      <td className={`px-5 py-4 font-mono text-[10px] font-bold ${balance >= 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
-        {formatCurrency(balance)}
-      </td>
-      <td className="px-5 py-4">
-        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[8.5px] font-semibold ${highlighted ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
-          {highlighted ? 'Maior concentração' : <><CheckCircle2 size={9} /> Menor pressão</>}
-        </span>
-      </td>
-    </tr>
+    <div className="rounded-[22px] border border-black/[0.05] bg-[#FAFAFA] p-4">
+      <div className="flex items-center gap-2 text-[11px] font-semibold text-slate-900"><CalendarRange size={14} />{label}</div>
+      <div className="mt-5 space-y-3"><MetricLine label="Entradas" value={income} width={income > 0 ? 100 : 2} color="#007AFF" /><MetricLine label="Contas" value={bills} width={bills > 0 ? 100 : 2} color="#FF3B30" /></div>
+      <div className="mt-5 border-t border-black/[0.05] pt-3"><span className="text-[9px] uppercase tracking-[0.1em] text-[#86868B]">Saldo da quinzena</span><strong className={`mt-1 block text-lg font-semibold tabular-nums ${balance >= 0 ? "text-emerald-700" : "text-rose-600"}`}>{formatCurrency(balance)}</strong></div>
+    </div>
   );
+}
+
+function ViewButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return <button type="button" onClick={onClick} className={`rounded-lg px-3 py-1.5 text-[10px] font-semibold transition-all ${active ? "bg-white text-[#1D1D1F] shadow-sm" : "text-[#86868B] hover:text-[#1D1D1F]"}`}>{children}</button>;
 }
