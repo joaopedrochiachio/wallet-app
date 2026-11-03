@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useWallet } from "@/context/WalletContext";
 import { AddTransactionSheet } from "@/components/ui/AddTransactionSheet";
 import { AddCardSheet } from "@/components/ui/AddCardSheet";
+import { StatementImportModal } from "@/components/import/StatementImportModal";
 import { ListGroup, ListItem } from "@/components/ui/iOSList";
 import {
   CardStack,
@@ -30,6 +31,7 @@ import {
 import Link from "next/link";
 import { formatAccountLabel } from "@/lib/utils/ledger";
 import { DailyBriefingCard } from "@/components/companion/DailyBriefingCard";
+import { GettingStartedChecklist } from "@/components/tutorial/AppTutorialGuide";
 
 export default function DashboardPage() {
   const {
@@ -50,6 +52,7 @@ export default function DashboardPage() {
 
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [isCardSheetOpen, setIsCardSheetOpen] = useState(false);
+  const [isStatementModalOpen, setIsStatementModalOpen] = useState(false);
 
   // Modo de visualização: Pilha 3D fluida vs Grade organizada
   const [is3DStackView, setIs3DStackView] = useState<boolean>(true);
@@ -113,10 +116,18 @@ export default function DashboardPage() {
       <WalletHeader
         onOpenNewTransaction={() => setIsSheetOpen(true)}
         onAddNewCard={() => setIsCardSheetOpen(true)}
+        onImportStatement={() => setIsStatementModalOpen(true)}
         cardsCount={userWalletCards.length}
       />
 
       <div className="max-w-4xl mx-auto space-y-8">
+        {/* GUIA PASSO A PASSO DIRETO PARA CONFIGURAR E USAR O APP */}
+        <GettingStartedChecklist
+          onOpenStatementImport={() => setIsStatementModalOpen(true)}
+          onOpenNewCard={() => setIsCardSheetOpen(true)}
+          onOpenNewTransaction={() => setIsSheetOpen(true)}
+        />
+
         {/* 0. PAINEL DO DIA & APOIO FINANCEIRO PROATIVO (WALLET COMPANION) */}
         <DailyBriefingCard />
 
@@ -492,6 +503,12 @@ export default function DashboardPage() {
         isOpen={isCardSheetOpen}
         onClose={() => setIsCardSheetOpen(false)}
         onAddCard={addCard}
+      />
+
+      {/* Modal de Importação de Extrato Bancário PDF */}
+      <StatementImportModal
+        isOpen={isStatementModalOpen}
+        onClose={() => setIsStatementModalOpen(false)}
       />
     </div>
   );

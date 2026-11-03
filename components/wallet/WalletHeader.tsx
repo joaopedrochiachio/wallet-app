@@ -1,18 +1,20 @@
 "use client";
 
 import React from "react";
-import { Plus } from "lucide-react";
+import { Plus, FileText } from "lucide-react";
 import { WalletLogo } from "@/components/ui/WalletLogo";
 
 interface WalletHeaderProps {
   onOpenNewTransaction?: () => void;
   onAddNewCard?: () => void;
+  onImportStatement?: () => void;
   cardsCount: number;
 }
 
 export function WalletHeader({
   onOpenNewTransaction,
   onAddNewCard,
+  onImportStatement,
   cardsCount,
 }: WalletHeaderProps) {
   return (
@@ -43,7 +45,20 @@ export function WalletHeader({
       </div>
 
       {/* Ações Rápidas Integradas no Cabeçalho */}
-      <div className="flex items-center gap-2 self-start sm:self-auto">
+      <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+        {onImportStatement && (
+          <button
+            type="button"
+            onClick={onImportStatement}
+            className="h-9 px-3.5 rounded-full bg-white hover:bg-black/[0.04] active:scale-[0.98] text-[#1D1D1F] text-xs font-semibold border border-black/[0.08] transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+            title="Importar extrato ou fatura do banco em PDF"
+            data-testid="header-import-statement-btn"
+          >
+            <FileText size={13} strokeWidth={2} className="text-[#1D1D1F]" />
+            <span>Importar Extrato PDF</span>
+          </button>
+        )}
+
         {onAddNewCard && (
           <button
             type="button"

@@ -5,6 +5,7 @@ import { useWallet } from "@/context/WalletContext";
 import { AgentAvatar } from "./AgentAvatar";
 import { QuickCaptureModal } from "./QuickCaptureModal";
 import { PurchaseSimulatorModal } from "./PurchaseSimulatorModal";
+import { InteractiveAppTourModal } from "@/components/tutorial/AppTutorialGuide";
 import {
   Sparkles,
   Plus,
@@ -13,6 +14,7 @@ import {
   X,
   Compass,
   Zap,
+  BookOpen,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -21,6 +23,7 @@ export function FloatingCompanionDock() {
   const [isOpen, setIsOpen] = useState(false);
   const [isQuickCaptureOpen, setIsQuickCaptureOpen] = useState(false);
   const [isSimulatorOpen, setIsSimulatorOpen] = useState(false);
+  const [isTourOpen, setIsTourOpen] = useState(false);
 
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -101,6 +104,24 @@ export function FloatingCompanionDock() {
                 <span className="text-[10px] text-[#86868B] font-normal">Wallet+ Consultor</span>
               </div>
             </Link>
+
+            {/* Ação 4: Tutorial Passo a Passo */}
+            <button
+              type="button"
+              onClick={() => {
+                setIsOpen(false);
+                setIsTourOpen(true);
+              }}
+              className="w-full text-left px-3 py-2 rounded-xl hover:bg-[#F2F2F7] text-[#1D1D1F] text-xs font-semibold flex items-center gap-2.5 transition-colors cursor-pointer"
+            >
+              <div className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                <BookOpen size={14} />
+              </div>
+              <div className="flex flex-col">
+                <span>Como Usar o App</span>
+                <span className="text-[10px] text-[#86868B] font-normal">Tutorial passo a passo</span>
+              </div>
+            </button>
           </div>
         )}
 
@@ -136,6 +157,10 @@ export function FloatingCompanionDock() {
       <PurchaseSimulatorModal
         isOpen={isSimulatorOpen}
         onClose={() => setIsSimulatorOpen(false)}
+      />
+      <InteractiveAppTourModal
+        isOpen={isTourOpen}
+        onClose={() => setIsTourOpen(false)}
       />
     </>
   );

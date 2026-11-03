@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -13,6 +13,7 @@ import {
   User,
   Sparkles,
   Compass,
+  BookOpen,
 } from "lucide-react";
 import { WalletProvider } from "@/context/WalletContext";
 import { AuthProvider } from "@/context/AuthContext";
@@ -20,9 +21,14 @@ import { AuthRouteGuard } from "@/components/auth/AuthRouteGuard";
 import { WalletLogo } from "@/components/ui/WalletLogo";
 import { DynamicIsland } from "@/components/companion/DynamicIsland";
 import { FloatingCompanionDock } from "@/components/companion/FloatingCompanionDock";
+import {
+  ContextualPageTutorialBar,
+  InteractiveAppTourModal,
+} from "@/components/tutorial/AppTutorialGuide";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const [isTourOpen, setIsTourOpen] = useState(false);
   const isStandalonePage =
     pathname === "/" || pathname === "/login" || pathname === "/onboarding";
 
@@ -85,7 +91,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   />
                 </nav>
 
-                <div className="mt-auto space-y-1.5 pt-4 border-t border-gray-200/60">
+                <div className="mt-auto space-y-2 pt-4 border-t border-gray-200/60">
+                  <button
+                    type="button"
+                    onClick={() => setIsTourOpen(true)}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-[#1D1D1F] bg-[#F2F2F7] hover:bg-[#E5E5EA] transition-all cursor-pointer"
+                  >
+                    <BookOpen size={16} strokeWidth={1.6} className="text-amber-600 shrink-0" />
+                    <span>Como Usar (Passo a Passo)</span>
+                  </button>
+
                   <Link
                     href="/ai"
                     className={`group relative overflow-hidden flex items-center justify-between px-3.5 py-3 rounded-2xl transition-all duration-200 ${
@@ -131,10 +146,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 {/* ILHA INTERATIVA WALLET (Top Dynamic Island) */}
                 <DynamicIsland />
 
+                {/* BARRA DE TUTORIAL DIRETO POR TELA */}
+                <ContextualPageTutorialBar />
+
                 {children}
 
                 {/* ATALHO TOUCH FLUTUANTE WALLET */}
                 <FloatingCompanionDock />
+
+                {/* MODAL GLOBAL DO TUTORIAL PASSO A PASSO */}
+                <InteractiveAppTourModal
+                  isOpen={isTourOpen}
+                  onClose={() => setIsTourOpen(false)}
+                />
               </main>
 
               {/* BOTTOM BAR (Mobile) */}
