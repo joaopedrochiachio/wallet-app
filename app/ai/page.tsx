@@ -52,7 +52,19 @@ import {
   getBestCardToSpendToday,
 } from "@/lib/services/dailyCompanionService";
 import { FinancialDiagnosis, SpecificExpenseAlert } from "@/app/api/ai/analyze/route";
-import { PurchaseSimulationResult } from "@/lib/services/financialContextService";
+import { safeParseFinancialDiagnosis } from "@/lib/services/financialDiagnosisService";
+import {
+  synthesizeFinancialTelemetry,
+  createSafeFinancialContext,
+  simulatePurchaseImpact,
+  PurchaseSimulationInput,
+  PurchaseSimulationResult,
+} from "@/lib/services/financialContextService";
+import {
+  generateDeterministicAuditDossier,
+  generateDeterministicAnalystChatReply,
+} from "@/lib/services/agentManagerService";
+import { auth } from "@/lib/firebase";
 import {
   ChatSession,
   loadChatSessions,
@@ -284,30 +296,45 @@ export default function AIAnalystPage() {
         };
       });
 
-      const idToken = user ? await user.getIdToken() : "";
-      const res = await fetch("/api/ai/analyze", {
+      const activeUser = auth.currentUser || user;
+      let idToken = activeUser ? await activeUser.getIdToken() : "";
+      const requestBody = JSON.stringify({
+        userProfile: {
+          ...userProfile,
+          persona: selectedPersona,
+        },
+        cards,
+        transactions,
+        recurringItems,
+        goals,
+        mainBalance,
+        monthIncome,
+        monthExpense,
+        monthlyProjections,
+        dismissedPatterns,
+        targetEndMonthBalance,
+      });
+
+      let res = await fetch("/api/ai/analyze", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
         },
-        body: JSON.stringify({
-          userProfile: {
-            ...userProfile,
-            persona: selectedPersona,
-          },
-          cards,
-          transactions,
-          recurringItems,
-          goals,
-          mainBalance,
-          monthIncome,
-          monthExpense,
-          monthlyProjections,
-          dismissedPatterns,
-          targetEndMonthBalance,
-        }),
+        body: requestBody,
       });
+
+      if (res.status === 401 && activeUser) {
+        idToken = await activeUser.getIdToken(true);
+        res = await fetch("/api/ai/analyze", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+          },
+          body: requestBody,
+        });
+      }
 
       const resText = await res.text();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -318,18 +345,7 @@ export default function AIAnalystPage() {
         data = null;
       }
 
-      if (!res.ok) {
-        const errorMsg =
-          data?.error ||
-          (res.status === 408 || res.status === 504
-            ? "Tempo limite esgotado no servidor. Tente novamente."
-            : res.status === 500
-              ? "Erro no servidor (500). Verifique as variáveis de ambiente."
-              : `Erro ao gerar diagnóstico (${res.status}).`);
-        throw new Error(errorMsg);
-      }
-
-      if (data && data.success && data.diagnosis) {
+      if (res.ok && data && data.success && data.diagnosis) {
         const timestamp = new Date().toISOString();
         setDiagnosis(data.diagnosis);
         setLastAnalyzedAt(timestamp);
@@ -351,11 +367,82 @@ export default function AIAnalystPage() {
           window.localStorage.removeItem("wallet_ai_pending_persona");
         }
       } else {
-        throw new Error(data?.error || "Não foi possível carregar a análise no momento.");
+        // Fallback local imediato para que o diagnóstico sempre funcione em produção
+        const telemetry = synthesizeFinancialTelemetry({
+          userProfile: { ...userProfile, persona: selectedPersona as typeof userProfile.persona },
+          cards,
+          transactions,
+          recurringItems,
+          goals,
+          mainBalance,
+          monthIncome,
+          monthExpense,
+          monthlyProjections,
+          targetEndMonthBalance,
+        });
+        const safeContext = createSafeFinancialContext(telemetry);
+        const localDiagnosis = safeParseFinancialDiagnosis("", safeContext, dismissedPatterns);
+        const timestamp = new Date().toISOString();
+        setDiagnosis(localDiagnosis);
+        setLastAnalyzedAt(timestamp);
+        setAnalysisModel("motor-contabil-local");
+
+        await savePersistentDiagnosis(
+          localDiagnosis,
+          {
+            timestamp,
+            modelUsed: "motor-contabil-local",
+            persona: selectedPersona,
+            aiTone: userProfile.aiTone || "analytical",
+          },
+          user?.uid
+        );
       }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Erro ao conectar com o assistente.";
-      setAnalysisError(msg);
+    } catch {
+      // Fallback local imediato em caso de erro de rede/timeout
+      const monthlyProjections = [0, 1, 2, 3, 4, 5].map((idx) => {
+        const p = getMonthlyProjection(idx);
+        return {
+          monthName: p.monthName,
+          year: p.year,
+          openingBalance: p.openingBalance,
+          plannedIncomesTotal: p.plannedIncomesTotal,
+          recurringDebitTotal: p.recurringDebitTotal,
+          recurringCreditTotal: p.recurringCreditTotal,
+          cardInstallments: p.cardInstallments,
+          totalCommitted: p.totalCommitted,
+          projectedFreeBalance: p.projectedFreeBalance,
+          monthNetSurplus: p.monthNetSurplus,
+        };
+      });
+      const telemetry = synthesizeFinancialTelemetry({
+        userProfile: { ...userProfile, persona: selectedPersona as typeof userProfile.persona },
+        cards,
+        transactions,
+        recurringItems,
+        goals,
+        mainBalance,
+        monthIncome,
+        monthExpense,
+        monthlyProjections,
+        targetEndMonthBalance,
+      });
+      const safeContext = createSafeFinancialContext(telemetry);
+      const localDiagnosis = safeParseFinancialDiagnosis("", safeContext, dismissedPatterns);
+      const timestamp = new Date().toISOString();
+      setDiagnosis(localDiagnosis);
+      setLastAnalyzedAt(timestamp);
+      setAnalysisModel("motor-contabil-local");
+      await savePersistentDiagnosis(
+        localDiagnosis,
+        {
+          timestamp,
+          modelUsed: "motor-contabil-local",
+          persona: selectedPersona,
+          aiTone: userProfile.aiTone || "analytical",
+        },
+        user?.uid
+      );
     } finally {
       setIsAnalyzing(false);
     }
@@ -576,32 +663,47 @@ export default function AIAnalystPage() {
         };
       });
 
-      const idToken = user ? await user.getIdToken() : "";
-      const res = await fetch("/api/ai/chat", {
+      const activeUser = auth.currentUser || user;
+      let idToken = activeUser ? await activeUser.getIdToken() : "";
+      const requestBody = JSON.stringify({
+        messages: currentMsgs.map((m) => ({ role: m.role, content: m.content })),
+        userMessage: text,
+        simulation: simulationPayload,
+        userProfile: {
+          ...userProfile,
+          persona: selectedPersona,
+        },
+        cards,
+        transactions,
+        recurringItems,
+        goals,
+        mainBalance,
+        monthIncome,
+        monthExpense,
+        monthlyProjections,
+        targetEndMonthBalance,
+      });
+
+      let res = await fetch("/api/ai/chat", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
         },
-        body: JSON.stringify({
-          messages: currentMsgs.map((m) => ({ role: m.role, content: m.content })),
-          userMessage: text,
-          simulation: simulationPayload,
-          userProfile: {
-            ...userProfile,
-            persona: selectedPersona,
-          },
-          cards,
-          transactions,
-          recurringItems,
-          goals,
-          mainBalance,
-          monthIncome,
-          monthExpense,
-          monthlyProjections,
-          targetEndMonthBalance,
-        }),
+        body: requestBody,
       });
+
+      if (res.status === 401 && activeUser) {
+        idToken = await activeUser.getIdToken(true);
+        res = await fetch("/api/ai/chat", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+          },
+          body: requestBody,
+        });
+      }
 
       const resText = await res.text();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -612,11 +714,7 @@ export default function AIAnalystPage() {
         data = null;
       }
 
-      if (!res.ok) {
-        throw new Error(data?.error || `Erro de comunicação com o auditor (${res.status}).`);
-      }
-
-      if (data && data.success && data.message) {
+      if (res.ok && data && data.success && data.message) {
         const assistantMsg: ChatMessage = {
           id: globalThis.crypto.randomUUID(),
           role: "assistant",
@@ -643,22 +741,77 @@ export default function AIAnalystPage() {
         setSessions(finalSessionsList);
         void saveChatSessions(finalSessionsList, user?.uid);
       } else {
-        throw new Error(data?.error || "O auditor não conseguiu processar a resposta.");
+        throw new Error(data?.error || "Fallback local acionado");
       }
-    } catch (err: unknown) {
-      const errorMsg: ChatMessage = {
+    } catch {
+      const monthlyProjections = [0, 1, 2, 3, 4, 5].map((idx) => {
+        const p = getMonthlyProjection(idx);
+        return {
+          monthName: p.monthName,
+          year: p.year,
+          openingBalance: p.openingBalance,
+          plannedIncomesTotal: p.plannedIncomesTotal,
+          recurringDebitTotal: p.recurringDebitTotal,
+          recurringCreditTotal: p.recurringCreditTotal,
+          cardInstallments: p.cardInstallments,
+          totalCommitted: p.totalCommitted,
+          projectedFreeBalance: p.projectedFreeBalance,
+          monthNetSurplus: p.monthNetSurplus,
+        };
+      });
+      const telemetry = synthesizeFinancialTelemetry({
+        userProfile: { ...userProfile, persona: selectedPersona as typeof userProfile.persona },
+        cards,
+        transactions,
+        recurringItems,
+        goals,
+        mainBalance,
+        monthIncome,
+        monthExpense,
+        monthlyProjections,
+        targetEndMonthBalance,
+      });
+      const safeContext = createSafeFinancialContext(telemetry);
+      const localSim =
+        simulationPayload && typeof (simulationPayload as { amount?: number }).amount === "number"
+          ? simulatePurchaseImpact(simulationPayload as PurchaseSimulationInput, telemetry, cards)
+          : null;
+      const auditDossier = generateDeterministicAuditDossier({
+        context: safeContext,
+        userMessage: text,
+      });
+      const fallbackReply = generateDeterministicAnalystChatReply({
+        context: safeContext,
+        auditDossier,
+        userMessage: text,
+        simulationResult: localSim,
+      });
+
+      const assistantMsg: ChatMessage = {
         id: globalThis.crypto.randomUUID(),
         role: "assistant",
-        content: `Dificuldade temporária na auditoria: ${
-          err instanceof Error ? err.message : "Tente novamente em instantes"
-        }.`,
+        content: fallbackReply,
         timestamp: new Date().toLocaleTimeString("pt-BR", {
           hour: "2-digit",
           minute: "2-digit",
         }),
+        modelUsed: "motor-contabil-local",
+        simulationResult: localSim,
       };
-      const finalMessages = [...newMessages, errorMsg];
+      const finalMessages = [...newMessages, assistantMsg];
       setMessages(finalMessages);
+
+      const finalSession: ChatSession = {
+        ...updatedSession,
+        updatedAt: new Date().toISOString(),
+        messages: finalMessages,
+      };
+      const finalSessionsList = [
+        finalSession,
+        ...sessions.filter((s) => s.id !== currentId),
+      ];
+      setSessions(finalSessionsList);
+      void saveChatSessions(finalSessionsList, user?.uid);
     } finally {
       setIsSending(false);
     }

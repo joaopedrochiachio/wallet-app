@@ -37,7 +37,7 @@ export interface TransactionContextItem {
   date: string;
   occurredAt?: string | number | Date | null;
   createdAt?: string | number | Date | null;
-  kind?: "regular" | "invoice_payment" | "invoice_settlement";
+  kind?: "regular" | "invoice_payment" | "invoice_settlement" | "balance_reconciliation";
 }
 
 export interface CategorySummary {

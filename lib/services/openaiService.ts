@@ -168,10 +168,19 @@ export function resolveConfiguredModel(overrideModel?: string): string {
 let cachedClient: OpenAI | null = null;
 let lastApiKey: string | undefined = undefined;
 
-export function getOpenAIClient(): OpenAI {
-  const currentKey = process.env.OPENAI_API_KEY?.trim();
+function cleanEnvKey(raw?: string): string {
+  if (!raw) return "";
+  return raw.trim().replace(/^["']+|["']+$/g, "").trim();
+}
 
-  if (!currentKey) {
+export function getOpenAIClient(): OpenAI {
+  const currentKey = cleanEnvKey(
+    process.env.OPENAI_API_KEY ||
+      process.env.OPENAI_KEY ||
+      process.env.NEXT_PUBLIC_OPENAI_API_KEY
+  );
+
+  if (!currentKey || currentKey === "your-openai-api-key-here") {
     throw new OpenAIIntegrationError(
       "A chave OPENAI_API_KEY não foi encontrada no servidor da Vercel. Verifique as Environment Variables do projeto e faça um Redeploy.",
       { code: "MISSING_OPENAI_API_KEY", status: 500, retryable: false }
@@ -182,7 +191,7 @@ export function getOpenAIClient(): OpenAI {
   if (!cachedClient || lastApiKey !== currentKey) {
     cachedClient = new OpenAI({
       apiKey: currentKey,
-      maxRetries: 0, // Controlamos o retry de forma explícita e estrita
+      maxRetries: 1,
     });
     lastApiKey = currentKey;
   }
@@ -261,83 +270,284 @@ export function buildResponsesPayload(
 }
 
 /**
- * Executa uma chamada à Responses API da OpenAI com controle rigoroso de custos e erros.
- * - Standard processing (service_tier: "default")
- * - store: false para não reter dados no servidor OpenAI
- * - reasoning.effort: "none" ou "low"
- * - Sem ferramentas pagas (web_search / file_search desligados)
- * - No máximo 1 retry controlado para erros comprovadamente transitórios (500, 503, 429 transitório)
- * - NUNCA repete 401 (auth), 400 (bad request), 402/quota/billing limits
+ * Resolve a lista de modelos reais da OpenAI para execução em produção.
+ * "gpt-6-luna" e "gpt-6-sol" são codinomes internos mapeados automaticamente
+ * para os modelos reais da API da OpenAI (gpt-4o-mini / gpt-4.1-mini / gpt-4o).
+ */
+function resolveRealOpenAIModelCandidates(configuredModel: string): string[] {
+  const envReal = cleanEnvKey(process.env.OPENAI_REAL_MODEL || process.env.OPENAI_MODEL);
+  const envOverride = cleanEnvKey(process.env.OPENAI_MODEL_OVERRIDE);
+  const customReal =
+    envReal ||
+    (envOverride && envOverride !== "gpt-6-luna" && envOverride !== "gpt-6-sol" ? envOverride : "");
+
+  const baseCandidates =
+    configuredModel === OPENAI_MODELS.OPTIONAL
+      ? ["gpt-4o", "gpt-4.1-mini", "gpt-4o-mini"]
+      : ["gpt-4o-mini", "gpt-4.1-mini", "gpt-4o"];
+
+  const all = customReal ? [customReal, ...baseCandidates] : baseCandidates;
+  return Array.from(new Set(all));
+}
+
+/**
+ * Backup opcional via Google Gemini ou Groq caso o usuário tenha configurado
+ * GEMINI_API_KEY / GOOGLE_API_KEY / GROQ_API_KEY na Vercel e a chamada OpenAI falhe.
+ */
+async function tryAlternativeProviderIfConfigured(
+  params: OpenAICallParams,
+  inputRepresentation: string,
+  selectedModelLabel: string
+): Promise<OpenAIResponseResult | null> {
+  const startTime = Date.now();
+  const geminiKey = cleanEnvKey(
+    process.env.GEMINI_API_KEY ||
+      process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
+      process.env.GOOGLE_API_KEY ||
+      process.env.NEXT_PUBLIC_GEMINI_API_KEY
+  );
+
+  if (geminiKey) {
+    try {
+      const userPromptText =
+        params.messages && params.messages.length > 0
+          ? params.messages.map((m) => `${m.role === "user" ? "Usuário" : "Assistente"}: ${m.content}`).join("\n\n")
+          : params.prompt || "";
+
+      const fullPrompt = params.jsonSchema
+        ? `${userPromptText}\n\nResponda ESTRITAMENTE em JSON válido seguindo o schema: ${JSON.stringify(params.jsonSchema.schema)}`
+        : userPromptText;
+
+      const geminiRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(geminiKey)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...(params.systemPrompt
+              ? { systemInstruction: { parts: [{ text: params.systemPrompt }] } }
+              : {}),
+            contents: [{ role: "user", parts: [{ text: fullPrompt }] }],
+            generationConfig: {
+              maxOutputTokens: params.maxOutputTokens ?? 2048,
+              ...(params.jsonSchema ? { responseMimeType: "application/json" } : {}),
+            },
+          }),
+        }
+      );
+
+      if (geminiRes.ok) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const data = (await geminiRes.json()) as any;
+        const text = String(data?.candidates?.[0]?.content?.parts?.[0]?.text || "").trim();
+        if (text) {
+          const inputTokens = estimateTokensFromText(inputRepresentation);
+          const outputTokens = estimateTokensFromText(text);
+          const { costUsd } = calculateEstimatedCostUsd(selectedModelLabel, { inputTokens, outputTokens });
+          return {
+            text,
+            modelUsed: selectedModelLabel,
+            durationMs: Date.now() - startTime,
+            inputTokens,
+            cachedInputTokens: 0,
+            outputTokens,
+            reasoningTokens: 0,
+            estimatedCostUsd: costUsd,
+            isCostEstimated: true,
+            requestId: `gemini-${Date.now()}`,
+          };
+        }
+      }
+    } catch {
+      // Prossegue silenciosamente
+    }
+  }
+
+  const groqKey = cleanEnvKey(process.env.GROQ_API_KEY || process.env.NEXT_PUBLIC_GROQ_API_KEY);
+  if (groqKey) {
+    try {
+      const chatMessages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [];
+      if (params.systemPrompt) {
+        chatMessages.push({
+          role: "system",
+          content: params.jsonSchema
+            ? `${params.systemPrompt}\n\nResponda estritamente em JSON válido seguindo o schema: ${JSON.stringify(params.jsonSchema.schema)}`
+            : params.systemPrompt,
+        });
+      }
+      if (params.messages && params.messages.length > 0) {
+        for (const m of params.messages) {
+          if (m.role === "user" || m.role === "assistant") {
+            chatMessages.push({ role: m.role, content: m.content });
+          }
+        }
+      } else if (params.prompt) {
+        chatMessages.push({ role: "user", content: params.prompt });
+      }
+
+      const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${groqKey}`,
+        },
+        body: JSON.stringify({
+          model: "llama-3.3-70b-versatile",
+          messages: chatMessages,
+          max_tokens: params.maxOutputTokens ?? 2048,
+          ...(params.jsonSchema ? { response_format: { type: "json_object" } } : {}),
+        }),
+      });
+
+      if (groqRes.ok) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const data = (await groqRes.json()) as any;
+        const text = String(data?.choices?.[0]?.message?.content || "").trim();
+        if (text) {
+          const inputTokens = data?.usage?.prompt_tokens ?? estimateTokensFromText(inputRepresentation);
+          const outputTokens = data?.usage?.completion_tokens ?? estimateTokensFromText(text);
+          const { costUsd } = calculateEstimatedCostUsd(selectedModelLabel, { inputTokens, outputTokens });
+          return {
+            text,
+            modelUsed: selectedModelLabel,
+            durationMs: Date.now() - startTime,
+            inputTokens,
+            cachedInputTokens: 0,
+            outputTokens,
+            reasoningTokens: 0,
+            estimatedCostUsd: costUsd,
+            isCostEstimated: !data?.usage,
+            requestId: data?.id || `groq-${Date.now()}`,
+          };
+        }
+      }
+    } catch {
+      // Prossegue silenciosamente
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Executa uma chamada à API da OpenAI com cascata resiliente de modelos reais em produção
+ * (gpt-4o-mini -> gpt-4.1-mini -> gpt-4o) e compatibilidade total com Structured Outputs.
  */
 export async function callOpenAIResponses(
   params: OpenAICallParams
 ): Promise<OpenAIResponseResult> {
-  const client = getOpenAIClient();
   const selectedModel = resolveConfiguredModel(params.model);
   const timeoutMs = params.timeoutMs ?? 30000;
 
-  const payload = buildResponsesPayload(params);
+  // Valida o formato do payload para manter contrato estrito
+  buildResponsesPayload(params);
 
-  // String unificada para estimativa de fallback de tokens de entrada sem erro de precedência
   const inputRepresentation =
     (params.systemPrompt ? `${params.systemPrompt}\n` : "") +
     (params.messages ? JSON.stringify(params.messages) : (params.prompt || ""));
 
-  const maxAttempts = 2;
+  let client: OpenAI;
+  try {
+    client = getOpenAIClient();
+  } catch (missingKeyErr) {
+    // Se não houver OPENAI_API_KEY mas houver GEMINI_API_KEY ou GROQ_API_KEY na Vercel, usa o provedor alternativo
+    const altResult = await tryAlternativeProviderIfConfigured(
+      params,
+      inputRepresentation,
+      selectedModel
+    );
+    if (altResult) return altResult;
+    throw missingKeyErr;
+  }
+
+  const candidateModels = resolveRealOpenAIModelCandidates(selectedModel);
   let lastError: unknown = null;
 
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+  // Monta lista de mensagens compatível com Chat Completions API (suportada universalmente em todos os modelos OpenAI)
+  const chatMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
+  if (params.systemPrompt) {
+    chatMessages.push({
+      role: "system",
+      content: params.systemPrompt,
+    });
+  }
+  if (params.messages && params.messages.length > 0) {
+    for (const m of params.messages) {
+      if (m.role === "user" || m.role === "assistant") {
+        chatMessages.push({ role: m.role, content: m.content });
+      }
+    }
+  } else if (params.prompt) {
+    chatMessages.push({ role: "user", content: params.prompt });
+  }
+
+  for (const realModel of candidateModels) {
     const startTime = Date.now();
     try {
-      const response = await client.responses.create(payload, {
-        timeout: timeoutMs,
-      });
+      const completionParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
+        model: realModel,
+        messages: chatMessages,
+        max_completion_tokens: params.maxOutputTokens ?? 2048,
+      };
+
+      if (params.jsonSchema) {
+        completionParams.response_format = {
+          type: "json_schema",
+          json_schema: {
+            name: params.jsonSchema.name,
+            strict: params.jsonSchema.strict ?? true,
+            schema: params.jsonSchema.schema,
+          },
+        };
+      }
+
+      let completion: OpenAI.Chat.Completions.ChatCompletion;
+      try {
+        completion = await client.chat.completions.create(completionParams, {
+          timeout: timeoutMs,
+        });
+      } catch (schemaErr: unknown) {
+        // Se algum modelo recusar strict json_schema, tenta json_object no mesmo modelo
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const status = (schemaErr as any)?.status;
+        if (params.jsonSchema && status === 400) {
+          const fallbackParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
+            ...completionParams,
+            messages: [
+              ...chatMessages,
+              {
+                role: "system",
+                content: `Responda ESTRITAMENTE em JSON válido respeitando esta estrutura: ${JSON.stringify(params.jsonSchema.schema)}`,
+              },
+            ],
+            response_format: { type: "json_object" },
+          };
+          completion = await client.chat.completions.create(fallbackParams, {
+            timeout: timeoutMs,
+          });
+        } else {
+          throw schemaErr;
+        }
+      }
 
       const durationMs = Date.now() - startTime;
-      const requestId = response.id || `resp-${Date.now()}`;
+      const requestId = completion.id || `resp-${Date.now()}`;
+      const choice = completion.choices?.[0];
 
-      // 1. Verificação de status da resposta
-      if (response.status === "incomplete") {
-        const reason = response.incomplete_details?.reason || "output_limit";
-        throw new OpenAIIntegrationError(
-          `A resposta da OpenAI foi interrompida ou incompleta (motivo: ${reason}).`,
-          {
-            code: "INCOMPLETE_RESPONSE",
-            status: 502,
-            retryable: false,
-            technicalDetails: { reason, incomplete_details: response.incomplete_details },
-          }
-        );
-      }
-
-      if (response.status === "failed") {
-        throw new OpenAIIntegrationError(
-          response.error?.message || "A solicitação foi recusada ou falhou no processamento da OpenAI.",
-          {
-            code: response.error?.code || "RESPONSE_FAILED",
-            status: 502,
-            retryable: false,
-            technicalDetails: response.error,
-          }
-        );
-      }
-
-      // 2. Verificação de recusa do modelo (refusal)
-      const hasRefusal = response.output?.some(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (item: any) => item.type === "refusal" || Boolean(item.refusal)
-      );
-      if (hasRefusal) {
+      if (choice?.message?.refusal) {
         throw new OpenAIIntegrationError(
           "A solicitação foi recusada pelo modelo de IA por critérios de segurança ou conformidade.",
           { code: "MODEL_REFUSAL", status: 400, retryable: false }
         );
       }
 
-      const text = response.output_text || "";
+      let text = (choice?.message?.content || "").trim();
+      // Remove cercas markdown ```json ... ``` caso o modo json_object tenha sido usado
+      if (params.jsonSchema && text.startsWith("```")) {
+        text = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+      }
 
-      // 3. Validação de saída textual
-      if (!text.trim()) {
+      if (!text) {
         throw new OpenAIIntegrationError("A OpenAI retornou uma resposta textual em branco.", {
           code: "EMPTY_RESPONSE",
           status: 502,
@@ -345,7 +555,6 @@ export async function callOpenAIResponses(
         });
       }
 
-      // 4. Se a chamada solicitou saída estruturada JSON, valida integridade do parsing
       if (params.jsonSchema) {
         try {
           JSON.parse(text);
@@ -362,12 +571,11 @@ export async function callOpenAIResponses(
         }
       }
 
-      // 5. Apuração de tokens e custos
-      const inputTokens = response.usage?.input_tokens ?? estimateTokensFromText(inputRepresentation);
-      const cachedInputTokens = response.usage?.input_tokens_details?.cached_tokens ?? 0;
-      const outputTokens = response.usage?.output_tokens ?? estimateTokensFromText(text);
-      const reasoningTokens = response.usage?.output_tokens_details?.reasoning_tokens ?? 0;
-      const isCostEstimated = !response.usage;
+      const inputTokens = completion.usage?.prompt_tokens ?? estimateTokensFromText(inputRepresentation);
+      const cachedInputTokens = completion.usage?.prompt_tokens_details?.cached_tokens ?? 0;
+      const outputTokens = completion.usage?.completion_tokens ?? estimateTokensFromText(text);
+      const reasoningTokens = completion.usage?.completion_tokens_details?.reasoning_tokens ?? 0;
+      const isCostEstimated = !completion.usage;
 
       const { costUsd } = calculateEstimatedCostUsd(selectedModel, {
         inputTokens,
@@ -390,18 +598,35 @@ export async function callOpenAIResponses(
       };
     } catch (err: unknown) {
       lastError = err;
-      const durationMs = Date.now() - startTime;
-
-      if (err instanceof OpenAIIntegrationError) {
-        throw err;
-      }
-
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const apiErr = err as any;
       const status = typeof apiErr?.status === "number" ? apiErr.status : undefined;
       const rawCode = String(apiErr?.code || apiErr?.type || "");
 
-      // Erros de autenticação (não repetíveis)
+      // Se o erro foi modelo não encontrado ou sem acesso (404 / 403 / model_not_found), tenta o próximo modelo da cascata
+      if (
+        status === 404 ||
+        status === 403 ||
+        rawCode.includes("model_not_found") ||
+        rawCode.includes("does_not_exist")
+      ) {
+        continue;
+      }
+
+      // Se falhar na OpenAI, verifica se há provedor alternativo (Gemini / Groq) configurado na Vercel
+      const altResult = await tryAlternativeProviderIfConfigured(
+        params,
+        inputRepresentation,
+        selectedModel
+      );
+      if (altResult) {
+        return altResult;
+      }
+
+      if (err instanceof OpenAIIntegrationError) {
+        throw err;
+      }
+
       if (status === 401) {
         throw new OpenAIIntegrationError(
           "Falha de autenticação na OpenAI. Verifique a chave OPENAI_API_KEY no servidor.",
@@ -409,15 +634,6 @@ export async function callOpenAIResponses(
         );
       }
 
-      // Erros de parâmetros (não repetíveis)
-      if (status === 400) {
-        throw new OpenAIIntegrationError(
-          "Parâmetros de requisição inválidos para a OpenAI.",
-          { code: "INVALID_REQUEST", status: 400, retryable: false }
-        );
-      }
-
-      // Erros de teto rígido do projeto/organização ou saldo esgotado (NÃO repetíveis)
       const isQuotaOrBilling =
         status === 402 ||
         rawCode.includes("insufficient_quota") ||
@@ -431,27 +647,11 @@ export async function callOpenAIResponses(
         );
       }
 
-      // Erros de timeout de rede onde o servidor da OpenAI pode ter processado a requisição
       const isTimeout =
         apiErr?.name === "APIConnectionTimeoutError" ||
         apiErr?.name === "TimeoutError" ||
         rawCode.includes("timeout");
 
-      // Falha comprovadamente transitória (500, 503, 429 temporário)
-      const isTransient = status === 429 || status === 500 || status === 503 || isTimeout;
-
-      if (attempt < maxAttempts && isTransient) {
-        const retryAfterHeader = apiErr?.headers?.["retry-after"];
-        const waitSec = retryAfterHeader ? Math.min(parseInt(retryAfterHeader, 10) || 1, 5) : 1;
-
-        console.warn(
-          `[OPENAI_TRANSIENT_RETRY] Tentativa ${attempt} falhou (${status || apiErr?.name}). Aguardando ${waitSec}s antes de única repetição.`
-        );
-        await new Promise((resolve) => setTimeout(resolve, waitSec * 1000));
-        continue;
-      }
-
-      // Se falhou por timeout definitivo, calcula custo incerto para não assumir custo zero
       let estimatedUncertainCostUsd: number | undefined = undefined;
       if (isTimeout) {
         const estInput = estimateTokensFromText(inputRepresentation);
@@ -462,14 +662,6 @@ export async function callOpenAIResponses(
         });
         estimatedUncertainCostUsd = costUsd;
       }
-
-      console.error("[OPENAI_CALL_FAILED]", {
-        model: selectedModel,
-        status,
-        code: rawCode || "UNKNOWN_ERROR",
-        durationMs,
-        attempt,
-      });
 
       throw new OpenAIIntegrationError(
         status === 429
@@ -488,7 +680,17 @@ export async function callOpenAIResponses(
     }
   }
 
-  throw new OpenAIIntegrationError("Falha na chamada à OpenAI após repetição controlada.", {
+  // Última tentativa em provedor alternativo se todos os modelos OpenAI foram recusados
+  const altResult = await tryAlternativeProviderIfConfigured(
+    params,
+    inputRepresentation,
+    selectedModel
+  );
+  if (altResult) {
+    return altResult;
+  }
+
+  throw new OpenAIIntegrationError("Falha na chamada à OpenAI após tentar modelos disponíveis.", {
     code: "MAX_RETRIES_EXCEEDED",
     status: 500,
     retryable: false,

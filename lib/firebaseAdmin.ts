@@ -14,6 +14,20 @@ let testFirestoreMock: Firestore | null = null;
 function getServiceAccount(): ServiceAccount | null {
   const saEnv = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
   if (!saEnv) {
+    // Suporte adicional caso o usuário tenha cadastrado variáveis separadas na Vercel
+    const separateEmail = process.env.FIREBASE_CLIENT_EMAIL?.trim();
+    const separateKey = process.env.FIREBASE_PRIVATE_KEY?.trim();
+    const separateProject =
+      process.env.FIREBASE_PROJECT_ID?.trim() ||
+      process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID?.trim() ||
+      "wallet-ia-c8e77";
+    if (separateEmail && separateKey) {
+      return {
+        projectId: separateProject,
+        clientEmail: separateEmail.replace(/^["']|["']$/g, ""),
+        privateKey: separateKey.replace(/^["']|["']$/g, "").replace(/\\n/g, "\n"),
+      };
+    }
     console.warn("[FIREBASE_ADMIN] Variável de ambiente FIREBASE_SERVICE_ACCOUNT_KEY não configurada.");
     return null;
   }
@@ -116,6 +130,14 @@ function getServiceAccount(): ServiceAccount | null {
 
 export function hasValidServiceAccount(): boolean {
   return testFirestoreMock !== null || getServiceAccount() !== null;
+}
+
+export function isAdminAuthMockActive(): boolean {
+  return testAuthMock !== null;
+}
+
+export function isAdminFirestoreMockActive(): boolean {
+  return testFirestoreMock !== null;
 }
 
 export function getAdminApp(): App {

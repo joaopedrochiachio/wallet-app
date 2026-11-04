@@ -204,45 +204,56 @@ ${JSON.stringify(
 )}`;
 
     try {
-      const openAIResult = await callOpenAIResponses({
-        systemPrompt,
-        prompt: userPrompt,
-        reasoningEffort: "none",
-        maxOutputTokens: 1500,
-        jsonSchema: SPENDING_PATTERNS_JSON_SCHEMA,
-        timeoutMs: 20000,
-      });
-
-      // Reconciliação atômica da cota com base no consumo real
-      await reconcileAIQuota({
-        reservation,
-        success: true,
-        actualCostUsd: openAIResult.estimatedCostUsd,
-      });
-      quotaReconciled = true;
-
-      // Registro de observabilidade
-      void recordAICallLog({
-        requestId: openAIResult.requestId,
-        uid: userId,
-        route: "patterns",
-        model: openAIResult.modelUsed,
-        timestamp: new Date().toISOString(),
-        durationMs: openAIResult.durationMs,
-        success: true,
-        inputTokens: openAIResult.inputTokens,
-        outputTokens: openAIResult.outputTokens,
-        reasoningTokens: openAIResult.reasoningTokens,
-        estimatedCostUsd: openAIResult.estimatedCostUsd,
-        isCostEstimated: openAIResult.isCostEstimated,
-      });
-
-      // 4. Conferência rigorosa no servidor de cada contagem e valor retornado
       let parsed: { patterns?: unknown[] } | null = null;
+      let modelUsed = "motor-contabil-local";
+      let durationMs = 0;
+
       try {
-        parsed = JSON.parse(openAIResult.text);
-      } catch {
-        console.warn("[AI_PATTERNS_PARSE_FAILED] Não foi possível parsear resposta do modelo.");
+        const openAIResult = await callOpenAIResponses({
+          systemPrompt,
+          prompt: userPrompt,
+          reasoningEffort: "none",
+          maxOutputTokens: 1500,
+          jsonSchema: SPENDING_PATTERNS_JSON_SCHEMA,
+          timeoutMs: 20000,
+        });
+
+        modelUsed = openAIResult.modelUsed;
+        durationMs = openAIResult.durationMs;
+
+        // Reconciliação atômica da cota com base no consumo real
+        await reconcileAIQuota({
+          reservation,
+          success: true,
+          actualCostUsd: openAIResult.estimatedCostUsd,
+        });
+        quotaReconciled = true;
+
+        // Registro de observabilidade
+        void recordAICallLog({
+          requestId: openAIResult.requestId,
+          uid: userId,
+          route: "patterns",
+          model: openAIResult.modelUsed,
+          timestamp: new Date().toISOString(),
+          durationMs: openAIResult.durationMs,
+          success: true,
+          inputTokens: openAIResult.inputTokens,
+          outputTokens: openAIResult.outputTokens,
+          reasoningTokens: openAIResult.reasoningTokens,
+          estimatedCostUsd: openAIResult.estimatedCostUsd,
+          isCostEstimated: openAIResult.isCostEstimated,
+        });
+
+        try {
+          parsed = JSON.parse(openAIResult.text);
+        } catch {
+          console.warn("[AI_PATTERNS_PARSE_FAILED] Não foi possível parsear resposta do modelo.");
+        }
+      } catch (aiCallErr) {
+        console.warn("[AI_PATTERNS_FALLBACK] Utilizando motor determinístico local de padrões:", aiCallErr);
+        await reconcileAIQuota({ reservation, success: false });
+        quotaReconciled = true;
       }
 
       const patterns: SpecificExpenseAlert[] = [];
@@ -378,8 +389,8 @@ ${JSON.stringify(
       return NextResponse.json({
         success: true,
         patterns,
-        modelUsed: openAIResult.modelUsed,
-        durationMs: openAIResult.durationMs,
+        modelUsed,
+        durationMs,
       });
     } catch (patternsErr: unknown) {
       if (!quotaReconciled) {

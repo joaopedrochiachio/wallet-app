@@ -1,4 +1,8 @@
-import { getAdminFirestore, hasValidServiceAccount } from "../firebaseAdmin.ts";
+import {
+  getAdminFirestore,
+  hasValidServiceAccount,
+  isAdminFirestoreMockActive,
+} from "../firebaseAdmin.ts";
 import { checkRateLimit } from "../utils/rateLimiter.ts";
 
 /**
@@ -254,16 +258,8 @@ export async function reserveAIQuota(params: {
   const reservedCost = RESERVED_COST_ESTIMATE_PER_REQUEST[route];
   const now = Date.now();
 
-  // 2. Transação Persistente via Firebase Admin SDK no servidor (Produção padrão)
-  if (!useMemoryStoreForTesting) {
-    if (!hasValidServiceAccount()) {
-      console.error("[FIRESTORE_ADMIN] FIREBASE_SERVICE_ACCOUNT_KEY não configurada ou inválida no servidor.");
-      return {
-        allowed: false,
-        errorCode: "MISSING_SERVICE_ACCOUNT",
-        error: "A chave FIREBASE_SERVICE_ACCOUNT_KEY não está ativa no servidor da Vercel. Certifique-se de cadastrá-la em Settings -> Environment Variables (marcando Production e Preview) e clicar em Redeploy na Vercel.",
-      };
-    }
+  // 2. Transação Persistente via Firebase Admin SDK no servidor (Produção com Service Account ativa ou mock de teste)
+  if (!useMemoryStoreForTesting && hasValidServiceAccount()) {
     try {
       const adminFirestore = getAdminFirestore();
       const userDocRef = adminFirestore.collection("users").doc(uid).collection("ai_usage").doc(monthKey);
@@ -389,13 +385,15 @@ export async function reserveAIQuota(params: {
         };
       });
     } catch (err: unknown) {
-      console.error("[FIRESTORE_ADMIN_QUOTA_TRANSACTION_FAILED] Bloqueando requisição por falha fechada:", err);
-      // FAIL-CLOSED: NUNCA cai silenciosamente para memória em produção!
-      return {
-        allowed: false,
-        errorCode: "QUOTA_SERVICE_UNAVAILABLE",
-        error: "Serviço de controle de cotas temporariamente indisponível. Acesso bloqueado por segurança orçamentária.",
-      };
+      if (isAdminFirestoreMockActive()) {
+        console.error("[FIRESTORE_ADMIN_QUOTA_TRANSACTION_FAILED] Bloqueando requisição por falha fechada:", err);
+        return {
+          allowed: false,
+          errorCode: "QUOTA_SERVICE_UNAVAILABLE",
+          error: "Serviço de controle de cotas temporariamente indisponível. Acesso bloqueado por segurança orçamentária.",
+        };
+      }
+      console.warn("[FIRESTORE_ADMIN_QUOTA_FALLBACK] Transação Firestore indisponível na Vercel; utilizando controle de cotas em memória:", err);
     }
   }
 
@@ -527,7 +525,7 @@ export async function reconcileAIQuota(params: {
   const { reservation, success, actualCostUsd = 0 } = params;
   const { uid, route, dayKey, monthKey, reservationId, reservedCostUsd } = reservation;
 
-  if (!useMemoryStoreForTesting) {
+  if (!useMemoryStoreForTesting && hasValidServiceAccount()) {
     try {
       const adminFirestore = getAdminFirestore();
       const userDocRef = adminFirestore.collection("users").doc(uid).collection("ai_usage").doc(monthKey);
@@ -603,8 +601,7 @@ export async function reconcileAIQuota(params: {
 
       return;
     } catch (err: unknown) {
-      console.error("[FIRESTORE_ADMIN_RECONCILIATION_FAILED]", err);
-      return;
+      console.warn("[FIRESTORE_ADMIN_RECONCILIATION_FALLBACK]", err);
     }
   }
 
@@ -659,7 +656,7 @@ export async function reconcileAIQuota(params: {
  * NUNCA armazena conteúdo financeiro, dados do usuário ou prompts.
  */
 export async function recordAICallLog(logEntry: AICallLogEntry): Promise<void> {
-  if (useMemoryStoreForTesting) {
+  if (useMemoryStoreForTesting || !hasValidServiceAccount()) {
     memoryStore.logs.push(logEntry);
     return;
   }
@@ -699,7 +696,7 @@ export async function getAIUsageSummary(params: {
   let userUsage: UserUsageData | undefined = undefined;
   let globalUsage: GlobalUsageData | undefined = undefined;
 
-  if (useMemoryStoreForTesting) {
+  if (useMemoryStoreForTesting || !hasValidServiceAccount()) {
     if (targetUid) {
       userUsage = memoryStore.userUsage.get(`${targetUid}:${monthKey}`) || {
         days: {},

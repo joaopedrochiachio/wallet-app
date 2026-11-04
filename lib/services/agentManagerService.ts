@@ -393,8 +393,122 @@ export const SPENDING_PATTERNS_JSON_SCHEMA = {
 };
 
 /**
+ * Resposta analítica local inteligente para o Chat do Consultor caso o provedor externo de IA
+ * esteja indisponível, sem saldo ou em timeout na Vercel.
+ */
+export function generateDeterministicAnalystChatReply(params: {
+  context: SafeFinancialContext;
+  auditDossier: AuditDossier;
+  userMessage?: string;
+  simulationResult?: PurchaseSimulationResult | null;
+}): string {
+  const { context, auditDossier, userMessage = "", simulationResult } = params;
+  const q = userMessage.toLowerCase();
+
+  // 1. Se houver simulação de compra ("Devo Comprar?")
+  if (simulationResult) {
+    const verdictBadge =
+      simulationResult.verdict === "safe"
+        ? "✅ **Compra Segura**"
+        : simulationResult.verdict === "warning"
+        ? "⚠️ **Atenção no Orçamento**"
+        : "🚨 **Risco Elevado para o Fluxo de Caixa**";
+
+    return `${verdictBadge} — ${simulationResult.verdictMessage}
+
+**Resumo do Impacto Simulado (R$ ${simulationResult.amount.toFixed(2)}):**
+- **Modalidade:** ${
+      simulationResult.method === "cash"
+        ? "À vista (Débito / PIX)"
+        : `Cartão de Crédito (${simulationResult.cardName}) em ${simulationResult.installments}x de R$ ${simulationResult.monthlyInstallmentAmount.toFixed(2)}`
+    }
+- **Saldo em Conta:** R$ ${simulationResult.before.checkingBalance.toFixed(2)} ➔ **R$ ${simulationResult.after.checkingBalance.toFixed(2)}**
+- **Comprometimento Mensal:** ${simulationResult.before.monthlyCommitmentPercent}% ➔ **${simulationResult.after.monthlyCommitmentPercent}%** (limite recomendado: ${context.profile.maxCommitmentAlertPercent}%)
+- **Projeção:** ${simulationResult.impactSummary}`;
+  }
+
+  const projectedEnd = context.target?.projectedEndMonthBalance ?? context.cashflow.checkingBalance;
+  const targetEnd = context.target?.targetEndMonthBalance ?? 0;
+  const safeMargin = context.target?.safeSpendingMargin ?? Math.max(0, projectedEnd - targetEnd);
+  const missingAmount = context.target?.missingAmount ?? Math.max(0, targetEnd - projectedEnd);
+
+  // 2. Perguntas sobre próximo mês / fatura futura
+  if (q.includes("mês que vem") || q.includes("mes que vem") || q.includes("próximo mês") || q.includes("proximo mes")) {
+    const nextProj = context.monthlyProjections?.[1] || context.monthlyProjections?.[0];
+    if (nextProj) {
+      return `Analisei a projeção para **${nextProj.monthName}/${nextProj.year}**:
+
+- **Saldo Inicial Projetado:** R$ ${nextProj.openingBalance.toFixed(2)}
+- **Entradas Previstas:** R$ ${nextProj.plannedIncomesTotal.toFixed(2)}
+- **Contas Fixas (Débito/PIX):** R$ ${nextProj.recurringDebitTotal.toFixed(2)}
+- **Faturas / Parcelas de Cartão:** R$ ${(nextProj.cardInstallments + nextProj.recurringCreditTotal).toFixed(2)}
+- **Saldo Livre Projetado no Fechamento:** **R$ ${nextProj.projectedFreeBalance.toFixed(2)}**
+
+**Recomendação:** Mantenha os gastos variáveis do dia a dia abaixo de **R$ ${Math.max(0, nextProj.projectedFreeBalance - targetEnd).toFixed(2)}** para preservar sua meta de fechamento mensal.`;
+    }
+  }
+
+  // 3. Perguntas sobre cartão / fatura / limite
+  if (q.includes("cartão") || q.includes("cartao") || q.includes("fatura") || q.includes("crédito") || q.includes("credito")) {
+    const cardsLines =
+      context.credit.cardsSummary && context.credit.cardsSummary.length > 0
+        ? context.credit.cardsSummary
+            .map(
+              (c) =>
+                `- **${c.alias}:** Fatura atual de **R$ ${c.spent.toFixed(2)}** / Limite R$ ${c.limit.toFixed(2)} (${Math.round((c.spent / Math.max(1, c.limit)) * 100)}% utilizado${c.dueDay ? `, vence dia ${c.dueDay}` : ""})`
+            )
+            .join("\n")
+        : `- **Total em Faturas:** R$ ${context.credit.totalSpent.toFixed(2)} (${context.credit.creditUtilizationPercent}% do limite total de R$ ${context.credit.totalLimit.toFixed(2)})`;
+
+    return `Aqui está o raio-x atualizado dos seus **Cartões e Faturas**:
+
+${cardsLines}
+
+- **Limite Disponível Total:** R$ ${context.credit.availableCredit.toFixed(2)}
+- **Impacto no Caixa:** Lembre-se que compras no crédito não reduzem seu saldo em conta hoje (R$ ${context.cashflow.checkingBalance.toFixed(2)}), mas impactam o pagamento da fatura no vencimento.`;
+  }
+
+  // 4. Resposta Executiva Completa (Score, Saldo, Meta e Principais Gastos)
+  const topSpendsText =
+    auditDossier.spendBreakdown.length > 0
+      ? auditDossier.spendBreakdown
+          .slice(0, 4)
+          .map(
+            (b) =>
+              `- **${b.categoryOrItem}:** R$ ${b.totalAmount.toFixed(2)} (${b.count}x — Crédito: R$ ${b.creditAmount.toFixed(2)} | Débito: R$ ${b.debitAmount.toFixed(2)})`
+          )
+          .join("\n")
+      : "- Nenhum desvio crítico de consumo identificado neste ciclo.";
+
+  const statusLine =
+    projectedEnd >= targetEnd
+      ? `✅ Sua meta de fechar o mês com **R$ ${targetEnd.toFixed(2)}** está protegida! Você possui uma margem livre segura de **R$ ${safeMargin.toFixed(2)}**.`
+      : `⚠️ Atenção: o fechamento projetado (**R$ ${projectedEnd.toFixed(2)}**) está **R$ ${missingAmount.toFixed(2)}** abaixo da sua meta de **R$ ${targetEnd.toFixed(2)}**.`;
+
+  return `Aqui está a leitura atualizada do seu fluxo financeiro:
+
+${statusLine}
+
+**Indicadores Principais deste Mês:**
+- **Saldo Atual em Conta:** R$ ${context.cashflow.checkingBalance.toFixed(2)}
+- **Fechamento Projetado do Mês:** **R$ ${projectedEnd.toFixed(2)}**
+- **Faturas de Cartão Acumuladas:** R$ ${context.credit.totalSpent.toFixed(2)} (${context.credit.creditUtilizationPercent}% do limite)
+- **Comprometimento da Renda:** ${context.commitments.commitmentRatioPercent}% (teto configurado: ${context.profile.maxCommitmentAlertPercent}%)
+
+**Principais Focos de Gasto Auditados:**
+${topSpendsText}
+
+**Próximo Passo Recomendado:** ${
+    projectedEnd >= targetEnd
+      ? `Mantenha seus gastos diários dentro da margem livre de R$ ${safeMargin.toFixed(2)} e priorize sua meta principal (${context.profile.primaryFocus}).`
+      : `Evite novos gastos variáveis no débito/PIX até recuperar os R$ ${missingAmount.toFixed(2)} necessários para atingir sua meta do mês.`
+  }`;
+}
+
+/**
  * ORQUESTRADOR DO CHAT DO ANALISTA
- * Uma chamada única ao modelo gpt-6-luna (Responses API), enriquecida com auditoria determinística.
+ * Uma chamada única ao modelo gpt-6-luna, enriquecida com auditoria determinística
+ * e fallback resiliente para nunca falhar em produção.
  */
 export async function orchestrateAnalystChat(params: {
   context: SafeFinancialContext;
@@ -421,23 +535,41 @@ export async function orchestrateAnalystChat(params: {
   // 2. Enriquece o system prompt com o dossiê factual
   const enrichedSystemPrompt = params.systemPrompt + formatAuditDossierForPrompt(auditDossier);
 
-  // 3. Chamada Única ao Modelo Principal (gpt-6-luna) com reasoning: none para chat ágil
-  const openAIResult = await callOpenAIResponses({
-    systemPrompt: enrichedSystemPrompt,
-    messages: params.conversationMessages,
-    reasoningEffort: "none",
-    maxOutputTokens: 1500,
-    timeoutMs: 25000,
-  });
+  // 3. Chamada ao modelo com fallback determinístico automático se o provedor falhar em prod
+  try {
+    const openAIResult = await callOpenAIResponses({
+      systemPrompt: enrichedSystemPrompt,
+      messages: params.conversationMessages,
+      reasoningEffort: "none",
+      maxOutputTokens: 1500,
+      timeoutMs: 25000,
+    });
 
-  return {
-    text: openAIResult.text,
-    modelUsed: openAIResult.modelUsed,
-    durationMs: Date.now() - startTime,
-    attemptedModels: [openAIResult.modelUsed],
-    auditBriefing: auditDossier,
-    openAIResponse: openAIResult,
-  };
+    return {
+      text: openAIResult.text,
+      modelUsed: openAIResult.modelUsed,
+      durationMs: Date.now() - startTime,
+      attemptedModels: [openAIResult.modelUsed],
+      auditBriefing: auditDossier,
+      openAIResponse: openAIResult,
+    };
+  } catch (err) {
+    console.warn("[CHAT_OPENAI_FALLBACK] Utilizando consultor determinístico local:", err);
+    const fallbackText = generateDeterministicAnalystChatReply({
+      context: params.context,
+      auditDossier,
+      userMessage: params.userMessage,
+      simulationResult: params.simulationResult,
+    });
+
+    return {
+      text: fallbackText,
+      modelUsed: "motor-contabil-local",
+      durationMs: Date.now() - startTime,
+      attemptedModels: ["motor-contabil-local"],
+      auditBriefing: auditDossier,
+    };
+  }
 }
 
 // Alias de retrocompatibilidade
