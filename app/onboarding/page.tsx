@@ -4,7 +4,11 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { useAuth } from "@/context/AuthContext";
-import { saveUserProfile } from "@/lib/services/userService";
+import {
+  saveUserProfile,
+  checkIsUserOnboarded,
+  markUserOnboardedLocal,
+} from "@/lib/services/userService";
 import { saveCardToFirestore } from "@/lib/services/cardsService";
 import { sanitizeTextInput, validateCurrency } from "@/lib/utils/security";
 import { CURRENT_LEDGER_BALANCE_VERSION } from "@/lib/utils/ledger";
@@ -50,14 +54,41 @@ export default function OnboardingPage() {
   // Etapa 3: Primeiro Cartão/Conta
   const [cardName, setCardName] = useState("Minha Conta Principal");
   const [initialAmount, setInitialAmount] = useState("2.500,00");
+  const [checkingOnboarding, setCheckingOnboarding] = useState(true);
 
   useEffect(() => {
-    if (!authLoading && !user) {
-      router.replace("/");
+    if (authLoading) return;
+    if (!user) {
+      router.replace("/login");
+      return;
     }
+
+    if (user.displayName) {
+      setName((prev) => (prev.trim() ? prev : user.displayName || ""));
+    }
+
+    let cancelled = false;
+    checkIsUserOnboarded(user.uid, user.metadata)
+      .then((alreadyOnboarded) => {
+        if (cancelled) return;
+        if (alreadyOnboarded) {
+          router.replace("/dashboard");
+        } else {
+          setCheckingOnboarding(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCheckingOnboarding(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [user, authLoading, router]);
 
-  if (authLoading || !user) {
+  if (authLoading || !user || checkingOnboarding) {
     return (
       <div className="min-h-screen bg-[#F2F2F7] flex items-center justify-center">
         <Loader2 className="animate-spin text-[#86868B]" size={24} />
@@ -187,6 +218,8 @@ export default function OnboardingPage() {
 
         await saveCardToFirestore(user.uid, firstCard);
       }
+
+      markUserOnboardedLocal(user.uid);
 
       // 3. Redirecionar ao Dashboard
       router.replace("/dashboard");
@@ -600,6 +633,9 @@ export default function OnboardingPage() {
         isOpen={isStatementModalOpen}
         onClose={() => setIsStatementModalOpen(false)}
         onImportedSuccess={({ result, analysis, confirmedAccounts }) => {
+          if (user) {
+            markUserOnboardedLocal(user.uid);
+          }
           const checkingAcc = confirmedAccounts.find((a) => a.type === "checking");
           if (checkingAcc) {
             setCardName(checkingAcc.name);

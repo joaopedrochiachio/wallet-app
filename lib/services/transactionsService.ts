@@ -100,6 +100,7 @@ export async function payCreditCardInvoice(
     creditCardName: string;
     date: string;
     occurredAt: Date;
+    periodKey?: string | null;
   }
 ): Promise<void> {
   const transactionsCol = getTransactionsCollectionRef(userId);
@@ -121,6 +122,7 @@ export async function payCreditCardInvoice(
         relatedCardId: input.creditCardId,
         groupId,
         kind: "invoice_payment",
+        periodKey: input.periodKey ?? null,
         date: input.date,
         occurredAt: input.occurredAt,
       },
@@ -141,6 +143,7 @@ export async function payCreditCardInvoice(
         relatedCardId: input.checkingCardId,
         groupId,
         kind: "invoice_settlement",
+        periodKey: input.periodKey ?? null,
         date: input.date,
         occurredAt: input.occurredAt,
       },
@@ -148,6 +151,59 @@ export async function payCreditCardInvoice(
     )
   );
 
+  await batch.commit();
+}
+
+/**
+ * Desfaz o pagamento de uma fatura de cartão para a competência informada (`periodKey`),
+ * removendo tanto a saída da conta corrente quanto a baixa da fatura.
+ */
+export async function unpayCreditCardInvoice(
+  userId: string,
+  creditCardId: string,
+  periodKey: string
+): Promise<void> {
+  if (!userId || !creditCardId || !periodKey) return;
+  const transactionsCol = getTransactionsCollectionRef(userId);
+  const snap = await getDocs(transactionsCol);
+  const batch = writeBatch(db);
+  const groupIdsToDelete = new Set<string>();
+  const docRefsToDelete = new Map<string, ReturnType<typeof doc>>();
+
+  snap.docs.forEach((d) => {
+    const data = d.data();
+    const kind = data.kind;
+    if (kind !== "invoice_payment" && kind !== "invoice_settlement") return;
+    const matchesCard = data.cardId === creditCardId || data.relatedCardId === creditCardId;
+    if (!matchesCard) return;
+
+    let entryPeriodKey: string | null = data.periodKey || null;
+    if (!entryPeriodKey && data.occurredAt) {
+      const dt = data.occurredAt?.toDate ? data.occurredAt.toDate() : new Date(data.occurredAt);
+      if (!Number.isNaN(dt.getTime())) {
+        entryPeriodKey = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
+      }
+    }
+
+    if (entryPeriodKey === periodKey) {
+      docRefsToDelete.set(d.id, d.ref);
+      if (data.groupId) {
+        groupIdsToDelete.add(String(data.groupId));
+      }
+    }
+  });
+
+  if (groupIdsToDelete.size > 0) {
+    snap.docs.forEach((d) => {
+      const data = d.data();
+      if (data.groupId && groupIdsToDelete.has(String(data.groupId))) {
+        docRefsToDelete.set(d.id, d.ref);
+      }
+    });
+  }
+
+  if (docRefsToDelete.size === 0) return;
+  docRefsToDelete.forEach((ref) => batch.delete(ref));
   await batch.commit();
 }
 

@@ -14,6 +14,15 @@ import {
   ONBOARDING_DIRECT_STEPS,
   evaluateGettingStartedTutorial,
 } from "../lib/utils/tutorialData.ts";
+import {
+  buildForwardRecurringUpdate,
+  getEffectiveRecurringItemForPeriod,
+} from "../lib/utils/dateUtils.ts";
+import {
+  getCardInvoiceDetailsForMonth,
+  getCardOpenInvoiceDetails,
+  calculateCheckingBalance,
+} from "../lib/utils/ledger.ts";
 
 test("generateSampleBankStatementPdf & extractTextFromPdfBytes: extrai texto de PDF binário real e identifica todas as linhas", () => {
   const pdfBytes = generateSampleBankStatementPdf({
@@ -256,4 +265,171 @@ test("PAGE_TUTORIALS & ONBOARDING_DIRECT_STEPS: fornece passo a passo didático 
   });
   assert.equal(manualDismissState.shouldHideFromHome, true);
 });
+
+test("buildForwardRecurringUpdate: aumento salarial aplica-se apenas ao mês selecionado e meses à frente, preservando meses anteriores", () => {
+  const initialSalaryItem = {
+    id: "rec-salary-1",
+    title: "Salário Empresa Tech",
+    amount: 5000,
+    type: "income",
+    account: "Conta Principal",
+    cardId: "card-checking-1",
+    category: "Salário / Extra",
+    dueDay: 5,
+    recurrenceType: "business_day_5",
+    startYear: 2026,
+    startMonth: 8, // Setembro/2026
+    active: true,
+  };
+
+  // Em Novembro/2026 ("2026-11") o usuário teve um aumento para R$ 6.200
+  const forwardUpdates = buildForwardRecurringUpdate(initialSalaryItem, "2026-11", {
+    amount: 6200,
+  });
+
+  const updatedSalaryItem = {
+    ...initialSalaryItem,
+    ...forwardUpdates,
+  };
+
+  // Meses anteriores a Novembro/2026 devem manter R$ 5.000
+  assert.equal(getEffectiveRecurringItemForPeriod(updatedSalaryItem, "2026-09").amount, 5000);
+  assert.equal(getEffectiveRecurringItemForPeriod(updatedSalaryItem, "2026-10").amount, 5000);
+
+  // Novembro/2026 e meses à frente devem refletir o novo valor de R$ 6.200
+  assert.equal(getEffectiveRecurringItemForPeriod(updatedSalaryItem, "2026-11").amount, 6200);
+  assert.equal(getEffectiveRecurringItemForPeriod(updatedSalaryItem, "2026-12").amount, 6200);
+  assert.equal(getEffectiveRecurringItemForPeriod(updatedSalaryItem, "2027-01").amount, 6200);
+});
+
+test("Pagamento de Fatura ('Paguei a fatura'): quita a competência da fatura e debita da conta corrente como planejado", () => {
+  const checkingCard = {
+    id: "card-checking",
+    name: "Conta Principal",
+    type: "checking",
+    brand: "Mastercard",
+    last4: "0001",
+    limit: 0,
+    spent: 0,
+    dueDate: "—",
+    colorScheme: { primary: "#111", secondary: "#222", text: "#fff", accent: "#0071E3" },
+    balance: 0,
+    openingBalance: 5000,
+    ledgerBalanceVersion: 2,
+  };
+
+  const creditCard = {
+    id: "card-nubank",
+    name: "Nubank",
+    type: "credit",
+    brand: "Mastercard",
+    last4: "1234",
+    limit: 8000,
+    spent: 0,
+    dueDate: "10",
+    dueDay: 10,
+    closingDay: 3,
+    colorScheme: { primary: "#820AD1", secondary: "#4A0578", text: "#fff", accent: "#820AD1" },
+  };
+
+  const recurringItems = [
+    {
+      id: "rec-netflix",
+      title: "Netflix",
+      amount: 55.9,
+      type: "expense",
+      account: "Nubank",
+      cardId: "card-nubank",
+      category: "Assinaturas",
+      dueDay: 15,
+      recurrenceType: "fixed_day",
+      startYear: 2026,
+      startMonth: 8,
+      active: true,
+    },
+  ];
+
+  // Compra de R$ 400 em 18/Out/2026 (após fechamento dia 3 -> vence em 10/Nov/2026, periodKey "2026-11")
+  const baseTransactions = [
+    {
+      id: "tx-1",
+      title: "Supermercado",
+      amount: 400,
+      type: "despesa",
+      category: "Alimentação",
+      account: "Nubank",
+      cardId: "card-nubank",
+      kind: "regular",
+      date: "18 de out.",
+      occurredAt: new Date(2026, 9, 18, 12, 0, 0),
+    },
+  ];
+
+  const refDate = new Date(2026, 10, 4, 12, 0, 0); // 04/Nov/2026
+  const beforePayDetails = getCardInvoiceDetailsForMonth(
+    creditCard,
+    baseTransactions,
+    recurringItems,
+    2026,
+    10, // Novembro (monthIndex 10 -> "2026-11")
+    refDate
+  );
+
+  // R$ 400 (compra) + R$ 55,90 (Netflix recorrente) = R$ 455,90
+  assert.equal(beforePayDetails.totalInvoice, 455.9);
+  assert.equal(beforePayDetails.isPaid, false);
+
+  // Usuário clica em "Paguei a fatura" para a competência "2026-11"
+  const afterPayTransactions = [
+    ...baseTransactions,
+    {
+      id: "tx-pay-checking",
+      title: "Pagamento Fatura Nubank",
+      amount: 455.9,
+      type: "despesa",
+      category: "Pagamento de Fatura",
+      account: "Conta Principal",
+      cardId: "card-checking",
+      relatedCardId: "card-nubank",
+      groupId: "invoice-card-nubank-1",
+      kind: "invoice_payment",
+      periodKey: "2026-11",
+      date: "04 de nov.",
+      occurredAt: refDate,
+    },
+    {
+      id: "tx-pay-settlement",
+      title: "Baixa Fatura Nubank",
+      amount: 455.9,
+      type: "receita",
+      category: "Baixa de Fatura",
+      account: "Nubank",
+      cardId: "card-nubank",
+      relatedCardId: "card-checking",
+      groupId: "invoice-card-nubank-1",
+      kind: "invoice_settlement",
+      periodKey: "2026-11",
+      date: "04 de nov.",
+      occurredAt: refDate,
+    },
+  ];
+
+  const afterPayDetails = getCardInvoiceDetailsForMonth(
+    creditCard,
+    afterPayTransactions,
+    recurringItems,
+    2026,
+    10,
+    refDate
+  );
+
+  assert.equal(afterPayDetails.totalInvoice, 0);
+  assert.equal(afterPayDetails.paidAmount, 455.9);
+  assert.equal(afterPayDetails.isPaid, true);
+
+  // Conta corrente foi debitada exatamente no valor planejado (5000 - 455.9 = 4544.1)
+  const checkingBalance = calculateCheckingBalance(checkingCard, afterPayTransactions);
+  assert.equal(Math.round(checkingBalance * 100) / 100, 4544.1);
+});
+
 

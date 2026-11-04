@@ -11,6 +11,7 @@ import {
   signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
+  getAdditionalUserInfo,
   indexedDBLocalPersistence,
   browserLocalPersistence,
   setPersistence,
@@ -21,6 +22,7 @@ import {
 } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { clearUserLocalCaches } from "@/lib/services/aiChatService";
+import { markUserOnboardedLocal } from "@/lib/services/userService";
 
 interface AuthContextType {
   user: User | null;
@@ -76,46 +78,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let isMounted = true;
     let unsubscribe: (() => void) | null = null;
 
-    // Garante persistência IndexedDB configurada logo no boot
-    configureBestPersistence().finally(() => {
-      // Trata resultado de redirecionamento OAuth com timeout de 3.5s para não travar o boot
-      const redirectPromise = getRedirectResult(auth)
-        .then((cred) => {
-          if (!isMounted) return;
-          if (cred?.user) {
-            setUser(cred.user);
-          }
-        })
-        .catch((err: unknown) => {
-          if (!isMounted) return;
-          console.error("[Auth] Redirect result listener error:", err);
-          const code =
-            typeof err === "object" && err && "code" in err ? String(err.code) : "";
-          if (code === "auth/unauthorized-domain") {
-            const currentHost = typeof window !== "undefined" ? window.location.hostname : "seu-dominio.vercel.app";
-            setAuthError(
-              `O domínio '${currentHost}' não está autorizado no Firebase. Adicione-o no Firebase Console em Authentication > Configurações > Domínios Autorizados.`
-            );
-          } else if (code === "auth/missing-or-invalid-nonce") {
-            setAuthError("A sessão de autenticação expirou. Por favor, tente novamente.");
-          } else if (
-            code !== "auth/popup-closed-by-user" &&
-            code !== "auth/cancelled-popup-request"
-          ) {
-            setAuthError("Não foi possível concluir a autenticação com o Google. Tente novamente.");
-          }
-        });
+    // Aguarda a restauração nativa da sessão pelo IndexedDB antes de liberar `loading = false`
+    const readyPromise =
+      typeof auth.authStateReady === "function"
+        ? auth.authStateReady().catch(() => undefined)
+        : Promise.resolve();
 
-      const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 3500));
-
-      Promise.race([redirectPromise, timeoutPromise]).finally(() => {
+    // Trata resultado de redirecionamento OAuth sem bloquear a restauração da sessão
+    getRedirectResult(auth)
+      .then((cred) => {
+        if (!isMounted || !cred?.user) return;
+        const additionalInfo = getAdditionalUserInfo(cred);
+        if (additionalInfo?.isNewUser === false) {
+          markUserOnboardedLocal(cred.user.uid);
+        }
+        setUser(cred.user);
+      })
+      .catch((err: unknown) => {
         if (!isMounted) return;
-        // Escuta mudanças no estado de autenticação em tempo real
-        unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-          if (!isMounted) return;
-          setUser(currentUser);
-          setLoading(false);
-        });
+        console.error("[Auth] Redirect result listener error:", err);
+        const code =
+          typeof err === "object" && err && "code" in err ? String(err.code) : "";
+        if (code === "auth/unauthorized-domain") {
+          const currentHost = typeof window !== "undefined" ? window.location.hostname : "seu-dominio.vercel.app";
+          setAuthError(
+            `O domínio '${currentHost}' não está autorizado no Firebase. Adicione-o no Firebase Console em Authentication > Configurações > Domínios Autorizados.`
+          );
+        } else if (code === "auth/missing-or-invalid-nonce") {
+          setAuthError("A sessão de autenticação expirou. Por favor, tente novamente.");
+        }
+      });
+
+    readyPromise.finally(() => {
+      if (!isMounted) return;
+      if (auth.currentUser) {
+        setUser(auth.currentUser);
+      }
+      unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+        if (!isMounted) return;
+        setUser(currentUser);
+        setLoading(false);
       });
     });
 
@@ -128,6 +130,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = async (email: string, pass: string) => {
     await configureBestPersistence();
     const cred = await signInWithEmailAndPassword(auth, email, pass);
+    if (cred.user) {
+      markUserOnboardedLocal(cred.user.uid);
+    }
     return cred.user;
   };
 
@@ -149,6 +154,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const cred = await signInWithPopup(auth, provider);
       if (cred?.user) {
+        const additionalInfo = getAdditionalUserInfo(cred);
+        // Se não é o 1º login desta conta Google, marca imediatamente como já cadastrada
+        if (additionalInfo?.isNewUser === false) {
+          markUserOnboardedLocal(cred.user.uid);
+        }
         setUser(cred.user);
       }
       return cred.user;

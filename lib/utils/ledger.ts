@@ -377,16 +377,33 @@ export function getCardOpenInvoiceDetails(
     targetMonth,
     entries
   );
+  const currentNetRecurring = Math.max(
+    0,
+    currentRecDetails.pendingAmount - (creditsByPeriod?.[openPeriodKey] || 0)
+  );
 
   // Se o openPeriodKey original estiver quitado ou zerado, mas houver despesas no ciclo do mês seguinte:
   if (
     openPeriodKey < nextMonthPeriodKey &&
     (schedule[openPeriodKey] || 0) === 0 &&
-    currentRecDetails.pendingAmount === 0
+    currentNetRecurring === 0
   ) {
-    targetYear = nextMonthRef.getFullYear();
-    targetMonth = nextMonthRef.getMonth();
-    openPeriodKey = nextMonthPeriodKey;
+    const nextRecDetails = getCardInvoiceRecurringDetails(
+      card,
+      recurringItems,
+      nextMonthRef.getFullYear(),
+      nextMonthRef.getMonth(),
+      entries
+    );
+    const nextNetRecurring = Math.max(
+      0,
+      nextRecDetails.pendingAmount - (creditsByPeriod?.[nextMonthPeriodKey] || 0)
+    );
+    if ((schedule[nextMonthPeriodKey] || 0) > 0 || nextNetRecurring > 0) {
+      targetYear = nextMonthRef.getFullYear();
+      targetMonth = nextMonthRef.getMonth();
+      openPeriodKey = nextMonthPeriodKey;
+    }
   }
 
   // 2. Compras e parcelas faturadas para esta competência ou competências pendentes
@@ -410,8 +427,21 @@ export function getCardOpenInvoiceDetails(
   const netRecurring = Math.round(Math.max(0, recurringDetails.pendingAmount - periodCredit) * 100) / 100;
   let totalInvoice = Math.round(Math.max(0, installmentsAmount + netRecurring) * 100) / 100;
 
-  // Fallback: se não houver faturas distribuídas mas houver despesas avulsas brutas
-  if (totalInvoice === 0 && schedule[openPeriodKey] === undefined && recurringDetails.pendingAmount === 0) {
+  const hasAnyPaymentForOpenPeriod = entries.some((entry) => {
+    if (!isInvoicePaymentOrSettlement(entry, card)) return false;
+    const pDate = getLedgerEntryDate(entry);
+    const pKey = entry.periodKey || (pDate ? getPeriodKey(pDate.getFullYear(), pDate.getMonth()) : null);
+    return pKey === openPeriodKey;
+  });
+
+  // Fallback: se não houver faturas distribuídas nem pagamento na competência, mas houver despesas avulsas brutas sem data
+  if (
+    totalInvoice === 0 &&
+    !hasAnyPaymentForOpenPeriod &&
+    Object.keys(schedule).length === 0 &&
+    schedule[openPeriodKey] === undefined &&
+    recurringDetails.pendingAmount === 0
+  ) {
     const rawInvoice = entries
       .filter((entry) => isActualEntry(entry) && matchesLedgerCard(card, entry.account, entry.cardId))
       .reduce(
@@ -587,10 +617,14 @@ export function getCardInvoiceDetailsForMonth(
     .reduce((sum, entry) => sum + entry.amount, 0);
 
   // Fatura aberta do ciclo corrente de referência
+  const refYear = referenceDate.getFullYear();
+  const refMonth = referenceDate.getMonth();
+  const refMonthKey = getPeriodKey(refYear, refMonth);
+
   const openDueDate = getInvoiceDueDate(card, referenceDate);
   const openPeriodKey = getPeriodKey(openDueDate.getFullYear(), openDueDate.getMonth());
 
-  const nextMonthRef = new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 1);
+  const nextMonthRef = new Date(refYear, refMonth + 1, 1);
   const nextMonthPeriodKey = getPeriodKey(nextMonthRef.getFullYear(), nextMonthRef.getMonth());
 
   let effectiveOpenPeriodKey = openPeriodKey;
@@ -601,21 +635,45 @@ export function getCardInvoiceDetailsForMonth(
     openDueDate.getMonth(),
     entries
   );
+  const currentNetRecurring = Math.max(
+    0,
+    currentRecDetails.pendingAmount - (creditsByPeriod?.[openPeriodKey] || 0)
+  );
 
   if (
     openPeriodKey < nextMonthPeriodKey &&
     (schedule[openPeriodKey] || 0) === 0 &&
-    currentRecDetails.pendingAmount === 0
+    currentNetRecurring === 0
   ) {
-    effectiveOpenPeriodKey = nextMonthPeriodKey;
+    const nextRecDetails = getCardInvoiceRecurringDetails(
+      card,
+      recurringItems,
+      nextMonthRef.getFullYear(),
+      nextMonthRef.getMonth(),
+      entries
+    );
+    const nextNetRecurring = Math.max(
+      0,
+      nextRecDetails.pendingAmount - (creditsByPeriod?.[nextMonthPeriodKey] || 0)
+    );
+    if ((schedule[nextMonthPeriodKey] || 0) > 0 || nextNetRecurring > 0) {
+      effectiveOpenPeriodKey = nextMonthPeriodKey;
+    }
   }
 
   const isOpenInvoice = targetPeriodKey === effectiveOpenPeriodKey;
   const isFutureInvoice = targetPeriodKey > effectiveOpenPeriodKey;
   const isPastInvoice = targetPeriodKey < effectiveOpenPeriodKey;
 
-  // Fallback se for fatura aberta sem itens distribuídos mas com gastos brutos
-  if (isOpenInvoice && totalInvoice === 0 && schedule[targetPeriodKey] === undefined && recurringDetails.pendingAmount === 0) {
+  // Fallback se for fatura aberta sem itens distribuídos nem pagamentos, mas com gastos brutos
+  if (
+    isOpenInvoice &&
+    totalInvoice === 0 &&
+    paidAmount === 0 &&
+    Object.keys(schedule).length === 0 &&
+    schedule[targetPeriodKey] === undefined &&
+    recurringDetails.pendingAmount === 0
+  ) {
     const rawInvoice = entries
       .filter((entry) => isActualEntry(entry) && matchesLedgerCard(card, entry.account, entry.cardId))
       .reduce((total, entry) => total + (entry.type === "despesa" ? entry.amount : -entry.amount), 0);
@@ -624,7 +682,11 @@ export function getCardInvoiceDetailsForMonth(
 
   const hasInstallments = cardTransactions.length > 0;
   const hasRecurring = recurringDetails.items.length > 0;
-  const isPaid = isPastInvoice || (paidAmount > 0 && totalInvoice <= 0) || (paidAmount >= (installmentsAmount + netRecurring) && (installmentsAmount + netRecurring) > 0);
+  const isPaid =
+    (isPastInvoice && totalInvoice <= 0.005) ||
+    targetPeriodKey < refMonthKey ||
+    (paidAmount > 0 && totalInvoice <= 0.005) ||
+    (paidAmount >= installmentsAmount + netRecurring && installmentsAmount + netRecurring > 0);
 
   const availableLimit = Math.max(0, card.limit - card.spent);
   const percentUsed = card.limit > 0 ? Math.min(100, Math.round((card.spent / card.limit) * 100)) : 0;

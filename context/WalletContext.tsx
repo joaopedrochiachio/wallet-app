@@ -2,7 +2,11 @@
 
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { subscribeToUserProfile, saveUserProfile } from "@/lib/services/userService";
+import {
+  subscribeToUserProfile,
+  saveUserProfile,
+  markUserOnboardedLocal,
+} from "@/lib/services/userService";
 import {
   subscribeToCards,
   saveCardToFirestore,
@@ -15,6 +19,7 @@ import {
   addTransaction as addTransactionFirestore,
   deleteTransactionFromFirestore,
   payCreditCardInvoice,
+  unpayCreditCardInvoice,
   updateTransactionInFirestore,
   realizePlannedOccurrence,
   unrealizePlannedOccurrence,
@@ -41,6 +46,7 @@ import {
   isRecurringActiveInMonth,
   getRecurringMonthOffset,
   getEffectiveRecurringItemForPeriod,
+  buildForwardRecurringUpdate,
   MONTH_NAMES_PT,
 } from "@/lib/utils/dateUtils";
 import {
@@ -54,6 +60,7 @@ import {
   getInvoiceDueDate,
   getLedgerEntryDate,
   matchesLedgerCard,
+  getCardOpenInvoiceDetails,
   getCardInvoiceRecurringDetails,
   isInvoicePaymentOrSettlement,
   getCheckingBalanceMigration,
@@ -169,10 +176,15 @@ interface WalletContextType {
   addTransaction: (tx: Omit<TransactionItem, "id">) => Promise<void>;
   reconcileCheckingBalance: (cardId: string, targetBalance: number) => Promise<number>;
   updateTransaction: (id: string, updates: TransactionUpdateInput) => Promise<void>;
-  payInvoice: (cardId: string, customAmount?: number) => Promise<void>;
+  payInvoice: (cardId: string, customAmount?: number, periodKey?: string) => Promise<void>;
+  unpayInvoice: (cardId: string, periodKey: string) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
   addRecurringItem: (item: Omit<RecurringItem, "id">) => Promise<void>;
-  updateRecurringItem: (id: string, updates: Partial<RecurringItem>) => Promise<void>;
+  updateRecurringItem: (
+    id: string,
+    updates: Partial<RecurringItem>,
+    fromPeriodKey?: string
+  ) => Promise<void>;
   updateRecurringItemOccurrence: (
     id: string,
     periodKey: string,
@@ -276,12 +288,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     goalsLoadedFor,
   ].every((loadedUserId) => loadedUserId === user.uid));
 
-  // Remove apenas caches financeiros legados. A sessão do Firebase Auth e o cache da IA são preservados.
+  // Remove apenas caches financeiros legados. A sessão do Firebase Auth, flags de onboarding/tutorial e o cache da IA são preservados.
   useEffect(() => {
     const legacyKeys = new Set([
       ...LEGACY_FINANCIAL_STORAGE_KEYS,
       ...Object.keys(window.localStorage).filter(
-        (key) => key.startsWith("wallet_") && !key.startsWith("wallet_ai_")
+        (key) =>
+          key.startsWith("wallet_") &&
+          !key.startsWith("wallet_ai_") &&
+          !key.startsWith("wallet_onboarded_") &&
+          !key.startsWith("wallet_tutorial_")
       ),
     ]);
     legacyKeys.forEach((key) => window.localStorage.removeItem(key));
@@ -312,6 +328,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     const unsub = subscribeToUserProfile(user.uid, (remoteProfile) => {
       if (remoteProfile) {
         setUserProfile({ ...INITIAL_USER_PROFILE, ...remoteProfile });
+        if (
+          remoteProfile.isOnboarded === true ||
+          (typeof remoteProfile.name === "string" && remoteProfile.name.trim().length > 0) ||
+          (typeof remoteProfile.monthlyIncomeBase === "number" && remoteProfile.monthlyIncomeBase > 0)
+        ) {
+          markUserOnboardedLocal(user.uid);
+        }
       }
       setProfileLoadedFor(user.uid);
     });
@@ -351,6 +374,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     const unsub = subscribeToRecurring(user.uid, (remoteRecurring) => {
       // Snapshot vazio é um estado válido — sempre atualizar
       setRecurringItems(remoteRecurring);
+      if (remoteRecurring.length > 0) {
+        markUserOnboardedLocal(user.uid);
+      }
       setRecurringLoadedFor(user.uid);
     });
     return () => unsub();
@@ -365,6 +391,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       // Snapshot vazio é um estado válido — sempre atualizar
       setCards(remoteCards);
       if (remoteCards.length > 0) {
+        markUserOnboardedLocal(user.uid);
         setActiveCardId((prevActiveId) => {
           if (!remoteCards.some((c) => c.id === prevActiveId)) {
             return remoteCards[0].id;
@@ -744,7 +771,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     return difference;
   }, [cards, transactions, user]);
 
-  const payInvoice = useCallback(async (cardId: string, customAmount?: number) => {
+  const payInvoice = useCallback(async (cardId: string, customAmount?: number, periodKey?: string) => {
     const targetCard = enrichedCards.find((c) => c.id === cardId);
     if (!targetCard || targetCard.type !== "credit") return;
     const invoiceValue = customAmount ?? targetCard.invoiceAmount ?? 0;
@@ -753,7 +780,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
     const checkingCard = enrichedCards.find((c) => c.type === "checking");
     if (!checkingCard) throw new Error("Cadastre uma conta corrente antes de pagar a fatura.");
-    if ((checkingCard.balance || 0) < invoiceValue) throw new Error("Saldo insuficiente para pagar a fatura.");
+
+    const effectivePeriodKey =
+      periodKey || getCardOpenInvoiceDetails(targetCard, transactions, recurringItems).periodKey;
 
     const now = new Date();
     await payCreditCardInvoice(user.uid, {
@@ -762,10 +791,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       checkingAccountName: checkingCard.name,
       creditCardId: targetCard.id,
       creditCardName: targetCard.name,
+      periodKey: effectivePeriodKey,
       date: `${now.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}, ${now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`,
       occurredAt: now,
     });
-  }, [enrichedCards, user]);
+  }, [enrichedCards, transactions, recurringItems, user]);
+
+  const unpayInvoice = useCallback(async (cardId: string, periodKey: string) => {
+    if (!user) throw new Error("Entre na sua conta para desfazer o pagamento da fatura.");
+    await unpayCreditCardInvoice(user.uid, cardId, periodKey);
+  }, [user]);
 
   const deleteTransaction = useCallback(async (id: string) => {
     if (!user) return;
@@ -797,10 +832,42 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     await saveRecurringToFirestore(user.uid, newItem);
   }, [user]);
 
-  const updateRecurringItem = useCallback(async (id: string, updates: Partial<RecurringItem>) => {
+  const updateRecurringItem = useCallback(async (
+    id: string,
+    updates: Partial<RecurringItem>,
+    fromPeriodKey?: string
+  ) => {
     if (!user) throw new Error("Entre na sua conta para editar o planejamento.");
-    await updateRecurringInFirestore(user.uid, id, updates);
-  }, [user]);
+    const item = recurringItems.find((candidate) => candidate.id === id);
+    const now = new Date();
+    const effectiveFromPeriod = fromPeriodKey || getPeriodKey(now.getFullYear(), now.getMonth());
+
+    const payload = item
+      ? buildForwardRecurringUpdate(item, effectiveFromPeriod, updates)
+      : updates;
+
+    await updateRecurringInFirestore(user.uid, id, payload);
+
+    // Se a competência inicial (ou futura) já tiver um lançamento efetivado vinculado, sincroniza o valor/dados
+    if (item) {
+      const linkedTxs = transactions.filter(
+        (t) => t.recurringItemId === id && t.periodKey && t.periodKey >= effectiveFromPeriod
+      );
+      for (const linkedTx of linkedTxs) {
+        const occurredDate = getLedgerEntryDate(linkedTx) || new Date();
+        await updateTransactionInFirestore(user.uid, linkedTx.id, {
+          title: updates.title ?? item.title,
+          amount: updates.amount !== undefined ? updates.amount : item.amount,
+          type: (updates.type ?? item.type) === "income" ? "receita" : "despesa",
+          category: updates.category ?? item.category,
+          account: updates.account ?? item.account,
+          cardId: updates.cardId !== undefined ? updates.cardId : (item.cardId ?? null),
+          date: linkedTx.date,
+          occurredAt: occurredDate,
+        });
+      }
+    }
+  }, [recurringItems, transactions, user]);
 
   const updateRecurringItemOccurrence = useCallback(async (
     id: string,
@@ -824,7 +891,29 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     await updateRecurringInFirestore(user.uid, id, {
       overrides: nextOverrides,
     });
-  }, [recurringItems, user]);
+
+    // Se esta competência específica já tiver lançamento efetivado vinculado, sincroniza também
+    const linkedTx = transactions.find(
+      (t) => t.recurringItemId === id && t.periodKey === periodKey
+    );
+    if (linkedTx) {
+      const effectiveItem = getEffectiveRecurringItemForPeriod(
+        { ...item, overrides: nextOverrides },
+        periodKey
+      );
+      const occurredDate = getLedgerEntryDate(linkedTx) || new Date();
+      await updateTransactionInFirestore(user.uid, linkedTx.id, {
+        title: effectiveItem.title,
+        amount: effectiveItem.amount,
+        type: effectiveItem.type === "income" ? "receita" : "despesa",
+        category: effectiveItem.category,
+        account: effectiveItem.account,
+        cardId: effectiveItem.cardId ?? null,
+        date: linkedTx.date,
+        occurredAt: occurredDate,
+      });
+    }
+  }, [recurringItems, transactions, user]);
 
   const deleteRecurringItemOccurrence = useCallback(async (
     id: string,
@@ -1144,15 +1233,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           cardRecurringTotal = recDetails.pendingAmount;
         }
 
-        // 3. Pagamentos de fatura já efetuados neste ciclo de fatura
-        const transactionsInInvoiceMonth = transactions.filter((transaction) => {
-          const occurredAt = getLedgerEntryDate(transaction);
-          return occurredAt && getPeriodKey(occurredAt.getFullYear(), occurredAt.getMonth()) === invoicePeriodKey;
-        });
-
+        // 3. Pagamentos de fatura já efetuados para esta competência de fatura (periodKey ou data no mês)
         const processedPaymentGroups = new Set<string>();
-        const paidAmount = transactionsInInvoiceMonth
+        const paidAmount = transactions
           .filter((t) => isInvoicePaymentOrSettlement(t, creditCard))
+          .filter((t) => {
+            const occurredAt = getLedgerEntryDate(t);
+            const pKey =
+              t.periodKey ||
+              (occurredAt ? getPeriodKey(occurredAt.getFullYear(), occurredAt.getMonth()) : null);
+            return pKey === invoicePeriodKey;
+          })
           .filter((t) => {
             const groupKey = t.groupId || t.id;
             if (groupKey && processedPaymentGroups.has(groupKey)) return false;
@@ -1173,9 +1264,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
         const periodCredit = creditsByPeriod?.[invoicePeriodKey] || 0;
         const pendingRecurring = Math.max(0, cardRecurringTotal - periodCredit);
-        const pendingInvoice = isPastMonth ? 0 : installmentsAmount + pendingRecurring;
-        const totalInvoice = isPastMonth ? paidAmount : Math.max(paidAmount, pendingInvoice);
-        const isPaid = isPastMonth || (paidAmount > 0 && pendingInvoice <= 0) || (totalInvoice === 0);
+        const pendingInvoice = isPastMonth ? 0 : Math.round((installmentsAmount + pendingRecurring) * 100) / 100;
+        const totalInvoice = isPastMonth
+          ? paidAmount
+          : Math.round((paidAmount + pendingInvoice) * 100) / 100;
+        const isPaid =
+          isPastMonth ||
+          (paidAmount > 0 && pendingInvoice <= 0.005) ||
+          (totalInvoice === 0 && pendingInvoice === 0);
 
         return {
           cardId: creditCard.id,
@@ -1302,6 +1398,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       reconcileCheckingBalance,
       updateTransaction,
       payInvoice,
+      unpayInvoice,
       deleteTransaction,
       addRecurringItem,
       updateRecurringItem,
@@ -1342,6 +1439,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       reconcileCheckingBalance,
       updateTransaction,
       payInvoice,
+      unpayInvoice,
       deleteTransaction,
       addRecurringItem,
       updateRecurringItem,

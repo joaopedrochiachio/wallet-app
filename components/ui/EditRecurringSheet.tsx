@@ -446,9 +446,11 @@ function EditRecurringModalInner({
                       className="mt-0.5 text-violet-600 focus:ring-violet-500"
                     />
                     <div className="text-xs">
-                      <strong className="text-[#1D1D1F] block">Todas as faturas</strong>
+                      <strong className="text-[#1D1D1F] block">
+                        Esta fatura e meses à frente ({currentMonthName || "deste mês"} em diante)
+                      </strong>
                       <span className="text-[11px] text-[#86868B] leading-tight block mt-0.5">
-                        Atualiza a regra para o mês atual e todos os meses seguintes.
+                        Atualiza para este mês e todos os meses seguintes, preservando meses anteriores.
                       </span>
                     </div>
                   </label>

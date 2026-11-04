@@ -1,6 +1,12 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore, initializeFirestore } from "firebase/firestore";
-import { getAuth } from "firebase/auth";
+import {
+  getAuth,
+  initializeAuth,
+  indexedDBLocalPersistence,
+  browserLocalPersistence,
+  browserPopupRedirectResolver,
+} from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyDummyKeyForTestEnvironment12345",
@@ -12,7 +18,8 @@ const firebaseConfig = {
 };
 
 // Evita que o Next.js inicialize o Firebase várias vezes no modo dev
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+const isFirstInit = !getApps().length;
+const app = isFirstInit ? initializeApp(firebaseConfig) : getApp();
 
 let db: ReturnType<typeof getFirestore>;
 try {
@@ -23,6 +30,18 @@ try {
   db = getFirestore(app);
 }
 
-const auth = getAuth(app);
+let auth: ReturnType<typeof getAuth>;
+if (typeof window !== "undefined" && isFirstInit) {
+  try {
+    auth = initializeAuth(app, {
+      persistence: [indexedDBLocalPersistence, browserLocalPersistence],
+      popupRedirectResolver: browserPopupRedirectResolver,
+    });
+  } catch {
+    auth = getAuth(app);
+  }
+} else {
+  auth = getAuth(app);
+}
 
 export { app, db, auth };

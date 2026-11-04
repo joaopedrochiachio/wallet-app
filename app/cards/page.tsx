@@ -18,6 +18,8 @@ import {
   ChevronLeft,
   ChevronRight,
   ArrowRight,
+  RotateCcw,
+  Zap,
 } from "lucide-react";
 import { AddCardSheet } from "@/components/ui/AddCardSheet";
 import { AddTransactionSheet } from "@/components/ui/AddTransactionSheet";
@@ -30,6 +32,7 @@ import { getPlanningMonths, getPeriodKey, MONTH_NAMES_PT } from "@/lib/utils/dat
 import {
   getInvoiceDueDate,
   getLedgerEntryDate,
+  getCardOpenInvoiceDetails,
   getCardInvoiceDetailsForMonth,
 } from "@/lib/utils/ledger";
 import type { RecurringItem } from "@/types";
@@ -47,6 +50,7 @@ export default function CardsPage() {
     deleteRecurringItemOccurrence,
     updateCardLimit,
     payInvoice,
+    unpayInvoice,
     mainBalance,
     addCard,
     deleteCard,
@@ -77,6 +81,7 @@ export default function CardsPage() {
     cardName: string;
     amount: number;
     monthName: string;
+    periodKey?: string;
   } | null>(null);
   const [confirmDeleteCardModal, setConfirmDeleteCardModal] = useState<{
     isOpen: boolean;
@@ -89,13 +94,25 @@ export default function CardsPage() {
 
   const creditCards = cards.filter((c) => c.type === "credit");
 
-  // Competência padrão da fatura aberta do cartão de referência
+  // Competência padrão da fatura aberta (ou fechada aguardando pagamento no mês atual)
   const defaultReferenceDueDate = useMemo(() => {
+    const now = new Date();
     if (creditCards.length > 0) {
-      return getInvoiceDueDate(creditCards[0], new Date());
+      const currentMonthDetails = getCardInvoiceDetailsForMonth(
+        creditCards[0],
+        transactions,
+        recurringItems,
+        now.getFullYear(),
+        now.getMonth(),
+        now
+      );
+      if (!currentMonthDetails.isPaid && currentMonthDetails.totalInvoice > 0) {
+        return currentMonthDetails.dueDate;
+      }
+      return getCardOpenInvoiceDetails(creditCards[0], transactions, recurringItems, now).dueDate;
     }
-    return new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1);
-  }, [creditCards]);
+    return new Date(now.getFullYear(), now.getMonth(), 10);
+  }, [creditCards, transactions, recurringItems]);
 
   const defaultPeriodKey = useMemo(() => {
     return getPeriodKey(
@@ -210,22 +227,34 @@ export default function CardsPage() {
 
   const handleExecutePayInvoice = async () => {
     if (!confirmPayModal) return;
-    const { cardId, cardName, amount } = confirmPayModal;
-    if (mainBalance < amount) {
-      setPaymentErrorMessage("Saldo na Conta Principal insuficiente para quitar esta fatura!");
-      setConfirmPayModal(null);
-      setTimeout(() => setPaymentErrorMessage(null), 5000);
-      return;
-    }
+    const { cardId, cardName, amount, periodKey, monthName } = confirmPayModal;
     setIsPayingInvoice(true);
     try {
-      await payInvoice(cardId, amount);
+      await payInvoice(cardId, amount, periodKey || selectedMonth.periodKey);
       setConfirmPayModal(null);
-      setPaymentSuccessMessage(`Fatura do ${cardName} paga com sucesso!`);
+      setPaymentSuccessMessage(
+        `Fatura do ${cardName} (${monthName}) paga e debitada da conta como planejado!`
+      );
       setTimeout(() => setPaymentSuccessMessage(null), 4000);
     } catch (error) {
       setPaymentErrorMessage(
         error instanceof Error ? error.message : "Não foi possível pagar a fatura."
+      );
+      setTimeout(() => setPaymentErrorMessage(null), 5000);
+    } finally {
+      setIsPayingInvoice(false);
+    }
+  };
+
+  const handleUndoPayInvoice = async (cardId: string, cardName: string, periodKey: string) => {
+    setIsPayingInvoice(true);
+    try {
+      await unpayInvoice(cardId, periodKey);
+      setPaymentSuccessMessage(`Pagamento da fatura do ${cardName} desfeito.`);
+      setTimeout(() => setPaymentSuccessMessage(null), 4000);
+    } catch (error) {
+      setPaymentErrorMessage(
+        error instanceof Error ? error.message : "Não foi possível desfazer o pagamento da fatura."
       );
       setTimeout(() => setPaymentErrorMessage(null), 5000);
     } finally {
@@ -244,14 +273,12 @@ export default function CardsPage() {
     scope: "all" | "single",
     periodKey?: string
   ) => {
+    const targetPeriod = periodKey || selectedMonth.periodKey;
     if (scope === "single" && periodKey) {
       await updateRecurringItemOccurrence(id, periodKey, updates);
     } else {
-      await updateRecurringItem(id, updates);
+      await updateRecurringItem(id, updates, targetPeriod);
     }
-
-    // Se houver uma transação física já realizada vinculada a este item na competência, sincronizá-la
-    const targetPeriod = periodKey || selectedMonth.periodKey;
     const realizedTx = transactions.find((t) => {
       if (t.recurringItemId !== id) return false;
       if (t.periodKey === targetPeriod || !t.periodKey) return true;
@@ -638,10 +665,18 @@ export default function CardsPage() {
                       <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-gray-100">
                         <div className="text-left sm:text-right">
                           <span className="text-[10px] uppercase font-semibold tracking-wider text-[#86868B] block">
-                            Fatura {card.name}
+                            {details.isPaid && details.paidAmount > 0
+                              ? `Fatura ${card.name} (Paga)`
+                              : `Fatura ${card.name}`}
                           </span>
-                          <span className="text-base sm:text-lg font-semibold text-[#1D1D1F] tracking-tight font-mono tabular-nums">
-                            R$ {formatCurrency(invoice)}
+                          <span
+                            className={`text-base sm:text-lg font-semibold tracking-tight font-mono tabular-nums ${
+                              details.isPaid && details.paidAmount > 0
+                                ? "text-emerald-600"
+                                : "text-[#1D1D1F]"
+                            }`}
+                          >
+                            R$ {formatCurrency(details.isPaid && details.paidAmount > 0 ? details.paidAmount : invoice)}
                           </span>
                           {card.limit > 0 && (
                             <span className="text-[10px] text-[#86868B] block mt-0.5">
@@ -654,7 +689,7 @@ export default function CardsPage() {
                         </div>
 
                         <div className="flex items-center gap-2">
-                          {!details.isPaid && invoice > 0 && (
+                          {!details.isPaid && invoice > 0 ? (
                             <button
                               type="button"
                               onClick={() =>
@@ -664,14 +699,29 @@ export default function CardsPage() {
                                   cardName: card.name,
                                   amount: invoice,
                                   monthName: details.dueMonthName,
+                                  periodKey: details.periodKey,
                                 })
                               }
-                              className="text-xs font-semibold bg-[#1D1D1F] hover:bg-black text-white px-3 py-1.5 rounded-full transition-all cursor-pointer shadow-2xs active:scale-95 shrink-0"
-                              title={`Pagar fatura de ${details.dueMonthName} do ${card.name} na Conta Principal`}
+                              className="inline-flex items-center gap-1.5 text-xs font-semibold bg-[#1D1D1F] hover:bg-black text-white px-3.5 py-1.5 rounded-full transition-all cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                              title={`Marcar fatura de ${details.dueMonthName} do ${card.name} como paga e debitar da Conta Principal`}
                             >
-                              {details.isFutureInvoice ? "Adiantar Fatura" : "Pagar Fatura"}
+                              <Zap size={12} className="text-amber-400 fill-amber-400 shrink-0" />
+                              <span>{details.isFutureInvoice ? "Adiantar Fatura" : "Paguei a fatura"}</span>
                             </button>
-                          )}
+                          ) : details.paidAmount > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void handleUndoPayInvoice(card.id, card.name, details.periodKey)
+                              }
+                              disabled={isPayingInvoice}
+                              className="inline-flex items-center gap-1.5 text-xs font-semibold bg-emerald-50 hover:bg-rose-50 hover:text-rose-600 text-emerald-700 border border-emerald-200/70 hover:border-rose-200 px-3 py-1.5 rounded-full transition-all cursor-pointer active:scale-95 shrink-0 group"
+                              title="Desfazer pagamento da fatura"
+                            >
+                              <RotateCcw size={12} className="group-hover:rotate-[-45deg] transition-transform" />
+                              <span>Desfazer pagamento</span>
+                            </button>
+                          ) : null}
 
                           <button
                             type="button"

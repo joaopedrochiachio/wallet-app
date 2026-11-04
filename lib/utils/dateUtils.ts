@@ -230,6 +230,97 @@ export function getEffectiveRecurringItemForPeriod<T extends {
 }
 
 /**
+ * Aplica alterações em um item recorrente apenas da competência `fromPeriodKey` (YYYY-MM) em diante
+ * ("este mês e meses à frente"), congelando os valores anteriores para todos os meses anteriores (< fromPeriodKey)
+ * dentro de `overrides`.
+ */
+export function buildForwardRecurringUpdate<
+  T extends {
+    title: string;
+    amount: number;
+    type?: "expense" | "income";
+    account: string;
+    cardId?: string | null;
+    category: string;
+    dueDay?: number;
+    recurrenceType?: "business_day_5" | "fixed_day";
+    startYear?: number;
+    startMonth?: number;
+    overrides?: Record<string, RecurringOverrideLike>;
+  },
+>(
+  item: T,
+  fromPeriodKey: string,
+  updates: Partial<T>
+): Partial<T> {
+  const match = /^(\d{4})-(\d{2})$/.exec(fromPeriodKey || "");
+  if (!match) {
+    return updates;
+  }
+
+  const fromYear = Number(match[1]);
+  const fromMonthIndex = Number(match[2]) - 1;
+
+  const existingOverrides: Record<string, RecurringOverrideLike> = {
+    ...(item.overrides || {}),
+  };
+
+  // Determina a menor competência anterior que precisa ter seu valor histórico preservado
+  const itemStartYear = item.startYear ?? 2026;
+  const itemStartMonth = item.startMonth ?? 8; // Setembro/2026 (base legada)
+  const fallbackStart = new Date(fromYear, fromMonthIndex - 18, 1);
+  const candidateStart = new Date(itemStartYear, itemStartMonth, 1);
+  const startDate = candidateStart < fallbackStart ? candidateStart : fallbackStart;
+
+  const cursor = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+  const targetStart = new Date(fromYear, fromMonthIndex, 1);
+
+  while (cursor < targetStart) {
+    const pKey = getPeriodKey(cursor.getFullYear(), cursor.getMonth());
+    const effectiveBefore = getEffectiveRecurringItemForPeriod(item, pKey);
+    const prevOverride = existingOverrides[pKey] || {};
+
+    existingOverrides[pKey] = {
+      ...prevOverride,
+      title: effectiveBefore.title,
+      amount: effectiveBefore.amount,
+      type: effectiveBefore.type,
+      account: effectiveBefore.account,
+      cardId: effectiveBefore.cardId ?? null,
+      category: effectiveBefore.category,
+      ...(effectiveBefore.dueDay !== undefined ? { dueDay: effectiveBefore.dueDay } : {}),
+      ...(effectiveBefore.recurrenceType !== undefined
+        ? { recurrenceType: effectiveBefore.recurrenceType }
+        : {}),
+    };
+
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+
+  // Para o mês atual (`fromPeriodKey`) e meses futuros (`>= fromPeriodKey`),
+  // limpamos overrides dos campos que estão sendo atualizados para que assumam o novo valor
+  const updatedFields = Object.keys(updates).filter((k) => k !== "overrides");
+  for (const [key, ov] of Object.entries(existingOverrides)) {
+    if (key >= fromPeriodKey && ov) {
+      const cleaned: RecurringOverrideLike = { ...ov };
+      for (const field of updatedFields) {
+        delete cleaned[field];
+      }
+      if (Object.keys(cleaned).length === 0) {
+        delete existingOverrides[key];
+      } else {
+        existingOverrides[key] = cleaned;
+      }
+    }
+  }
+
+  return {
+    ...updates,
+    overrides: existingOverrides,
+  } as Partial<T>;
+}
+
+/**
  * Retorna o dia de vencimento efetivo considerando se o item é fixo ou 5º dia útil
  */
 export function getEffectiveDueDay(

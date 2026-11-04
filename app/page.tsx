@@ -15,9 +15,12 @@ import {
   Sliders,
 } from "lucide-react";
 import { useWallet } from "@/context/WalletContext";
+import { useAuth } from "@/context/AuthContext";
 
 export default function PresentationPage() {
   const { userProfile } = useWallet();
+  const { user } = useAuth();
+  const authEntryHref = user ? "/dashboard" : "/login";
 
   return (
     <div className="w-full min-h-screen bg-[#F2F2F7] text-[#1D1D1F] font-sans selection:bg-[#1D1D1F] selection:text-white pb-24">
@@ -62,13 +65,13 @@ export default function PresentationPage() {
 
           <div className="flex items-center gap-3">
             <Link
-              href="/login"
+              href={authEntryHref}
               className="hidden sm:inline-flex text-sm font-medium text-[#6E6E73] hover:text-[#1D1D1F] transition-colors px-2 py-1"
             >
-              Entrar
+              {user ? "Painel" : "Entrar"}
             </Link>
             <Link
-              href="/login"
+              href={authEntryHref}
               className="bg-[#1D1D1F] hover:bg-black text-white text-xs sm:text-sm font-semibold px-4 py-2 rounded-full transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
             >
               <span>Acessar Carteira</span>
@@ -119,7 +122,7 @@ export default function PresentationPage() {
         {/* CTAs */}
         <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
           <Link
-            href="/login"
+            href={authEntryHref}
             className="bg-[#1D1D1F] hover:bg-black text-white text-sm font-semibold px-6 py-3.5 rounded-full transition-all flex items-center gap-2 shadow-[0_4px_16px_rgba(0,0,0,0.15)] active:scale-98 cursor-pointer"
           >
             <span>Abrir Minha Carteira</span>

@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { getUserProfile, recordLgpdConsent } from "@/lib/services/userService";
+import { checkIsUserOnboarded, recordLgpdConsent } from "@/lib/services/userService";
 import { validateEmail, validatePassword } from "@/lib/utils/security";
 import { LgpdTermsModal } from "@/components/legal/LgpdTermsModal";
 import { Lock, Mail, ArrowRight, ShieldCheck, Loader2, CheckCircle2 } from "lucide-react";
@@ -42,6 +42,7 @@ export default function LoginPage() {
     return 0;
   });
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isNavigatingRef = useRef(false);
 
   const activeError = error || authError;
 
@@ -61,27 +62,28 @@ export default function LoginPage() {
   }, [cooldownSeconds]);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get("reason") === "inactivity") {
-        setError("Sua sessão foi encerrada automaticamente por inatividade para proteger seus dados financeiros.");
-      }
-    }
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
   }, []);
 
-  // Navega para o destino correto com fallback imediato se o router do Next.js engasgar em mobile/PWA
-  const navigateToAuthenticatedApp = async (uid: string) => {
+  // Navega para o destino correto: somente se for genuinamente o 1º login vai para /onboarding;
+  // caso a conta já exista (ou se houver timeout de rede), direciona direto ao /dashboard.
+  const navigateToAuthenticatedApp = async (
+    uid: string,
+    authMetadata?: { creationTime?: string; lastSignInTime?: string } | null
+  ) => {
+    if (isNavigatingRef.current) return;
+    isNavigatingRef.current = true;
+
     let target = "/dashboard";
     try {
-      const profilePromise = getUserProfile(uid);
-      const timeoutPromise = new Promise<null>((resolve) =>
-        setTimeout(() => resolve(null), 2000)
+      const onboardedPromise = checkIsUserOnboarded(uid, authMetadata);
+      const timeoutPromise = new Promise<boolean>((resolve) =>
+        setTimeout(() => resolve(true), 3500)
       );
-      const profile = await Promise.race([profilePromise, timeoutPromise]);
-      target = profile?.isOnboarded ? "/dashboard" : "/onboarding";
+      const isAlreadyOnboarded = await Promise.race([onboardedPromise, timeoutPromise]);
+      target = isAlreadyOnboarded ? "/dashboard" : "/onboarding";
     } catch {
       target = "/dashboard";
     }
@@ -99,7 +101,7 @@ export default function LoginPage() {
   // Se o usuário estiver autenticado (seja por redirect, popup ou e-mail), direciona com base no onboarding
   useEffect(() => {
     if (!authLoading && user) {
-      navigateToAuthenticatedApp(user.uid);
+      void navigateToAuthenticatedApp(user.uid, user.metadata);
     }
   }, [user, authLoading]);
 
@@ -119,13 +121,9 @@ export default function LoginPage() {
       const loggedUser = await signInWithGoogle();
       if (loggedUser) {
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
-        // Registra consentimento LGPD para a conta Google caso seja novo cadastro
-        try {
-          await recordLgpdConsent(loggedUser.uid);
-        } catch {
-          // Continua navegação se gravação falhar
-        }
-        await navigateToAuthenticatedApp(loggedUser.uid);
+        await navigateToAuthenticatedApp(loggedUser.uid, loggedUser.metadata);
+        // Registra consentimento LGPD em segundo plano sem bloquear ou sobrescrever o check de 1º login
+        void recordLgpdConsent(loggedUser.uid).catch(() => undefined);
       } else {
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
         setGoogleLoading(false);
@@ -222,7 +220,7 @@ export default function LoginPage() {
           sessionStorage.removeItem("wallet_login_failed_attempts");
         }
         setFailedAttempts(0);
-        await navigateToAuthenticatedApp(loggedUser.uid);
+        await navigateToAuthenticatedApp(loggedUser.uid, loggedUser.metadata);
       } else {
         const newUser = await signUp(trimmedEmail, password);
         // Grava o consentimento expresso da LGPD com timestamp no Firestore

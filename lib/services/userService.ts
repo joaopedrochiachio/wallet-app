@@ -1,11 +1,35 @@
 import { auth, db } from "@/lib/firebase";
 import { UserProfile } from "@/types";
 import {
+  collection,
   doc,
   getDoc,
+  getDocs,
+  limit,
+  query,
   setDoc,
   onSnapshot,
 } from "firebase/firestore";
+
+const LOCAL_ONBOARDED_PREFIX = "wallet_onboarded_";
+
+export function markUserOnboardedLocal(userId: string): void {
+  if (!userId || typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(`${LOCAL_ONBOARDED_PREFIX}${userId}`, "true");
+  } catch {
+    // Ignora falha de storage
+  }
+}
+
+export function hasLocalOnboardedFlag(userId: string): boolean {
+  if (!userId || typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(`${LOCAL_ONBOARDED_PREFIX}${userId}`) === "true";
+  } catch {
+    return false;
+  }
+}
 
 function sanitizeData<T>(data: T): T {
   return JSON.parse(JSON.stringify(data));
@@ -19,7 +43,11 @@ export async function saveUserProfile(
   profile: Partial<UserProfile>
 ): Promise<void> {
   const userDocRef = doc(db, "users", userId);
-  const cleanProfile = sanitizeData(profile);
+  const cleanProfile = sanitizeData({
+    ...profile,
+    isOnboarded: profile.isOnboarded ?? true,
+  });
+  markUserOnboardedLocal(userId);
   await setDoc(userDocRef, cleanProfile, { merge: true });
 }
 
@@ -35,6 +63,85 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
   }
 
   return snapshot.data() as UserProfile;
+}
+
+/**
+ * Verifica com segurança se o usuário já concluiu o cadastro inicial (onboarding)
+ * ou se a conta já existia anteriormente (evitando mandar contas existentes para /onboarding).
+ * Só retorna `false` se for genuinamente o 1º login de uma conta recém-criada sem dados.
+ */
+export async function checkIsUserOnboarded(
+  userId: string,
+  authMetadata?: { creationTime?: string; lastSignInTime?: string } | null
+): Promise<boolean> {
+  if (!userId) return false;
+
+  // 1. Verificação instantânea via cache local do navegador
+  if (hasLocalOnboardedFlag(userId)) {
+    return true;
+  }
+
+  const userDocRef = doc(db, "users", userId);
+
+  try {
+    // 2. Verifica documento de perfil no Firestore
+    const snapshot = await getDoc(userDocRef);
+    if (snapshot.exists()) {
+      const data = snapshot.data() as Partial<UserProfile> & Record<string, unknown>;
+      const hasProfileData =
+        data.isOnboarded === true ||
+        Boolean(data.name && data.name.trim() !== "" && data.name !== "Seu Nome") ||
+        Boolean(typeof data.monthlyIncomeBase === "number" && data.monthlyIncomeBase > 0) ||
+        Boolean(data.persona);
+
+      if (hasProfileData) {
+        markUserOnboardedLocal(userId);
+        if (data.isOnboarded !== true) {
+          void setDoc(userDocRef, { isOnboarded: true }, { merge: true }).catch(() => undefined);
+        }
+        return true;
+      }
+    }
+
+    // 3. Verifica se o usuário já possui cartões, transações ou itens planejados salvos
+    const [cardsSnap, txSnap, recSnap] = await Promise.all([
+      getDocs(query(collection(db, "users", userId, "cards"), limit(1))),
+      getDocs(query(collection(db, "users", userId, "transactions"), limit(1))),
+      getDocs(query(collection(db, "users", userId, "recurring"), limit(1))),
+    ]);
+
+    if (!cardsSnap.empty || !txSnap.empty || !recSnap.empty) {
+      markUserOnboardedLocal(userId);
+      void setDoc(userDocRef, { isOnboarded: true }, { merge: true }).catch(() => undefined);
+      return true;
+    }
+  } catch (err) {
+    console.warn("[checkIsUserOnboarded] Falha ao consultar Firestore, avaliando metadados da conta:", err);
+    // Se houve falha de rede/timeout e a conta não acabou de ser criada neste instante, assume já cadastrada
+    if (authMetadata?.creationTime && authMetadata?.lastSignInTime) {
+      const createdMs = new Date(authMetadata.creationTime).getTime();
+      const lastSignInMs = new Date(authMetadata.lastSignInTime).getTime();
+      if (!Number.isNaN(createdMs) && !Number.isNaN(lastSignInMs) && Math.abs(lastSignInMs - createdMs) > 60_000) {
+        markUserOnboardedLocal(userId);
+        return true;
+      }
+    }
+    return true;
+  }
+
+  // 4. Se a conta no Firebase Auth foi criada em uma sessão anterior (diferença > 2 min entre criação e login atual),
+  // não é o 1º login do usuário — marca como onboarded e leva direto ao Dashboard.
+  if (authMetadata?.creationTime && authMetadata?.lastSignInTime) {
+    const createdMs = new Date(authMetadata.creationTime).getTime();
+    const lastSignInMs = new Date(authMetadata.lastSignInTime).getTime();
+    if (!Number.isNaN(createdMs) && !Number.isNaN(lastSignInMs) && Math.abs(lastSignInMs - createdMs) > 120_000) {
+      markUserOnboardedLocal(userId);
+      void setDoc(userDocRef, { isOnboarded: true }, { merge: true }).catch(() => undefined);
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**
