@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useWallet } from "@/context/WalletContext";
 import { get5thBusinessDay, MONTH_NAMES_PT } from "@/lib/utils/dateUtils";
-import { formatAccountLabel } from "@/lib/utils/ledger";
+import { formatAccountLabel, splitInstallmentPurchase } from "@/lib/utils/ledger";
 import { RecurrenceType } from "@/types";
 import { Portal } from "./Portal";
 import {
@@ -109,6 +109,7 @@ export function AddTransactionSheet({
   const [customDayInput, setCustomDayInput] = useState(() => String(new Date().getDate()));
   const [durationMode, setDurationMode] = useState<"continuous" | "limited">("continuous");
   const [installmentsInput, setInstallmentsInput] = useState("3");
+  const [creditPurchaseMode, setCreditPurchaseMode] = useState<"single" | "installments" | "subscription">("single");
 
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -145,6 +146,11 @@ export function AddTransactionSheet({
   const effectiveAccount = availableAccounts.includes(account)
     ? account
     : availableAccounts[0] || "Débito/Pix";
+  const selectedCardObj = cards.find(
+    (card) => card.name === effectiveAccount || card.id === effectiveAccount
+  );
+  const isSelectedAccountCreditCard =
+    type === "despesa" && selectedCardObj?.type === "credit";
 
   const handleTypeChange = (nextType: "despesa" | "receita") => {
     setType(nextType);
@@ -164,6 +170,13 @@ export function AddTransactionSheet({
   const installmentsCount = Math.min(
     360,
     Math.max(2, parseInt(installmentsInput, 10) || 3)
+  );
+  const isInstallmentModeActive = isSelectedAccountCreditCard
+    ? creditPurchaseMode === "installments"
+    : isRecurring && durationMode === "limited";
+  const installmentSplit = splitInstallmentPurchase(
+    parsedAmount,
+    isInstallmentModeActive ? installmentsCount : 1
   );
   const effectiveDueDay =
     recurrenceType === "business_day_5"
@@ -206,6 +219,26 @@ export function AddTransactionSheet({
 
       const submitAction = onAdd || addTransaction;
       if (!submitAction) throw new Error("Fluxo de lançamento indisponível.");
+
+      const effectiveIsRecurring = isSelectedAccountCreditCard
+        ? creditPurchaseMode === "installments" || creditPurchaseMode === "subscription"
+        : isRecurring;
+      const effectiveInstallmentsCount = isSelectedAccountCreditCard
+        ? creditPurchaseMode === "installments"
+          ? validateInstallmentsCount(installmentsCount).value
+          : undefined
+        : isRecurring && durationMode === "limited"
+          ? validateInstallmentsCount(installmentsCount).value
+          : undefined;
+      const effectiveRecurrenceType = isSelectedAccountCreditCard
+        ? "fixed_day"
+        : recurrenceType;
+      const effectiveRecurrenceDay = isSelectedAccountCreditCard
+        ? creditPurchaseMode === "installments"
+          ? validateDayOfMonth(chosenDate.getDate()).value
+          : validateDayOfMonth(effectiveDueDay).value
+        : validateDayOfMonth(effectiveDueDay).value;
+
       await submitAction({
         title: txDescription,
         amount: safeAmount,
@@ -215,18 +248,16 @@ export function AddTransactionSheet({
         cardId: cards.find((card) => card.name === effectiveAccount)?.id || null,
         date: formattedDate,
         occurredAt: chosenDate,
-        isRecurring,
-        recurrenceType: isRecurring ? recurrenceType : undefined,
-        recurrenceDay: isRecurring ? validateDayOfMonth(effectiveDueDay).value : undefined,
-        installmentsCount:
-          isRecurring && durationMode === "limited"
-            ? validateInstallmentsCount(installmentsCount).value
-            : undefined,
+        isRecurring: effectiveIsRecurring,
+        recurrenceType: effectiveIsRecurring ? effectiveRecurrenceType : undefined,
+        recurrenceDay: effectiveIsRecurring ? effectiveRecurrenceDay : undefined,
+        installmentsCount: effectiveInstallmentsCount,
       });
 
       setAmountInput("");
       setTitle("");
       setIsRecurring(false);
+      setCreditPurchaseMode("single");
       setDatePreset("today");
       const today = new Date();
       setDateInput(formatDateToInput(today));
@@ -326,7 +357,9 @@ export function AddTransactionSheet({
           {/* 3. VALOR COMO PROTAGONISTA (Experiência Apple Cash / Wallet) */}
           <div className="text-center py-5 px-4 bg-[#FBFBFD] rounded-2xl border border-black/[0.04] space-y-1">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-[#86868B] block">
-              Valor do lançamento
+              {isInstallmentModeActive
+                ? `Valor total da compra (${installmentsCount}x)`
+                : "Valor do lançamento"}
             </span>
             <div className="flex items-baseline justify-center gap-1.5">
               <span className="text-2xl sm:text-3xl font-light text-[#86868B]">
@@ -342,6 +375,13 @@ export function AddTransactionSheet({
                 autoFocus
               />
             </div>
+            {isInstallmentModeActive && parsedAmount > 0 && (
+              <div className="pt-1">
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200/70 text-[11px] font-semibold font-mono tabular-nums">
+                  {installmentsCount}x de R$ {formatCurrency(installmentSplit.installmentAmount)} / mês
+                </span>
+              </div>
+            )}
             {amountInput && (
               <button
                 type="button"
@@ -416,6 +456,183 @@ export function AddTransactionSheet({
               })}
             </div>
           </div>
+
+          {/* 4.1 PARCELAMENTO DIRETO NO CARTÃO DE CRÉDITO */}
+          {isSelectedAccountCreditCard && (
+            <div className="rounded-2xl border border-indigo-200/70 bg-indigo-50/40 p-3.5 sm:p-4 space-y-3 animate-in fade-in duration-200">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-indigo-950 flex items-center gap-1.5">
+                  <CreditCard size={13} strokeWidth={2} className="text-indigo-700" />
+                  Como foi a compra no cartão?
+                </span>
+                <span className="text-[11px] font-semibold text-indigo-700">
+                  {creditPurchaseMode === "single"
+                    ? "À vista (1x)"
+                    : creditPurchaseMode === "installments"
+                      ? `Parcelado em ${installmentsCount}x`
+                      : "Assinatura Mensal"}
+                </span>
+              </div>
+
+              <div className="p-1 rounded-full bg-white/90 border border-indigo-200/60 grid grid-cols-3 gap-0.5 shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => setCreditPurchaseMode("single")}
+                  className={`rounded-full py-1.5 text-xs transition-all select-none cursor-pointer ${
+                    creditPurchaseMode === "single"
+                      ? "bg-[#1D1D1F] text-white font-semibold shadow-2xs"
+                      : "text-[#86868B] hover:text-[#1D1D1F] font-medium"
+                  }`}
+                >
+                  À vista (1x)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCreditPurchaseMode("installments")}
+                  className={`rounded-full py-1.5 text-xs transition-all select-none cursor-pointer ${
+                    creditPurchaseMode === "installments"
+                      ? "bg-[#1D1D1F] text-white font-semibold shadow-2xs"
+                      : "text-[#86868B] hover:text-[#1D1D1F] font-medium"
+                  }`}
+                >
+                  Parcelado
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCreditPurchaseMode("subscription")}
+                  className={`rounded-full py-1.5 text-xs transition-all select-none cursor-pointer ${
+                    creditPurchaseMode === "subscription"
+                      ? "bg-[#1D1D1F] text-white font-semibold shadow-2xs"
+                      : "text-[#86868B] hover:text-[#1D1D1F] font-medium"
+                  }`}
+                >
+                  Assinatura Fixa
+                </button>
+              </div>
+
+              {creditPurchaseMode === "installments" && (
+                <div className="space-y-2.5 pt-1 animate-in fade-in duration-150">
+                  <div className="flex flex-wrap gap-1.5">
+                    {[2, 3, 4, 5, 6, 8, 10, 12, 18, 24].map((count) => (
+                      <button
+                        key={count}
+                        type="button"
+                        onClick={() => setInstallmentsInput(String(count))}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                          installmentsCount === count &&
+                          installmentsInput === String(count)
+                            ? "bg-indigo-600 text-white shadow-2xs"
+                            : "bg-white text-[#1D1D1F] border border-indigo-200/70 hover:bg-indigo-50"
+                        }`}
+                      >
+                        {count}x
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs text-[#1D1D1F] pt-0.5">
+                    <span className="text-[#86868B] font-medium">Quantidade de parcelas:</span>
+                    <div className="flex items-center gap-1 bg-white border border-indigo-200/80 rounded-lg p-0.5 shadow-2xs">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const current = parseInt(installmentsInput, 10) || 2;
+                          setInstallmentsInput(String(Math.max(2, current - 1)));
+                        }}
+                        className="w-6 h-6 rounded bg-[#F2F2F7] hover:bg-[#E5E5EA] text-[#1D1D1F] font-bold text-xs flex items-center justify-center cursor-pointer select-none"
+                        title="Diminuir"
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        min="2"
+                        max="360"
+                        value={installmentsInput}
+                        onChange={(e) => setInstallmentsInput(e.target.value)}
+                        onBlur={() => setInstallmentsInput(String(installmentsCount))}
+                        className="w-12 text-center text-xs font-bold text-[#1D1D1F] outline-none bg-transparent"
+                      />
+                      <span className="text-xs font-bold text-[#86868B] pr-1">x</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const current = parseInt(installmentsInput, 10) || 2;
+                          setInstallmentsInput(String(current + 1));
+                        }}
+                        className="w-6 h-6 rounded bg-[#F2F2F7] hover:bg-[#E5E5EA] text-[#1D1D1F] font-bold text-xs flex items-center justify-center cursor-pointer select-none"
+                        title="Aumentar"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="bg-white rounded-xl p-3 border border-indigo-200/70 space-y-1.5 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[#86868B]">Valor de cada parcela:</span>
+                      <strong className="text-indigo-700 font-mono tabular-nums">
+                        {installmentsCount}x de R$ {formatCurrency(installmentSplit.installmentAmount)}
+                      </strong>
+                    </div>
+                    {Math.abs(installmentSplit.lastInstallmentAmount - installmentSplit.installmentAmount) >= 0.005 && (
+                      <div className="flex items-center justify-between text-[11px] text-[#86868B]">
+                        <span>Ajuste de centavos na última parcela:</span>
+                        <span className="font-mono tabular-nums">
+                          R$ {formatCurrency(installmentSplit.lastInstallmentAmount)}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between border-t border-black/[0.04] pt-1.5">
+                      <span className="text-[#86868B]">Limite descontado agora:</span>
+                      <strong className="text-[#1D1D1F] font-mono tabular-nums">
+                        R$ {formatCurrency(parsedAmount)} (total)
+                      </strong>
+                    </div>
+                    {selectedCardObj && selectedCardObj.limit > 0 && (
+                      <div className="flex items-center justify-between text-[11px] text-[#86868B]">
+                        <span>Limite disponível após a compra:</span>
+                        <span className="font-mono tabular-nums font-semibold text-emerald-700">
+                          R${" "}
+                          {formatCurrency(
+                            Math.max(
+                              0,
+                              selectedCardObj.limit - (selectedCardObj.spent || 0) - parsedAmount
+                            )
+                          )}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {creditPurchaseMode === "subscription" && (
+                <div className="bg-white rounded-xl p-3 border border-indigo-200/70 space-y-2 text-xs animate-in fade-in duration-150">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[#86868B]">Cobrança mensal fixa no dia:</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="31"
+                      value={customDayInput}
+                      onChange={(e) => {
+                        setCustomDayInput(e.target.value);
+                        const d = parseInt(e.target.value, 10);
+                        if (!Number.isNaN(d) && d >= 1 && d <= 31) {
+                          setRecurrenceDay(d);
+                        }
+                      }}
+                      className="w-14 rounded-lg border border-black/15 bg-[#FBFBFD] px-2 py-1 text-center text-xs font-semibold text-[#1D1D1F] outline-none"
+                    />
+                  </div>
+                  <p className="text-[11px] text-[#86868B]">
+                    Ideal para Netflix, Spotify, iCloud ou academia. Entra todo mês na fatura sem bloquear o limite dos meses futuros.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* 5. DESCRIÇÃO E CATEGORIA (Campos Suaves e Integrados) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -553,7 +770,8 @@ export function AddTransactionSheet({
             )}
           </div>
 
-          {/* 6. RECORRÊNCIA (Progressive Disclosure) */}
+          {/* 6. RECORRÊNCIA (Progressive Disclosure - para Conta/Pix e Receitas) */}
+          {!isSelectedAccountCreditCard && (
           <div className="rounded-2xl border border-black/[0.04] bg-[#FBFBFD] p-4 space-y-3">
             {/* Toggle Principal */}
             <div className="flex items-center justify-between">
@@ -821,11 +1039,14 @@ export function AddTransactionSheet({
               </div>
             )}
           </div>
+          )}
 
           {/* 7. RESUMO FINANCEIRO (Subtotal / Método / Total em Destaque) */}
           <div className="space-y-1.5 pt-2 border-t border-black/[0.04]">
             <div className="flex justify-between items-center text-xs text-[#86868B]">
-              <span>Subtotal</span>
+              <span>
+                {isInstallmentModeActive ? "Valor total da compra (limite)" : "Subtotal"}
+              </span>
               <span className="font-mono text-[#1D1D1F]">
                 R$ {formatCurrency(parsedAmount)}
               </span>
@@ -838,12 +1059,27 @@ export function AddTransactionSheet({
                 {formatAccountLabel(effectiveAccount)}
               </span>
             </div>
+            {isInstallmentModeActive && (
+              <div className="flex justify-between items-center text-xs text-indigo-700 font-medium">
+                <span>Parcelamento na fatura</span>
+                <span className="font-mono tabular-nums font-semibold">
+                  {installmentsCount}x de R$ {formatCurrency(installmentSplit.installmentAmount)}
+                </span>
+              </div>
+            )}
             <div className="flex justify-between items-baseline pt-1">
               <span className="text-xs font-semibold uppercase tracking-wider text-[#86868B]">
-                {type === "receita" ? "Total a receber" : "Total a pagar"}
+                {type === "receita"
+                  ? "Total a receber"
+                  : isInstallmentModeActive
+                    ? "1ª parcela na fatura"
+                    : "Total a pagar"}
               </span>
               <span className="text-2xl font-bold tracking-tight text-[#1D1D1F] font-mono tabular-nums">
-                R$ {formatCurrency(parsedAmount)}
+                R${" "}
+                {formatCurrency(
+                  isInstallmentModeActive ? installmentSplit.installmentAmount : parsedAmount
+                )}
               </span>
             </div>
           </div>

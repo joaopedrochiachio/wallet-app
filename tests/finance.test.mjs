@@ -13,6 +13,8 @@ import {
   getCardInvoiceRecurringDetails,
   getCardInvoiceDetailsForMonth,
   isInvoicePaymentOrSettlement,
+  splitInstallmentPurchase,
+  calculateCreditCardUsedLimit,
 } from "../lib/utils/ledger.ts";
 import {
   getPeriodKey,
@@ -1896,4 +1898,137 @@ test("exclusão pontual via excludedPeriods em fatura de cartão remove apenas o
   assert.equal(detailsJan.periodKey, "2027-01");
   assert.equal(detailsJan.totalInvoice, 34.9);
   assert.equal(detailsJan.recurringItemDetails.length, 1);
+});
+
+test("compra parcelada de R$ 275 em 3x no cartão divide as parcelas (91,67 + 91,67 + 91,66) e desconta o limite integral (R$ 275,00)", () => {
+  const split = splitInstallmentPurchase(275, 3);
+  assert.equal(split.totalAmount, 275);
+  assert.equal(split.installmentsCount, 3);
+  assert.equal(split.installmentAmount, 91.67);
+  assert.equal(split.lastInstallmentAmount, 91.66);
+  assert.equal(
+    Math.round((split.installmentAmount * 2 + split.lastInstallmentAmount) * 100) / 100,
+    275
+  );
+
+  const nubank = {
+    id: "card-nu",
+    name: "NuBank",
+    type: "credit",
+    limit: 1000,
+    spent: 0,
+    closingDay: 1,
+    dueDay: 10,
+  };
+
+  // Compra feita em 05/10/2026 (após fechamento dia 1 -> 1ª parcela vence em Novembro 2026-11)
+  const purchaseDate = new Date(2026, 9, 5, 12);
+  const firstInstallmentTx = {
+    id: "tx-compra-1",
+    title: "Compra Parcelada 3x",
+    amount: split.installmentAmount, // 91.67
+    type: "despesa",
+    account: "NuBank",
+    cardId: "card-nu",
+    recurringItemId: "rec-compra-3x",
+    periodKey: "2026-10",
+    occurredAt: purchaseDate,
+  };
+
+  const recurringInstallmentItem = {
+    id: "rec-compra-3x",
+    title: "Compra Parcelada 3x",
+    amount: split.installmentAmount, // 91.67
+    type: "expense",
+    account: "NuBank",
+    cardId: "card-nu",
+    dueDay: 5,
+    recurrenceType: "fixed_day",
+    installmentsCount: 3,
+    startYear: 2026,
+    startMonth: 9, // Outubro 2026 (0-indexed)
+    realizedPeriods: ["2026-10"],
+    overrides: {
+      "2026-12": { amount: split.lastInstallmentAmount }, // 3ª parcela (Dezembro -> vence em Jan/2027) = 91.66
+    },
+    active: true,
+  };
+
+  const entries = [firstInstallmentTx];
+  const recurringItems = [recurringInstallmentItem];
+
+  // 1. Fatura aberta atual (Novembro/2026) cobra apenas a 1ª parcela (91,67)
+  const openInvoice = calculateCreditInvoice(nubank, entries, recurringItems, purchaseDate);
+  assert.equal(openInvoice, 91.67);
+
+  // 2. Limite utilizado no cartão desconta a compra inteira (R$ 275,00) imediatamente
+  const usedLimit = calculateCreditCardUsedLimit(nubank, entries, recurringItems, purchaseDate);
+  assert.equal(usedLimit, 275);
+
+  const novDetails = getCardInvoiceDetailsForMonth(
+    nubank,
+    entries,
+    recurringItems,
+    2026,
+    10, // Novembro
+    purchaseDate
+  );
+  assert.equal(novDetails.totalInvoice, 91.67);
+  assert.equal(novDetails.availableLimit, 725); // 1000 - 275
+
+  // 3. Fatura de Dezembro/2026 (2ª parcela) = 91,67
+  const decDetails = getCardInvoiceDetailsForMonth(
+    nubank,
+    entries,
+    recurringItems,
+    2026,
+    11, // Dezembro
+    purchaseDate
+  );
+  assert.equal(decDetails.totalInvoice, 91.67);
+
+  // 4. Fatura de Janeiro/2027 (3ª e última parcela) = 91,66
+  const janDetails = getCardInvoiceDetailsForMonth(
+    nubank,
+    entries,
+    recurringItems,
+    2027,
+    0, // Janeiro
+    purchaseDate
+  );
+  assert.equal(janDetails.totalInvoice, 91.66);
+
+  // 5. Fatura de Fevereiro/2027 (após fim das 3 parcelas) = 0
+  const febDetails = getCardInvoiceDetailsForMonth(
+    nubank,
+    entries,
+    recurringItems,
+    2027,
+    1, // Fevereiro
+    purchaseDate
+  );
+  assert.equal(febDetails.totalInvoice, 0);
+
+  // 6. Quando a 1ª fatura (Novembro/2026) é paga, o limite libera R$ 91,67 (restando R$ 183,33 presos)
+  const entriesAfterFirstPayment = [
+    ...entries,
+    {
+      id: "tx-pay-nov",
+      amount: 91.67,
+      type: "despesa",
+      kind: "invoice_payment",
+      account: "Conta Principal",
+      cardId: "checking",
+      relatedCardId: "card-nu",
+      periodKey: "2026-11",
+      occurredAt: new Date(2026, 10, 10, 12),
+    },
+  ];
+  const usedLimitAfterPayment = calculateCreditCardUsedLimit(
+    nubank,
+    entriesAfterFirstPayment,
+    recurringItems,
+    purchaseDate
+  );
+  assert.equal(usedLimitAfterPayment, 183.33);
 });

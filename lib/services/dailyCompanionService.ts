@@ -49,6 +49,7 @@ export interface QuickExpenseParseResult {
   category: string;
   account: string;
   cardId?: string | null;
+  installmentsCount?: number;
   confidence: number;
 }
 
@@ -157,8 +158,22 @@ export function parseQuickExpenseText(
     };
   }
 
+  // 0. Detecta menção a parcelamento ("em 3x", "3x", "dividido em 3 vezes") antes de extrair o valor
+  let installmentsCount: number | undefined;
+  let textForAmount = cleaned;
+  const installmentMatch = cleaned.match(
+    /\b(?:em\s+|dividid[oa]\s+em\s+|parcelad[oa]\s+em\s+)?(\d{1,2})\s*(?:x|vezes|parcelas)\b/i
+  );
+  if (installmentMatch) {
+    const parsedInst = parseInt(installmentMatch[1], 10);
+    if (parsedInst >= 2 && parsedInst <= 72) {
+      installmentsCount = parsedInst;
+      textForAmount = cleaned.replace(installmentMatch[0], " ").trim();
+    }
+  }
+
   // Regex para capturar valores monetários: "R$ 45", "45,90", "45.90", "45"
-  const amountMatch = cleaned.match(/(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)/i);
+  const amountMatch = textForAmount.match(/(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)/i);
   let amount = 0;
   if (amountMatch) {
     const rawVal = amountMatch[1].replace(",", ".");
@@ -166,9 +181,9 @@ export function parseQuickExpenseText(
   }
 
   // Remove o trecho numérico para obter as palavras-chave
-  let textWithoutAmount = cleaned;
+  let textWithoutAmount = textForAmount;
   if (amountMatch) {
-    textWithoutAmount = cleaned.replace(amountMatch[0], "").trim();
+    textWithoutAmount = textForAmount.replace(amountMatch[0], "").trim();
   }
 
   // Detecta menção a cartão/conta
@@ -295,6 +310,7 @@ export function parseQuickExpenseText(
     category,
     account: chosenAccount,
     cardId: chosenCardId,
+    ...(installmentsCount ? { installmentsCount } : {}),
     confidence,
   };
 }

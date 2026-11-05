@@ -757,7 +757,13 @@ export default function CardsPage() {
                     <div className="space-y-1.5 pt-1">
                       <div className="flex justify-between items-center text-xs">
                         <span className="text-[#86868B]">
-                          Utilizado: <strong className="text-[#1D1D1F] font-mono tabular-nums">R$ {formatCurrency(card.spent)}</strong>
+                          Limite Utilizado:{" "}
+                          <strong className="text-[#1D1D1F] font-mono tabular-nums">
+                            R$ {formatCurrency(card.spent)}
+                          </strong>{" "}
+                          <span className="text-[11px] text-[#86868B]">
+                            (Disponível: R$ {formatCurrency(details.availableLimit)})
+                          </span>
                         </span>
                         <div className="flex items-center gap-2">
                           {isEditing ? (
@@ -913,6 +919,16 @@ export default function CardsPage() {
                               const linkedItem = recurringItems.find(
                                 (r) => r.id === tx.recurringItemId
                               );
+                              const matchedRecDetail = details.recurringItemDetails.find(
+                                (d) => d.item.id === tx.recurringItemId
+                              );
+                              const isInstallmentPlan = Boolean(
+                                linkedItem?.installmentsCount && linkedItem.installmentsCount > 1
+                              );
+                              const installmentIdx = matchedRecDetail?.installmentIndex || 1;
+                              const totalInst =
+                                linkedItem?.installmentsCount ||
+                                matchedRecDetail?.totalInstallments;
                               return (
                                 <div
                                   key={tx.id}
@@ -920,19 +936,30 @@ export default function CardsPage() {
                                 >
                                   <div className="flex items-center gap-2.5 min-w-0">
                                     <div className="w-8 h-8 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center shrink-0 shadow-2xs">
-                                      <Repeat size={14} strokeWidth={2.2} />
+                                      {isInstallmentPlan ? (
+                                        <CalendarClock size={14} strokeWidth={2.2} />
+                                      ) : (
+                                        <Repeat size={14} strokeWidth={2.2} />
+                                      )}
                                     </div>
                                     <div className="min-w-0">
                                       <div className="flex items-center gap-1.5 flex-wrap">
                                         <p className="font-semibold text-[#1D1D1F] text-xs truncate">
                                           {tx.title}
                                         </p>
-                                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-violet-100 text-violet-800 border border-violet-200/80 inline-flex items-center gap-1 shrink-0">
-                                          <Repeat size={10} strokeWidth={2.5} /> Recorrente mensal
-                                        </span>
+                                        {isInstallmentPlan ? (
+                                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 border border-purple-200/80 inline-flex items-center gap-1 shrink-0">
+                                            <CalendarClock size={10} strokeWidth={2.5} /> Parcela{" "}
+                                            {installmentIdx} de {totalInst}
+                                          </span>
+                                        ) : (
+                                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-violet-100 text-violet-800 border border-violet-200/80 inline-flex items-center gap-1 shrink-0">
+                                            <Repeat size={10} strokeWidth={2.5} /> Recorrente mensal
+                                          </span>
+                                        )}
                                       </div>
                                       <p className="text-[11px] text-[#86868B] truncate mt-0.5">
-                                        {tx.category || "Assinatura"} · Lançamento faturado
+                                        {tx.category || (isInstallmentPlan ? "Compra Parcelada" : "Assinatura")} · Lançamento faturado
                                       </p>
                                     </div>
                                   </div>

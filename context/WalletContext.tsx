@@ -53,6 +53,8 @@ import {
   calculateCheckingBalance,
   calculateCheckingBalanceBefore,
   calculateCreditInvoice,
+  calculateCreditCardUsedLimit,
+  splitInstallmentPurchase,
   calculateInvoiceSchedule,
   calculateInvoiceScheduleWithCredits,
   calculateMonthlyAccountFlow,
@@ -105,6 +107,7 @@ export interface TransactionItem {
   recurrenceType?: RecurrenceType;
   recurrenceDay?: number;
   installmentsCount?: number;
+  amountIsTotalPurchase?: boolean;
   kind?: "regular" | "invoice_payment" | "invoice_settlement" | "balance_reconciliation";
   relatedCardId?: string | null;
   groupId?: string | null;
@@ -547,9 +550,19 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           return { ...card, balance: checkingBalances[card.id] ?? 0, spent: 0 };
         }
         const invoiceAmount = cardInvoices[card.id] || 0;
-        return { ...card, balance: 0, invoiceAmount, spent: invoiceAmount };
+        const usedLimit = calculateCreditCardUsedLimit(
+          { ...card, spent: 0 },
+          transactions,
+          recurringItems
+        );
+        return {
+          ...card,
+          balance: 0,
+          invoiceAmount,
+          spent: Math.max(invoiceAmount, usedLimit),
+        };
       }),
-    [cards, cardInvoices, checkingBalances]
+    [cards, cardInvoices, checkingBalances, transactions, recurringItems]
   );
 
   const activeCard = useMemo(
@@ -667,20 +680,43 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const resolvedCardId = tx.cardId || resolveCardId(tx.account);
       const periodKey = getPeriodKey(safeTxDate.getFullYear(), safeTxDate.getMonth());
       const expectedRecurringType = tx.type === "receita" ? "income" : "expense";
-      const matchingRecurring = recurringItems.find((item) => {
-        const itemCardId = item.cardId || resolveCardId(item.account);
-        const sameDescription =
-          item.title.trim().toLocaleLowerCase("pt-BR") === tx.title.trim().toLocaleLowerCase("pt-BR") ||
-          item.category.trim().toLocaleLowerCase("pt-BR") === tx.category.trim().toLocaleLowerCase("pt-BR");
-        return (
-          item.active &&
-          (item.type || "expense") === expectedRecurringType &&
-          Math.abs(item.amount - tx.amount) < 0.005 &&
-          sameDescription &&
-          itemCardId === resolvedCardId &&
-          !item.realizedPeriods?.includes(periodKey)
-        );
-      });
+
+      const requestedInstallments =
+        tx.installmentsCount && tx.installmentsCount > 1
+          ? Math.max(2, Math.min(360, Math.round(tx.installmentsCount)))
+          : undefined;
+      const isInstallmentPurchase = Boolean(requestedInstallments && requestedInstallments > 1);
+
+      const splitInfo =
+        isInstallmentPurchase && tx.amountIsTotalPurchase !== false
+          ? splitInstallmentPurchase(tx.amount, requestedInstallments!)
+          : {
+              totalAmount: tx.amount * (requestedInstallments || 1),
+              installmentsCount: requestedInstallments || 1,
+              installmentAmount: tx.amount,
+              lastInstallmentAmount: tx.amount,
+            };
+
+      const effectiveTxAmount = isInstallmentPurchase
+        ? splitInfo.installmentAmount
+        : tx.amount;
+
+      const matchingRecurring = !isInstallmentPurchase
+        ? recurringItems.find((item) => {
+            const itemCardId = item.cardId || resolveCardId(item.account);
+            const sameDescription =
+              item.title.trim().toLocaleLowerCase("pt-BR") === tx.title.trim().toLocaleLowerCase("pt-BR") ||
+              item.category.trim().toLocaleLowerCase("pt-BR") === tx.category.trim().toLocaleLowerCase("pt-BR");
+            return (
+              item.active &&
+              (item.type || "expense") === expectedRecurringType &&
+              Math.abs(item.amount - effectiveTxAmount) < 0.005 &&
+              sameDescription &&
+              itemCardId === resolvedCardId &&
+              !item.realizedPeriods?.includes(periodKey)
+            );
+          })
+        : undefined;
 
       let recurringToPersist: RecurringItem | undefined;
       if (matchingRecurring) {
@@ -688,12 +724,34 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           ...matchingRecurring,
           realizedPeriods: [...(matchingRecurring.realizedPeriods || []), periodKey],
         };
-      } else if (tx.isRecurring) {
+      } else if (tx.isRecurring || isInstallmentPurchase) {
         const recurrenceType: RecurrenceType = tx.recurrenceType || "fixed_day";
+        let overrides: RecurringItem["overrides"] | undefined;
+        if (
+          isInstallmentPurchase &&
+          requestedInstallments &&
+          Math.abs(splitInfo.lastInstallmentAmount - splitInfo.installmentAmount) >= 0.005
+        ) {
+          const lastMonthDate = new Date(
+            safeTxDate.getFullYear(),
+            safeTxDate.getMonth() + requestedInstallments - 1,
+            1
+          );
+          const lastCandPeriodKey = getPeriodKey(
+            lastMonthDate.getFullYear(),
+            lastMonthDate.getMonth()
+          );
+          overrides = {
+            [lastCandPeriodKey]: {
+              amount: splitInfo.lastInstallmentAmount,
+            },
+          };
+        }
+
         recurringToPersist = {
           id: `rec-${crypto.randomUUID()}`,
           title: tx.title,
-          amount: tx.amount,
+          amount: effectiveTxAmount,
           account: tx.account,
           cardId: resolvedCardId,
           category: tx.category,
@@ -701,19 +759,20 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           dueDay:
             recurrenceType === "business_day_5"
               ? get5thBusinessDay(safeTxDate.getFullYear(), safeTxDate.getMonth())
-              : tx.recurrenceDay || 10,
+              : tx.recurrenceDay || safeTxDate.getDate() || 10,
           recurrenceType,
-          installmentsCount: tx.installmentsCount,
+          installmentsCount: requestedInstallments,
           startMonth: safeTxDate.getMonth(),
           startYear: safeTxDate.getFullYear(),
           realizedPeriods: [periodKey],
+          ...(overrides ? { overrides } : {}),
           active: true,
         };
       }
 
       await addTransactionFirestore(
         {
-          amount: tx.amount,
+          amount: effectiveTxAmount,
           type: tx.type === "receita" ? "in" : "out",
           category: tx.category,
           description: tx.title,

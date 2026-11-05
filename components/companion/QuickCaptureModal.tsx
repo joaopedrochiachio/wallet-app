@@ -73,6 +73,8 @@ export function QuickCaptureModal({ isOpen, onClose, onSuccess }: QuickCaptureMo
         cardId: parsed.cardId || null,
         date: new Date().toISOString().split("T")[0],
         occurredAt: new Date().toISOString(),
+        isRecurring: Boolean(parsed.installmentsCount && parsed.installmentsCount > 1),
+        installmentsCount: parsed.installmentsCount,
       });
 
       setJustSaved(true);
@@ -226,6 +228,11 @@ export function QuickCaptureModal({ isOpen, onClose, onSuccess }: QuickCaptureMo
                       <CreditCard size={11} className="text-[#86868B]" />
                       <span>{parsed.account}</span>
                     </span>
+                    {parsed.installmentsCount && parsed.installmentsCount > 1 && (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-indigo-50 border border-indigo-200/70 text-indigo-700 font-mono tabular-nums">
+                        {parsed.installmentsCount}x de R$ {(parsed.amount / parsed.installmentsCount).toFixed(2)}
+                      </span>
+                    )}
                   </div>
                 </div>
 

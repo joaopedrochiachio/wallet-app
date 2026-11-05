@@ -500,6 +500,116 @@ export function calculateCreditInvoice(
   return getCardOpenInvoiceDetails(card, entries, recurringItems, referenceDate).totalInvoice;
 }
 
+export interface InstallmentPurchaseSplit {
+  totalAmount: number;
+  installmentsCount: number;
+  installmentAmount: number;
+  lastInstallmentAmount: number;
+}
+
+/**
+ * Divide o valor total de uma compra parcelada em N parcelas mensais,
+ * conciliando eventual diferença de centavos na última parcela (como nos cartões reais).
+ * Exemplo: R$ 275,00 em 3x -> 2x de R$ 91,67 + 1x de R$ 91,66 = R$ 275,00.
+ */
+export function splitInstallmentPurchase(
+  totalAmount: number,
+  installmentsCount: number
+): InstallmentPurchaseSplit {
+  const safeTotal = Math.round(Math.max(0, Number(totalAmount) || 0) * 100) / 100;
+  const safeCount = Math.max(1, Math.min(360, Math.round(Number(installmentsCount) || 1)));
+  if (safeCount <= 1) {
+    return {
+      totalAmount: safeTotal,
+      installmentsCount: 1,
+      installmentAmount: safeTotal,
+      lastInstallmentAmount: safeTotal,
+    };
+  }
+  const installmentAmount = Math.round((safeTotal / safeCount) * 100) / 100;
+  const lastInstallmentAmount =
+    Math.round((safeTotal - installmentAmount * (safeCount - 1)) * 100) / 100;
+  return {
+    totalAmount: safeTotal,
+    installmentsCount: safeCount,
+    installmentAmount,
+    lastInstallmentAmount: Math.max(0, lastInstallmentAmount),
+  };
+}
+
+/**
+ * Calcula o limite total comprometido (utilizado) no cartão de crédito,
+ * reproduzindo o funcionamento real de um cartão:
+ * - Soma a fatura aberta atual (compras à vista, parcela do mês atual e assinaturas do ciclo aberto)
+ * - Soma todas as parcelas futuras ainda não quitadas de compras parceladas (installmentsCount > 1),
+ *   descontando do limite o valor integral da compra e liberando a cada fatura paga.
+ */
+export function calculateCreditCardUsedLimit(
+  card: CardItem,
+  entries: LedgerEntry[],
+  recurringItems: RecurringItem[] = [],
+  referenceDate: Date = new Date()
+): number {
+  if (card.type !== "credit") return 0;
+
+  const openDetails = getCardOpenInvoiceDetails(card, entries, recurringItems, referenceDate);
+  const { schedule, creditsByPeriod } = calculateInvoiceScheduleWithCredits(
+    card,
+    entries,
+    referenceDate
+  );
+
+  // 1. Fatura aberta atual
+  let totalCommitted = openDetails.totalInvoice;
+
+  // 2. Compras lançadas diretamente em entries com vencimento após a fatura aberta
+  for (const [periodKey, amount] of Object.entries(schedule)) {
+    if (periodKey > openDetails.periodKey && amount > 0) {
+      totalCommitted += amount;
+    }
+  }
+
+  // 3. Parcelas futuras de compras parceladas (installmentsCount > 1) que vencem após a fatura aberta
+  const installmentRecurringItems = recurringItems.filter(
+    (item) =>
+      item.active &&
+      item.type !== "income" &&
+      Boolean(item.installmentsCount && item.installmentsCount > 1) &&
+      matchesLedgerCard(card, item.account, item.cardId)
+  );
+
+  if (installmentRecurringItems.length > 0) {
+    const maxInstallments = installmentRecurringItems.reduce(
+      (max, item) => Math.max(max, Math.min(360, item.installmentsCount || 1)),
+      1
+    );
+    const horizonMonths = Math.min(360, maxInstallments + 2);
+
+    for (let offset = 1; offset <= horizonMonths; offset++) {
+      const futDate = new Date(openDetails.targetYear, openDetails.targetMonth + offset, 1);
+      const futYear = futDate.getFullYear();
+      const futMonth = futDate.getMonth();
+      const futPeriodKey = getPeriodKey(futYear, futMonth);
+
+      const futRecDetails = getCardInvoiceRecurringDetails(
+        card,
+        installmentRecurringItems,
+        futYear,
+        futMonth,
+        entries
+      );
+
+      if (futRecDetails.pendingAmount > 0) {
+        const futCredit = creditsByPeriod?.[futPeriodKey] || 0;
+        const netFutInstallments = Math.max(0, futRecDetails.pendingAmount - futCredit);
+        totalCommitted += netFutInstallments;
+      }
+    }
+  }
+
+  return Math.round(Math.max(0, totalCommitted) * 100) / 100;
+}
+
 export interface CardMonthInvoiceDetails {
   card: CardItem;
   targetYear: number;
@@ -688,8 +798,13 @@ export function getCardInvoiceDetailsForMonth(
     (paidAmount > 0 && totalInvoice <= 0.005) ||
     (paidAmount >= installmentsAmount + netRecurring && installmentsAmount + netRecurring > 0);
 
-  const availableLimit = Math.max(0, card.limit - card.spent);
-  const percentUsed = card.limit > 0 ? Math.min(100, Math.round((card.spent / card.limit) * 100)) : 0;
+  const effectiveSpent =
+    card.spent > 0
+      ? card.spent
+      : calculateCreditCardUsedLimit(card, entries, recurringItems, referenceDate);
+  const availableLimit = Math.round(Math.max(0, card.limit - effectiveSpent) * 100) / 100;
+  const percentUsed =
+    card.limit > 0 ? Math.min(100, Math.round((effectiveSpent / card.limit) * 100)) : 0;
 
   return {
     card,
