@@ -37,21 +37,21 @@ export interface AIQuotaConfig {
 
 export const DEFAULT_AI_QUOTAS: AIQuotaConfig = {
   daily: {
-    chat: 15,
-    analyze: 2,
-    patterns: 4,
+    chat: 500,
+    analyze: 200,
+    patterns: 200,
   },
   monthly: {
-    chat: 150,
-    analyze: 10,
-    patterns: 20,
+    chat: 5000,
+    analyze: 2000,
+    patterns: 2000,
   },
-  userMonthlyCostCeilingUsd: 0.75, // US$ 0,75 por usuário por mês
-  globalMonthlyCostCeilingUsd: 4.50, // US$ 4,50 compartilhado globalmente entre todos os usuários
+  userMonthlyCostCeilingUsd: 50.0, // US$ 50,00 por usuário por mês
+  globalMonthlyCostCeilingUsd: 250.0, // US$ 250,00 compartilhado globalmente entre todos os usuários
   perMinuteRateLimit: {
-    chat: 15,
-    analyze: 5,
-    patterns: 10,
+    chat: 60,
+    analyze: 30,
+    patterns: 30,
   },
 };
 

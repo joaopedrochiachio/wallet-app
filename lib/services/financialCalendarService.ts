@@ -30,6 +30,8 @@ export interface FinancialCalendarTransactionItem {
   cardName?: string;
   occurredAt: Date;
   timeLabel?: string;
+  recurringItemId?: string | null;
+  periodKey?: string | null;
 }
 
 export interface FinancialCalendarBillItem {
@@ -40,6 +42,7 @@ export interface FinancialCalendarBillItem {
   status: "pending" | "paid" | "scheduled_card";
   source: "recurring" | "credit_invoice";
   sourceItem?: RecurringItem;
+  scheduledDueDay?: number;
 }
 
 export interface FinancialCalendarDay {
@@ -96,13 +99,29 @@ function isCreditRecurring(item: RecurringItem, cards: CardItem[]): boolean {
   });
 }
 
-function wasRecurringRealized(
+function parseDateValue(value: unknown): Date | null {
+  if (!value) return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  if (typeof value === "string" || typeof value === "number") {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+  if (typeof value === "object" && "toDate" in (value as Record<string, unknown>)) {
+    const fn = (value as { toDate?: () => Date }).toDate;
+    if (typeof fn === "function") {
+      const parsed = fn.call(value);
+      if (parsed instanceof Date && !Number.isNaN(parsed.getTime())) return parsed;
+    }
+  }
+  return null;
+}
+
+function findRealizedRecurringTransaction(
   item: RecurringItem,
   periodKey: string,
   transactions: FinancialCalendarTransaction[]
-): boolean {
-  if (item.realizedPeriods?.includes(periodKey)) return true;
-  return transactions.some((transaction) => {
+): FinancialCalendarTransaction | undefined {
+  return transactions.find((transaction) => {
     if (transaction.recurringItemId !== item.id) return false;
     if (transaction.periodKey === periodKey) return true;
     const occurredAt = getLedgerEntryDate(transaction);
@@ -110,6 +129,77 @@ function wasRecurringRealized(
       occurredAt && getPeriodKey(occurredAt.getFullYear(), occurredAt.getMonth()) === periodKey
     );
   });
+}
+
+function wasRecurringRealized(
+  item: RecurringItem,
+  periodKey: string,
+  transactions: FinancialCalendarTransaction[]
+): boolean {
+  if (item.realizedPeriods?.includes(periodKey)) return true;
+  return Boolean(findRealizedRecurringTransaction(item, periodKey, transactions));
+}
+
+/**
+ * Resolve o dia efetivo no calendário para uma recorrência já realizada (ex: recebida ou paga adiantado).
+ * Quando o usuário recebe ou paga adiantado (ex: ontem, dia 4, em vez do 5º dia útil no dia 9),
+ * tanto o lançamento realizado quanto o item da agenda prevista avançam para o dia real do recebimento/pagamento.
+ */
+export function resolveRealizedRecurringDay(params: {
+  rawItem?: RecurringItem;
+  transaction?: FinancialCalendarTransaction;
+  year: number;
+  month: number;
+  daysInMonth: number;
+  periodKey: string;
+  isCurrentMonth: boolean;
+  now: Date;
+}): number {
+  const { rawItem, transaction, year, month, daysInMonth, periodKey, isCurrentMonth, now } = params;
+  const effectiveItem = rawItem ? getEffectiveRecurringItemForPeriod(rawItem, periodKey) : undefined;
+  const scheduledDueDay = effectiveItem
+    ? Math.min(daysInMonth, Math.max(1, getEffectiveDueDay(effectiveItem, year, month)))
+    : undefined;
+
+  const occurredAt = transaction ? getLedgerEntryDate(transaction) : null;
+  let resolvedDay =
+    occurredAt && occurredAt.getFullYear() === year && occurredAt.getMonth() === month
+      ? occurredAt.getDate()
+      : scheduledDueDay ?? 1;
+
+  // 1. Se occurredAt ficou gravado no vencimento futuro (12:00) mas createdAt mostra que foi baixado antes (ex: ontem), usa o dia de createdAt
+  const createdAt = transaction ? parseDateValue(transaction.createdAt) : null;
+  if (
+    createdAt &&
+    createdAt.getFullYear() === year &&
+    createdAt.getMonth() === month &&
+    createdAt.getDate() < resolvedDay &&
+    ((occurredAt && occurredAt.getHours() === 12 && occurredAt.getMinutes() === 0) ||
+      (isCurrentMonth && resolvedDay > now.getDate()))
+  ) {
+    resolvedDay = createdAt.getDate();
+  }
+
+  // 2. Se o usuário editou o dia da recorrência para um dia anterior (ex: mudou para ontem no planejamento)
+  if (scheduledDueDay !== undefined && scheduledDueDay < resolvedDay) {
+    const hasExplicitOverrideDay = rawItem?.overrides?.[periodKey]?.dueDay !== undefined;
+    const isFixedDayMovedEarlier =
+      effectiveItem?.recurrenceType !== "business_day_5" &&
+      occurredAt?.getHours() === 12 &&
+      occurredAt?.getMinutes() === 0;
+    const isFutureInCurrentMonth = isCurrentMonth && resolvedDay > now.getDate() && scheduledDueDay <= now.getDate();
+
+    if (hasExplicitOverrideDay || isFixedDayMovedEarlier || isFutureInCurrentMonth) {
+      resolvedDay = scheduledDueDay;
+    }
+  }
+
+  // 3. No mês corrente, um item já efetivado ("Recebi antes" / "Paguei antes") nunca fica pendurado em dia futuro
+  if (isCurrentMonth && resolvedDay > now.getDate()) {
+    resolvedDay = now.getDate();
+  }
+
+  return Math.min(daysInMonth, Math.max(1, resolvedDay));
 }
 
 function createEmptyDay(day: number): FinancialCalendarDay {
@@ -156,7 +246,24 @@ export function buildFinancialCalendar({
     const occurredAt = getLedgerEntryDate(transaction);
     if (!occurredAt || occurredAt.getFullYear() !== year || occurredAt.getMonth() !== month) continue;
 
-    const day = days.get(occurredAt.getDate());
+    const linkedRecurring = transaction.recurringItemId
+      ? recurringItems.find((candidate) => candidate.id === transaction.recurringItemId)
+      : undefined;
+
+    const targetDayNumber = transaction.recurringItemId
+      ? resolveRealizedRecurringDay({
+          rawItem: linkedRecurring,
+          transaction,
+          year,
+          month,
+          daysInMonth,
+          periodKey,
+          isCurrentMonth,
+          now,
+        })
+      : occurredAt.getDate();
+
+    const day = days.get(targetDayNumber);
     if (!day) continue;
     const amount = Math.abs(Number(transaction.amount) || 0);
     const isIncome = transaction.type === "receita";
@@ -164,32 +271,54 @@ export function buildFinancialCalendar({
       ? cards.find((card) => card.id === transaction.cardId)?.name
       : undefined;
 
+    const effectiveOccurredAt =
+      targetDayNumber !== occurredAt.getDate()
+        ? new Date(year, month, targetDayNumber, occurredAt.getHours(), occurredAt.getMinutes(), occurredAt.getSeconds())
+        : occurredAt;
+
     if (isIncome) day.realizedIncome += amount;
     else day.realizedExpense += amount;
     day.realizedNet = day.realizedIncome - day.realizedExpense;
     day.transactions.push({
-      id: transaction.id || `${periodKey}-${occurredAt.getDate()}-${day.transactions.length}`,
+      id: transaction.id || `${periodKey}-${targetDayNumber}-${day.transactions.length}`,
       title: transaction.title || transaction.description || (isIncome ? "Entrada" : "Saída"),
       amount,
       type: isIncome ? "income" : "expense",
       category: transaction.category || (isIncome ? "Renda" : "Outros"),
       account: transaction.account,
       cardName,
-      occurredAt,
-      timeLabel: occurredAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
+      occurredAt: effectiveOccurredAt,
+      timeLabel: effectiveOccurredAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
+      recurringItemId: transaction.recurringItemId || null,
+      periodKey: transaction.periodKey || periodKey,
     });
   }
 
   for (const rawItem of recurringItems) {
     if (!isRecurringScheduledForPeriod(rawItem, year, month, periodKey)) continue;
     const item = getEffectiveRecurringItemForPeriod(rawItem, periodKey);
-    const dueDay = Math.min(daysInMonth, Math.max(1, getEffectiveDueDay(item, year, month)));
-    const day = days.get(dueDay);
+    const scheduledDueDay = Math.min(daysInMonth, Math.max(1, getEffectiveDueDay(item, year, month)));
+    const linkedTx = findRealizedRecurringTransaction(rawItem, periodKey, transactions);
+    const isPaid = Boolean(rawItem.realizedPeriods?.includes(periodKey) || linkedTx);
+
+    const effectiveDay = isPaid
+      ? resolveRealizedRecurringDay({
+          rawItem,
+          transaction: linkedTx,
+          year,
+          month,
+          daysInMonth,
+          periodKey,
+          isCurrentMonth,
+          now,
+        })
+      : scheduledDueDay;
+
+    const day = days.get(effectiveDay);
     if (!day) continue;
 
     const isIncome = item.type === "income";
     const isCardCharge = isCreditRecurring(item, cards);
-    const isPaid = wasRecurringRealized(rawItem, periodKey, transactions);
     const status: FinancialCalendarBillItem["status"] = isPaid
       ? "paid"
       : isCardCharge
@@ -204,6 +333,7 @@ export function buildFinancialCalendar({
       status,
       source: "recurring",
       sourceItem: rawItem,
+      scheduledDueDay,
     });
 
     if (!isPaid && !isCardCharge) {
@@ -217,8 +347,8 @@ export function buildFinancialCalendar({
       !isPaid &&
       !isCardCharge &&
       isCurrentMonth &&
-      dueDay >= now.getDate() &&
-      dueDay <= now.getDate() + 3
+      effectiveDay >= now.getDate() &&
+      effectiveDay <= now.getDate() + 3
     ) {
       day.hasUrgentBill = true;
     }

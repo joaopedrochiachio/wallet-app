@@ -431,8 +431,187 @@ export function generateDeterministicAnalystChatReply(params: {
   const targetEnd = context.target?.targetEndMonthBalance ?? 0;
   const safeMargin = context.target?.safeSpendingMargin ?? Math.max(0, projectedEnd - targetEnd);
   const missingAmount = context.target?.missingAmount ?? Math.max(0, targetEnd - projectedEnd);
+  const now = new Date();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const remainingDays = Math.max(1, daysInMonth - now.getDate() + 1);
+  const safeDaily = Math.max(0, safeMargin / remainingDays);
 
-  // 2. Perguntas sobre próximo mês / fatura futura
+  // 2. Perguntas vindas da Agenda / Calendário ("Analise meu dia...")
+  if (q.includes("analise meu dia") || (q.includes("dia ") && q.includes("realizado:") && q.includes("previsto:"))) {
+    const dayStatus =
+      projectedEnd >= targetEnd
+        ? `✅ **Sua agenda protege sua meta de R$ ${targetEnd.toFixed(2)}!** Mesmo considerando os compromissos previstos, seu fechamento projetado é de **R$ ${projectedEnd.toFixed(2)}** (folga de **R$ ${safeMargin.toFixed(2)}**).`
+        : `⚠️ **Atenção na agenda:** o fechamento projetado (**R$ ${projectedEnd.toFixed(2)}**) está **R$ ${missingAmount.toFixed(2)}** abaixo da sua meta de **R$ ${targetEnd.toFixed(2)}**.`;
+
+    return `### 📅 Leitura Contábil do Dia na Agenda
+
+${dayStatus}
+
+- **Saldo Atual em Conta:** R$ ${context.cashflow.checkingBalance.toFixed(2)}
+- **Contas Fixas / Recorrentes do Mês:** R$ ${context.commitments.recurringMonthlyTotal.toFixed(2)}
+- **Teto Diário Seguro Hoje:** **R$ ${safeDaily.toFixed(2)}/dia** (${remainingDays} dias restantes no ciclo)
+
+**Orientação prática:**
+1. Se você já recebeu ou pagou algum item adiantado (como ontem ou hoje), marque como realizado na agenda para que o saldo em conta reflita o caixa real.
+2. Mantenha gastos variáveis do dia dentro de **R$ ${safeDaily.toFixed(2)}** para preservar sua margem até o fechamento do mês.`;
+  }
+
+  // 3. Perguntas sobre Teto Diário Seguro ("teto diário", "teto seguro", "quanto posso gastar hoje")
+  if (
+    q.includes("teto diário") ||
+    q.includes("teto diario") ||
+    q.includes("teto seguro") ||
+    q.includes("gastar hoje") ||
+    q.includes("livre hoje")
+  ) {
+    return `### 💡 Seu Teto Diário Seguro Hoje: **R$ ${safeDaily.toFixed(2)}**
+
+Calculamos esse limite protegendo 100% das suas contas pendentes e a sua meta de fechamento:
+
+- **Saldo Atual em Conta:** R$ ${context.cashflow.checkingBalance.toFixed(2)}
+- **Fechamento Projetado do Mês:** R$ ${projectedEnd.toFixed(2)}
+- **Meta de Fechamento Protegida:** R$ ${targetEnd.toFixed(2)}
+- **Margem Livre Total até o Fim do Mês:** **R$ ${safeMargin.toFixed(2)}** (dividida pelos ${remainingDays} dias restantes = **R$ ${safeDaily.toFixed(2)}/dia**)
+
+${
+  safeDaily > 0
+    ? `✅ Enquanto suas despesas variáveis à vista ficarem abaixo de **R$ ${safeDaily.toFixed(2)} hoje**, sua meta de fechar o mês com R$ ${targetEnd.toFixed(2)} permanece intacta.`
+    : `⚠️ Sua margem variável para o mês já foi consumida. Evite novos gastos no débito/PIX hoje para recuperar **R$ ${missingAmount.toFixed(2)}** até o fim do mês.`
+}`;
+  }
+
+  // 4. Perguntas sobre Projeção de 6 Meses / Fluxo de Caixa / Risco (Rubi)
+  if (
+    q.includes("projeção de caixa") ||
+    q.includes("projecao de caixa") ||
+    q.includes("6 meses") ||
+    q.includes("cashflow at risk") ||
+    q.includes("risco de fluxo")
+  ) {
+    const projections = context.monthlyProjections || [];
+    const projLines =
+      projections.length > 0
+        ? projections
+            .slice(0, 6)
+            .map(
+              (p) =>
+                `- **${p.monthName}/${p.year}:** Entradas R$ ${p.plannedIncomesTotal.toFixed(2)} | Compromissos R$ ${p.totalCommitted.toFixed(2)} ➔ **Saldo Livre: R$ ${p.projectedFreeBalance.toFixed(2)}**`
+            )
+            .join("\n")
+        : `- **Mês Atual:** Saldo Livre Projetado de **R$ ${projectedEnd.toFixed(2)}**`;
+
+    return `### 📊 Projeção de Caixa e Risco (6 Meses)
+
+Aqui está o comportamento projetado do seu caixa nos próximos ciclos:
+
+${projLines}
+
+- **Comprometimento Atual da Renda:** **${context.commitments.commitmentRatioPercent}%** (limite de segurança: ${context.profile.maxCommitmentAlertPercent}%)
+- **Baseline de Gastos Variáveis:** ~R$ ${context.historicalVariableBaseline.toFixed(2)}/mês
+
+**Diagnóstico da Rubi:** ${
+      projectedEnd >= targetEnd
+        ? `Seu fluxo de caixa está saudável e sustenta a meta de R$ ${targetEnd.toFixed(2)}. O principal ponto de atenção é evitar que novas parcelas de cartão elevem o comprometimento acima de ${context.profile.maxCommitmentAlertPercent}%.`
+        : `O mês atual exige contenção de R$ ${missingAmount.toFixed(2)} em gastos variáveis para restaurar a folga de caixa nos próximos meses.`
+    }`;
+  }
+
+  // 5. Perguntas sobre Hábitos, Ralos Invisíveis, Sobrevivência e Emergência (Sol)
+  if (
+    q.includes("ralo") ||
+    q.includes("hábito") ||
+    q.includes("habito") ||
+    q.includes("sobrevivência") ||
+    q.includes("sobrevivencia") ||
+    q.includes("fôlego") ||
+    q.includes("folego") ||
+    q.includes("fundo de emergência") ||
+    q.includes("fundo de emergencia") ||
+    q.includes("blindar meu caixa") ||
+    q.includes("cortar")
+  ) {
+    const monthlyEssential = Math.max(
+      1,
+      context.commitments.recurringMonthlyTotal + context.historicalVariableBaseline * 0.5
+    );
+    const survivalDays = Math.max(
+      0,
+      Math.round((context.cashflow.checkingBalance / monthlyEssential) * 30)
+    );
+    const idealEmergencyFund = monthlyEssential * 6;
+    const habitsLines =
+      auditDossier.spendBreakdown.length > 0
+        ? auditDossier.spendBreakdown
+            .slice(0, 4)
+            .map(
+              (b) =>
+                `- **${b.categoryOrItem}:** R$ ${b.totalAmount.toFixed(2)} (${b.count}x — potencial de economia de **R$ ${(b.totalAmount * 0.35).toFixed(2)}/mês** se reduzido em 35%)`
+            )
+            .join("\n")
+        : `- Seus gastos variáveis atuais somam **R$ ${context.cashflow.monthExpenseRealized.toFixed(2)}** neste ciclo.`;
+
+    return `### 🛡️ Diagnóstico de Fôlego, Ralos e Blindagem (Sol)
+
+- **Autonomia Atual de Caixa:** **~${survivalDays} dias** de cobertura com o saldo em conta atual (R$ ${context.cashflow.checkingBalance.toFixed(2)})
+- **Custo Base Mensal Estimado:** R$ ${monthlyEssential.toFixed(2)}/mês
+- **Reserva de Emergência Ideal (6 meses):** R$ ${idealEmergencyFund.toFixed(2)}
+
+**Principais Focos de Vazamento / Hábitos Auditados:**
+${habitsLines}
+
+**Plano de Blindagem em 2 Passos:**
+1. Defina um teto semanal para os itens acima e redirecione 30% desse valor direto para sua reserva.
+2. Proteja o teto diário de **R$ ${safeDaily.toFixed(2)}/dia** nas compras em débito/PIX até o fechamento do mês.`;
+  }
+
+  // 6. Perguntas sobre Metas, Alocação de Sobra, 12/24/36 meses (Atlos)
+  if (
+    q.includes("meta") ||
+    q.includes("atlos") ||
+    q.includes("excedente") ||
+    q.includes("alocação") ||
+    q.includes("alocacao") ||
+    q.includes("12, 24 e 36") ||
+    q.includes("aporte") ||
+    q.includes("render")
+  ) {
+    const monthlySurplus = Math.max(0, projectedEnd);
+    const safeMonthlyContribution = Math.max(
+      0,
+      safeMargin > 0 ? safeMargin * 0.6 : monthlySurplus * 0.3
+    );
+    const rateMonthly = 0.0085; // ~10.7% a.a. líquido conservador CDI
+    const calcCompound = (months: number) =>
+      safeMonthlyContribution * ((Math.pow(1 + rateMonthly, months) - 1) / rateMonthly);
+
+    const goalsSummary =
+      context.goals && context.goals.length > 0
+        ? context.goals
+            .map(
+              (g) =>
+                `- **${g.alias}:** R$ ${g.current.toFixed(2)} / R$ ${g.target.toFixed(2)} (${g.progressPercent}% concluído)`
+            )
+            .join("\n")
+        : `- **Meta de Fechamento Mensal:** R$ ${targetEnd.toFixed(2)} (Saldo projetado: R$ ${projectedEnd.toFixed(2)})`;
+
+    return `### 🚀 Plano de Alocação e Metas (Atlos)
+
+- **Fechamento Projetado do Mês:** R$ ${projectedEnd.toFixed(2)}
+- **Margem Segura Acima da Meta:** R$ ${safeMargin.toFixed(2)}
+- **Aporte Mensal Sustentável Recomendado:** **R$ ${safeMonthlyContribution.toFixed(2)}/mês**
+
+**Suas Metas Atuais:**
+${goalsSummary}
+
+**Simulação de Acúmulo Conservador (CDI ~10,7% a.a. líquido):**
+- **Em 12 meses:** R$ ${calcCompound(12).toFixed(2)}
+- **Em 24 meses:** R$ ${calcCompound(24).toFixed(2)}
+- **Em 36 meses:** R$ ${calcCompound(36).toFixed(2)}
+
+**Recomendação:** Separe o aporte logo após o recebimento da renda principal para não misturar com o caixa variável do mês.`;
+  }
+
+  // 7. Perguntas sobre próximo mês / fatura futura
   if (q.includes("mês que vem") || q.includes("mes que vem") || q.includes("próximo mês") || q.includes("proximo mes")) {
     const nextProj = context.monthlyProjections?.[1] || context.monthlyProjections?.[0];
     if (nextProj) {
@@ -448,24 +627,35 @@ export function generateDeterministicAnalystChatReply(params: {
     }
   }
 
-  // 3. Perguntas sobre cartão / fatura / limite
-  if (q.includes("cartão") || q.includes("cartao") || q.includes("fatura") || q.includes("crédito") || q.includes("credito")) {
+  // 8. Perguntas sobre cartão / fatura / limite / Nanquim
+  if (
+    q.includes("cartão") ||
+    q.includes("cartao") ||
+    q.includes("fatura") ||
+    q.includes("crédito") ||
+    q.includes("credito") ||
+    q.includes("nanquim") ||
+    q.includes("dias livres") ||
+    q.includes("parcelar")
+  ) {
     const cardsLines =
       context.credit.cardsSummary && context.credit.cardsSummary.length > 0
         ? context.credit.cardsSummary
             .map(
               (c) =>
-                `- **${c.alias}:** Fatura atual de **R$ ${c.spent.toFixed(2)}** / Limite R$ ${c.limit.toFixed(2)} (${Math.round((c.spent / Math.max(1, c.limit)) * 100)}% utilizado${c.dueDay ? `, vence dia ${c.dueDay}` : ""})`
+                `- **${c.alias}:** Fatura atual de **R$ ${c.spent.toFixed(2)}** / Limite R$ ${c.limit.toFixed(2)} (${Math.round((c.spent / Math.max(1, c.limit)) * 100)}% utilizado${c.closingDay ? `, fecha dia ${c.closingDay}` : ""}${c.dueDay ? `, vence dia ${c.dueDay}` : ""})`
             )
             .join("\n")
         : `- **Total em Faturas:** R$ ${context.credit.totalSpent.toFixed(2)} (${context.credit.creditUtilizationPercent}% do limite total de R$ ${context.credit.totalLimit.toFixed(2)})`;
 
-    return `Aqui está o raio-x atualizado dos seus **Cartões e Faturas**:
+    return `### 💳 Estratégia de Cartões, Limite e Faturas (Nanquim)
 
 ${cardsLines}
 
 - **Limite Disponível Total:** R$ ${context.credit.availableCredit.toFixed(2)}
-- **Impacto no Caixa:** Lembre-se que compras no crédito não reduzem seu saldo em conta hoje (R$ ${context.cashflow.checkingBalance.toFixed(2)}), mas impactam o pagamento da fatura no vencimento.`;
+- **Utilização Geral de Crédito:** ${context.credit.creditUtilizationPercent}% (ideal manter abaixo de 30%)
+- **Regra de Ouro da Janela de Compra:** Compras feitas após a data de fechamento ganham até **40 dias livres de juros** para pagar apenas na fatura seguinte.
+- **À vista vs Parcelado:** Só parcele se não houver desconto à vista superior a ~1% ao mês e se a soma das parcelas preservar sua meta mensal de **R$ ${targetEnd.toFixed(2)}**.`;
   }
 
   // 4. Resposta Executiva Completa (Score, Saldo, Meta e Principais Gastos)

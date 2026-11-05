@@ -135,3 +135,56 @@ test("recorrência realizada continua visível, sem duplicar a previsão", () =>
   assert.equal(calendar.get(10).plannedExpense, 0);
   assert.equal(calendar.get(10).bills[0].status, "paid");
 });
+
+test("recorrência realizada adiantada (ex: 5º dia útil no dia 9 realizado no dia 4) adianta no calendário", () => {
+  const salary = {
+    id: "salary-biz5",
+    title: "Salário Fixo",
+    amount: 1874.85,
+    type: "income",
+    account: "Conta principal",
+    cardId: "checking-1",
+    category: "Salário",
+    dueDay: 9,
+    recurrenceType: "business_day_5",
+    startYear: 2026,
+    startMonth: 10,
+    active: true,
+    realizedPeriods: ["2026-11"],
+  };
+
+  const calendar = buildFinancialCalendar({
+    year: 2026,
+    month: 10, // Novembro/2026
+    cards: [checkingCard],
+    recurringItems: [salary],
+    transactions: [
+      {
+        id: "salary-early-tx",
+        title: "Salário Fixo",
+        amount: 1874.85,
+        type: "receita",
+        category: "Salário",
+        account: "Conta principal",
+        cardId: "checking-1",
+        recurringItemId: "salary-biz5",
+        periodKey: "2026-11",
+        date: "04 de nov., 12:00",
+        occurredAt: new Date(2026, 10, 4, 12),
+        createdAt: new Date(2026, 10, 4, 12),
+      },
+    ],
+    now: new Date(2026, 10, 5, 12),
+  });
+
+  // Dia 4: recebeu adiantado ontem
+  assert.equal(calendar.get(4).realizedIncome, 1874.85);
+  assert.equal(calendar.get(4).bills.length, 1);
+  assert.equal(calendar.get(4).bills[0].status, "paid");
+  assert.equal(calendar.get(4).bills[0].title, "Salário Fixo");
+
+  // Dia 9: não deve ficar travado no dia 9
+  assert.equal(calendar.get(9).realizedIncome, 0);
+  assert.equal(calendar.get(9).plannedIncome, 0);
+  assert.equal(calendar.get(9).bills.length, 0);
+});

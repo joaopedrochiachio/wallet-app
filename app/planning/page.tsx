@@ -646,7 +646,7 @@ export default function PlanningPage() {
     }
   };
 
-  const handleRealizeNow = async (item: RecurringItem) => {
+  const handleRealizeNow = async (item: RecurringItem, customDateOverride?: Date) => {
     try {
       setProcessingItemId(item.id);
       const isCredit = !isCheckingAccount(item);
@@ -673,9 +673,21 @@ export default function PlanningPage() {
         }
       }
 
+      const now = new Date();
       const effectiveDay = getEffectiveDueDay(item, plannedYear, plannedMonth);
       const plannedDate = new Date(plannedYear, plannedMonth, effectiveDay, 12, 0, 0);
-      await realizeRecurringItemNow(item, plannedYear, plannedMonth, undefined, plannedDate);
+      const isCurrentTargetMonth =
+        plannedYear === now.getFullYear() && plannedMonth === now.getMonth();
+
+      // Se o usuário clicou em "Recebi antes" / "Paguei antes" no mês atual antes do vencimento,
+      // usa a data real (hoje ou ontem, se selecionado) em vez de jogar para o vencimento futuro no calendário
+      const effectiveRealizeDate = customDateOverride
+        ? customDateOverride
+        : isCurrentTargetMonth && plannedDate.getTime() > now.getTime()
+          ? now
+          : plannedDate;
+
+      await realizeRecurringItemNow(item, plannedYear, plannedMonth, undefined, effectiveRealizeDate);
     } catch (error) {
       alert(error instanceof Error ? error.message : "Não foi possível efetivar o lançamento.");
     } finally {
@@ -863,49 +875,89 @@ export default function PlanningPage() {
               <span>Liquidado</span>
             </span>
           ) : !isRealizedInThisMonth && !isFinishedInThisMonth && item.active ? (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                void handleRealizeNow(item);
-              }}
-              disabled={isProcessing}
-              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#1D1D1F]/5 hover:bg-[#1D1D1F] hover:text-white text-[#1D1D1F] transition-all cursor-pointer active:scale-95 disabled:opacity-50 shadow-2xs"
-              title={
-                item.type === "income"
-                  ? "Recebi adiantado: efetivar entrada agora"
-                  : sectionKind === "credit"
-                  ? "Registrar que esta cobrança já ocorreu no cartão"
-                  : "Paguei adiantado: debitar e efetivar saída agora"
-              }
-            >
-              {isProcessing ? (
-                <Loader2 size={12} className="animate-spin text-current" />
-              ) : (
-                <Zap size={12} className="text-amber-500 fill-amber-500 shrink-0" />
+            <div className="flex items-center gap-1.5">
+              {plannedYear === new Date().getFullYear() && plannedMonth === new Date().getMonth() && new Date().getDate() > 1 && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const yesterday = new Date();
+                    yesterday.setDate(yesterday.getDate() - 1);
+                    void handleRealizeNow(item, yesterday);
+                  }}
+                  disabled={isProcessing}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-50 hover:bg-amber-600 hover:text-white text-amber-800 border border-amber-200/70 transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+                  title={
+                    item.type === "income"
+                      ? "Recebi adiantado ontem: adiantar também no calendário"
+                      : "Paguei adiantado ontem: adiantar também no calendário"
+                  }
+                >
+                  <span>Ontem</span>
+                </button>
               )}
-              <span>
-                {item.type === "income"
-                  ? "Recebi antes"
-                  : sectionKind === "credit"
-                  ? "Já cobrou"
-                  : "Paguei antes"}
-              </span>
-            </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleRealizeNow(item);
+                }}
+                disabled={isProcessing}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#1D1D1F]/5 hover:bg-[#1D1D1F] hover:text-white text-[#1D1D1F] transition-all cursor-pointer active:scale-95 disabled:opacity-50 shadow-2xs"
+                title={
+                  item.type === "income"
+                    ? "Recebi adiantado: efetivar entrada agora"
+                    : sectionKind === "credit"
+                    ? "Registrar que esta cobrança já ocorreu no cartão"
+                    : "Paguei adiantado: debitar e efetivar saída agora"
+                }
+              >
+                {isProcessing ? (
+                  <Loader2 size={12} className="animate-spin text-current" />
+                ) : (
+                  <Zap size={12} className="text-amber-500 fill-amber-500 shrink-0" />
+                )}
+                <span>
+                  {item.type === "income"
+                    ? "Recebi antes"
+                    : sectionKind === "credit"
+                    ? "Já cobrou"
+                    : "Paguei antes"}
+                </span>
+              </button>
+            </div>
           ) : isRealizedInThisMonth ? (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                void handleUnrealize(item);
-              }}
-              disabled={isProcessing}
-              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-50 hover:bg-rose-50 hover:text-rose-600 text-indigo-700 border border-indigo-200/60 hover:border-rose-200 transition-all cursor-pointer active:scale-95 disabled:opacity-50 group"
-              title="Desfazer efetivação"
-            >
-              <RotateCcw size={12} className="group-hover:rotate-[-45deg] transition-transform" />
-              <span>Desfazer</span>
-            </button>
+            <div className="flex items-center gap-1.5">
+              {plannedYear === new Date().getFullYear() && plannedMonth === new Date().getMonth() && new Date().getDate() > 1 && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const yesterday = new Date();
+                    yesterday.setDate(yesterday.getDate() - 1);
+                    void handleRealizeNow(item, yesterday);
+                  }}
+                  disabled={isProcessing}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-700 border border-emerald-200/70 transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+                  title="Mover a data de efetivação para ontem no calendário"
+                >
+                  <span>Adiantar p/ ontem</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleUnrealize(item);
+                }}
+                disabled={isProcessing}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-50 hover:bg-rose-50 hover:text-rose-600 text-indigo-700 border border-indigo-200/60 hover:border-rose-200 transition-all cursor-pointer active:scale-95 disabled:opacity-50 group"
+                title="Desfazer efetivação"
+              >
+                <RotateCcw size={12} className="group-hover:rotate-[-45deg] transition-transform" />
+                <span>Desfazer</span>
+              </button>
+            </div>
           ) : null}
 
           {/* Valor formatado */}

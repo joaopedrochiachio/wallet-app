@@ -42,7 +42,9 @@ interface SpendingCalendarHeatmapProps {
   onRealizeItem?: (
     recurringItem: RecurringItem,
     year: number,
-    month: number
+    month: number,
+    customAmount?: number,
+    customDate?: Date
   ) => Promise<void>;
   onDiscussWithAI: (topic: string) => void;
 }
@@ -135,11 +137,19 @@ export function SpendingCalendarHeatmap({
     setSelectedDay(now.getDate());
   };
 
-  const handleRealize = async (bill: FinancialCalendarBillItem) => {
+  const handleRealize = async (bill: FinancialCalendarBillItem, customDate?: Date) => {
     if (!onRealizeItem || !bill.sourceItem) return;
     setActionLoadingId(bill.id);
     try {
-      await onRealizeItem(bill.sourceItem, targetYear, targetMonth);
+      const effectiveDate =
+        customDate ??
+        (isCurrentMonth && selectedDay > now.getDate()
+          ? new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0)
+          : new Date(targetYear, targetMonth, selectedDay, 12, 0, 0));
+      await onRealizeItem(bill.sourceItem, targetYear, targetMonth, undefined, effectiveDate);
+      if (effectiveDate.getFullYear() === targetYear && effectiveDate.getMonth() === targetMonth) {
+        setSelectedDay(effectiveDate.getDate());
+      }
     } finally {
       setActionLoadingId(null);
     }
@@ -331,14 +341,56 @@ export function SpendingCalendarHeatmap({
                         <span className="text-[10px] text-[#86868B]">{bill.status === "paid" ? "Realizado" : bill.status === "scheduled_card" ? "Cai na fatura do cartão" : "Pendente"}</span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-1.5 shrink-0">
                       <strong className="font-mono font-bold text-[#1D1D1F]">R$ {formatCurrency(bill.amount)}</strong>
                       {bill.status === "pending" && bill.sourceItem && onRealizeItem && (
-                        <button type="button" onClick={() => handleRealize(bill)} disabled={actionLoadingId === bill.id} className="px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-[10px] transition-all cursor-pointer disabled:opacity-50">
-                          {actionLoadingId === bill.id ? "Salvando..." : bill.type === "income" ? "Receber" : "Baixar"}
-                        </button>
+                        <div className="flex items-center gap-1">
+                          {isCurrentMonth && now.getDate() > 1 && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleRealize(
+                                  bill,
+                                  new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 12, 0, 0)
+                                )
+                              }
+                              disabled={actionLoadingId === bill.id}
+                              title={bill.type === "income" ? "Recebi adiantado ontem" : "Paguei adiantado ontem"}
+                              className="px-2 py-1 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-semibold text-[10px] transition-all cursor-pointer disabled:opacity-50"
+                            >
+                              Ontem
+                            </button>
+                          )}
+                          <button type="button" onClick={() => handleRealize(bill)} disabled={actionLoadingId === bill.id} className="px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-[10px] transition-all cursor-pointer disabled:opacity-50">
+                            {actionLoadingId === bill.id ? "Salvando..." : bill.type === "income" ? "Receber" : "Baixar"}
+                          </button>
+                        </div>
                       )}
-                      {bill.status === "paid" && <CheckCircle2 size={15} className="text-emerald-600" />}
+                      {bill.status === "paid" && (
+                        <div className="flex items-center gap-1.5">
+                          {isCurrentMonth &&
+                            now.getDate() > 1 &&
+                            selectedDay !== now.getDate() - 1 &&
+                            bill.sourceItem &&
+                            onRealizeItem && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleRealize(
+                                    bill,
+                                    new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 12, 0, 0)
+                                  )
+                                }
+                                disabled={actionLoadingId === bill.id}
+                                title="Mover recebimento/pagamento realizado para ontem"
+                                className="px-2 py-0.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-semibold text-[9px] transition-all cursor-pointer disabled:opacity-50"
+                              >
+                                {actionLoadingId === bill.id ? "..." : "Adiantar p/ ontem"}
+                              </button>
+                            )}
+                          <CheckCircle2 size={15} className="text-emerald-600" />
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}

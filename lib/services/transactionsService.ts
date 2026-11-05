@@ -342,11 +342,30 @@ export async function deleteTransactionFromFirestore(
     relatedSnapshot.docs.forEach((item) => batch.delete(item.ref));
   }
 
-  if (transaction.recurringItemId && transaction.periodKey) {
+  if (transaction.recurringItemId) {
     const recurringRef = doc(db, "users", userId, "recurring", transaction.recurringItemId);
     const recurringSnapshot = await getDoc(recurringRef);
     if (recurringSnapshot.exists()) {
-      batch.update(recurringRef, { realizedPeriods: arrayRemove(transaction.periodKey) });
+      const recData = recurringSnapshot.data() as RecurringItem;
+      const isInstallmentOrLimited = Boolean(
+        recData.installmentsCount && recData.installmentsCount >= 1
+      );
+      const realizedCount = recData.realizedPeriods?.length ?? 0;
+
+      // Se for compra parcelada/limitada com apenas essa ocorrência ou sem outras realizações,
+      // exclui a série inteira para não ficar órfã nem recriar transações indesejadas
+      if (isInstallmentOrLimited && realizedCount <= 1) {
+        batch.delete(recurringRef);
+      } else {
+        // Marca o período como excluído pontualmente para que o timeProgressionService
+        // JAMAIS recrie a transação automaticamente pelo catch-up!
+        const updates: Record<string, unknown> = {};
+        if (transaction.periodKey) {
+          updates.realizedPeriods = arrayRemove(transaction.periodKey);
+          updates.excludedPeriods = arrayUnion(transaction.periodKey);
+        }
+        batch.update(recurringRef, updates);
+      }
     }
   }
 

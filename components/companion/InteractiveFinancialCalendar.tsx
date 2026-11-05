@@ -5,8 +5,10 @@ import { useWallet } from "@/context/WalletContext";
 import {
   MONTH_NAMES_PT,
   getPeriodKey,
-  get5thBusinessDay,
+  getEffectiveDueDay,
+  getEffectiveRecurringItemForPeriod,
 } from "@/lib/utils/dateUtils";
+import { resolveRealizedRecurringDay } from "@/lib/services/financialCalendarService";
 import {
   ChevronLeft,
   ChevronRight,
@@ -101,32 +103,45 @@ export function InteractiveFinancialCalendar() {
     }
 
     // 1. Recorrências e Contas Fixas
-    for (const item of recurringItems) {
-      if (item.active === false) continue;
-      let day = item.dueDay || 10;
-      if (item.recurrenceType === "business_day_5") {
-        day = get5thBusinessDay(targetYear, targetMonth);
-      }
-      if (day < 1) day = 1;
-      if (day > daysInMonth) day = daysInMonth;
+    const isCurrentMonth = targetYear === now.getFullYear() && targetMonth === now.getMonth();
+    for (const rawItem of recurringItems) {
+      if (rawItem.active === false) continue;
+      if (rawItem.excludedPeriods?.includes(currentPeriodKey)) continue;
+      if (rawItem.overrides?.[currentPeriodKey]?.isDeleted) continue;
 
-      const isIncome = item.type === "income";
+      const item = getEffectiveRecurringItemForPeriod(rawItem, currentPeriodKey);
+      const scheduledDay = Math.min(daysInMonth, Math.max(1, getEffectiveDueDay(item, targetYear, targetMonth)));
+
+      const linkedTx = transactions.find(
+        (tx) => tx.recurringItemId === rawItem.id && tx.periodKey === currentPeriodKey
+      );
       const isRealized = Boolean(
-        item.realizedPeriods?.includes(currentPeriodKey) ||
-          transactions.some(
-            (tx) => tx.recurringItemId === item.id && tx.periodKey === currentPeriodKey
-          )
+        rawItem.realizedPeriods?.includes(currentPeriodKey) || linkedTx
       );
 
+      const day = isRealized
+        ? resolveRealizedRecurringDay({
+            rawItem,
+            transaction: linkedTx,
+            year: targetYear,
+            month: targetMonth,
+            daysInMonth,
+            periodKey: currentPeriodKey,
+            isCurrentMonth,
+            now,
+          })
+        : scheduledDay;
+
+      const isIncome = item.type === "income";
       const dayList = map.get(day) || [];
       dayList.push({
-        id: `rec_${item.id}`,
+        id: `rec_${rawItem.id}`,
         title: item.title,
         amount: item.amount,
         type: isIncome ? "income" : "expense",
         accountOrCard: item.account,
         isRealized,
-        recurringItemId: item.id,
+        recurringItemId: rawItem.id,
       });
       map.set(day, dayList);
     }

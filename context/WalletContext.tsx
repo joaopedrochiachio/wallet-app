@@ -704,9 +704,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const matchingRecurring = !isInstallmentPurchase
         ? recurringItems.find((item) => {
             const itemCardId = item.cardId || resolveCardId(item.account);
-            const sameDescription =
-              item.title.trim().toLocaleLowerCase("pt-BR") === tx.title.trim().toLocaleLowerCase("pt-BR") ||
-              item.category.trim().toLocaleLowerCase("pt-BR") === tx.category.trim().toLocaleLowerCase("pt-BR");
+            const sameTitle =
+              item.title.trim().toLocaleLowerCase("pt-BR") === tx.title.trim().toLocaleLowerCase("pt-BR");
+            const sameCategoryAndCloseTitle =
+              item.category.trim().toLocaleLowerCase("pt-BR") === tx.category.trim().toLocaleLowerCase("pt-BR") &&
+              (item.title.trim().toLocaleLowerCase("pt-BR").includes(tx.title.trim().toLocaleLowerCase("pt-BR")) ||
+                tx.title.trim().toLocaleLowerCase("pt-BR").includes(item.title.trim().toLocaleLowerCase("pt-BR")));
+            const sameDescription = sameTitle || sameCategoryAndCloseTitle;
             return (
               item.active &&
               (item.type || "expense") === expectedRecurringType &&
@@ -866,11 +870,24 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
     const txToDelete = transactions.find((t) => t.id === id);
     if (!txToDelete) return;
+
+    // Atualização otimista imediata para que a UI responda na hora sem piscar
+    setTransactions((prev) => prev.filter((t) => t.id !== id));
+
+    const effectivePeriodKey =
+      txToDelete.periodKey ||
+      (txToDelete.occurredAt
+        ? getPeriodKey(
+            new Date(txToDelete.occurredAt).getFullYear(),
+            new Date(txToDelete.occurredAt).getMonth()
+          )
+        : getPeriodKey(new Date().getFullYear(), new Date().getMonth()));
+
     await deleteTransactionFromFirestore(user.uid, {
       id: txToDelete.id,
       groupId: txToDelete.groupId,
       recurringItemId: txToDelete.recurringItemId,
-      periodKey: txToDelete.periodKey,
+      periodKey: effectivePeriodKey,
     });
   }, [transactions, user]);
 
@@ -913,7 +930,26 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         (t) => t.recurringItemId === id && t.periodKey && t.periodKey >= effectiveFromPeriod
       );
       for (const linkedTx of linkedTxs) {
-        const occurredDate = getLedgerEntryDate(linkedTx) || new Date();
+        const prevOccurredDate = getLedgerEntryDate(linkedTx) || new Date();
+        const txYear = prevOccurredDate.getFullYear();
+        const txMonth = prevOccurredDate.getMonth();
+        const daysInTxMonth = new Date(txYear, txMonth + 1, 0).getDate();
+        const updatedItemForMonth: RecurringItem = {
+          ...item,
+          ...updates,
+        };
+        const shouldMoveDay =
+          updates.dueDay !== undefined || updates.recurrenceType !== undefined;
+        const nextDay = shouldMoveDay
+          ? Math.min(daysInTxMonth, Math.max(1, getEffectiveDueDay(updatedItemForMonth, txYear, txMonth)))
+          : prevOccurredDate.getDate();
+        const occurredDate = shouldMoveDay
+          ? new Date(txYear, txMonth, nextDay, prevOccurredDate.getHours(), prevOccurredDate.getMinutes(), prevOccurredDate.getSeconds())
+          : prevOccurredDate;
+        const nextDateLabel = shouldMoveDay
+          ? `${occurredDate.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}, ${occurredDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
+          : linkedTx.date;
+
         await updateTransactionInFirestore(user.uid, linkedTx.id, {
           title: updates.title ?? item.title,
           amount: updates.amount !== undefined ? updates.amount : item.amount,
@@ -921,7 +957,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           category: updates.category ?? item.category,
           account: updates.account ?? item.account,
           cardId: updates.cardId !== undefined ? updates.cardId : (item.cardId ?? null),
-          date: linkedTx.date,
+          date: nextDateLabel,
           occurredAt: occurredDate,
         });
       }
@@ -960,7 +996,23 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         { ...item, overrides: nextOverrides },
         periodKey
       );
-      const occurredDate = getLedgerEntryDate(linkedTx) || new Date();
+      const prevOccurredDate = getLedgerEntryDate(linkedTx) || new Date();
+      const [pYearStr, pMonthStr] = periodKey.split("-");
+      const txYear = Number(pYearStr) || prevOccurredDate.getFullYear();
+      const txMonth = (Number(pMonthStr) || prevOccurredDate.getMonth() + 1) - 1;
+      const daysInTxMonth = new Date(txYear, txMonth + 1, 0).getDate();
+      const shouldMoveDay =
+        override.dueDay !== undefined || override.recurrenceType !== undefined;
+      const nextDay = shouldMoveDay
+        ? Math.min(daysInTxMonth, Math.max(1, getEffectiveDueDay(effectiveItem, txYear, txMonth)))
+        : prevOccurredDate.getDate();
+      const occurredDate = shouldMoveDay
+        ? new Date(txYear, txMonth, nextDay, prevOccurredDate.getHours(), prevOccurredDate.getMinutes(), prevOccurredDate.getSeconds())
+        : prevOccurredDate;
+      const nextDateLabel = shouldMoveDay
+        ? `${occurredDate.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}, ${occurredDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
+        : linkedTx.date;
+
       await updateTransactionInFirestore(user.uid, linkedTx.id, {
         title: effectiveItem.title,
         amount: effectiveItem.amount,
@@ -968,7 +1020,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         category: effectiveItem.category,
         account: effectiveItem.account,
         cardId: effectiveItem.cardId ?? null,
-        date: linkedTx.date,
+        date: nextDateLabel,
         occurredAt: occurredDate,
       });
     }
