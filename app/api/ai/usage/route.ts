@@ -5,6 +5,7 @@ import { safeCompareTokens } from "../../../../lib/utils/security.ts";
 import { checkRateLimit } from "../../../../lib/utils/rateLimiter.ts";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 /**
  * Consulta Segura de Consumo e Limites de IA

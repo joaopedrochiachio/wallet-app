@@ -17,8 +17,6 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 const MAX_PAYLOAD_BYTES = 512 * 1024; // 512 KB
 
-export * from "../../../../lib/services/financialDiagnosisService.ts";
-
 export async function POST(req: NextRequest) {
   try {
     // 1. Verificação de tamanho máximo de payload (proteção anti-DoS)

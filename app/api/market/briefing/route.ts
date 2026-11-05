@@ -1,5 +1,7 @@
 import type { MarketBriefing, MarketNewsItem, MarketQuote } from "@/types/market";
 
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 export const revalidate = 300;
 
 const REQUEST_TIMEOUT_MS = 5_000;

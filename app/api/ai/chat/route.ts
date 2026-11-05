@@ -288,7 +288,14 @@ Oriente o usuário com base estritamente nesses números simulados calculados pe
         await reconcileAIQuota({ reservation, success: false });
         quotaReconciled = true;
       }
-      console.warn("[AI_CHAT_RECOVERED_WITH_LOCAL_ANALYST]", chatErr);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const errDetail = chatErr as any;
+      console.warn("[AI_CHAT_OPENAI_ERROR]", {
+        status: errDetail?.status,
+        code: errDetail?.code,
+        message: errDetail?.message,
+        name: errDetail?.name,
+      });
       const auditDossier = generateDeterministicAuditDossier({
         context: safeContext,
         userMessage: sanitizedUserMessage,

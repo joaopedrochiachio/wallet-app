@@ -51,8 +51,11 @@ import {
   calculateWeeklySpendingVelocity,
   getBestCardToSpendToday,
 } from "@/lib/services/dailyCompanionService";
-import { FinancialDiagnosis, SpecificExpenseAlert } from "@/app/api/ai/analyze/route";
-import { safeParseFinancialDiagnosis } from "@/lib/services/financialDiagnosisService";
+import {
+  FinancialDiagnosis,
+  SpecificExpenseAlert,
+  safeParseFinancialDiagnosis,
+} from "@/lib/services/financialDiagnosisService";
 import {
   synthesizeFinancialTelemetry,
   createSafeFinancialContext,
@@ -554,10 +557,10 @@ export default function AIAnalystPage() {
           return;
         }
 
-        setDiagnosis((prev) => {
+        setDiagnosis((prev: FinancialDiagnosis | null) => {
           if (!prev) return prev;
           const existing = prev.specificExpensesAlerts || [];
-          const existingNames = new Set(existing.map((e) => e.item.toLowerCase().trim()));
+          const existingNames = new Set(existing.map((e: SpecificExpenseAlert) => e.item.toLowerCase().trim()));
           const newAlerts = data.patterns.filter(
             (p: SpecificExpenseAlert) => !existingNames.has(p.item.toLowerCase().trim())
           );
@@ -962,7 +965,7 @@ export default function AIAnalystPage() {
   }, [selectedPersona, targetEndMonthBalance]);
 
   // Padrões de consumo mapeados
-  const visibleSpecificAlerts = (diagnosis?.specificExpensesAlerts || []).filter((item) => {
+  const visibleSpecificAlerts = (diagnosis?.specificExpensesAlerts || []).filter((item: SpecificExpenseAlert) => {
     const itemName = (item.item || "").toLowerCase().trim();
     const habitCat = (item.habitCategory || "").toLowerCase().trim();
     return !dismissedPatterns.some((d) => {
@@ -977,7 +980,7 @@ export default function AIAnalystPage() {
   });
 
   const categoryTotals: Record<string, number> = {};
-  visibleSpecificAlerts.forEach((item) => {
+  visibleSpecificAlerts.forEach((item: SpecificExpenseAlert) => {
     const cat = item.habitCategory || "Outros";
     categoryTotals[cat] = (categoryTotals[cat] || 0) + item.totalAmount;
   });
@@ -1002,7 +1005,7 @@ export default function AIAnalystPage() {
       };
     });
 
-  const filteredPatterns = visibleSpecificAlerts.filter((item) => {
+  const filteredPatterns = visibleSpecificAlerts.filter((item: SpecificExpenseAlert) => {
     if (selectedCategoryFilter && (item.habitCategory || "Outros") !== selectedCategoryFilter) {
       return false;
     }

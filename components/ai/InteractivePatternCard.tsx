@@ -14,7 +14,7 @@ import {
   TrendingDown,
   Target,
 } from "lucide-react";
-import { SpecificExpenseAlert } from "@/app/api/ai/analyze/route";
+import { SpecificExpenseAlert } from "@/lib/services/financialDiagnosisService";
 import { resolveAppleCategoryTheme } from "./CategorySpectrumBar";
 
 interface InteractivePatternCardProps {

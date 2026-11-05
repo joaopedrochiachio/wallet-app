@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { CreditCard, Calendar, ChevronRight, Info } from "lucide-react";
-import { InstallmentScheduleItem } from "@/app/api/ai/analyze/route";
+import { InstallmentScheduleItem } from "@/lib/services/financialDiagnosisService";
 
 interface InstallmentTimelineChartProps {
   schedule: InstallmentScheduleItem[];

@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useWallet } from "@/context/WalletContext";
 import { AddTransactionSheet } from "@/components/ui/AddTransactionSheet";
 import { AddCardSheet } from "@/components/ui/AddCardSheet";
 import { StatementImportModal } from "@/components/import/StatementImportModal";
+import { PurchaseSimulatorModal } from "@/components/companion/PurchaseSimulatorModal";
 import { ListGroup, ListItem } from "@/components/ui/iOSList";
 import {
   CardStack,
@@ -25,13 +26,19 @@ import {
   Target,
   ShieldCheck,
   Plane,
-  TrendingUp,
   ArrowUpRight,
+  Wallet,
+  TrendingDown,
+  TrendingUp,
+  Sparkle,
 } from "lucide-react";
 import Link from "next/link";
 import { formatAccountLabel } from "@/lib/utils/ledger";
-import { DailyBriefingCard } from "@/components/companion/DailyBriefingCard";
 import { GettingStartedChecklist } from "@/components/tutorial/AppTutorialGuide";
+import {
+  calculateDailySafeSpend,
+  getBestCardToSpendToday,
+} from "@/lib/services/dailyCompanionService";
 
 export default function DashboardPage() {
   const {
@@ -48,11 +55,13 @@ export default function DashboardPage() {
     monthIncome,
     monthExpense,
     isDataLoaded,
+    getMonthlyProjection,
   } = useWallet();
 
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [isCardSheetOpen, setIsCardSheetOpen] = useState(false);
   const [isStatementModalOpen, setIsStatementModalOpen] = useState(false);
+  const [isSimulatorOpen, setIsSimulatorOpen] = useState(false);
 
   // Modo de visualização: Pilha 3D fluida vs Grade organizada
   const [is3DStackView, setIs3DStackView] = useState<boolean>(true);
@@ -61,6 +70,24 @@ export default function DashboardPage() {
     val.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const balanceIsPositive = mainBalance >= 0;
+
+  // Projeção e Margem Diária
+  const currentMonthProj = getMonthlyProjection(0);
+  const effectiveProjectedFree =
+    currentMonthProj?.projectedFreeBalance ?? (mainBalance - monthExpense);
+  const targetEndMonthBalance = userProfile?.targetMonthEndBalance || 700;
+
+  const safeSpendMetric = useMemo(() => {
+    return calculateDailySafeSpend({
+      projectedFreeBalance: effectiveProjectedFree,
+      targetEndMonthBalance,
+    });
+  }, [effectiveProjectedFree, targetEndMonthBalance]);
+
+  // Melhor Cartão para Gastar Hoje
+  const bestCard = useMemo(() => {
+    return getBestCardToSpendToday({ cards });
+  }, [cards]);
 
   const getTransactionIcon = (category: string) => {
     if (category.includes("Alimentação")) return <Utensils strokeWidth={1.5} size={16} />;
@@ -111,16 +138,18 @@ export default function DashboardPage() {
     userWalletCards[0];
 
   return (
-    <div className="min-h-full bg-[#F2F2F7] p-4 sm:p-6 md:p-10 text-[#1D1D1F] font-sans space-y-8 animate-in fade-in duration-500 relative">
-      {/* 1. HEADER INTEGRADO DA CARTEIRA */}
+    <div className="min-h-full bg-[#F2F2F7] p-4 sm:p-6 md:p-10 text-[#1D1D1F] font-sans space-y-7 animate-in fade-in duration-500 relative">
+      {/* 1. HEADER INTEGRADO DA CARTEIRA COM BOTÃO DE LANÇAMENTO DIRETO */}
       <WalletHeader
+        userName={userProfile.name}
         onOpenNewTransaction={() => setIsSheetOpen(true)}
+        onOpenSimulator={() => setIsSimulatorOpen(true)}
         onAddNewCard={() => setIsCardSheetOpen(true)}
         onImportStatement={() => setIsStatementModalOpen(true)}
         cardsCount={userWalletCards.length}
       />
 
-      <div className="max-w-4xl mx-auto space-y-8">
+      <div className="max-w-4xl mx-auto space-y-7">
         {/* GUIA PASSO A PASSO DIRETO PARA CONFIGURAR E USAR O APP */}
         <GettingStartedChecklist
           onOpenStatementImport={() => setIsStatementModalOpen(true)}
@@ -128,10 +157,103 @@ export default function DashboardPage() {
           onOpenNewTransaction={() => setIsSheetOpen(true)}
         />
 
-        {/* 0. PAINEL DO DIA & APOIO FINANCEIRO PROATIVO (WALLET COMPANION) */}
-        <DailyBriefingCard />
+        {/* 2. RESUMO PRINCIPAL DIRETO DA CONTA & CONSOLIDADO DO MÊS */}
+        <section className="space-y-3" data-testid="dashboard-consolidated">
+          <div className="flex items-center justify-between px-1">
+            <div>
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-[#86868B]">
+                Resumo da Conta
+              </h2>
+              <p className="text-[11px] text-[#A1A1A6]">Posição financeira em tempo real</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsSheetOpen(true)}
+              className="inline-flex sm:hidden items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#1D1D1F] text-white text-xs font-semibold shadow-xs active:scale-95 transition-transform"
+            >
+              <Plus size={13} strokeWidth={2.5} />
+              <span>Lançar Gasto</span>
+            </button>
+          </div>
 
-        {/* 2. PILHA 3D DE CARTÕES E GRADE */}
+          <div className="overflow-hidden rounded-[24px] border border-black/[0.06] bg-white shadow-[0_4px_20px_rgba(0,0,0,0.03)] backdrop-blur-xl">
+            {/* Bloco Superior: Saldo Principal + Entradas/Saídas */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-black/[0.06]">
+              {/* Saldo Principal */}
+              <div className="p-5 sm:p-6 bg-gradient-to-b from-white to-[#FAFAFC]">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-[#86868B]">Tenho na conta</span>
+                  <span
+                    className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                      balanceIsPositive
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                        : "bg-rose-50 text-rose-700 border-rose-200"
+                    }`}
+                  >
+                    {balanceIsPositive ? "Saldo Positivo" : "Em Aberto"}
+                  </span>
+                </div>
+                <strong
+                  className={`mt-2 block text-2xl sm:text-3xl font-bold tracking-tight font-mono tabular-nums ${
+                    balanceIsPositive ? "text-[#1D1D1F]" : "text-rose-600"
+                  }`}
+                >
+                  {balanceIsPositive ? "" : "−"}R$ {formatCurrency(Math.abs(mainBalance))}
+                </strong>
+                <p className="mt-1 text-[11px] text-[#86868B]">Conta Corrente Principal</p>
+              </div>
+
+              {/* Entrou */}
+              <div className="p-5 sm:p-6">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-[#86868B]">Entrou este mês</span>
+                  <TrendingUp size={14} className="text-emerald-600" />
+                </div>
+                <strong className="mt-2 block text-xl sm:text-2xl font-bold text-emerald-600 font-mono tabular-nums truncate">
+                  + R$ {formatCurrency(monthIncome)}
+                </strong>
+                <p className="mt-1 text-[11px] text-[#86868B]">Receitas confirmadas</p>
+              </div>
+
+              {/* Saiu */}
+              <div className="p-5 sm:p-6">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-[#86868B]">Saiu este mês</span>
+                  <TrendingDown size={14} className="text-[#86868B]" />
+                </div>
+                <strong className="mt-2 block text-xl sm:text-2xl font-bold text-[#1D1D1F] font-mono tabular-nums truncate">
+                  − R$ {formatCurrency(monthExpense)}
+                </strong>
+                <p className="mt-1 text-[11px] text-[#86868B]">Despesas e faturas</p>
+              </div>
+            </div>
+
+            {/* Barra Inferior Útil: Teto Seguro + Melhor Cartão */}
+            <div className="px-5 py-3.5 bg-[#F9F9FB] border-t border-black/[0.05] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                <span className="text-[#86868B]">Teto diário seguro hoje:</span>
+                <strong className="font-mono font-semibold text-emerald-700">
+                  R$ {formatCurrency(safeSpendMetric.safeDailyAllowance)}
+                </strong>
+                <span className="text-[11px] text-[#A1A1A6]">
+                  • {safeSpendMetric.remainingDaysInMonth} dias no mês
+                </span>
+              </div>
+
+              {bestCard && (
+                <div className="flex items-center gap-1.5 text-[11px] text-[#6E6E73]">
+                  <CreditCard size={13} className="text-indigo-500 shrink-0" />
+                  <span>Melhor cartão hoje:</span>
+                  <strong className="font-semibold text-[#1D1D1F]">{bestCard.cardName}</strong>
+                  <span className="text-[#86868B]">(Fecha dia {bestCard.closingDay})</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* 3. PILHA 3D DE CARTÕES E GRADE */}
         <section className="space-y-4">
           <div className="flex items-center justify-between px-1">
             <div className="flex items-center gap-2">
@@ -184,7 +306,7 @@ export default function DashboardPage() {
               <button
                 type="button"
                 onClick={() => setIsCardSheetOpen(true)}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-[#1D1D1F] px-4 py-2 text-xs font-semibold text-white hover:bg-black"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-[#1D1D1F] px-4 py-2 text-xs font-semibold text-white hover:bg-black cursor-pointer transition-colors"
               >
                 <Plus size={14} />
                 Adicionar primeiro cartão
@@ -240,110 +362,6 @@ export default function DashboardPage() {
           )}
         </section>
 
-        {/* 3. DIAGNÓSTICO ESTRATÉGICO WIDGET */}
-        <section className="space-y-2">
-          <div className="flex items-center justify-between px-1">
-            <div className="flex items-center gap-2">
-              <div className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#1D1D1F] border border-white/10 text-white shadow-2xs">
-                <span className="text-[10px] font-semibold tracking-tight">Wallet</span>
-                <span className="text-[11px] font-bold text-white tracking-tighter drop-shadow-[0_0_6px_rgba(255,255,255,0.8)] ml-0.5 leading-none">+</span>
-              </div>
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-[#86868B]">
-                Diagnóstico Estratégico
-              </h2>
-            </div>
-            <Link
-              href="/ai"
-              className="text-xs font-semibold text-[#1D1D1F] hover:underline flex items-center gap-1"
-            >
-              <span>Abrir Diagnóstico</span>
-              <ChevronRight size={13} />
-            </Link>
-          </div>
-
-          <Link
-            href="/ai"
-            className="block p-5 rounded-[24px] bg-white border border-black/[0.04] shadow-[0_2px_10px_rgba(0,0,0,0.035)] hover:border-black/15 transition-all group"
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full border ${
-                      Math.round((monthExpense / (userProfile?.monthlyIncomeBase || 5000)) * 100) > 60
-                        ? "bg-rose-50 text-rose-700 border-rose-200"
-                        : Math.round((monthExpense / (userProfile?.monthlyIncomeBase || 5000)) * 100) > 35
-                        ? "bg-amber-50 text-amber-700 border-amber-200"
-                        : "bg-emerald-50 text-emerald-700 border-emerald-200"
-                    }`}
-                  >
-                    {Math.round((monthExpense / (userProfile?.monthlyIncomeBase || 5000)) * 100) > 60
-                      ? "Alerta de Comprometimento"
-                      : Math.round((monthExpense / (userProfile?.monthlyIncomeBase || 5000)) * 100) > 35
-                      ? "Atenção Moderada"
-                      : "Fluxo Equilibrado"}
-                  </span>
-                  <span className="text-[11px] text-[#86868B]">
-                    Comprometimento: {Math.round((monthExpense / (userProfile?.monthlyIncomeBase || 5000)) * 100)}%
-                  </span>
-                </div>
-                <h3 className="text-sm font-bold text-[#1D1D1F] group-hover:text-black transition-colors">
-                  Diagnóstico e Simulação de Compras
-                </h3>
-                <p className="text-xs text-[#86868B] leading-relaxed line-clamp-2">
-                  Acompanhe seu score de liquidez, identifique gargalos de consumo e simule o impacto de compras no fluxo de caixa.
-                </p>
-              </div>
-
-              <div className="w-10 h-10 rounded-2xl bg-[#1D1D1F] text-white flex items-center justify-center shrink-0 group-hover:bg-black transition-all shadow-xs">
-                <ArrowUpRight size={18} className="text-white group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
-              </div>
-            </div>
-          </Link>
-        </section>
-
-        {/* 4. CONSOLIDADO FINANCEIRO */}
-        <section className="space-y-2" data-testid="dashboard-consolidated">
-          <div className="flex items-end justify-between px-1">
-            <div>
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-[#86868B]">
-                Consolidado do mês
-              </h2>
-              <p className="mt-0.5 text-[11px] text-[#A1A1A6]">Somente valores realizados</p>
-            </div>
-            <span className="text-[11px] text-[#86868B]">Conta principal</span>
-          </div>
-
-          <div className="overflow-hidden rounded-[24px] border border-black/[0.04] bg-white/90 shadow-[0_2px_10px_rgba(0,0,0,0.035)] backdrop-blur-xl">
-            <div className="grid grid-cols-2 sm:grid-cols-3">
-              <div className="border-b border-r border-black/[0.05] p-3.5 sm:p-5 min-w-0 sm:border-b-0">
-                <span className="text-[10px] font-medium text-[#86868B]">Entrou</span>
-                <strong className="mt-1 block text-sm font-semibold text-emerald-600 sm:text-base truncate font-mono tabular-nums">
-                  + R$ {formatCurrency(monthIncome)}
-                </strong>
-              </div>
-
-              <div className="border-b border-black/[0.05] p-3.5 sm:p-5 min-w-0 sm:border-b-0 sm:border-r">
-                <span className="text-[10px] font-medium text-[#86868B]">Saiu</span>
-                <strong className="mt-1 block text-sm font-semibold text-[#1D1D1F] sm:text-base truncate font-mono tabular-nums">
-                  − R$ {formatCurrency(monthExpense)}
-                </strong>
-              </div>
-
-              <div className="col-span-2 bg-[#FAFAFC] p-3.5 sm:p-5 min-w-0 sm:col-span-1">
-                <span className="text-[10px] font-medium text-[#86868B]">Tenho na conta</span>
-                <strong
-                  className={`mt-1 block text-lg sm:text-xl font-semibold tracking-tight truncate font-mono tabular-nums ${
-                    balanceIsPositive ? "text-[#1D1D1F]" : "text-rose-600"
-                  }`}
-                >
-                  {balanceIsPositive ? "" : "−"}R$ {formatCurrency(Math.abs(mainBalance))}
-                </strong>
-              </div>
-            </div>
-          </div>
-        </section>
-
         {/* 4. LANÇAMENTOS RECENTES EM TEMPO REAL */}
         <section className="space-y-3">
           <div className="flex justify-between items-center px-1">
@@ -391,7 +409,7 @@ export default function DashboardPage() {
           </ListGroup>
         </section>
 
-        {/* 6. METAS EM ANDAMENTO CONECTADAS AO WALLETCONTEXT */}
+        {/* 5. METAS EM ANDAMENTO */}
         <section className="space-y-2">
           <div className="flex justify-between items-center px-1">
             <h2 className="text-xs uppercase tracking-wider font-semibold text-[#86868B]">
@@ -488,6 +506,68 @@ export default function DashboardPage() {
             </div>
           )}
         </section>
+
+        {/* 6. DIAGNÓSTICO ESTRATÉGICO (WALLET+) */}
+        <section className="space-y-2">
+          <div className="flex items-center justify-between px-1">
+            <div className="flex items-center gap-2">
+              <div className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#1D1D1F] border border-white/10 text-white shadow-2xs">
+                <span className="text-[10px] font-semibold tracking-tight">Wallet</span>
+                <span className="text-[11px] font-bold text-white tracking-tighter drop-shadow-[0_0_6px_rgba(255,255,255,0.8)] ml-0.5 leading-none">+</span>
+              </div>
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-[#86868B]">
+                Diagnóstico Estratégico
+              </h2>
+            </div>
+            <Link
+              href="/ai"
+              className="text-xs font-semibold text-[#1D1D1F] hover:underline flex items-center gap-1"
+            >
+              <span>Abrir Diagnóstico</span>
+              <ChevronRight size={13} />
+            </Link>
+          </div>
+
+          <Link
+            href="/ai"
+            className="block p-5 rounded-[24px] bg-white border border-black/[0.04] shadow-[0_2px_10px_rgba(0,0,0,0.035)] hover:border-black/15 transition-all group"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full border ${
+                      Math.round((monthExpense / (userProfile?.monthlyIncomeBase || 5000)) * 100) > 60
+                        ? "bg-rose-50 text-rose-700 border-rose-200"
+                        : Math.round((monthExpense / (userProfile?.monthlyIncomeBase || 5000)) * 100) > 35
+                        ? "bg-amber-50 text-amber-700 border-amber-200"
+                        : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    }`}
+                  >
+                    {Math.round((monthExpense / (userProfile?.monthlyIncomeBase || 5000)) * 100) > 60
+                      ? "Alerta de Comprometimento"
+                      : Math.round((monthExpense / (userProfile?.monthlyIncomeBase || 5000)) * 100) > 35
+                      ? "Atenção Moderada"
+                      : "Fluxo Equilibrado"}
+                  </span>
+                  <span className="text-[11px] text-[#86868B]">
+                    Comprometimento: {Math.round((monthExpense / (userProfile?.monthlyIncomeBase || 5000)) * 100)}%
+                  </span>
+                </div>
+                <h3 className="text-sm font-bold text-[#1D1D1F] group-hover:text-black transition-colors">
+                  Diagnóstico e Simulação de Compras
+                </h3>
+                <p className="text-xs text-[#86868B] leading-relaxed line-clamp-2">
+                  Acompanhe seu score de liquidez, identifique gargalos de consumo e simule o impacto de compras no fluxo de caixa.
+                </p>
+              </div>
+
+              <div className="w-10 h-10 rounded-2xl bg-[#1D1D1F] text-white flex items-center justify-center shrink-0 group-hover:bg-black transition-all shadow-xs">
+                <ArrowUpRight size={18} className="text-white group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+              </div>
+            </div>
+          </Link>
+        </section>
       </div>
 
       {/* Modal Bottom Sheet de Novo Lançamento Conectado */}
@@ -509,6 +589,12 @@ export default function DashboardPage() {
       <StatementImportModal
         isOpen={isStatementModalOpen}
         onClose={() => setIsStatementModalOpen(false)}
+      />
+
+      {/* Modal de Simulação de Compras (Devo Comprar?) */}
+      <PurchaseSimulatorModal
+        isOpen={isSimulatorOpen}
+        onClose={() => setIsSimulatorOpen(false)}
       />
     </div>
   );
