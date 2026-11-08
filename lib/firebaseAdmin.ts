@@ -1,6 +1,7 @@
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import { initializeApp, getApps, getApp, cert, type App, type ServiceAccount } from "firebase-admin/app";
-import { getAuth, type Auth } from "firebase-admin/auth";
+import type { Auth } from "firebase-admin/auth";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
 
 /**
@@ -184,6 +185,9 @@ export function getAdminAuth(): Auth {
     return testAuthMock;
   }
   const app = getAdminApp();
+  const runtimeRequire = createRequire(import.meta.url);
+  const authPkg = ["firebase-admin", "auth"].join("/");
+  const { getAuth } = runtimeRequire(authPkg) as typeof import("firebase-admin/auth");
   return getAuth(app);
 }
 
