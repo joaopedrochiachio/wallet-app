@@ -83,3 +83,38 @@ test("escritório só projeta aportes usando margem acima da meta", () => {
   assert.equal(analysis.investments.goalsProgress, 20);
   assert.ok(analysis.investments.projection36Months > 400 * 36);
 });
+
+test("escritório preserva o valor histórico da fatura mesmo quando ela já foi paga (pendingInvoice = 0)", () => {
+  const paidMonth = {
+    monthName: "Novembro",
+    year: 2026,
+    projectedIncome: 5000,
+    totalCommitted: 3500,
+    projectedFreeBalance: 1500,
+    monthNetSurplus: 500,
+    totalInvoicesPending: 0,
+    cardInvoices: [
+      {
+        cardId: "credit-1",
+        cardName: "Nubank",
+        pendingInvoice: 0,
+        totalInvoice: 950,
+        dueDay: 10,
+      },
+    ],
+  };
+
+  const analysis = buildAgentOfficeAnalysis({
+    cards: [card],
+    transactions: [],
+    recurringItems: [],
+    goals: [],
+    targetEndMonthBalance: 700,
+    referenceDate: new Date(2026, 10, 15, 12),
+    monthlyProjections: [paidMonth, month("Dezembro", 1600, 800)],
+  });
+
+  assert.equal(analysis.credit.series[0].amount, 950);
+  assert.equal(analysis.credit.peakMonth, "Nov");
+  assert.equal(analysis.credit.peakInvoice, 950);
+});

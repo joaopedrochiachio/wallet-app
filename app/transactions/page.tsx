@@ -25,6 +25,9 @@ import {
   Utensils,
   ArrowDownLeft,
   Target,
+  Search,
+  X,
+  RotateCcw,
 } from "lucide-react";
 
 interface DayGroup {
@@ -287,6 +290,9 @@ export default function TransactionsPage() {
 
   const [selectedMonth, setSelectedMonth] = useState(currentPeriodKey);
   const [selectedFilter, setSelectedFilter] = useState("Todas");
+  const [selectedType, setSelectedType] = useState<"all" | "receita" | "despesa">("all");
+  const [selectedCategory, setSelectedCategory] = useState("Todas");
+  const [searchQuery, setSearchQuery] = useState("");
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [isStatementModalOpen, setIsStatementModalOpen] = useState(false);
   const [txToDelete, setTxToDelete] = useState<TransactionItem | null>(null);
@@ -302,15 +308,58 @@ export default function TransactionsPage() {
     setSelectedTransaction(transaction);
   };
 
-  const filteredTransactions = transactions.filter((transaction) => {
+  // Transações do mês selecionado (base para extrair categorias disponíveis)
+  const monthTransactions = transactions.filter((transaction) => {
     if (transaction.kind === "invoice_settlement") return false;
     const txDate = getTransactionDate(transaction);
-    const belongsToMonth =
-      getPeriodKey(txDate.getFullYear(), txDate.getMonth()) === selectedMonth;
+    return getPeriodKey(txDate.getFullYear(), txDate.getMonth()) === selectedMonth;
+  });
+
+  const categoryOptions = Array.from(
+    new Set(
+      monthTransactions
+        .map((tx) => tx.category?.trim())
+        .filter((cat): cat is string => Boolean(cat))
+    )
+  ).sort((a, b) => a.localeCompare(b, "pt-BR"));
+
+  const normalizedQuery = searchQuery.trim().toLocaleLowerCase("pt-BR");
+
+  const filteredTransactions = monthTransactions.filter((transaction) => {
     const belongsToAccount =
       selectedFilter === "Todas" || transaction.account === selectedFilter;
-    return belongsToMonth && belongsToAccount;
+    const belongsToType =
+      selectedType === "all" || transaction.type === selectedType;
+    const belongsToCategory =
+      selectedCategory === "Todas" || transaction.category === selectedCategory;
+    const matchesSearch =
+      !normalizedQuery ||
+      transaction.title.toLocaleLowerCase("pt-BR").includes(normalizedQuery) ||
+      (transaction.category || "").toLocaleLowerCase("pt-BR").includes(normalizedQuery) ||
+      (transaction.account || "").toLocaleLowerCase("pt-BR").includes(normalizedQuery);
+
+    return belongsToAccount && belongsToType && belongsToCategory && matchesSearch;
   });
+
+  const hasActiveFilters =
+    selectedFilter !== "Todas" ||
+    selectedType !== "all" ||
+    selectedCategory !== "Todas" ||
+    normalizedQuery.length > 0;
+
+  const clearAllFilters = () => {
+    setSelectedFilter("Todas");
+    setSelectedType("all");
+    setSelectedCategory("Todas");
+    setSearchQuery("");
+  };
+
+  const filteredIncomesTotal = filteredTransactions
+    .filter((tx) => tx.type === "receita")
+    .reduce((acc, tx) => acc + tx.amount, 0);
+  const filteredExpensesTotal = filteredTransactions
+    .filter((tx) => tx.type === "despesa")
+    .reduce((acc, tx) => acc + tx.amount, 0);
 
   // Agrupamento cronológico descendente por dia
   const sortedTransactions = [...filteredTransactions].sort((a, b) => {
@@ -405,39 +454,129 @@ export default function TransactionsPage() {
       </header>
 
       <div className="max-w-4xl mx-auto space-y-4">
-        {/* 2. BARRA DE FILTROS POR CONTA/CARTÃO (Chips Discretos e Contador Silencioso) */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-1">
-          {/* Filtros por Conta/Cartão (Sem preto sólido pesado) */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none touch-pan-x">
-            <span className="text-xs text-[#86868B] font-medium mr-1 shrink-0 flex items-center gap-1">
-              <Filter strokeWidth={1.75} size={12} />
-              <span>Conta:</span>
-            </span>
-            {["Todas", ...accountOptions].map((filter) => {
-              const isSelected = selectedFilter === filter;
-              return (
+        {/* 2. PAINEL DE FILTROS COMPLETO (Busca, Tipo, Categoria e Conta/Cartão) */}
+        <div className="bg-white rounded-[22px] p-4 border border-black/[0.04] shadow-[0_1px_4px_rgba(0,0,0,0.02)] space-y-3">
+          {/* Linha 1: Busca por texto + Seletor de Tipo (Todos / Entradas / Saídas) + Seletor de Categoria */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+            {/* Campo de Busca */}
+            <div className="relative flex-1">
+              <Search
+                size={14}
+                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#86868B] pointer-events-none"
+              />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Buscar por nome, categoria ou conta..."
+                className="w-full bg-[#F2F2F7] focus:bg-white rounded-xl pl-9 pr-8 py-2 text-xs text-[#1D1D1F] placeholder:text-[#86868B] outline-none border border-transparent focus:border-black/15 transition-all"
+              />
+              {searchQuery && (
                 <button
-                  key={filter}
                   type="button"
-                  onClick={() => setSelectedFilter(filter)}
-                  className={`px-3 py-1 rounded-full text-xs transition-all shrink-0 select-none cursor-pointer ${
-                    isSelected
-                      ? "bg-white text-[#1D1D1F] font-semibold shadow-[0_1px_2px_rgba(0,0,0,0.05)] border border-black/[0.08]"
-                      : "text-[#86868B] hover:text-[#1D1D1F] bg-[#E5E5EA]/40 hover:bg-[#E5E5EA]/70 border border-transparent font-medium"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#86868B] hover:text-[#1D1D1F] p-0.5 cursor-pointer"
+                  title="Limpar busca"
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+
+            {/* Filtro de Tipo (Segmented Control) */}
+            <div className="bg-[#F2F2F7] p-1 rounded-xl flex items-center gap-0.5 shrink-0">
+              {(
+                [
+                  { id: "all", label: "Todos" },
+                  { id: "receita", label: "Entradas" },
+                  { id: "despesa", label: "Saídas" },
+                ] as const
+              ).map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setSelectedType(t.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    selectedType === t.id
+                      ? "bg-white text-[#1D1D1F] shadow-2xs"
+                      : "text-[#86868B] hover:text-[#1D1D1F]"
                   }`}
                 >
-                  {filter === "Todas" ? filter : formatAccountLabel(filter)}
+                  {t.label}
                 </button>
-              );
-            })}
+              ))}
+            </div>
+
+            {/* Filtro de Categoria */}
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="bg-[#F2F2F7] hover:bg-[#E5E5EA]/80 rounded-xl px-3 py-2 text-xs font-medium text-[#1D1D1F] outline-none border border-transparent focus:border-black/15 cursor-pointer shrink-0"
+              aria-label="Filtrar por categoria"
+            >
+              <option value="Todas">Categoria: Todas</option>
+              {categoryOptions.map((cat) => (
+                <option key={cat} value={cat}>
+                  {cat}
+                </option>
+              ))}
+            </select>
           </div>
 
-          {/* Contador Editorial */}
-          <span className="text-xs text-[#86868B] font-normal shrink-0">
-            {filteredTransactions.length}{" "}
-            {filteredTransactions.length === 1 ? "lançamento" : "lançamentos"} em{" "}
-            {activeMonthName}
-          </span>
+          {/* Linha 2: Filtro por Conta/Cartão + Contador e Resumo */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-1 border-t border-black/[0.04]">
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none touch-pan-x">
+              <span className="text-xs text-[#86868B] font-medium mr-1 shrink-0 flex items-center gap-1">
+                <Filter strokeWidth={1.75} size={12} />
+                <span>Conta:</span>
+              </span>
+              {["Todas", ...accountOptions].map((filter) => {
+                const isSelected = selectedFilter === filter;
+                return (
+                  <button
+                    key={filter}
+                    type="button"
+                    onClick={() => setSelectedFilter(filter)}
+                    className={`px-3 py-1 rounded-full text-xs transition-all shrink-0 select-none cursor-pointer ${
+                      isSelected
+                        ? "bg-[#1D1D1F] text-white font-semibold shadow-2xs"
+                        : "text-[#86868B] hover:text-[#1D1D1F] bg-[#F2F2F7] hover:bg-[#E5E5EA] font-medium"
+                    }`}
+                  >
+                    {filter === "Todas" ? filter : formatAccountLabel(filter)}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 text-xs">
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={clearAllFilters}
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-[#0071E3] hover:text-[#0077ED] cursor-pointer"
+                >
+                  <RotateCcw size={11} />
+                  <span>Limpar filtros</span>
+                </button>
+              )}
+
+              <span className="text-[#86868B] font-normal">
+                {filteredTransactions.length}{" "}
+                {filteredTransactions.length === 1 ? "lançamento" : "lançamentos"}
+                {filteredIncomesTotal > 0 && (
+                  <span className="text-emerald-600 font-medium font-mono tabular-nums ml-2">
+                    +R$ {formatCurrency(filteredIncomesTotal)}
+                  </span>
+                )}
+                {filteredExpensesTotal > 0 && (
+                  <span className="text-[#1D1D1F] font-medium font-mono tabular-nums ml-2">
+                    −R$ {formatCurrency(filteredExpensesTotal)}
+                  </span>
+                )}
+              </span>
+            </div>
+          </div>
         </div>
 
         {/* 3. SUPERFÍCIE ÚNICA DE TRANSAÇÕES (Estilo Apple Wallet / Ajustes) */}
@@ -452,15 +591,15 @@ export default function TransactionsPage() {
                 Nenhum lançamento encontrado
               </p>
               <p className="text-xs text-[#86868B] max-w-sm mx-auto">
-                Não foram encontrados lançamentos para o filtro selecionado em {activeMonthName}.
+                Não foram encontrados lançamentos para os filtros selecionados em {activeMonthName}.
               </p>
-              {selectedFilter !== "Todas" && (
+              {hasActiveFilters && (
                 <button
                   type="button"
-                  onClick={() => setSelectedFilter("Todas")}
+                  onClick={clearAllFilters}
                   className="mt-2 inline-flex items-center text-xs font-semibold px-3.5 py-1.5 rounded-full bg-[#1D1D1F] text-white hover:bg-black transition-colors cursor-pointer"
                 >
-                  Ver todas as contas
+                  Limpar todos os filtros
                 </button>
               )}
             </div>

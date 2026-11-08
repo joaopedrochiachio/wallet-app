@@ -162,11 +162,14 @@ export default function CardsPage() {
     (m) => m.periodKey === selectedMonth.periodKey
   );
 
-  // Pré-cálculo dos totais por mês para exibição na régua de navegação
-  const monthTotals = useMemo(() => {
+  // Pré-cálculo dos totais e status de pagamento por mês para exibição na régua de navegação
+  const { monthTotals, monthPaidStatus } = useMemo(() => {
     const totals: Record<string, number> = {};
+    const paidStatus: Record<string, boolean> = {};
     for (const m of invoiceMonths) {
       let sum = 0;
+      let hasAnyBilledOrPaid = false;
+      let allBilledArePaid = true;
       for (const card of creditCards) {
         const details = getCardInvoiceDetailsForMonth(
           card,
@@ -176,10 +179,19 @@ export default function CardsPage() {
           m.monthIndex
         );
         sum += details.totalInvoice;
+        if (details.totalInvoice > 0 || details.paidAmount > 0) {
+          if (details.paidAmount > 0) {
+            hasAnyBilledOrPaid = true;
+          }
+          if (!details.isPaid) {
+            allBilledArePaid = false;
+          }
+        }
       }
       totals[m.periodKey] = sum;
+      paidStatus[m.periodKey] = hasAnyBilledOrPaid && allBilledArePaid;
     }
-    return totals;
+    return { monthTotals: totals, monthPaidStatus: paidStatus };
   }, [invoiceMonths, creditCards, transactions, recurringItems]);
 
   // Detalhes calculados dos cartões para o mês selecionado
@@ -214,13 +226,32 @@ export default function CardsPage() {
 
   const handleStartEditLimit = (cardId: string, currentLimit: number) => {
     setEditingCardId(cardId);
-    setNewLimitInput(currentLimit.toString());
+    setNewLimitInput(
+      currentLimit.toLocaleString("pt-BR", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })
+    );
+  };
+
+  const parseCurrencyInput = (raw: string): number => {
+    const cleaned = raw.replace(/[R$\s]/g, "").trim();
+    if (!cleaned) return NaN;
+    if (cleaned.includes(",") && cleaned.includes(".")) {
+      return parseFloat(cleaned.replace(/\./g, "").replace(",", "."));
+    }
+    if (cleaned.includes(",")) {
+      return parseFloat(cleaned.replace(",", "."));
+    }
+    return parseFloat(cleaned);
   };
 
   const handleSaveLimit = (cardId: string) => {
-    const num = parseFloat(newLimitInput.replace(/\./g, "").replace(",", "."));
+    const num = parseCurrencyInput(newLimitInput);
     if (!isNaN(num) && num > 0) {
       updateCardLimit(cardId, num);
+      setPaymentSuccessMessage("Limite do cartão atualizado com sucesso!");
+      setTimeout(() => setPaymentSuccessMessage(null), 3500);
     }
     setEditingCardId(null);
   };
@@ -488,6 +519,7 @@ export default function CardsPage() {
               {invoiceMonths.map((m) => {
                 const isSelected = m.periodKey === selectedPeriodKey;
                 const total = monthTotals[m.periodKey] || 0;
+                const isMonthPaid = monthPaidStatus[m.periodKey] || false;
 
                 return (
                   <button
@@ -507,7 +539,17 @@ export default function CardsPage() {
                       <span className={`text-[10px] ${isSelected ? "text-white/70" : "text-[#86868B]"}`}>
                         {m.year}
                       </span>
-                      {m.isOpenInvoice && (
+                      {isMonthPaid ? (
+                        <span
+                          className={`text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded-full ${
+                            isSelected
+                              ? "bg-emerald-500/25 text-emerald-200 border border-emerald-400/30"
+                              : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                          }`}
+                        >
+                          Paga
+                        </span>
+                      ) : m.isOpenInvoice ? (
                         <span
                           className={`text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded-full ${
                             isSelected
@@ -517,11 +559,17 @@ export default function CardsPage() {
                         >
                           Aberta
                         </span>
-                      )}
+                      ) : null}
                     </div>
                     <span
                       className={`text-[11px] font-mono tabular-nums font-semibold ${
-                        isSelected ? "text-white" : "text-[#1D1D1F]"
+                        isSelected
+                          ? isMonthPaid
+                            ? "text-emerald-300"
+                            : "text-white"
+                          : isMonthPaid
+                            ? "text-emerald-700"
+                            : "text-[#1D1D1F]"
                       }`}
                     >
                       R$ {formatCurrency(total)}
@@ -688,7 +736,7 @@ export default function CardsPage() {
                           )}
                         </div>
 
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap justify-end">
                           {!details.isPaid && invoice > 0 ? (
                             <button
                               type="button"
@@ -697,7 +745,7 @@ export default function CardsPage() {
                                   isOpen: true,
                                   cardId: card.id,
                                   cardName: card.name,
-                                  amount: invoice,
+                                  amount: details.pendingInvoice > 0 ? details.pendingInvoice : invoice,
                                   monthName: details.dueMonthName,
                                   periodKey: details.periodKey,
                                 })
@@ -722,6 +770,16 @@ export default function CardsPage() {
                               <span>Desfazer pagamento</span>
                             </button>
                           ) : null}
+
+                          <button
+                            type="button"
+                            onClick={() => handleStartEditLimit(card.id, card.limit)}
+                            className="inline-flex items-center gap-1 text-xs font-semibold text-[#1D1D1F] bg-[#F2F2F7] hover:bg-[#E5E5EA] px-3 py-1.5 rounded-full transition-colors cursor-pointer shrink-0"
+                            title={`Alterar limite do ${card.name}`}
+                          >
+                            <SlidersHorizontal size={12} />
+                            <span>Alterar Limite</span>
+                          </button>
 
                           <button
                             type="button"
@@ -754,53 +812,71 @@ export default function CardsPage() {
                     </div>
 
                     {/* Barra de Progresso de Limite e Ajuste */}
-                    <div className="space-y-1.5 pt-1">
-                      <div className="flex justify-between items-center text-xs">
+                    <div className="space-y-2 pt-1">
+                      <div className="flex flex-wrap justify-between items-center gap-2 text-xs">
                         <span className="text-[#86868B]">
                           Limite Utilizado:{" "}
                           <strong className="text-[#1D1D1F] font-mono tabular-nums">
                             R$ {formatCurrency(card.spent)}
                           </strong>{" "}
                           <span className="text-[11px] text-[#86868B]">
-                            (Disponível: R$ {formatCurrency(details.availableLimit)})
+                            (Disponível: R$ {formatCurrency(details.availableLimit)} de R$ {formatCurrency(card.limit)})
                           </span>
                         </span>
                         <div className="flex items-center gap-2">
-                          {isEditing ? (
-                            <div className="flex items-center gap-1.5 bg-[#F2F2F7] px-2 py-0.5 rounded-lg">
-                              <span className="text-[#86868B] text-[11px]">R$</span>
-                              <input
-                                type="number"
-                                value={newLimitInput}
-                                onChange={(e) => setNewLimitInput(e.target.value)}
-                                onKeyDown={(e) => e.key === "Enter" && handleSaveLimit(card.id)}
-                                className="w-16 bg-transparent text-[#1D1D1F] font-semibold outline-none text-xs font-mono tabular-nums"
-                                autoFocus
-                              />
-                              <button
-                                onClick={() => handleSaveLimit(card.id)}
-                                className="text-emerald-600 hover:text-emerald-700 cursor-pointer"
-                              >
-                                <Check size={13} />
-                              </button>
-                              <button
-                                onClick={() => setEditingCardId(null)}
-                                className="text-gray-400 hover:text-gray-600 cursor-pointer"
-                              >
-                                <X size={13} />
-                              </button>
-                            </div>
-                          ) : (
+                          {!isEditing && (
                             <button
+                              type="button"
                               onClick={() => handleStartEditLimit(card.id, card.limit)}
-                              className="text-[#86868B] hover:text-[#1D1D1F] font-medium flex items-center gap-1 cursor-pointer text-[11px]"
+                              className="text-[#0071E3] hover:text-[#0077ED] font-semibold flex items-center gap-1 cursor-pointer text-xs"
                             >
-                              <SlidersHorizontal size={11} />
-                              <span>Ajustar Limite</span>
+                              <Pencil size={11} />
+                              <span>Editar limite</span>
                             </button>
                           )}
                         </div>
                       </div>
+
+                      {isEditing && (
+                        <div className="flex flex-wrap items-center justify-between gap-3 bg-[#F2F2F7]/90 border border-black/[0.08] p-3 rounded-2xl animate-in fade-in duration-200">
+                          <div className="flex items-center gap-2 flex-1 min-w-[180px]">
+                            <span className="text-xs font-semibold text-[#86868B] shrink-0">
+                              Novo Limite: R$
+                            </span>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              placeholder="Ex: 5.000,00"
+                              value={newLimitInput}
+                              onChange={(e) => setNewLimitInput(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") handleSaveLimit(card.id);
+                                if (e.key === "Escape") setEditingCardId(null);
+                              }}
+                              className="w-full max-w-[160px] bg-white border border-black/10 focus:border-[#0071E3] rounded-xl px-3 py-1.5 text-[#1D1D1F] font-semibold outline-none text-sm font-mono tabular-nums"
+                              autoFocus
+                            />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleSaveLimit(card.id)}
+                              className="inline-flex items-center gap-1 bg-[#1D1D1F] hover:bg-black text-white text-xs font-semibold px-3.5 py-1.5 rounded-xl transition-colors cursor-pointer"
+                            >
+                              <Check size={13} />
+                              <span>Salvar limite</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingCardId(null)}
+                              className="inline-flex items-center gap-1 bg-white hover:bg-gray-100 text-[#86868B] hover:text-[#1D1D1F] border border-black/10 text-xs font-medium px-3 py-1.5 rounded-xl transition-colors cursor-pointer"
+                            >
+                              <X size={13} />
+                              <span>Cancelar</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
 
                       <div className="w-full h-1.5 bg-[#F2F2F7] rounded-full overflow-hidden">
                         <div

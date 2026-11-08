@@ -622,6 +622,7 @@ export interface CardMonthInvoiceDetails {
   installmentsAmount: number;
   recurringAmount: number;
   totalInvoice: number;
+  pendingInvoice: number;
   paidAmount: number;
   isPaid: boolean;
   isOpenInvoice: boolean;
@@ -639,6 +640,8 @@ export interface CardMonthInvoiceDetails {
 /**
  * Retorna os detalhes da fatura do cartão para qualquer mês específico (passado, presente ou futuro),
  * distribuindo compras parceladas, cobranças programadas e pagamentos daquela competência.
+ * Quando a fatura é paga, o valor real (totalInvoice) é preservado para exibição e análises de IA,
+ * enquanto pendingInvoice zera para evitar dupla contagem no fluxo de caixa e liberar o limite.
  */
 export function getCardInvoiceDetailsForMonth(
   card: CardItem,
@@ -668,6 +671,7 @@ export function getCardInvoiceDetailsForMonth(
       installmentsAmount: 0,
       recurringAmount: 0,
       totalInvoice: 0,
+      pendingInvoice: 0,
       paidAmount: 0,
       isPaid: true,
       isOpenInvoice: false,
@@ -684,7 +688,7 @@ export function getCardInvoiceDetailsForMonth(
   }
 
   const { schedule, creditsByPeriod } = calculateInvoiceScheduleWithCredits(card, entries, referenceDate);
-  const installmentsAmount = schedule[targetPeriodKey] || 0;
+  const netInstallments = schedule[targetPeriodKey] || 0;
 
   const recurringDetails = getCardInvoiceRecurringDetails(
     card,
@@ -696,7 +700,7 @@ export function getCardInvoiceDetailsForMonth(
 
   const periodCredit = creditsByPeriod?.[targetPeriodKey] || 0;
   const netRecurring = Math.round(Math.max(0, recurringDetails.pendingAmount - periodCredit) * 100) / 100;
-  let totalInvoice = Math.round(Math.max(0, installmentsAmount + netRecurring) * 100) / 100;
+  let pendingInvoice = Math.round(Math.max(0, netInstallments + netRecurring) * 100) / 100;
 
   // Compras faturadas que vencem nesta competência
   const cardTransactions = entries.filter((entry) => {
@@ -709,22 +713,42 @@ export function getCardInvoiceDetailsForMonth(
     return dKey === targetPeriodKey;
   });
 
-  // Pagamentos desta competência
-  const processedPaymentGroups = new Set<string>();
-  const paidAmount = entries
-    .filter((entry) => isInvoicePaymentOrSettlement(entry, card))
+  // Estornos/créditos avulsos no cartão (que não sejam pagamento/baixa de fatura)
+  const cardRefundsTotal = entries
     .filter((entry) => {
-      const pDate = getLedgerEntryDate(entry);
-      const pKey = entry.periodKey || (pDate ? getPeriodKey(pDate.getFullYear(), pDate.getMonth()) : null);
-      return pKey === targetPeriodKey;
-    })
-    .filter((entry) => {
-      const groupKey = entry.groupId || entry.id;
-      if (groupKey && processedPaymentGroups.has(groupKey)) return false;
-      if (groupKey) processedPaymentGroups.add(groupKey);
-      return true;
+      if (entry.id?.startsWith("planned-")) return false;
+      if (entry.type !== "receita") return false;
+      if (isInvoicePaymentOrSettlement(entry, card)) return false;
+      if (!matchesLedgerCard(card, entry.account, entry.cardId)) return false;
+      const dDate = getInvoiceDueDate(card, getLedgerEntryDate(entry) || new Date(invoiceYear, invoiceMonth, 1));
+      const dKey = getPeriodKey(dDate.getFullYear(), dDate.getMonth());
+      return dKey === targetPeriodKey;
     })
     .reduce((sum, entry) => sum + entry.amount, 0);
+
+  const grossInstallments = Math.round(
+    Math.max(0, cardTransactions.reduce((sum, entry) => sum + entry.amount, 0) - cardRefundsTotal) * 100
+  ) / 100;
+  const grossRecurring = Math.round(Math.max(0, recurringDetails.pendingAmount) * 100) / 100;
+
+  // Pagamentos desta competência
+  const processedPaymentGroups = new Set<string>();
+  const paidAmount = Math.round(
+    entries
+      .filter((entry) => isInvoicePaymentOrSettlement(entry, card))
+      .filter((entry) => {
+        const pDate = getLedgerEntryDate(entry);
+        const pKey = entry.periodKey || (pDate ? getPeriodKey(pDate.getFullYear(), pDate.getMonth()) : null);
+        return pKey === targetPeriodKey;
+      })
+      .filter((entry) => {
+        const groupKey = entry.groupId || entry.id;
+        if (groupKey && processedPaymentGroups.has(groupKey)) return false;
+        if (groupKey) processedPaymentGroups.add(groupKey);
+        return true;
+      })
+      .reduce((sum, entry) => sum + entry.amount, 0) * 100
+  ) / 100;
 
   // Fatura aberta do ciclo corrente de referência
   const refYear = referenceDate.getFullYear();
@@ -778,7 +802,7 @@ export function getCardInvoiceDetailsForMonth(
   // Fallback se for fatura aberta sem itens distribuídos nem pagamentos, mas com gastos brutos
   if (
     isOpenInvoice &&
-    totalInvoice === 0 &&
+    pendingInvoice === 0 &&
     paidAmount === 0 &&
     Object.keys(schedule).length === 0 &&
     schedule[targetPeriodKey] === undefined &&
@@ -787,16 +811,37 @@ export function getCardInvoiceDetailsForMonth(
     const rawInvoice = entries
       .filter((entry) => isActualEntry(entry) && matchesLedgerCard(card, entry.account, entry.cardId))
       .reduce((total, entry) => total + (entry.type === "despesa" ? entry.amount : -entry.amount), 0);
-    totalInvoice = Math.max(0, rawInvoice);
+    pendingInvoice = Math.max(0, rawInvoice);
   }
 
-  const hasInstallments = cardTransactions.length > 0;
-  const hasRecurring = recurringDetails.items.length > 0;
+  // Preserva o valor real da fatura mesmo quando paga (não zera ao pagar!)
+  const installmentsAmount =
+    paidAmount > 0
+      ? Math.round(
+          Math.max(
+            grossInstallments,
+            netInstallments,
+            grossInstallments + grossRecurring === 0 ? paidAmount : 0
+          ) * 100
+        ) / 100
+      : netInstallments;
+
+  const recurringAmount =
+    paidAmount > 0
+      ? Math.round(Math.max(grossRecurring, netRecurring) * 100) / 100
+      : netRecurring;
+
+  const totalInvoice =
+    paidAmount > 0
+      ? Math.round(Math.max(installmentsAmount + recurringAmount, paidAmount + pendingInvoice) * 100) / 100
+      : pendingInvoice;
+
+  const hasInstallments = cardTransactions.length > 0 || installmentsAmount > 0;
+  const hasRecurring = recurringDetails.items.length > 0 || recurringAmount > 0;
   const isPaid =
-    (isPastInvoice && totalInvoice <= 0.005) ||
+    (isPastInvoice && pendingInvoice <= 0.005) ||
     targetPeriodKey < refMonthKey ||
-    (paidAmount > 0 && totalInvoice <= 0.005) ||
-    (paidAmount >= installmentsAmount + netRecurring && installmentsAmount + netRecurring > 0);
+    (paidAmount > 0 && pendingInvoice <= 0.005);
 
   const effectiveSpent =
     card.spent > 0
@@ -816,8 +861,9 @@ export function getCardInvoiceDetailsForMonth(
     dueMonthName,
     closingDay,
     installmentsAmount,
-    recurringAmount: netRecurring,
+    recurringAmount,
     totalInvoice,
+    pendingInvoice,
     paidAmount,
     isPaid,
     isOpenInvoice,

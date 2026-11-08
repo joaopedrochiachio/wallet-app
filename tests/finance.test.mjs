@@ -2031,4 +2031,18 @@ test("compra parcelada de R$ 275 em 3x no cartão divide as parcelas (91,67 + 91
     purchaseDate
   );
   assert.equal(usedLimitAfterPayment, 183.33);
+
+  // 7. A fatura de Novembro/2026 após paga NÃO zera seu valor histórico (permanece 91,67 com isPaid = true e pendingInvoice = 0)
+  const novDetailsAfterPay = getCardInvoiceDetailsForMonth(
+    nubank,
+    entriesAfterFirstPayment,
+    recurringItems,
+    2026,
+    10, // Novembro
+    purchaseDate
+  );
+  assert.equal(novDetailsAfterPay.totalInvoice, 91.67);
+  assert.equal(novDetailsAfterPay.pendingInvoice, 0);
+  assert.equal(novDetailsAfterPay.paidAmount, 91.67);
+  assert.equal(novDetailsAfterPay.isPaid, true);
 });

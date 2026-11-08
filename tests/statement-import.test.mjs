@@ -423,7 +423,10 @@ test("Pagamento de Fatura ('Paguei a fatura'): quita a competência da fatura e 
     refDate
   );
 
-  assert.equal(afterPayDetails.totalInvoice, 0);
+  // A fatura paga preserva seu valor real (455.9) para histórico e análises de IA,
+  // enquanto a pendência (pendingInvoice) zera e o status passa a isPaid = true
+  assert.equal(afterPayDetails.totalInvoice, 455.9);
+  assert.equal(afterPayDetails.pendingInvoice, 0);
   assert.equal(afterPayDetails.paidAmount, 455.9);
   assert.equal(afterPayDetails.isPaid, true);
 

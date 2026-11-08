@@ -23,6 +23,7 @@ import {
 import {
   calculateInvoiceSchedule,
   matchesLedgerCard,
+  getCardInvoiceDetailsForMonth,
   getCardInvoiceRecurringDetails,
 } from "../utils/ledger.ts";
 
@@ -580,26 +581,25 @@ export function computeFortnightBreakdown(
   const cardInvoices: FortnightMovementItem[] = [];
 
   for (const creditCard of creditCards) {
-    const schedule = calculateInvoiceSchedule(creditCard, transactions as unknown as Parameters<typeof calculateInvoiceSchedule>[1]);
-    const installments = schedule[targetPeriodKey] || 0;
-
-    const recDetails = getCardInvoiceRecurringDetails(
+    const details = getCardInvoiceDetailsForMonth(
       creditCard,
+      transactions as unknown as Parameters<typeof getCardInvoiceDetailsForMonth>[1],
       recurringItems,
       year,
-      monthIndex,
-      transactions as unknown as Parameters<typeof getCardInvoiceRecurringDetails>[4]
+      monthIndex
     );
-    const creditRecurring = recDetails.pendingAmount;
 
-    let totalInvoice = installments + creditRecurring;
+    let totalInvoice = details.totalInvoice;
     if (totalInvoice === 0 && (creditCard.invoiceAmount || creditCard.spent)) {
       totalInvoice = creditCard.invoiceAmount || creditCard.spent || 0;
     }
 
     if (totalInvoice > 0) {
       cardInvoices.push({
-        title: `Fatura ${creditCard.name}`,
+        title:
+          details.isPaid && details.paidAmount > 0
+            ? `Fatura ${creditCard.name} (Paga)`
+            : `Fatura ${creditCard.name}`,
         amount: totalInvoice,
         dueDay: creditCard.dueDay || 10,
         type: "credit_invoice" as const,

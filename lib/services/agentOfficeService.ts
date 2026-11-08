@@ -169,13 +169,16 @@ export function buildAgentOfficeAnalysis(params: {
     : 0;
   const riskMonths = liquiditySeries.filter((item) => item.balance < targetEndMonthBalance).length;
 
-  const creditSeries = projectionWindow.map((projection) => ({
-    label: projection.monthName.slice(0, 3),
-    amount: roundCurrency(
-      projection.totalInvoicesPending ||
-      projection.cardInvoices.reduce((sum, invoice) => sum + (invoice.pendingInvoice || 0), 0)
-    ),
-  }));
+  const creditSeries = projectionWindow.map((projection) => {
+    const totalFromCards = projection.cardInvoices.reduce(
+      (sum, invoice) => sum + (invoice.totalInvoice || invoice.pendingInvoice || 0),
+      0
+    );
+    return {
+      label: projection.monthName.slice(0, 3),
+      amount: roundCurrency(totalFromCards > 0 ? totalFromCards : (projection.totalInvoicesPending || 0)),
+    };
+  });
   const totalSixMonths = creditSeries.reduce((sum, item) => sum + item.amount, 0);
   const peakCredit = creditSeries.reduce(
     (peak, item) => item.amount > peak.amount ? item : peak,

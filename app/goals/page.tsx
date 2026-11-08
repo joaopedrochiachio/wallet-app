@@ -19,6 +19,7 @@ import {
   ArrowUpRight,
   AlertCircle,
   Check,
+  Pencil,
 } from "lucide-react";
 import { GoalItem } from "@/types";
 import { AppleConfirmModal } from "@/components/ui/AppleConfirmModal";
@@ -30,6 +31,7 @@ export default function GoalsPage() {
     cards,
     mainBalance,
     addGoal,
+    updateGoal,
     contributeToGoal,
     withdrawFromGoal,
     deleteGoal,
@@ -37,11 +39,19 @@ export default function GoalsPage() {
 
   // Modais e Feedback
   const [isNewGoalModalOpen, setIsNewGoalModalOpen] = useState(false);
+  const [editingGoal, setEditingGoal] = useState<GoalItem | null>(null);
   const [activeMovementGoal, setActiveMovementGoal] = useState<GoalItem | null>(null);
   const [movementTab, setMovementTab] = useState<"contribute" | "withdraw">("contribute");
   const [goalToDelete, setGoalToDelete] = useState<GoalItem | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isSubmittingMovement, setIsSubmittingMovement] = useState(false);
+
+  // Formulário Editar Meta Existente
+  const [editTitle, setEditTitle] = useState("");
+  const [editCategory, setEditCategory] = useState("");
+  const [editTargetAmount, setEditTargetAmount] = useState("");
+  const [editCurrentAmount, setEditCurrentAmount] = useState("");
+  const [editDeadline, setEditDeadline] = useState("");
 
   // Formulário Nova Meta
   const [title, setTitle] = useState("");
@@ -191,6 +201,48 @@ export default function GoalsPage() {
     setInitialSourceType("already_saved");
     setSelectedInitialAccountId(checkingAccounts[0]?.id || "");
     setIsNewGoalModalOpen(true);
+  };
+
+  // Abrir Modal de Edição de Meta Existente
+  const handleOpenEditGoal = (goal: GoalItem) => {
+    setEditingGoal(goal);
+    setEditTitle(goal.title);
+    setEditCategory(goal.category || "Objetivo Geral");
+    setEditTargetAmount(
+      goal.target.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    );
+    setEditCurrentAmount(
+      goal.current.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    );
+    setEditDeadline(goal.deadline || "");
+  };
+
+  const handleSaveEditGoal = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingGoal) return;
+
+    const targetValidation = validateCurrency(editTargetAmount, { min: 1, max: 100_000_000 });
+    const currentValidation = validateCurrency(editCurrentAmount, {
+      min: 0,
+      max: 100_000_000,
+      fallback: editingGoal.current,
+    });
+    const sanitizedTitle = sanitizeTextInput(editTitle, 80);
+    const sanitizedCategory = sanitizeTextInput(editCategory, 60) || "Objetivo Geral";
+    const sanitizedDeadline = sanitizeTextInput(editDeadline, 50) || "Em andamento";
+
+    if (!targetValidation.isValid || !sanitizedTitle) return;
+
+    updateGoal(editingGoal.id, {
+      title: sanitizedTitle,
+      category: sanitizedCategory,
+      target: targetValidation.value,
+      current: currentValidation.value,
+      deadline: sanitizedDeadline,
+    });
+
+    showToast(`Meta "${sanitizedTitle}" atualizada com sucesso!`);
+    setEditingGoal(null);
   };
 
   // Abrir Modal de Movimentação em Aporte
@@ -482,13 +534,22 @@ export default function GoalsPage() {
                         <p className="text-xs text-[#86868B]">{goal.category}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5">
                       <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-[#F2F2F7] text-[#86868B] font-mono tabular-nums">
                         {percentage}%
                       </span>
                       <button
+                        type="button"
+                        onClick={() => handleOpenEditGoal(goal)}
+                        className="text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#F2F2F7] rounded-lg transition-colors p-1.5 cursor-pointer"
+                        title="Editar detalhes da meta"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => setGoalToDelete(goal)}
-                        className="text-gray-300 hover:text-rose-500 transition-colors p-1 cursor-pointer"
+                        className="text-gray-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors p-1.5 cursor-pointer"
                         title="Excluir meta"
                       >
                         <Trash2 size={15} />
@@ -525,6 +586,16 @@ export default function GoalsPage() {
                       )}
 
                       <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditGoal(goal)}
+                          className="text-xs font-medium px-2.5 py-1 rounded-full bg-[#F2F2F7] hover:bg-[#E5E5EA] text-[#1D1D1F] transition-all flex items-center gap-1 cursor-pointer"
+                          title="Editar nome, valor alvo, valor guardado ou prazo desta meta"
+                        >
+                          <Pencil size={12} />
+                          <span>Editar</span>
+                        </button>
+
                         {goal.current > 0 && (
                           <button
                             onClick={() => handleOpenWithdraw(goal)}
@@ -1251,6 +1322,146 @@ export default function GoalsPage() {
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL EDITAR DETALHES DA META */}
+      {editingGoal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div
+            onClick={() => setEditingGoal(null)}
+            className="fixed inset-0 bg-black/45 animate-apple-backdrop"
+          />
+
+          <div className="relative w-full max-w-md bg-white rounded-[28px] p-6 space-y-5 shadow-2xl z-50 animate-apple-modal font-sans max-h-[90dvh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-[#86868B]">
+                  Editar Objetivo
+                </span>
+                <h3 className="text-lg font-semibold text-[#1D1D1F]">
+                  Detalhes da Meta
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingGoal(null)}
+                className="w-8 h-8 rounded-full bg-[#F2F2F7] text-[#86868B] hover:text-[#1D1D1F] flex items-center justify-center cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditGoal} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold uppercase tracking-wider text-[#86868B]">
+                  Nome da Meta
+                </label>
+                <input
+                  type="text"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  placeholder="Ex: Reserva de Emergência, Viagem..."
+                  className="w-full bg-[#F2F2F7] rounded-xl px-4 py-3 text-sm text-[#1D1D1F] outline-none font-medium focus:ring-2 focus:ring-black/10 transition-all"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold uppercase tracking-wider text-[#86868B]">
+                  Categoria
+                </label>
+                <input
+                  type="text"
+                  value={editCategory}
+                  onChange={(e) => setEditCategory(e.target.value)}
+                  placeholder="Ex: Segurança Financeira, Lazer & Turismo..."
+                  className="w-full bg-[#F2F2F7] rounded-xl px-4 py-3 text-sm text-[#1D1D1F] outline-none focus:ring-2 focus:ring-black/10 transition-all"
+                />
+                <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                  {[
+                    "Segurança Financeira",
+                    "Lazer & Turismo",
+                    "Equipamento & Trabalho",
+                    "Patrimônio & Bens",
+                  ].map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setEditCategory(cat)}
+                      className={`text-[11px] font-medium px-2.5 py-1 rounded-full border transition-all cursor-pointer ${
+                        editCategory === cat
+                          ? "bg-[#1D1D1F] text-white border-[#1D1D1F]"
+                          : "bg-[#F2F2F7] text-[#86868B] hover:text-[#1D1D1F] border-transparent"
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-[#86868B]">
+                    Valor Alvo (R$)
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={editTargetAmount}
+                    onChange={(e) => setEditTargetAmount(e.target.value)}
+                    placeholder="10.000,00"
+                    className="w-full bg-[#F2F2F7] rounded-xl px-4 py-3 text-sm font-semibold text-[#1D1D1F] outline-none font-mono tabular-nums focus:ring-2 focus:ring-black/10 transition-all"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-[#86868B]">
+                    Valor Guardado (R$)
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={editCurrentAmount}
+                    onChange={(e) => setEditCurrentAmount(e.target.value)}
+                    placeholder="0,00"
+                    className="w-full bg-[#F2F2F7] rounded-xl px-4 py-3 text-sm font-semibold text-[#1D1D1F] outline-none font-mono tabular-nums focus:ring-2 focus:ring-black/10 transition-all"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold uppercase tracking-wider text-[#86868B]">
+                  Prazo Estimado
+                </label>
+                <input
+                  type="text"
+                  value={editDeadline}
+                  onChange={(e) => setEditDeadline(e.target.value)}
+                  placeholder="Ex: Dezembro 2026, 12 meses..."
+                  className="w-full bg-[#F2F2F7] rounded-xl px-4 py-3 text-sm text-[#1D1D1F] outline-none focus:ring-2 focus:ring-black/10 transition-all"
+                />
+              </div>
+
+              <div className="pt-2 flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setEditingGoal(null)}
+                  className="flex-1 bg-[#F2F2F7] hover:bg-[#E5E5EA] text-[#1D1D1F] font-semibold text-sm py-3.5 rounded-xl transition-all cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 bg-[#1D1D1F] hover:bg-black text-white font-semibold text-sm py-3.5 rounded-xl transition-all cursor-pointer shadow-xs"
+                >
+                  Salvar Alterações
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

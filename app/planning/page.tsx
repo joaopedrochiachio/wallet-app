@@ -876,26 +876,6 @@ export default function PlanningPage() {
             </span>
           ) : !isRealizedInThisMonth && !isFinishedInThisMonth && item.active ? (
             <div className="flex items-center gap-1.5">
-              {plannedYear === new Date().getFullYear() && plannedMonth === new Date().getMonth() && new Date().getDate() > 1 && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const yesterday = new Date();
-                    yesterday.setDate(yesterday.getDate() - 1);
-                    void handleRealizeNow(item, yesterday);
-                  }}
-                  disabled={isProcessing}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-50 hover:bg-amber-600 hover:text-white text-amber-800 border border-amber-200/70 transition-all cursor-pointer active:scale-95 disabled:opacity-50"
-                  title={
-                    item.type === "income"
-                      ? "Recebi adiantado ontem: adiantar também no calendário"
-                      : "Paguei adiantado ontem: adiantar também no calendário"
-                  }
-                >
-                  <span>Ontem</span>
-                </button>
-              )}
               <button
                 type="button"
                 onClick={(e) => {
@@ -928,22 +908,6 @@ export default function PlanningPage() {
             </div>
           ) : isRealizedInThisMonth ? (
             <div className="flex items-center gap-1.5">
-              {plannedYear === new Date().getFullYear() && plannedMonth === new Date().getMonth() && new Date().getDate() > 1 && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const yesterday = new Date();
-                    yesterday.setDate(yesterday.getDate() - 1);
-                    void handleRealizeNow(item, yesterday);
-                  }}
-                  disabled={isProcessing}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-700 border border-emerald-200/70 transition-all cursor-pointer active:scale-95 disabled:opacity-50"
-                  title="Mover a data de efetivação para ontem no calendário"
-                >
-                  <span>Adiantar p/ ontem</span>
-                </button>
-              )}
               <button
                 type="button"
                 onClick={(e) => {
@@ -1528,11 +1492,20 @@ export default function PlanningPage() {
 
               <div className="flex items-center gap-3">
                 <span className="text-xs font-semibold text-[#1D1D1F] font-mono tabular-nums">
-                  − R$ {formatCurrency(projection.totalInvoicesPending ?? creditCommitments)}
-                  {projection.totalInvoicesPaid > 0 && (
-                    <span className="text-emerald-600 font-normal ml-1.5">
-                      (R$ {formatCurrency(projection.totalInvoicesPaid)} pagos)
+                  {(projection.totalInvoicesPending ?? creditCommitments) === 0 &&
+                  projection.totalInvoicesPaid > 0 ? (
+                    <span className="text-emerald-600 font-semibold">
+                      R$ {formatCurrency(projection.totalInvoicesScheduled || projection.totalInvoicesPaid)} (Paga)
                     </span>
+                  ) : (
+                    <>
+                      − R$ {formatCurrency(projection.totalInvoicesPending ?? creditCommitments)}
+                      {projection.totalInvoicesPaid > 0 && (
+                        <span className="text-emerald-600 font-normal ml-1.5">
+                          (R$ {formatCurrency(projection.totalInvoicesPaid)} pagos)
+                        </span>
+                      )}
+                    </>
                   )}
                 </span>
 
