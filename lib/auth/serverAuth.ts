@@ -12,12 +12,17 @@ export interface AuthenticatedUser {
  * ou validação de claims do token Firebase do projeto caso o FIREBASE_SERVICE_ACCOUNT_KEY
  * não esteja configurado na Vercel.
  */
+function cleanEnvString(val?: string): string {
+  if (!val) return "";
+  return val.trim().replace(/^["']+|["']+$/g, "").trim();
+}
+
 async function verifyFirebaseTokenProdFallback(token: string): Promise<AuthenticatedUser | null> {
   const projectId =
-    process.env.FIREBASE_PROJECT_ID ||
-    process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ||
+    cleanEnvString(process.env.FIREBASE_PROJECT_ID) ||
+    cleanEnvString(process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID) ||
     "wallet-ia-c8e77";
-  const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
+  const apiKey = cleanEnvString(process.env.NEXT_PUBLIC_FIREBASE_API_KEY);
 
   // 1. Tenta validar diretamente na API oficial do Firebase Auth (Google Identity Toolkit)
   if (apiKey && !apiKey.includes("your-api-key")) {

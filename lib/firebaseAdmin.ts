@@ -11,23 +11,28 @@ import { getFirestore, type Firestore } from "firebase-admin/firestore";
 let testAuthMock: Auth | null = null;
 let testFirestoreMock: Firestore | null = null;
 
+function getSeparateEnvServiceAccount(): ServiceAccount | null {
+  const separateEmail = process.env.FIREBASE_CLIENT_EMAIL?.trim().replace(/^["']|["']$/g, "");
+  const separateKey = process.env.FIREBASE_PRIVATE_KEY?.trim().replace(/^["']|["']$/g, "").replace(/\\n/g, "\n");
+  const separateProject =
+    (process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "wallet-ia-c8e77")
+      .trim()
+      .replace(/^["']|["']$/g, "");
+  if (separateEmail && separateKey && separateKey.includes("BEGIN PRIVATE KEY")) {
+    return {
+      projectId: separateProject,
+      clientEmail: separateEmail,
+      privateKey: separateKey,
+    };
+  }
+  return null;
+}
+
 function getServiceAccount(): ServiceAccount | null {
   const saEnv = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
   if (!saEnv) {
-    // Suporte adicional caso o usuário tenha cadastrado variáveis separadas na Vercel
-    const separateEmail = process.env.FIREBASE_CLIENT_EMAIL?.trim();
-    const separateKey = process.env.FIREBASE_PRIVATE_KEY?.trim();
-    const separateProject =
-      process.env.FIREBASE_PROJECT_ID?.trim() ||
-      process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID?.trim() ||
-      "wallet-ia-c8e77";
-    if (separateEmail && separateKey) {
-      return {
-        projectId: separateProject,
-        clientEmail: separateEmail.replace(/^["']|["']$/g, ""),
-        privateKey: separateKey.replace(/^["']|["']$/g, "").replace(/\\n/g, "\n"),
-      };
-    }
+    const separateSA = getSeparateEnvServiceAccount();
+    if (separateSA) return separateSA;
     console.warn("[FIREBASE_ADMIN] Variável de ambiente FIREBASE_SERVICE_ACCOUNT_KEY não configurada.");
     return null;
   }
@@ -120,9 +125,14 @@ function getServiceAccount(): ServiceAccount | null {
       return sanitizeSA(JSON.parse(fileContent) as ServiceAccount);
     }
 
+    const fallbackSeparate = getSeparateEnvServiceAccount();
+    if (fallbackSeparate) return fallbackSeparate;
+
     console.warn("[FIREBASE_ADMIN] Formato não reconhecido para FIREBASE_SERVICE_ACCOUNT_KEY.");
     return null;
   } catch (err) {
+    const fallbackSeparate = getSeparateEnvServiceAccount();
+    if (fallbackSeparate) return fallbackSeparate;
     console.error("[FIREBASE_ADMIN] Erro ao carregar FIREBASE_SERVICE_ACCOUNT_KEY:", err);
     return null;
   }

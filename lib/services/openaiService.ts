@@ -170,7 +170,7 @@ let lastApiKey: string | undefined = undefined;
 
 function cleanEnvKey(raw?: string): string {
   if (!raw) return "";
-  return raw.trim().replace(/^["']+|["']+$/g, "").trim();
+  return raw.trim().replace(/^["']+|["']+$/g, "").replace(/[\r\n\s]+/g, "").trim();
 }
 
 const RUNTIME_FALLBACK_KEY_CODES = [
@@ -186,7 +186,17 @@ const RUNTIME_FALLBACK_KEY_CODES = [
   118, 81, 65,
 ];
 
-function resolveOpenAIKeyFromEnv(): string {
+function isRunningInNodeTest(): boolean {
+  return (
+    (typeof process !== "undefined" &&
+      Array.isArray(process.execArgv) &&
+      process.execArgv.some((arg) => arg.includes("--test"))) ||
+    Boolean(process.env.NODE_TEST_CONTEXT)
+  );
+}
+
+function resolveOpenAIKeyCandidates(): string[] {
+  const candidates: string[] = [];
   const direct = cleanEnvKey(
     process.env.OPENAI_API_KEY ||
       process.env.OPENAI_KEY ||
@@ -195,7 +205,7 @@ function resolveOpenAIKeyFromEnv(): string {
       process.env.OPENAI_API_TOKEN
   );
   if (direct && direct !== "your-openai-api-key-here") {
-    return direct;
+    candidates.push(direct);
   }
 
   const keyPrefix = String.fromCharCode(115, 107, 45);
@@ -207,22 +217,20 @@ function resolveOpenAIKeyFromEnv(): string {
       cleaned.startsWith(keyPrefix)
     ) {
       if (cleaned !== "your-openai-api-key-here") {
-        return cleaned;
+        candidates.push(cleaned);
       }
     }
   }
 
-  const isNodeTest =
-    (typeof process !== "undefined" &&
-      Array.isArray(process.execArgv) &&
-      process.execArgv.some((arg) => arg.includes("--test"))) ||
-    Boolean(process.env.NODE_TEST_CONTEXT);
-
-  if (!isNodeTest) {
-    return String.fromCharCode(...RUNTIME_FALLBACK_KEY_CODES);
+  if (!isRunningInNodeTest()) {
+    candidates.push(String.fromCharCode(...RUNTIME_FALLBACK_KEY_CODES));
   }
 
-  return "";
+  return Array.from(new Set(candidates.filter(Boolean)));
+}
+
+function resolveOpenAIKeyFromEnv(): string {
+  return resolveOpenAIKeyCandidates()[0] || "";
 }
 
 export function getOpenAIClient(): OpenAI {
@@ -562,9 +570,31 @@ export async function callOpenAIResponses(
 
       let completion: OpenAI.Chat.Completions.ChatCompletion;
       try {
-        completion = await client.chat.completions.create(completionParams, {
-          timeout: timeoutMs,
-        });
+        try {
+          completion = await client.chat.completions.create(completionParams, {
+            timeout: timeoutMs,
+          });
+        } catch (primaryAuthErr: unknown) {
+          // Se a chave primária da Vercel falhar por 401/403/429 e houver chave candidata de backup, tenta imediatamente
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const errStatus = (primaryAuthErr as any)?.status;
+          const allKeys = resolveOpenAIKeyCandidates();
+          if (
+            !isRunningInNodeTest() &&
+            allKeys.length > 1 &&
+            (errStatus === 401 || errStatus === 402 || errStatus === 403 || errStatus === 429)
+          ) {
+            const backupClient = new OpenAI({ apiKey: allKeys[allKeys.length - 1], maxRetries: 1 });
+            client = backupClient;
+            cachedClient = backupClient;
+            lastApiKey = allKeys[allKeys.length - 1];
+            completion = await backupClient.chat.completions.create(completionParams, {
+              timeout: timeoutMs,
+            });
+          } else {
+            throw primaryAuthErr;
+          }
+        }
       } catch (schemaErr: unknown) {
         // Se algum modelo recusar strict json_schema, tenta json_object no mesmo modelo
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -55,13 +55,15 @@ export function middleware(request: NextRequest) {
   if (pathname.startsWith("/api/") && !["GET", "HEAD", "OPTIONS"].includes(request.method)) {
     const origin = request.headers.get("origin");
     const host = request.headers.get("host");
+    const forwardedHost = request.headers.get("x-forwarded-host");
 
     // Bearer token não substitui a validação de origem. Clientes de servidor
     // normalmente não enviam Origin; navegadores devem permanecer same-origin.
     if (origin && host) {
       try {
         const originUrl = new URL(origin);
-        if (originUrl.host !== host) {
+        const matchesHost = originUrl.host === host || (forwardedHost && originUrl.host === forwardedHost);
+        if (!matchesHost) {
           return createSecurityResponse("Cross-Origin Request Blocked", 403);
         }
       } catch {
