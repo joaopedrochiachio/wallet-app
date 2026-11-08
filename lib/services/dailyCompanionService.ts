@@ -21,6 +21,7 @@ import {
   getEffectiveRecurringItemForPeriod,
   getPeriodKey,
 } from "../utils/dateUtils.ts";
+import { getLedgerEntryDate } from "../utils/ledger.ts";
 
 export interface DailySpendMetric {
   safeDailyAllowance: number;
@@ -438,6 +439,8 @@ export function getUpcomingFinancialEvents(params: {
     amount: number;
     dueDay?: number;
     type?: "expense" | "income" | "receita" | "despesa" | string;
+    account?: string;
+    cardId?: string | null;
     active?: boolean;
     realizedPeriods?: string[];
   }>;
@@ -451,6 +454,8 @@ export function getUpcomingFinancialEvents(params: {
     periodKey?: string | null;
     amount?: number;
     date?: string;
+    occurredAt?: string | number | Date | null;
+    createdAt?: string | number | Date | null;
   }>;
   cardInvoiceProjections?: Array<{
     cardId: string;
@@ -467,6 +472,26 @@ export function getUpcomingFinancialEvents(params: {
   const year = now.getFullYear();
   const month = now.getMonth();
   const currentPeriodKey = getPeriodKey(year, month);
+
+  const isTxInCurrentMonth = (tx: NonNullable<typeof params.transactions>[number]) => {
+    if (tx.periodKey === currentPeriodKey) return true;
+    if (tx.date && tx.date.includes(currentPeriodKey)) return true;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const d = getLedgerEntryDate(tx as any);
+    if (d && getPeriodKey(d.getFullYear(), d.getMonth()) === currentPeriodKey) return true;
+    return false;
+  };
+
+  const creditCards = params.cards.filter((c) => !c.type || c.type === "credit");
+  const isCreditCardRecurring = (item: { account?: string; cardId?: string | null }) => {
+    const acc = (item.account || "").trim().toLowerCase();
+    return creditCards.some(
+      (c) =>
+        (item.cardId && c.id === item.cardId) ||
+        c.id.toLowerCase() === acc ||
+        (c.name && c.name.trim().toLowerCase() === acc)
+    );
+  };
 
   const events: UpcomingFinancialEvent[] = [];
   const filterType = params.filterType || (params.onlyExpenses ? "expenses" : "all");
@@ -487,8 +512,9 @@ export function getUpcomingFinancialEvents(params: {
           params.transactions.some(
             (tx) =>
               tx.kind === "invoice_payment" &&
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               (tx.relatedCardId === card.id || (tx as any).cardId === card.id) &&
-              (tx.periodKey === currentPeriodKey || (tx.date && tx.date.includes(currentPeriodKey)))
+              isTxInCurrentMonth(tx)
           ));
 
       if (invoicePaid) continue; // Fatura já quitada! Não colocar nas pendências
@@ -499,7 +525,7 @@ export function getUpcomingFinancialEvents(params: {
         let estimatedAmount = card.spent ?? card.balance ?? 0;
         if (params.cardInvoiceProjections) {
           const inv = params.cardInvoiceProjections.find((i) => i.cardId === card.id);
-          if (inv && inv.pendingInvoice > 0) {
+          if (inv) {
             estimatedAmount = inv.pendingInvoice;
           }
         }
@@ -541,6 +567,11 @@ export function getUpcomingFinancialEvents(params: {
     if (filterType === "expenses" && isIncome) continue;
     if (filterType === "incomes" && !isIncome) continue;
 
+    // Assinaturas/parcelas no cartão de crédito entram na fatura do cartão, não como débito direto na conta
+    if (!isIncome && isCreditCardRecurring(item)) {
+      continue;
+    }
+
     // C. Verifica se a ocorrência do mês corrente já foi realizada / paga / recebida
     const isRealized = Boolean(
       item.realizedPeriods?.includes(currentPeriodKey) ||
@@ -552,7 +583,7 @@ export function getUpcomingFinancialEvents(params: {
                   tx.title.toLowerCase().trim() === item.title.toLowerCase().trim() &&
                   typeof tx.amount === "number" &&
                   Math.abs(tx.amount - item.amount) < 0.01)) &&
-              (tx.periodKey === currentPeriodKey || (tx.date && tx.date.includes(currentPeriodKey)))
+              isTxInCurrentMonth(tx)
           ))
     );
 

@@ -24,7 +24,23 @@ import { FloatingCompanionDock } from "@/components/companion/FloatingCompanionD
 import {
   ContextualPageTutorialBar,
   InteractiveAppTourModal,
+  useTutorialCompleted,
 } from "@/components/tutorial/AppTutorialGuide";
+
+function SidebarTutorialButton({ onOpen }: { onOpen: () => void }) {
+  const { isTutorialCompleted } = useTutorialCompleted();
+  if (isTutorialCompleted) return null;
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-[#1D1D1F] bg-[#F2F2F7] hover:bg-[#E5E5EA] transition-all cursor-pointer"
+    >
+      <BookOpen size={16} strokeWidth={1.6} className="text-amber-600 shrink-0" />
+      <span>Como Usar (Passo a Passo)</span>
+    </button>
+  );
+}
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -92,14 +108,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </nav>
 
                 <div className="mt-auto space-y-2 pt-4 border-t border-gray-200/60">
-                  <button
-                    type="button"
-                    onClick={() => setIsTourOpen(true)}
-                    className="w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-[#1D1D1F] bg-[#F2F2F7] hover:bg-[#E5E5EA] transition-all cursor-pointer"
-                  >
-                    <BookOpen size={16} strokeWidth={1.6} className="text-amber-600 shrink-0" />
-                    <span>Como Usar (Passo a Passo)</span>
-                  </button>
+                  <SidebarTutorialButton onOpen={() => setIsTourOpen(true)} />
 
                   <Link
                     href="/ai"

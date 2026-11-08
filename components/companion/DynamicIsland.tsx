@@ -292,7 +292,7 @@ export function DynamicIsland() {
                   <div className="grid grid-cols-3 gap-2">
                     <MiniMetric label="Livre hoje" value={`R$ ${formatCurrency(safeSpend.safeDailyAllowance)}`} tone="emerald" />
                     <MiniMetric label="Fecha o mês" value={`R$ ${formatCurrency(projectedFreeBalance)}`} tone={gapToTarget > 0 ? "amber" : "blue"} />
-                    <MiniMetric label="Próximo evento" value={nextEvent ? `${nextEvent.daysRemaining === 0 ? "Hoje" : `${nextEvent.daysRemaining}d`} · R$ ${Math.round(nextEvent.amount)}` : "Agenda livre"} tone="white" />
+                    <MiniMetric label="Próximo evento" value={nextEvent ? `${nextEvent.daysRemaining === 0 ? "Hoje" : `${nextEvent.daysRemaining}d`} · R$ ${formatCurrency(nextEvent.amount)}` : "Agenda livre"} tone="white" />
                   </div>
 
                   <div className={`rounded-2xl border p-3.5 ${urgentEvents.length > 0 || gapToTarget > 0 ? "bg-amber-50 border-amber-200" : "bg-emerald-50 border-emerald-200"}`}>
@@ -317,30 +317,6 @@ export function DynamicIsland() {
                           {payingId === urgentEvents[0].id ? "Salvando" : "Dar baixa"}
                         </button>
                       )}
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl bg-[#FAFAFC] border border-black/[0.06] p-3.5 space-y-2.5">
-                    <div className="flex items-center gap-2">
-                      <PencilLine size={13} className="text-violet-600" />
-                      <span className="text-xs font-semibold text-[#1D1D1F]">Seu foco pessoal de hoje</span>
-                      {focusSaved && <span className="ml-auto text-[10px] text-emerald-600 flex items-center gap-1"><Check size={10} />Salvo</span>}
-                    </div>
-                    <div className="flex gap-2">
-                      <input
-                        value={personalFocus}
-                        onChange={(event) => setPersonalFocus(event.target.value)}
-                        onKeyDown={(event) => { if (event.key === "Enter") saveFocus(); }}
-                        maxLength={100}
-                        placeholder="Ex.: treino às 19h, ligar para minha mãe..."
-                        className="min-w-0 flex-1 rounded-xl bg-white border border-black/[0.08] px-3 py-2 text-xs text-[#1D1D1F] placeholder:text-[#AEAEB2] outline-none focus:border-violet-400"
-                      />
-                      <button type="button" onClick={saveFocus} className="px-3 rounded-xl bg-violet-50 border border-violet-200 text-violet-700 text-xs font-semibold cursor-pointer">Guardar</button>
-                    </div>
-                    <div className="grid grid-cols-3 gap-1.5">
-                      <MoodButton label="No controle" color="emerald" active={activeMood === "in_control"} onClick={() => performCheckIn("in_control")} />
-                      <MoodButton label="Gastei fora" color="amber" active={activeMood === "unexpected_spend"} onClick={() => performCheckIn("unexpected_spend")} />
-                      <MoodButton label="Modo reserva" color="blue" active={activeMood === "tight_savings"} onClick={() => performCheckIn("tight_savings")} />
                     </div>
                   </div>
 

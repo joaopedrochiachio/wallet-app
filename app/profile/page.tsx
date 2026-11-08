@@ -12,6 +12,7 @@ import { exportUserDataJson } from "@/lib/services/userService";
 import { sanitizeTextInput, validateCurrency, validateEmail } from "@/lib/utils/security";
 import { WalletIdTitaniumCard, PERSONA_METADATA } from "@/components/profile/WalletIdTitaniumCard";
 import { PersonaAnalyzerCard } from "@/components/profile/PersonaAnalyzerCard";
+import { InteractiveAppTourModal } from "@/components/tutorial/AppTutorialGuide";
 import {
   ChevronLeft,
   CheckCircle2,
@@ -30,6 +31,7 @@ import {
   Target,
   Sparkles,
   Lock,
+  BookOpen,
 } from "lucide-react";
 
 export default function ProfilePage() {
@@ -54,6 +56,7 @@ export default function ProfilePage() {
   const [isArchetypeModalOpen, setIsArchetypeModalOpen] = useState(false);
   const [isLgpdModalOpen, setIsLgpdModalOpen] = useState(false);
   const [isExportingData, setIsExportingData] = useState(false);
+  const [isTourModalOpen, setIsTourModalOpen] = useState(false);
 
   // Sincronizar inputs locais quando o perfil for carregado do Firestore
   useEffect(() => {
@@ -213,7 +216,7 @@ export default function ProfilePage() {
       )}
 
       {/* Header com Navegação Apple */}
-      <header className="flex items-center justify-between pt-2 md:pt-0">
+      <header className="flex items-center justify-between gap-3 flex-wrap pt-2 md:pt-0">
         <div className="flex items-center gap-3">
           <Link
             href="/"
@@ -231,6 +234,15 @@ export default function ProfilePage() {
             </h1>
           </div>
         </div>
+
+        <button
+          type="button"
+          onClick={() => setIsTourModalOpen(true)}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white hover:bg-[#E5E5EA] text-xs font-semibold text-[#1D1D1F] border border-black/[0.06] shadow-xs transition-all cursor-pointer"
+        >
+          <BookOpen size={14} className="text-amber-600" />
+          <span>Como Usar o App (Tutorial)</span>
+        </button>
       </header>
 
       {/* Hero Apple Wallet Titanium Card com Emojis e Modo Duplo Interativo */}
@@ -724,6 +736,11 @@ export default function ProfilePage() {
         isOpen={isLgpdModalOpen}
         onClose={() => setIsLgpdModalOpen(false)}
         hasAccepted={true}
+      />
+
+      <InteractiveAppTourModal
+        isOpen={isTourModalOpen}
+        onClose={() => setIsTourModalOpen(false)}
       />
     </div>
   );

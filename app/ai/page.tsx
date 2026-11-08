@@ -294,6 +294,8 @@ export default function AIAnalystPage() {
           recurringCreditTotal: p.recurringCreditTotal,
           cardInstallments: p.cardInstallments,
           totalCommitted: p.totalCommitted,
+          pendingCommitted: p.pendingCommitted,
+          totalInvoicesPending: p.totalInvoicesPending,
           projectedFreeBalance: p.projectedFreeBalance,
           monthNetSurplus: p.monthNetSurplus,
         };
@@ -414,12 +416,14 @@ export default function AIAnalystPage() {
           recurringCreditTotal: p.recurringCreditTotal,
           cardInstallments: p.cardInstallments,
           totalCommitted: p.totalCommitted,
+          pendingCommitted: p.pendingCommitted,
+          totalInvoicesPending: p.totalInvoicesPending,
           projectedFreeBalance: p.projectedFreeBalance,
           monthNetSurplus: p.monthNetSurplus,
         };
       });
       const telemetry = synthesizeFinancialTelemetry({
-        userProfile: { ...userProfile, persona: selectedPersona as typeof userProfile.persona },
+        userProfile,
         cards,
         transactions,
         recurringItems,
@@ -661,6 +665,8 @@ export default function AIAnalystPage() {
           recurringCreditTotal: p.recurringCreditTotal,
           cardInstallments: p.cardInstallments,
           totalCommitted: p.totalCommitted,
+          pendingCommitted: p.pendingCommitted,
+          totalInvoicesPending: p.totalInvoicesPending,
           projectedFreeBalance: p.projectedFreeBalance,
           monthNetSurplus: p.monthNetSurplus,
         };
@@ -672,10 +678,7 @@ export default function AIAnalystPage() {
         messages: currentMsgs.map((m) => ({ role: m.role, content: m.content })),
         userMessage: text,
         simulation: simulationPayload,
-        userProfile: {
-          ...userProfile,
-          persona: selectedPersona,
-        },
+        userProfile,
         cards,
         transactions,
         recurringItems,
@@ -758,12 +761,14 @@ export default function AIAnalystPage() {
           recurringCreditTotal: p.recurringCreditTotal,
           cardInstallments: p.cardInstallments,
           totalCommitted: p.totalCommitted,
+          pendingCommitted: p.pendingCommitted,
+          totalInvoicesPending: p.totalInvoicesPending,
           projectedFreeBalance: p.projectedFreeBalance,
           monthNetSurplus: p.monthNetSurplus,
         };
       });
       const telemetry = synthesizeFinancialTelemetry({
-        userProfile: { ...userProfile, persona: selectedPersona as typeof userProfile.persona },
+        userProfile,
         cards,
         transactions,
         recurringItems,
@@ -821,12 +826,14 @@ export default function AIAnalystPage() {
   };
 
   const openCopilotWithContext = (
-    context: CopilotContext,
-    prompt: string
+    _context?: CopilotContext,
+    _prompt?: string
   ) => {
-    setCopilotContext(context);
+    setCopilotContext(null);
     setIsCopilotOpen(true);
-    void handleSendMessage(prompt);
+    setTimeout(() => {
+      chatInputRef.current?.focus();
+    }, 60);
   };
 
   const handleNewChat = () => {
@@ -924,10 +931,15 @@ export default function AIAnalystPage() {
   };
 
   const currentScore = diagnosis?.healthScore ?? 82;
-  const totalInvoices = creditCards.reduce((acc, c) => acc + (c.spent || c.invoiceAmount || 0), 0);
+  const totalInvoices =
+    currentMonthProj?.totalInvoicesPending ??
+    creditCards.reduce((acc, c) => acc + (c.invoiceAmount || 0), 0);
+  const currentPendingCommitted = currentMonthProj?.pendingCommitted ?? 0;
   const monthlyIncome = userProfile?.monthlyIncomeBase || (monthIncome > 0 ? monthIncome : 5000);
   const commitmentRatio =
-    monthlyIncome > 0 ? Math.round(((monthExpense + totalInvoices) / monthlyIncome) * 100) : 0;
+    monthlyIncome > 0
+      ? Math.round(((monthExpense + currentPendingCommitted) / monthlyIncome) * 100)
+      : 0;
 
   const quickPrompts = useMemo(() => {
     const p = normalizeCharacterId(selectedPersona);
@@ -1030,7 +1042,7 @@ export default function AIAnalystPage() {
   });
 
   return (
-    <div className="relative min-h-full w-full overflow-x-hidden bg-[linear-gradient(180deg,#F5F6F8_0%,#EFF1F4_46%,#F5F5F7_100%)] pb-12 font-sans text-[#1D1D1F] selection:bg-[#1D1D1F] selection:text-white">
+    <div className="relative min-h-full w-full overflow-x-hidden bg-[linear-gradient(180deg,#F5F6F8_0%,#EFF1F4_46%,#F5F5F7_100%)] pb-32 md:pb-24 font-sans text-[#1D1D1F] selection:bg-[#1D1D1F] selection:text-white">
       <div className="pointer-events-none absolute -left-48 top-28 h-[520px] w-[520px] rounded-full bg-emerald-200/20 blur-[110px]" />
       <div className="pointer-events-none absolute -right-56 top-[420px] h-[620px] w-[620px] rounded-full bg-blue-200/20 blur-[130px]" />
       <div className="relative z-10 mx-auto w-full max-w-[1440px] space-y-5 px-3 py-4 sm:px-6 sm:py-6">
@@ -1114,6 +1126,16 @@ export default function AIAnalystPage() {
               </span>
             </div>
 
+            {/* Botão Abrir Chat Único IA */}
+            <button
+              type="button"
+              onClick={() => openCopilotWithContext()}
+              className="px-3.5 py-1.5 rounded-full bg-[#1D1D1F] hover:bg-black active:scale-95 text-xs font-semibold text-white flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+            >
+              <Sparkles size={12} className="text-emerald-400" />
+              <span>Chat IA</span>
+            </button>
+
             {/* Botão Sincronizar Análise */}
             <button
               type="button"
@@ -1128,277 +1150,263 @@ export default function AIAnalystPage() {
         </header>
 
         {/* =========================================================
-            2. WORKSPACE WALLET+: ESCRITÓRIO PRIMEIRO, NIKO COMO APOIO
+            2. WORKSPACE WALLET+: CHAT ÚNICO CENTRALIZADO COM A IA
            ========================================================= */}
         <div className="flex flex-col gap-5">
 
-          {/* NIKO COPILOT: UMA ÚNICA CAMADA GLOBAL, FORA DO FLUXO DA PÁGINA */}
+          {/* CHAT ÚNICO CENTRALIZADO COM A IA (SEM AGENTES ESPECÍFICOS E SEM PRÉ-PROMPTS) */}
           {isCopilotOpen && (
-            <>
+            <div className="fixed inset-0 z-[130] flex items-center justify-center p-3 sm:p-6">
               <button
                 type="button"
-                aria-label="Fechar Niko Copilot"
+                aria-label="Fechar Chat com a IA"
                 onClick={() => setIsCopilotOpen(false)}
-                className="fixed inset-0 z-[120] cursor-default bg-black/20 backdrop-blur-md animate-in fade-in duration-200"
+                className="fixed inset-0 cursor-default bg-black/35 backdrop-blur-md animate-in fade-in duration-200"
               />
               <section
                 role="dialog"
                 aria-modal="true"
-                aria-label="Niko Copilot"
-                className="fixed inset-y-0 right-0 z-[130] flex w-full max-w-[500px] flex-col border-l border-black/[0.06] bg-white/95 p-4 shadow-[-24px_0_70px_rgba(0,0,0,0.14)] backdrop-blur-2xl animate-in slide-in-from-right duration-300 sm:bottom-3 sm:right-3 sm:top-16 sm:rounded-[32px] sm:border sm:p-5"
+                aria-label="Chat com a IA Wallet+"
+                className="relative z-10 flex h-[82dvh] max-h-[680px] w-full max-w-2xl flex-col rounded-[32px] border border-black/[0.08] bg-white/98 p-4 shadow-[0_24px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl animate-in zoom-in-95 fade-in duration-200 sm:p-5"
               >
-            <div className="mb-3 flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-emerald-700">
-                  Niko Copilot · contexto ativo
-                </span>
-                <h2 className="mt-1 text-lg font-semibold tracking-tight text-[#1D1D1F]">
-                  Converse sem sair da análise
-                </h2>
-                <p className="mt-0.5 text-[11px] text-[#6E6E73]">
-                  Niko mantém o card e os números que abriram esta conversa.
-                </p>
-              </div>
-              <button type="button" onClick={() => setIsCopilotOpen(false)} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#F2F2F7] text-[#6E6E73] transition-colors hover:bg-[#E5E5EA] hover:text-[#1D1D1F]" aria-label="Fechar Copilot"><X size={14} /></button>
-            </div>
-
-            {copilotContext && (
-              <div className="mb-3 rounded-[18px] border border-black/[0.05] bg-[linear-gradient(135deg,#F5F5F7,#FFFFFF)] p-3.5 shadow-[0_2px_10px_rgba(0,0,0,0.025)]">
-                <div className="flex items-start gap-3">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[11px] bg-[#1D1D1F] text-white"><Sparkles size={14} /></span>
-                  <div className="min-w-0"><span className="text-[8px] font-semibold uppercase tracking-[0.12em] text-[#86868B]">{copilotContext.eyebrow}</span><strong className="mt-0.5 block text-[11px] font-semibold text-slate-900">{copilotContext.title}</strong>{copilotContext.detail && <p className="mt-0.5 text-[9px] text-[#86868B]">{copilotContext.detail}</p>}</div>
-                </div>
-              </div>
-            )}
-
-            {/* ATALHOS DE CONVERSA */}
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-              {quickPrompts.map((prompt, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => handleSendMessage(prompt)}
-                  className="px-3 py-1.5 rounded-full bg-white hover:bg-[#F8F8FA] active:scale-95 text-[#1D1D1F] text-[11px] font-semibold border border-black/[0.06] shadow-2xs whitespace-nowrap transition-all cursor-pointer shrink-0"
-                >
-                  {prompt}
-                </button>
-              ))}
-            </div>
-
-            {/* FEED DE CONVERSA */}
-            <div className="mt-3 flex min-h-0 flex-1 flex-col justify-between overflow-hidden rounded-[24px] border border-black/[0.06] bg-white">
-              {/* Header da conversa ativa */}
-              <div className="p-3.5 px-4 border-b border-black/[0.05] flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                  <span className="font-bold text-[#1D1D1F] truncate max-w-[200px]">
-                    {currentSession?.title || "Consulta com Auditor"}
-                  </span>
-                  <span className="text-[10px] font-medium text-[#86868B] bg-[#F2F2F7] px-2 py-0.5 rounded-full">
-                    {messages.length} msgs
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setIsHistoryDrawerOpen(!isHistoryDrawerOpen)}
-                    className="p-1.5 rounded-lg text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#F2F2F7] transition-colors cursor-pointer"
-                    title="Histórico de conversas salvas"
-                  >
-                    <History size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleNewChat}
-                    className="p-1.5 rounded-lg text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#F2F2F7] transition-colors cursor-pointer"
-                    title="Iniciar nova conversa"
-                  >
-                    <Plus size={15} />
-                  </button>
-                </div>
-              </div>
-
-              {/* Mensagens */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-3.5 touch-scroll">
-                {messages.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-3">
-                    <div className="w-12 h-12 rounded-2xl bg-[#1D1D1F] text-white flex items-center justify-center shadow-xs">
-                      <Sparkles size={22} className="text-white" />
-                    </div>
-                    <div className="max-w-xs space-y-1">
-                      <h4 className="text-sm font-bold text-[#1D1D1F]">
-                        Como posso ajudar na sua auditoria?
-                      </h4>
-                      <p className="text-[11px] text-[#86868B]">
-                        Pergunte sobre limites de gastos, planeje cortes ou clique em &ldquo;Conversar sobre isto&rdquo; em qualquer indicador ao lado.
-                      </p>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#1D1D1F] text-white shadow-xs">
+                      <Sparkles size={18} className="text-emerald-400" />
+                    </span>
+                    <div className="min-w-0">
+                      <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-emerald-700">
+                        Chat Único · IA Generativa Wallet+
+                      </span>
+                      <h2 className="text-base sm:text-lg font-bold tracking-tight text-[#1D1D1F] truncate">
+                        Converse livremente com a IA
+                      </h2>
                     </div>
                   </div>
-                ) : (
-                  messages.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className={`flex flex-col ${
-                        msg.role === "user" ? "items-end" : "items-start"
-                      }`}
-                    >
-                      <div
-                        className={`max-w-[88%] sm:max-w-[84%] rounded-[22px] p-3.5 sm:p-4 text-xs leading-relaxed space-y-2 ${
-                          msg.role === "user"
-                            ? "bg-[#1D1D1F] text-white rounded-br-xs shadow-2xs"
-                            : "bg-[#FAFAFC] text-[#1D1D1F] border border-black/[0.06] rounded-bl-xs shadow-2xs"
-                        }`}
+                  <button
+                    type="button"
+                    onClick={() => setIsCopilotOpen(false)}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#F2F2F7] text-[#6E6E73] transition-colors hover:bg-[#E5E5EA] hover:text-[#1D1D1F] cursor-pointer"
+                    aria-label="Fechar Chat"
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+
+                {/* FEED DE CONVERSA */}
+                <div className="flex min-h-0 flex-1 flex-col justify-between overflow-hidden rounded-[24px] border border-black/[0.06] bg-white">
+                  {/* Header da conversa ativa */}
+                  <div className="p-3.5 px-4 border-b border-black/[0.05] flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                      <span className="font-bold text-[#1D1D1F] truncate max-w-[240px]">
+                        {currentSession?.title || "Conversa com a IA"}
+                      </span>
+                      <span className="text-[10px] font-medium text-[#86868B] bg-[#F2F2F7] px-2 py-0.5 rounded-full">
+                        {messages.length} msgs
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setIsHistoryDrawerOpen(!isHistoryDrawerOpen)}
+                        className="p-1.5 rounded-lg text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#F2F2F7] transition-colors cursor-pointer"
+                        title="Histórico de conversas salvas"
                       >
-                        {/* Card de Simulação de Compra se houver */}
-                        {msg.simulationResult && (
-                          <div
-                            className={`p-3 rounded-xl border text-[11px] font-medium space-y-1 ${
-                              msg.simulationResult.verdict === "safe"
-                                ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-                                : msg.simulationResult.verdict === "warning"
-                                ? "bg-amber-50 text-amber-800 border-amber-200"
-                                : "bg-rose-50 text-rose-800 border-rose-200"
-                            }`}
-                          >
-                            <div className="flex items-center gap-1.5 font-bold">
-                              <CheckCircle2 size={13} />
-                              <span>Veredito do Auditor: {msg.simulationResult.verdict === "safe" ? "Compra Viável" : "Requer Atenção"}</span>
-                            </div>
-                            <p className="text-[10px] leading-relaxed">{msg.simulationResult.verdictMessage}</p>
-                          </div>
-                        )}
+                        <History size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleNewChat}
+                        className="p-1.5 rounded-lg text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#F2F2F7] transition-colors cursor-pointer"
+                        title="Iniciar nova conversa"
+                      >
+                        <Plus size={15} />
+                      </button>
+                    </div>
+                  </div>
 
-                        <FormattedMessage content={msg.content} role={msg.role} />
-
-                        <div
-                          className={`flex items-center justify-between text-[9px] pt-1 border-t ${
-                            msg.role === "user"
-                              ? "text-white/60 border-white/10"
-                              : "text-[#86868B] border-black/[0.04]"
-                          }`}
-                        >
-                          <span>{msg.role === "assistant" ? "Auditor Wallet" : "Você"}</span>
-                          <span>{msg.timestamp}</span>
+                  {/* Mensagens */}
+                  <div className="flex-1 overflow-y-auto p-4 space-y-3.5 touch-scroll">
+                    {messages.length === 0 ? (
+                      <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-3">
+                        <div className="w-12 h-12 rounded-2xl bg-[#1D1D1F] text-white flex items-center justify-center shadow-xs">
+                          <Sparkles size={22} className="text-emerald-400" />
+                        </div>
+                        <div className="max-w-sm space-y-1">
+                          <h4 className="text-sm font-bold text-[#1D1D1F]">
+                            Envie sua mensagem para a IA
+                          </h4>
+                          <p className="text-[11px] text-[#86868B]">
+                            Digite qualquer dúvida sobre seu saldo, cartões, faturas, hábitos ou metas abaixo e receba uma resposta generativa completa.
+                          </p>
                         </div>
                       </div>
-                    </div>
-                  ))
-                )}
+                    ) : (
+                      messages.map((msg) => (
+                        <div
+                          key={msg.id}
+                          className={`flex flex-col ${
+                            msg.role === "user" ? "items-end" : "items-start"
+                          }`}
+                        >
+                          <div
+                            className={`max-w-[88%] sm:max-w-[84%] rounded-[22px] p-3.5 sm:p-4 text-xs leading-relaxed space-y-2 ${
+                              msg.role === "user"
+                                ? "bg-[#1D1D1F] text-white rounded-br-xs shadow-2xs"
+                                : "bg-[#FAFAFC] text-[#1D1D1F] border border-black/[0.06] rounded-bl-xs shadow-2xs"
+                            }`}
+                          >
+                            {/* Card de Simulação de Compra se houver */}
+                            {msg.simulationResult && (
+                              <div
+                                className={`p-3 rounded-xl border text-[11px] font-medium space-y-1 ${
+                                  msg.simulationResult.verdict === "safe"
+                                    ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                    : msg.simulationResult.verdict === "warning"
+                                    ? "bg-amber-50 text-amber-800 border-amber-200"
+                                    : "bg-rose-50 text-rose-800 border-rose-200"
+                                }`}
+                              >
+                                <div className="flex items-center gap-1.5 font-bold">
+                                  <CheckCircle2 size={13} />
+                                  <span>Veredito da IA: {msg.simulationResult.verdict === "safe" ? "Compra Viável" : "Requer Atenção"}</span>
+                                </div>
+                                <p className="text-[10px] leading-relaxed">{msg.simulationResult.verdictMessage}</p>
+                              </div>
+                            )}
 
-                {isSending && (
-                  <div className="flex items-center gap-2 p-3 text-xs text-[#86868B] bg-[#FAFAFC] rounded-2xl w-fit border border-black/[0.04]">
-                    <RefreshCw size={13} className="animate-spin text-[#1D1D1F]" />
-                    <span>O auditor está calculando o impacto no seu livro-caixa...</span>
+                            <FormattedMessage content={msg.content} role={msg.role} />
+
+                            <div
+                              className={`flex items-center justify-between text-[9px] pt-1 border-t ${
+                                msg.role === "user"
+                                  ? "text-white/60 border-white/10"
+                                  : "text-[#86868B] border-black/[0.04]"
+                              }`}
+                            >
+                              <span>{msg.role === "assistant" ? "Wallet+ IA" : "Você"}</span>
+                              <span>{msg.timestamp}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+
+                    {isSending && (
+                      <div className="flex items-center gap-2 p-3 text-xs text-[#86868B] bg-[#FAFAFC] rounded-2xl w-fit border border-black/[0.04]">
+                        <RefreshCw size={13} className="animate-spin text-[#1D1D1F]" />
+                        <span>A IA está analisando seus números...</span>
+                      </div>
+                    )}
+                    <div ref={chatBottomRef} />
                   </div>
-                )}
-                <div ref={chatBottomRef} />
-              </div>
 
-              {/* SIMULADOR DE COMPRA INLINE (DROPDOWN RETRÁTIL) */}
-              {isInlineSimOpen && (
-                <div className="p-3 bg-[#F8F8FA] border-t border-black/[0.06] space-y-2 animate-in slide-in-from-bottom duration-200 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-[#1D1D1F] flex items-center gap-1.5">
-                      <Calculator size={14} className="text-emerald-600" />
-                      <span>Simulador Rápido de Compra</span>
-                    </span>
+                  {/* SIMULADOR DE COMPRA INLINE (DROPDOWN RETRÁTIL) */}
+                  {isInlineSimOpen && (
+                    <div className="p-3 bg-[#F8F8FA] border-t border-black/[0.06] space-y-2 animate-in slide-in-from-bottom duration-200 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-[#1D1D1F] flex items-center gap-1.5">
+                          <Calculator size={14} className="text-emerald-600" />
+                          <span>Simulador Rápido de Compra</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setIsInlineSimOpen(false)}
+                          className="text-[#86868B] hover:text-[#1D1D1F]"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          type="text"
+                          placeholder="Descrição (ex: Tênis)"
+                          value={simDescription}
+                          onChange={(e) => setSimDescription(e.target.value)}
+                          className="px-3 py-1.5 rounded-xl bg-white border border-black/10 text-xs"
+                        />
+                        <input
+                          type="text"
+                          placeholder="Valor R$ (ex: 350)"
+                          value={simAmount}
+                          onChange={(e) => setSimAmount(e.target.value)}
+                          className="px-3 py-1.5 rounded-xl bg-white border border-black/10 text-xs font-mono font-bold"
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 pt-1">
+                        <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-black/5 text-[11px]">
+                          <button
+                            type="button"
+                            onClick={() => setSimMethod("credit")}
+                            className={`px-2.5 py-0.5 rounded-lg font-semibold ${simMethod === "credit" ? "bg-[#1D1D1F] text-white" : "text-[#86868B]"}`}
+                          >
+                            Crédito
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSimMethod("cash")}
+                            className={`px-2.5 py-0.5 rounded-lg font-semibold ${simMethod === "cash" ? "bg-[#1D1D1F] text-white" : "text-[#86868B]"}`}
+                          >
+                            À vista
+                          </button>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={executeSimulation}
+                          className="px-4 py-1.5 rounded-xl bg-[#1D1D1F] hover:bg-black text-white font-bold text-xs active:scale-95 transition-all cursor-pointer"
+                        >
+                          Calcular Impacto
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* BARRA DE ENTRADA DO CHAT */}
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }}
+                    className="p-3 border-t border-black/[0.05] flex items-center gap-2 bg-white"
+                  >
                     <button
                       type="button"
-                      onClick={() => setIsInlineSimOpen(false)}
-                      className="text-[#86868B] hover:text-[#1D1D1F]"
+                      onClick={() => setIsInlineSimOpen(!isInlineSimOpen)}
+                      title="Simular compra antes de gastar"
+                      className={`p-2.5 rounded-full transition-all cursor-pointer border ${
+                        isInlineSimOpen
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                          : "bg-[#F2F2F7] text-[#86868B] hover:text-[#1D1D1F] border-black/[0.04]"
+                      }`}
                     >
-                      <X size={14} />
+                      <Calculator size={15} />
                     </button>
-                  </div>
 
-                  <div className="grid grid-cols-2 gap-2">
                     <input
+                      ref={chatInputRef}
                       type="text"
-                      placeholder="Descrição (ex: Tênis)"
-                      value={simDescription}
-                      onChange={(e) => setSimDescription(e.target.value)}
-                      className="px-3 py-1.5 rounded-xl bg-white border border-black/10 text-xs"
+                      value={inputMessage}
+                      onChange={(e) => setInputMessage(e.target.value)}
+                      placeholder="Digite sua mensagem para a IA..."
+                      className="flex-1 px-4 py-2.5 rounded-full bg-[#F2F2F7] text-xs font-medium text-[#1D1D1F] border border-black/5 focus:outline-none focus:bg-white focus:ring-2 focus:ring-black/10 placeholder:text-[#86868B] transition-all"
                     />
-                    <input
-                      type="text"
-                      placeholder="Valor R$ (ex: 350)"
-                      value={simAmount}
-                      onChange={(e) => setSimAmount(e.target.value)}
-                      className="px-3 py-1.5 rounded-xl bg-white border border-black/10 text-xs font-mono font-bold"
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between gap-2 pt-1">
-                    <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-black/5 text-[11px]">
-                      <button
-                        type="button"
-                        onClick={() => setSimMethod("credit")}
-                        className={`px-2.5 py-0.5 rounded-lg font-semibold ${simMethod === "credit" ? "bg-[#1D1D1F] text-white" : "text-[#86868B]"}`}
-                      >
-                        Crédito
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setSimMethod("cash")}
-                        className={`px-2.5 py-0.5 rounded-lg font-semibold ${simMethod === "cash" ? "bg-[#1D1D1F] text-white" : "text-[#86868B]"}`}
-                      >
-                        À vista
-                      </button>
-                    </div>
 
                     <button
-                      type="button"
-                      onClick={executeSimulation}
-                      className="px-4 py-1.5 rounded-xl bg-[#1D1D1F] hover:bg-black text-white font-bold text-xs active:scale-95 transition-all cursor-pointer"
+                      type="submit"
+                      disabled={!inputMessage.trim() || isSending}
+                      className="w-9 h-9 rounded-full bg-[#1D1D1F] hover:bg-black text-white flex items-center justify-center transition-all disabled:opacity-40 cursor-pointer shadow-xs shrink-0 active:scale-95"
                     >
-                      Calcular Impacto
+                      <Send size={14} />
                     </button>
-                  </div>
+                  </form>
                 </div>
-              )}
-
-              {/* BARRA DE ENTRADA DO CHAT */}
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleSendMessage();
-                }}
-                className="p-3 border-t border-black/[0.05] flex items-center gap-2 bg-white"
-              >
-                <button
-                  type="button"
-                  onClick={() => setIsInlineSimOpen(!isInlineSimOpen)}
-                  title="Simular compra antes de gastar"
-                  className={`p-2.5 rounded-full transition-all cursor-pointer border ${
-                    isInlineSimOpen
-                      ? "bg-emerald-50 text-emerald-700 border-emerald-300"
-                      : "bg-[#F2F2F7] text-[#86868B] hover:text-[#1D1D1F] border-black/[0.04]"
-                  }`}
-                >
-                  <Calculator size={15} />
-                </button>
-
-                <input
-                  ref={chatInputRef}
-                  type="text"
-                  value={inputMessage}
-                  onChange={(e) => setInputMessage(e.target.value)}
-                  placeholder="Pergunte ao auditor ou converse sobre seus números..."
-                  className="flex-1 px-4 py-2.5 rounded-full bg-[#F2F2F7] text-xs font-medium text-[#1D1D1F] border border-black/5 focus:outline-none focus:bg-white focus:ring-2 focus:ring-black/10 placeholder:text-[#86868B] transition-all"
-                />
-
-                <button
-                  type="submit"
-                  disabled={!inputMessage.trim() || isSending}
-                  className="w-9 h-9 rounded-full bg-[#1D1D1F] hover:bg-black text-white flex items-center justify-center transition-all disabled:opacity-40 cursor-pointer shadow-xs shrink-0 active:scale-95"
-                >
-                  <Send size={14} />
-                </button>
-              </form>
-            </div>
               </section>
-            </>
+            </div>
           )}
 
 
@@ -1500,11 +1508,7 @@ export default function AIAnalystPage() {
                 targetEndMonthBalance={targetEndMonthBalance}
                 isAnalyzing={isAnalyzing}
                 onRefresh={runDiagnosis}
-                onDiscussWithAI={(prompt, agentId) => {
-                  if (agentId) setSelectedPersona(agentId);
-                  const agentNames: Record<string, string> = { "wallet-rubi": "Rubi · Caixa", "wallet-sol": "Sol · Hábitos", "wallet-nanquim": "Nanquim · Crédito", "wallet-atlos": "Atlos · Metas" };
-                  openCopilotWithContext({ eyebrow: "Escritório Wallet+", title: agentNames[agentId || ""] || "Análise da equipe", detail: "Contexto enviado diretamente pela mesa do agente." }, prompt);
-                }}
+                onDiscussWithAI={() => openCopilotWithContext()}
               />
             )}
 
@@ -1558,7 +1562,7 @@ export default function AIAnalystPage() {
                     commitmentCeiling={userProfile?.maxCommitmentAlertPercent || 60}
                     mainBalance={mainBalance}
                     totalInvoices={totalInvoices}
-                    pendingBills={diagnosis?.cashflowWindow?.currentMonth.pendingBills ?? monthExpense}
+                    pendingBills={diagnosis?.cashflowWindow?.currentMonth.pendingBills ?? currentPendingCommitted}
                     targetEndMonthBalance={targetEndMonthBalance}
                     projectedFreeBalance={diagnosis?.targetAnalysis?.projectedEndMonthBalance ?? effectiveProjectedFree}
                     safeSpendingMargin={diagnosis?.targetAnalysis?.safeSpendingMargin ?? safeSpendingMargin}
@@ -1575,7 +1579,7 @@ export default function AIAnalystPage() {
                   <CashflowBarChart
                     currentMonthName={diagnosis?.cashflowWindow?.currentMonth.monthName || "Mês atual"}
                     currentBalance={diagnosis?.cashflowWindow?.currentMonth.checkingBalance ?? mainBalance}
-                    currentPending={diagnosis?.cashflowWindow?.currentMonth.pendingBills ?? monthExpense}
+                    currentPending={diagnosis?.cashflowWindow?.currentMonth.pendingBills ?? currentPendingCommitted}
                     currentFree={diagnosis?.cashflowWindow?.currentMonth.projectedFreeBalance ?? mainBalance}
                     nextMonthName={diagnosis?.cashflowWindow?.nextMonth.monthName || "Próximo mês"}
                     nextIncome={diagnosis?.cashflowWindow?.nextMonth.projectedIncome ?? monthlyIncome}
@@ -1624,18 +1628,48 @@ export default function AIAnalystPage() {
       </div>
 
       {!isCopilotOpen && (
-        <button
-          type="button"
-          onClick={() => {
-            setCopilotContext(null);
-            setIsCopilotOpen(true);
-          }}
-          className="fixed bottom-5 right-5 z-[90] flex items-center gap-2.5 rounded-full border border-white/70 bg-[#1D1D1F]/95 py-2.5 pl-3 pr-4 text-white shadow-[0_14px_36px_rgba(0,0,0,0.22)] backdrop-blur-xl transition-all hover:-translate-y-0.5 hover:bg-black active:scale-95 sm:bottom-7 sm:right-7"
-          aria-label="Abrir Niko Copilot"
-        >
-          <span className="relative flex h-7 w-7 items-center justify-center rounded-full bg-white/10"><Sparkles size={14} /><span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full border-2 border-[#1D1D1F] bg-emerald-400" /></span>
-          <span className="text-left"><strong className="block text-[10px] font-semibold leading-none">Niko Copilot</strong><span className="mt-1 block text-[8px] text-white/55">Pergunte sobre esta tela</span></span>
-        </button>
+        <div className="fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom,0px))] md:bottom-5 left-1/2 -translate-x-1/2 z-[90] w-[calc(100%-1.5rem)] max-w-xl">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (inputMessage.trim()) {
+                handleSendMessage();
+              } else {
+                openCopilotWithContext();
+              }
+            }}
+            className="flex items-center gap-2 rounded-full border border-white/70 bg-[#1D1D1F]/95 p-1.5 pl-3 text-white shadow-[0_18px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl transition-all"
+          >
+            <button
+              type="button"
+              onClick={() => openCopilotWithContext()}
+              className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors cursor-pointer"
+              title="Abrir histórico do Chat IA"
+            >
+              <Sparkles size={14} className="text-emerald-400" />
+              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full border-2 border-[#1D1D1F] bg-emerald-400" />
+            </button>
+
+            <input
+              type="text"
+              value={inputMessage}
+              onChange={(e) => setInputMessage(e.target.value)}
+              onFocus={() => {
+                if (messages.length > 0) setIsCopilotOpen(true);
+              }}
+              placeholder="Pergunte qualquer coisa para a IA Wallet+..."
+              className="flex-1 bg-transparent px-2 py-1.5 text-xs font-medium text-white placeholder:text-white/55 focus:outline-none"
+            />
+
+            <button
+              type="submit"
+              className="flex h-8 items-center gap-1.5 rounded-full bg-white px-3.5 text-[11px] font-bold text-[#1D1D1F] hover:bg-white/90 active:scale-95 transition-all cursor-pointer shrink-0"
+            >
+              <span>{inputMessage.trim() ? "Enviar" : "Abrir Chat"}</span>
+              <Send size={12} />
+            </button>
+          </form>
+        </div>
       )}
 
       {/* =========================================================

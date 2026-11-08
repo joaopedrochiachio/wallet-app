@@ -1270,18 +1270,35 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           card.type === "checking" && matchesLedgerCard(card, item.account, item.cardId)
         ) || item.account === "Débito/Pix";
 
+      const transactionsInTargetMonth = transactions.filter((transaction) => {
+        const occurredAt = getLedgerEntryDate(transaction);
+        return occurredAt && getPeriodKey(occurredAt.getFullYear(), occurredAt.getMonth()) === targetPeriodKey;
+      });
+
+      const isRecurringAlreadyInTransactions = (item: RecurringItem, effectiveAmount: number) => {
+        const normItemTitle = (item.title || "").trim().toLowerCase();
+        return transactionsInTargetMonth.some((tx) => {
+          if (tx.recurringItemId && tx.recurringItemId === item.id) return true;
+          const normTxTitle = (tx.title || "").trim().toLowerCase();
+          return (
+            normItemTitle.length > 0 &&
+            normTxTitle === normItemTitle &&
+            Math.abs(tx.amount - effectiveAmount) < 0.01
+          );
+        });
+      };
+
       // Recebimentos futuros planejados ativos (ex: salário, rendimentos)
       // Se for mês passado, não há mais receitas futuras planejadas
       const plannedIncomesTotal = isPastMonth
         ? 0
         : recurringItems
             .filter((r) => r.type === "income" && activeInTargetMonth(r))
-            .reduce((acc, r) => acc + getEffectiveRecurringItemForPeriod(r, targetPeriodKey).amount, 0);
-
-      const transactionsInTargetMonth = transactions.filter((transaction) => {
-        const occurredAt = getLedgerEntryDate(transaction);
-        return occurredAt && getPeriodKey(occurredAt.getFullYear(), occurredAt.getMonth()) === targetPeriodKey;
-      });
+            .reduce((acc, r) => {
+              const effective = getEffectiveRecurringItemForPeriod(r, targetPeriodKey);
+              if (isRecurringAlreadyInTransactions(r, effective.amount)) return acc;
+              return acc + effective.amount;
+            }, 0);
 
       const actualIncomeTotal = transactionsInTargetMonth
         .filter((transaction) => transaction.kind !== "balance_reconciliation")
@@ -1313,7 +1330,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         ? 0
         : recurringItems
             .filter((r) => r.type !== "income" && isCheckingRecurring(r) && activeInTargetMonth(r))
-            .reduce((acc, r) => acc + getEffectiveRecurringItemForPeriod(r, targetPeriodKey).amount, 0);
+            .reduce((acc, r) => {
+              const effective = getEffectiveRecurringItemForPeriod(r, targetPeriodKey);
+              if (isRecurringAlreadyInTransactions(r, effective.amount)) return acc;
+              return acc + effective.amount;
+            }, 0);
 
       // Faturas de cartão de crédito detalhadas por cartão
       const creditCards = cards.filter((card) => card.type === "credit");

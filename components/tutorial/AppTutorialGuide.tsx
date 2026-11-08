@@ -41,6 +41,7 @@ export {
 
 const TUTORIAL_COMPLETED_KEY = "wallet_tutorial_completed_v1";
 const TUTORIAL_COLLAPSED_KEY = "wallet_getting_started_collapsed_v1";
+const TUTORIAL_CHECKED_STEPS_KEY = "wallet_tutorial_checked_steps_v1";
 const TUTORIAL_COMPLETED_EVENT = "wallet:tutorial-completed";
 
 export function markTutorialCompletedInStorage() {
@@ -50,6 +51,95 @@ export function markTutorialCompletedInStorage() {
   } catch {
     // ignore
   }
+}
+
+export function useTutorialCompleted() {
+  const { userProfile, cards, recurringItems, transactions, isDataLoaded } = useWallet();
+  const [manuallyCompleted, setManuallyCompleted] = useState(false);
+  const [checkedSteps, setCheckedSteps] = useState<Record<string, boolean>>({});
+  const [isStorageChecked, setIsStorageChecked] = useState(false);
+
+  useEffect(() => {
+    const syncFromStorage = () => {
+      try {
+        const completed = window.localStorage.getItem(TUTORIAL_COMPLETED_KEY) === "true";
+        const rawChecked = window.localStorage.getItem(TUTORIAL_CHECKED_STEPS_KEY);
+        const parsedChecked = rawChecked ? (JSON.parse(rawChecked) as Record<string, boolean>) : {};
+        setManuallyCompleted(completed);
+        setCheckedSteps(parsedChecked && typeof parsedChecked === "object" ? parsedChecked : {});
+      } catch {
+        // ignore
+      } finally {
+        setIsStorageChecked(true);
+      }
+    };
+
+    syncFromStorage();
+    window.addEventListener(TUTORIAL_COMPLETED_EVENT, syncFromStorage);
+    return () => window.removeEventListener(TUTORIAL_COMPLETED_EVENT, syncFromStorage);
+  }, []);
+
+  const evaluation = evaluateGettingStartedTutorial({
+    userName: userProfile.name,
+    monthlyIncomeBase: userProfile.monthlyIncomeBase,
+    cardsCount: cards.length,
+    recurringCount: recurringItems.length,
+    transactionsCount: transactions.length,
+    manuallyCompleted,
+  });
+
+  const mergedStepsStatus = {
+    profile: Boolean(evaluation.stepsStatus.profile || checkedSteps["profile"]),
+    pdfImport: Boolean(evaluation.stepsStatus.pdfImport || checkedSteps["pdf-import"]),
+    cards: Boolean(evaluation.stepsStatus.cards || checkedSteps["cards"]),
+    recurring: Boolean(evaluation.stepsStatus.recurring || checkedSteps["recurring"]),
+    transactions: Boolean(evaluation.stepsStatus.transactions || checkedSteps["transactions"]),
+  };
+
+  const completedCount = Object.values(mergedStepsStatus).filter(Boolean).length;
+  const allChecked = completedCount === 5;
+  const isTutorialCompleted = Boolean(manuallyCompleted || evaluation.shouldHideFromHome || allChecked);
+
+  useEffect(() => {
+    if (isDataLoaded && allChecked && !manuallyCompleted) {
+      markTutorialCompletedInStorage();
+    }
+  }, [isDataLoaded, allChecked, manuallyCompleted]);
+
+  const toggleStepCheck = (stepId: string) => {
+    const next = { ...checkedSteps, [stepId]: !checkedSteps[stepId] };
+    setCheckedSteps(next);
+    try {
+      window.localStorage.setItem(TUTORIAL_CHECKED_STEPS_KEY, JSON.stringify(next));
+      const nextMerged = {
+        profile: Boolean(evaluation.stepsStatus.profile || next["profile"]),
+        pdfImport: Boolean(evaluation.stepsStatus.pdfImport || next["pdf-import"]),
+        cards: Boolean(evaluation.stepsStatus.cards || next["cards"]),
+        recurring: Boolean(evaluation.stepsStatus.recurring || next["recurring"]),
+        transactions: Boolean(evaluation.stepsStatus.transactions || next["transactions"]),
+      };
+      if (Object.values(nextMerged).every(Boolean)) {
+        markTutorialCompletedInStorage();
+      } else {
+        window.dispatchEvent(new Event(TUTORIAL_COMPLETED_EVENT));
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  return {
+    isStorageChecked,
+    isDataLoaded,
+    isTutorialCompleted,
+    mergedStepsStatus,
+    completedCount,
+    toggleStepCheck,
+    dismissTutorial: () => {
+      setManuallyCompleted(true);
+      markTutorialCompletedInStorage();
+    },
+  };
 }
 
 /**
@@ -68,47 +158,30 @@ export function GettingStartedChecklist({
   onOpenNewTransaction: () => void;
 }) {
   const router = useRouter();
-  const { userProfile, cards, recurringItems, transactions, isDataLoaded } = useWallet();
+  const { cards } = useWallet();
+  const {
+    isStorageChecked,
+    isDataLoaded,
+    isTutorialCompleted,
+    mergedStepsStatus,
+    completedCount,
+    toggleStepCheck,
+    dismissTutorial,
+  } = useTutorialCompleted();
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [manuallyCompleted, setManuallyCompleted] = useState(false);
-  const [isStorageChecked, setIsStorageChecked] = useState(false);
   const [isTourModalOpen, setIsTourModalOpen] = useState(false);
 
   useEffect(() => {
     try {
-      const completed = window.localStorage.getItem(TUTORIAL_COMPLETED_KEY) === "true";
       const collapsed = window.localStorage.getItem(TUTORIAL_COLLAPSED_KEY) === "true";
-      setManuallyCompleted(completed);
       setIsCollapsed(collapsed);
     } catch {
       // ignore
-    } finally {
-      setIsStorageChecked(true);
     }
-
-    const handleCompletedEvent = () => setManuallyCompleted(true);
-    window.addEventListener(TUTORIAL_COMPLETED_EVENT, handleCompletedEvent);
-    return () => window.removeEventListener(TUTORIAL_COMPLETED_EVENT, handleCompletedEvent);
   }, []);
 
-  const evaluation = evaluateGettingStartedTutorial({
-    userName: userProfile.name,
-    monthlyIncomeBase: userProfile.monthlyIncomeBase,
-    cardsCount: cards.length,
-    recurringCount: recurringItems.length,
-    transactionsCount: transactions.length,
-    manuallyCompleted,
-  });
-
-  // Se o usuário acabou de completar todos os passos, grava como concluído para sumir em definitivo
-  useEffect(() => {
-    if (isDataLoaded && evaluation.allStepsCompleted && !manuallyCompleted) {
-      markTutorialCompletedInStorage();
-    }
-  }, [isDataLoaded, evaluation.allStepsCompleted, manuallyCompleted]);
-
   // Não exibe antes de carregar dados ou se o tutorial já foi cumprido
-  if (!isStorageChecked || !isDataLoaded || evaluation.shouldHideFromHome) {
+  if (!isStorageChecked || !isDataLoaded || isTutorialCompleted) {
     return null;
   }
 
@@ -121,8 +194,8 @@ export function GettingStartedChecklist({
       title: "Coloque seu nome e sua renda mensal",
       description:
         "Defina seu nome e quanto você recebe por mês para o app calcular seu limite seguro de gastos.",
-      done: evaluation.stepsStatus.profile,
-      buttonLabel: evaluation.stepsStatus.profile ? "Revisar Perfil" : "Preencher Nome e Renda",
+      done: mergedStepsStatus.profile,
+      buttonLabel: mergedStepsStatus.profile ? "Revisar Perfil" : "Preencher Nome e Renda",
       onAction: () => router.push("/profile"),
     },
     {
@@ -131,7 +204,7 @@ export function GettingStartedChecklist({
       title: "Exporte aqui o PDF do extrato do seu banco",
       description:
         "Baixe o extrato ou fatura em PDF no app do seu banco e envie aqui. O app já identifica suas contas, gastos e contas fixas automaticamente para você confirmar.",
-      done: evaluation.stepsStatus.pdfImport,
+      done: mergedStepsStatus.pdfImport,
       highlight: true,
       buttonLabel: "Enviar PDF do Extrato",
       onAction: onOpenStatementImport,
@@ -142,7 +215,7 @@ export function GettingStartedChecklist({
       title: "Cadastre suas contas e cartões de crédito",
       description:
         "Adicione os cartões que você usa informando o limite, o dia que a fatura fecha e o dia que vence.",
-      done: evaluation.stepsStatus.cards,
+      done: mergedStepsStatus.cards,
       buttonLabel: hasCreditCard ? "Adicionar Outro Cartão" : "Cadastrar Cartão",
       onAction: onOpenNewCard,
     },
@@ -152,8 +225,8 @@ export function GettingStartedChecklist({
       title: "Confira suas contas fixas (Aluguel, Luz, Assinaturas)",
       description:
         "No Planejamento Mensal ficam as contas que vencem todo mês e as compras parceladas.",
-      done: evaluation.stepsStatus.recurring,
-      buttonLabel: evaluation.stepsStatus.recurring ? "Ver Planejamento" : "Cadastrar Contas Fixas",
+      done: mergedStepsStatus.recurring,
+      buttonLabel: mergedStepsStatus.recurring ? "Ver Planejamento" : "Cadastrar Contas Fixas",
       onAction: () => router.push("/planning"),
     },
     {
@@ -162,13 +235,11 @@ export function GettingStartedChecklist({
       title: "Anote gastos avulsos do dia a dia",
       description:
         "Fez um Pix ou comprou algo hoje? Clique em '+ Nova Transação' ou use a Captura Rápida.",
-      done: evaluation.stepsStatus.transactions,
+      done: mergedStepsStatus.transactions,
       buttonLabel: "Lançar Gasto Agora",
       onAction: onOpenNewTransaction,
     },
   ];
-
-  const completedCount = evaluation.completedCount;
 
   const toggleCollapse = () => {
     const next = !isCollapsed;
@@ -181,8 +252,7 @@ export function GettingStartedChecklist({
   };
 
   const handleDismissTutorial = () => {
-    setManuallyCompleted(true);
-    markTutorialCompletedInStorage();
+    dismissTutorial();
   };
 
   return (
@@ -262,7 +332,12 @@ export function GettingStartedChecklist({
                 }`}
               >
                 <div className="flex items-start gap-3 min-w-0">
-                  <div className="mt-0.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => toggleStepCheck(item.id)}
+                    title={item.done ? "Passo concluído" : "Marcar como concluído"}
+                    className="mt-0.5 shrink-0 cursor-pointer hover:scale-110 transition-transform"
+                  >
                     {item.done ? (
                       <CheckCircle2 size={18} className="text-emerald-600" />
                     ) : (
@@ -271,7 +346,7 @@ export function GettingStartedChecklist({
                         className={item.highlight ? "text-amber-600" : "text-[#86868B]"}
                       />
                     )}
-                  </div>
+                  </button>
                   <div className="space-y-0.5 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span
@@ -332,10 +407,12 @@ export function GettingStartedChecklist({
  */
 export function ContextualPageTutorialBar() {
   const pathname = usePathname();
+  const { isStorageChecked, isDataLoaded, isTutorialCompleted } = useTutorialCompleted();
   const [isOpen, setIsOpen] = useState(false);
   const [isTourOpen, setIsTourOpen] = useState(false);
 
-  // No Dashboard já exibimos o GettingStartedChecklist completo
+  // Não exibe se o tutorial já foi concluído ou no Dashboard
+  if (!isStorageChecked || !isDataLoaded || isTutorialCompleted) return null;
   if (!pathname || pathname === "/dashboard") return null;
 
   const config = PAGE_TUTORIALS[pathname];

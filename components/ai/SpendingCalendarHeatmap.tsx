@@ -345,22 +345,6 @@ export function SpendingCalendarHeatmap({
                       <strong className="font-mono font-bold text-[#1D1D1F]">R$ {formatCurrency(bill.amount)}</strong>
                       {bill.status === "pending" && bill.sourceItem && onRealizeItem && (
                         <div className="flex items-center gap-1">
-                          {isCurrentMonth && now.getDate() > 1 && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handleRealize(
-                                  bill,
-                                  new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 12, 0, 0)
-                                )
-                              }
-                              disabled={actionLoadingId === bill.id}
-                              title={bill.type === "income" ? "Recebi adiantado ontem" : "Paguei adiantado ontem"}
-                              className="px-2 py-1 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-semibold text-[10px] transition-all cursor-pointer disabled:opacity-50"
-                            >
-                              Ontem
-                            </button>
-                          )}
                           <button type="button" onClick={() => handleRealize(bill)} disabled={actionLoadingId === bill.id} className="px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-[10px] transition-all cursor-pointer disabled:opacity-50">
                             {actionLoadingId === bill.id ? "Salvando..." : bill.type === "income" ? "Receber" : "Baixar"}
                           </button>
@@ -368,26 +352,6 @@ export function SpendingCalendarHeatmap({
                       )}
                       {bill.status === "paid" && (
                         <div className="flex items-center gap-1.5">
-                          {isCurrentMonth &&
-                            now.getDate() > 1 &&
-                            selectedDay !== now.getDate() - 1 &&
-                            bill.sourceItem &&
-                            onRealizeItem && (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleRealize(
-                                    bill,
-                                    new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 12, 0, 0)
-                                  )
-                                }
-                                disabled={actionLoadingId === bill.id}
-                                title="Mover recebimento/pagamento realizado para ontem"
-                                className="px-2 py-0.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-semibold text-[9px] transition-all cursor-pointer disabled:opacity-50"
-                              >
-                                {actionLoadingId === bill.id ? "..." : "Adiantar p/ ontem"}
-                              </button>
-                            )}
                           <CheckCircle2 size={15} className="text-emerald-600" />
                         </div>
                       )}

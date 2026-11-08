@@ -25,6 +25,7 @@ import {
   matchesLedgerCard,
   getCardInvoiceDetailsForMonth,
   getCardInvoiceRecurringDetails,
+  getLedgerEntryDate,
 } from "../utils/ledger.ts";
 
 export interface TransactionContextItem {
@@ -198,6 +199,8 @@ export interface MonthProjectionSummary {
   recurringCreditTotal: number;
   cardInstallments: number;
   totalCommitted: number;
+  pendingCommitted?: number;
+  totalInvoicesPending?: number;
   projectedFreeBalance: number;
   monthNetSurplus?: number;
   firstFortnight?: FortnightProjection;
@@ -546,9 +549,26 @@ export function computeFortnightBreakdown(
       card.type === "checking" && matchesLedgerCard(card, item.account, item.cardId)
     ) || item.account === "Débito/Pix";
 
-  // 1. Recebimentos planejados ativos no mês
+  const isAlreadyRealizedInMonth = (item: RecurringItem, expectedType: "receita" | "despesa") => {
+    const normTitle = (item.title || "").trim().toLowerCase();
+    if (!normTitle) return false;
+    return transactions.some((tx) => {
+      if (tx.type !== expectedType) return false;
+      const d = getLedgerEntryDate(tx);
+      if (!d || d.getFullYear() !== year || d.getMonth() !== monthIndex) return false;
+      const txTitle = (tx.title || "").trim().toLowerCase();
+      return txTitle === normTitle || txTitle.includes(normTitle) || normTitle.includes(txTitle);
+    });
+  };
+
+  // 1. Recebimentos planejados ativos no mês (excluindo os já lançados no extrato do mês)
   const plannedIncomes: FortnightMovementItem[] = recurringItems
-    .filter((r) => r.type === "income" && isRecurringActiveInMonth(r, year, monthIndex))
+    .filter(
+      (r) =>
+        r.type === "income" &&
+        isRecurringActiveInMonth(r, year, monthIndex) &&
+        !isAlreadyRealizedInMonth(r, "receita")
+    )
     .map((r) => {
       const effective = getEffectiveRecurringItemForPeriod(r, targetPeriodKey);
       const dueDay = getEffectiveDueDay(effective, year, monthIndex);
@@ -561,9 +581,15 @@ export function computeFortnightBreakdown(
       };
     });
 
-  // 2. Contas em débito direto ativas no mês
+  // 2. Contas em débito direto ativas no mês (excluindo as já pagas/lançadas no mês)
   const plannedDebits: FortnightMovementItem[] = recurringItems
-    .filter((r) => r.type !== "income" && isChecking(r) && isRecurringActiveInMonth(r, year, monthIndex))
+    .filter(
+      (r) =>
+        r.type !== "income" &&
+        isChecking(r) &&
+        isRecurringActiveInMonth(r, year, monthIndex) &&
+        !isAlreadyRealizedInMonth(r, "despesa")
+    )
     .map((r) => {
       const effective = getEffectiveRecurringItemForPeriod(r, targetPeriodKey);
       const dueDay = getEffectiveDueDay(effective, year, monthIndex);
@@ -576,7 +602,7 @@ export function computeFortnightBreakdown(
       };
     });
 
-  // 3. Faturas de cartões de crédito para o mês
+  // 3. Faturas de cartões de crédito em aberto para o mês (faturas já pagas não contam como despesa pendente)
   const creditCards = cards.filter((c) => c.type === "credit");
   const cardInvoices: FortnightMovementItem[] = [];
 
@@ -589,18 +615,19 @@ export function computeFortnightBreakdown(
       monthIndex
     );
 
-    let totalInvoice = details.totalInvoice;
-    if (totalInvoice === 0 && (creditCard.invoiceAmount || creditCard.spent)) {
-      totalInvoice = creditCard.invoiceAmount || creditCard.spent || 0;
+    if (details.totalInvoice > 0 && details.isPaid) {
+      continue;
     }
 
-    if (totalInvoice > 0) {
+    let pendingInvoice = details.pendingInvoice;
+    if (details.totalInvoice === 0 && (creditCard.invoiceAmount !== undefined ? creditCard.invoiceAmount : creditCard.spent)) {
+      pendingInvoice = creditCard.invoiceAmount !== undefined ? creditCard.invoiceAmount : (creditCard.spent || 0);
+    }
+
+    if (pendingInvoice > 0) {
       cardInvoices.push({
-        title:
-          details.isPaid && details.paidAmount > 0
-            ? `Fatura ${creditCard.name} (Paga)`
-            : `Fatura ${creditCard.name}`,
-        amount: totalInvoice,
+        title: `Fatura ${creditCard.name}`,
+        amount: pendingInvoice,
         dueDay: creditCard.dueDay || 10,
         type: "credit_invoice" as const,
         account: creditCard.name,
@@ -697,13 +724,22 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
   }));
 
   // Recorrências e Comprometimento Fixo
-  // CRÍTICO: Separa rigorosamente despesas recorrentes de receitas planejadas (como salário)
-  const activeRecurringExpenses = recurringItems.filter((r) => r.active !== false && r.type !== "income");
-  const activeRecurringIncomes = recurringItems.filter((r) => r.active !== false && r.type === "income");
+  // CRÍTICO: Separa rigorosamente despesas recorrentes ativas no mês atual e evita duplicar recorrências de cartão já incluídas na fatura
+  const nowRef = new Date();
+  const activeRecurringExpenses = recurringItems.filter(
+    (r) => r.active !== false && r.type !== "income" && isRecurringActiveInMonth(r, nowRef.getFullYear(), nowRef.getMonth())
+  );
+  const activeRecurringIncomes = recurringItems.filter(
+    (r) => r.active !== false && r.type === "income" && isRecurringActiveInMonth(r, nowRef.getFullYear(), nowRef.getMonth())
+  );
   const recurringMonthlyTotal = activeRecurringExpenses.reduce((acc, r) => acc + (r.amount || 0), 0);
+  const currentOpenInvoicesTotal = creditCards.reduce(
+    (acc, c) => acc + (c.invoiceAmount !== undefined ? c.invoiceAmount : (c.spent || 0)),
+    0
+  );
   const commitmentRatioPercent =
     monthlyIncomeBase > 0
-      ? Math.round(((recurringMonthlyTotal + totalSpent) / monthlyIncomeBase) * 100)
+      ? Math.round(((recurringMonthlyTotal + currentOpenInvoicesTotal) / monthlyIncomeBase) * 100)
       : 0;
 
   const isOverLimit = commitmentRatioPercent > maxCommitmentAlertPercent;
@@ -942,8 +978,13 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
   const nextProj = projections[1];
 
   const currentCheckingBalance = mainBalance;
-  const currentPendingBills = currentProj ? currentProj.totalCommitted : monthExpense;
-  const currentProjectedFree = currentProj ? currentProj.projectedFreeBalance : Math.max(0, mainBalance - monthExpense);
+  const currentPendingBills = currentProj
+    ? (currentProj.pendingCommitted ??
+        ((currentProj.recurringDebitTotal || 0) +
+          (currentProj.cardInstallments || 0) +
+          (currentProj.recurringCreditTotal || 0)))
+    : 0;
+  const currentProjectedFree = currentProj ? currentProj.projectedFreeBalance : Math.max(0, mainBalance);
 
   const nextIncome = nextProj?.plannedIncomesTotal || (userProfile?.monthlyIncomeBase || monthIncome) || 0;
   const nextCommitted = nextProj?.totalCommitted || 0;

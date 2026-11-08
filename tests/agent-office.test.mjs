@@ -115,6 +115,8 @@ test("escritório preserva o valor histórico da fatura mesmo quando ela já foi
   });
 
   assert.equal(analysis.credit.series[0].amount, 950);
-  assert.equal(analysis.credit.peakMonth, "Nov");
-  assert.equal(analysis.credit.peakInvoice, 950);
+  assert.equal(analysis.credit.series[0].pendingAmount, 0);
+  assert.equal(analysis.credit.series[0].isPaid, true);
+  assert.equal(analysis.credit.peakMonth, "Dez");
+  assert.equal(analysis.credit.peakInvoice, 800);
 });

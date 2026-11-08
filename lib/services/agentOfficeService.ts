@@ -1,6 +1,7 @@
 import type { CardItem, GoalItem, RecurringItem } from "../../types/index.ts";
 import type { LedgerEntry } from "../utils/ledger.ts";
 import { getLedgerEntryDate } from "../utils/ledger.ts";
+import { isRecurringActiveInMonth } from "../utils/dateUtils.ts";
 
 export interface OfficeCardInvoice {
   cardId: string;
@@ -45,7 +46,7 @@ export interface OfficeAnalysis {
     status: "healthy" | "attention";
   };
   credit: {
-    series: Array<{ label: string; amount: number }>;
+    series: Array<{ label: string; amount: number; pendingAmount: number; isPaid: boolean }>;
     totalSixMonths: number;
     averageInvoice: number;
     peakInvoice: number;
@@ -174,24 +175,42 @@ export function buildAgentOfficeAnalysis(params: {
       (sum, invoice) => sum + (invoice.totalInvoice || invoice.pendingInvoice || 0),
       0
     );
+    const pendingFromCards = projection.cardInvoices.reduce(
+      (sum, invoice) => sum + (invoice.pendingInvoice || 0),
+      0
+    );
+    const amount = roundCurrency(totalFromCards > 0 ? totalFromCards : (projection.totalInvoicesPending || 0));
+    const pendingAmount = roundCurrency(
+      projection.cardInvoices.length > 0 ? pendingFromCards : (projection.totalInvoicesPending || 0)
+    );
     return {
       label: projection.monthName.slice(0, 3),
-      amount: roundCurrency(totalFromCards > 0 ? totalFromCards : (projection.totalInvoicesPending || 0)),
+      amount,
+      pendingAmount,
+      isPaid: amount > 0 && pendingAmount <= 0,
     };
   });
   const totalSixMonths = creditSeries.reduce((sum, item) => sum + item.amount, 0);
-  const peakCredit = creditSeries.reduce(
-    (peak, item) => item.amount > peak.amount ? item : peak,
-    creditSeries[0] || { label: "—", amount: 0 }
-  );
+  const openCreditSeries = creditSeries.filter((item) => item.pendingAmount > 0);
+  const peakCredit = openCreditSeries.length > 0
+    ? openCreditSeries.reduce(
+        (peak, item) => item.pendingAmount > peak.pendingAmount ? item : peak,
+        openCreditSeries[0]
+      )
+    : { label: creditSeries[0]?.label || "—", amount: 0, pendingAmount: 0, isPaid: true };
   const totalCreditLimit = cards
     .filter((card) => card.type === "credit")
     .reduce((sum, card) => sum + Math.max(0, card.limit || 0), 0);
-  const currentCredit = creditSeries[0]?.amount || 0;
+  const currentCredit = creditSeries[0]?.pendingAmount ?? 0;
 
   const categories = buildPatterns(transactions, referenceDate);
   const recurringExpense = recurringItems
-    .filter((item) => item.active && item.type !== "income")
+    .filter(
+      (item) =>
+        item.active &&
+        item.type !== "income" &&
+        isRecurringActiveInMonth(item, referenceDate.getFullYear(), referenceDate.getMonth())
+    )
     .reduce((sum, item) => sum + Math.abs(item.amount), 0);
   const variableExpense = categories.reduce((sum, item) => sum + item.total, 0);
 
@@ -228,9 +247,21 @@ export function buildAgentOfficeAnalysis(params: {
     {
       id: "credit",
       agentId: "wallet-nanquim",
-      severity: totalCreditLimit > 0 && currentCredit / totalCreditLimit > 0.5 ? "warning" : "info",
-      title: `Pico de fatura em ${peakCredit.label}`,
-      description: `R$ ${roundCurrency(peakCredit.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })} previstos no mês de maior pressão do crédito.`,
+      severity: openCreditSeries.length === 0
+        ? "positive"
+        : totalCreditLimit > 0 && currentCredit / totalCreditLimit > 0.5
+        ? "warning"
+        : "info",
+      title: openCreditSeries.length > 0
+        ? `Pico de fatura aberta em ${peakCredit.label}`
+        : totalSixMonths > 0
+        ? "Faturas atuais quitadas"
+        : "Sem faturas em aberto",
+      description: openCreditSeries.length > 0
+        ? `R$ ${roundCurrency(peakCredit.pendingAmount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })} em aberto no mês de maior pressão do crédito.`
+        : totalSixMonths > 0
+        ? "As faturas lançadas no período já constam como pagas."
+        : "Nenhum compromisso pendente nos cartões de crédito.",
     },
     {
       id: "patterns",
@@ -264,7 +295,7 @@ export function buildAgentOfficeAnalysis(params: {
       series: creditSeries,
       totalSixMonths: roundCurrency(totalSixMonths),
       averageInvoice: roundCurrency(creditSeries.length ? totalSixMonths / creditSeries.length : 0),
-      peakInvoice: roundCurrency(peakCredit.amount),
+      peakInvoice: roundCurrency(peakCredit.pendingAmount),
       peakMonth: peakCredit.label,
       utilizationPercent: totalCreditLimit > 0 ? Math.round((currentCredit / totalCreditLimit) * 100) : 0,
     },
