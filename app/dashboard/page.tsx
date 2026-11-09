@@ -35,12 +35,16 @@ import {
 import Link from "next/link";
 import { formatAccountLabel } from "@/lib/utils/ledger";
 import { GettingStartedChecklist } from "@/components/tutorial/AppTutorialGuide";
+import { CategoryBudgets } from "@/components/planning/CategoryBudgets";
+import { PendingConfirmations } from "@/components/planning/PendingConfirmations";
+import { useCalendarDay } from "@/lib/hooks/useCalendarDay";
 import {
   calculateDailySafeSpend,
   getBestCardToSpendToday,
 } from "@/lib/services/dailyCompanionService";
 
 export default function DashboardPage() {
+  useCalendarDay();
   const {
     userProfile,
     cards,
@@ -252,6 +256,9 @@ export default function DashboardPage() {
             </div>
           </div>
         </section>
+
+        <PendingConfirmations />
+        <CategoryBudgets />
 
         {/* 3. PILHA 3D DE CARTÕES E GRADE */}
         <section className="space-y-4">

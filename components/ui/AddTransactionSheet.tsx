@@ -16,6 +16,8 @@ import { formatAccountLabel, getInvoiceDueDate } from "@/lib/utils/ledger";
 import { buildInstallmentPurchasePlan } from "@/lib/utils/installments";
 import { RecurrenceType } from "@/types";
 import { Portal } from "./Portal";
+import { AutoConfirmToggle } from "./AutoConfirmToggle";
+import { getCategoryBudgetProgress } from "@/lib/utils/categoryBudgets";
 import {
   sanitizeTextInput,
   validateCurrency,
@@ -39,6 +41,7 @@ export interface AddTransactionSheetProps {
     date: string;
     occurredAt?: Date | string | null;
     isRecurring?: boolean;
+    autoConfirm?: boolean;
     recurrenceType?: RecurrenceType;
     recurrenceDay?: number;
     installmentsCount?: number;
@@ -93,7 +96,7 @@ export function AddTransactionSheet({
   initialType,
   onAdd,
 }: AddTransactionSheetProps) {
-  const { cards, addTransaction } = useWallet();
+  const { cards, addTransaction, userProfile, transactions } = useWallet();
   const [type, setType] = useState<"despesa" | "receita">(initialType || "despesa");
   const [amountInput, setAmountInput] = useState("");
   const [title, setTitle] = useState("");
@@ -103,6 +106,7 @@ export function AddTransactionSheet({
   const [dateInput, setDateInput] = useState(() => formatDateToInput(new Date()));
   const [datePreset, setDatePreset] = useState<"today" | "yesterday" | "custom">("today");
   const [isRecurring, setIsRecurring] = useState(false);
+  const [autoConfirm, setAutoConfirm] = useState(false);
   const [recurrenceType, setRecurrenceType] = useState<RecurrenceType>(() =>
     initialType === "receita" ? "business_day_5" : "fixed_day"
   );
@@ -270,6 +274,7 @@ export function AddTransactionSheet({
         date: formattedDate,
         occurredAt: chosenDate,
         isRecurring: effectiveIsRecurring,
+        autoConfirm: effectiveIsRecurring && !isSelectedAccountCreditCard && autoConfirm,
         recurrenceType: effectiveIsRecurring ? effectiveRecurrenceType : undefined,
         recurrenceDay: effectiveIsRecurring ? effectiveRecurrenceDay : undefined,
         installmentsCount: effectiveInstallmentsCount,
@@ -281,6 +286,7 @@ export function AddTransactionSheet({
       setAmountInput("");
       setTitle("");
       setIsRecurring(false);
+      setAutoConfirm(false);
       setCreditPurchaseMode("single");
       setDatePreset("today");
       const today = new Date();
@@ -1092,6 +1098,16 @@ export function AddTransactionSheet({
             )}
           </div>
           )}
+
+          {isRecurring && !isSelectedAccountCreditCard && <AutoConfirmToggle checked={autoConfirm} onChange={setAutoConfirm} isIncome={type === "receita"} />}
+          {type === "despesa" && parsedAmount > 0 && (() => {
+            const occurrence = isInstallmentModeActive ? installmentSplit.firstUnpaidOccurrence : { date: purchaseDate, amount: parsedAmount };
+            if (!occurrence) return null;
+            const budget = getCategoryBudgetProgress(userProfile.categoryBudgets || [], [...transactions, {
+              amount: occurrence.amount, type: "despesa", account: effectiveAccount, category, occurredAt: occurrence.date,
+            }], occurrence.date.getFullYear(), occurrence.date.getMonth()).find((item) => item.category === category);
+            return budget && budget.status !== "normal" ? <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">Com este lançamento, {category} ficaria em {budget.percent}% do limite mensal de R$ {formatCurrency(budget.amount)}. {budget.remaining >= 0 ? `Restariam R$ ${formatCurrency(budget.remaining)}.` : `Excederia R$ ${formatCurrency(-budget.remaining)}.`}</p> : null;
+          })()}
 
           {/* 7. RESUMO FINANCEIRO (Subtotal / Método / Total em Destaque) */}
           <div className="space-y-1.5 pt-2 border-t border-black/[0.04]">

@@ -6,12 +6,12 @@ import {
   getDocs,
   serverTimestamp,
   Timestamp,
-  writeBatch,
+  runTransaction,
   arrayUnion,
 } from "firebase/firestore";
 import {
   DueOccurrence,
-  getPendingDueOccurrences,
+  getAutomaticDueOccurrences,
 } from "@/lib/utils/timeProgression";
 
 export interface ProcessDueResult {
@@ -81,7 +81,7 @@ export async function processDueOccurrencesForUser(
     }
 
     // 4. Calcular ocorrências vencidas de forma pura e idempotente
-    const dueOccurrences = getPendingDueOccurrences(
+    const dueOccurrences = getAutomaticDueOccurrences(
       recurringItems,
       cards,
       existingTransactions,
@@ -92,49 +92,57 @@ export async function processDueOccurrencesForUser(
       return { processedCount: 0, processedOccurrences: [] };
     }
 
-    // 5. Materializar ocorrências via Firestore WriteBatch
-    const batch = writeBatch(db);
+    // Revalida cada ocorrência com o estado persistido para não sobrescrever uma confirmação manual.
+    const processedOccurrences: DueOccurrence[] = [];
 
     for (const occ of dueOccurrences) {
       const txRef = doc(db, "users", userId, "transactions", occ.occurrenceId);
       const recurringRef = doc(db, "users", userId, "recurring", occ.recurringItemId);
+      const processed = await runTransaction(db, async (transaction) => {
+        const existing = await transaction.get(txRef);
+        const recurringSnapshot = await transaction.get(recurringRef);
+        if (existing.exists() || !recurringSnapshot.exists()) return null;
+        const item = { ...recurringSnapshot.data(), id: occ.recurringItemId } as RecurringItem;
+        const current = getAutomaticDueOccurrences([item], cards, [], asOfDate).find((candidate) => candidate.occurrenceId === occ.occurrenceId);
+        if (!current) return null;
 
-      batch.set(
-        txRef,
-        {
-          amount: occ.amount,
-          type: occ.type,
-          category: occ.category,
-          description: occ.description,
-          paymentMethod: occ.paymentMethod,
-          cardId: occ.cardId ?? null,
-          kind: "regular",
-          relatedCardId: null,
-          groupId: null,
-          recurringItemId: occ.recurringItemId,
-          periodKey: occ.periodKey,
-          date: occ.formattedDate,
-          occurredAt: Timestamp.fromDate(occ.dueDate),
-          createdAt: serverTimestamp(),
-          userId,
-        },
-        { merge: true }
-      );
+        transaction.set(
+          txRef,
+          {
+            amount: current.amount,
+            type: current.type,
+            category: current.category,
+            description: current.description,
+            paymentMethod: current.paymentMethod,
+            cardId: current.cardId ?? null,
+            kind: "regular",
+            relatedCardId: null,
+            groupId: null,
+            recurringItemId: occ.recurringItemId,
+            periodKey: occ.periodKey,
+            date: occ.formattedDate,
+            occurredAt: Timestamp.fromDate(occ.dueDate),
+            createdAt: serverTimestamp(),
+            userId,
+          },
+          { merge: true }
+        );
 
-      batch.set(
-        recurringRef,
-        {
-          realizedPeriods: arrayUnion(occ.periodKey),
-        },
-        { merge: true }
-      );
+        transaction.set(
+          recurringRef,
+          {
+            realizedPeriods: arrayUnion(occ.periodKey),
+          },
+          { merge: true }
+        );
+        return current;
+      });
+      if (processed) processedOccurrences.push(processed);
     }
 
-    await batch.commit();
-
     return {
-      processedCount: dueOccurrences.length,
-      processedOccurrences: dueOccurrences,
+      processedCount: processedOccurrences.length,
+      processedOccurrences,
     };
   } catch (error) {
     console.error("Erro ao processar ocorrências vencidas:", error);

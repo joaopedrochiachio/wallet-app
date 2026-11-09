@@ -27,8 +27,9 @@ import {
 } from "@/lib/services/transactionsService";
 import {
   subscribeToGoals,
-  saveGoalToFirestore,
   deleteGoalFromFirestore,
+  saveGoalOperation,
+  updateGoalDetails,
 } from "@/lib/services/goalsService";
 import {
   subscribeToRecurring,
@@ -38,6 +39,9 @@ import {
 } from "@/lib/services/recurringService";
 import { processDueOccurrencesForUser } from "@/lib/services/timeProgressionService";
 import { buildInstallmentPurchasePlan } from "@/lib/utils/installments";
+import { validateCategoryBudgets } from "@/lib/utils/categoryBudgets";
+import { getPendingDueOccurrences } from "@/lib/utils/timeProgression";
+import { hasRecordedRecurringOccurrence } from "@/lib/utils/recurringOccurrences";
 import {
   get5thBusinessDay,
   getEffectiveDueDay,
@@ -80,6 +84,7 @@ import {
   FinancialPersonaId,
   RiskToleranceId,
   AIToneId,
+  CategoryBudget,
 } from "@/types";
 
 export type {
@@ -106,6 +111,7 @@ export interface TransactionItem {
   occurredAt?: string | number | Date | null;
   createdAt?: string | number | Date | null;
   isRecurring?: boolean;
+  autoConfirm?: boolean;
   recurrenceType?: RecurrenceType;
   recurrenceDay?: number;
   installmentsCount?: number;
@@ -180,6 +186,7 @@ interface WalletContextType {
   addCard: (card: NewCardInput) => CardItem;
   deleteCard: (cardId: string) => void;
   updateUserProfile: (profile: Partial<UserProfile>) => void;
+  saveCategoryBudgets: (budgets: CategoryBudget[]) => Promise<void>;
   addTransaction: (tx: Omit<TransactionItem, "id">) => Promise<void>;
   reconcileCheckingBalance: (cardId: string, targetBalance: number) => Promise<number>;
   updateTransaction: (id: string, updates: TransactionUpdateInput) => Promise<void>;
@@ -222,8 +229,9 @@ interface WalletContextType {
       type: "account" | "already_saved";
       cardId?: string | null;
       accountName?: string;
-    }
-  ) => GoalItem;
+    },
+    operationId?: string
+  ) => Promise<GoalItem>;
   contributeToGoal: (
     goalId: string,
     amount: number,
@@ -231,7 +239,8 @@ interface WalletContextType {
       type: "account" | "already_saved";
       cardId?: string | null;
       accountName?: string;
-    }
+    },
+    operationId?: string
   ) => Promise<void>;
   withdrawFromGoal: (
     goalId: string,
@@ -240,10 +249,10 @@ interface WalletContextType {
       type: "account" | "already_withdrawn";
       cardId?: string | null;
       accountName?: string;
-    }
+    },
+    operationId?: string
   ) => Promise<void>;
-  updateGoal: (goalId: string, updates: Partial<GoalItem>) => void;
-  updateGoalProgress: (goalId: string, amountToAdd: number) => void;
+  updateGoal: (goalId: string, updates: Partial<GoalItem>) => Promise<void>;
   deleteGoal: (goalId: string) => void;
 }
 
@@ -602,6 +611,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setActiveCardId(cardId);
   }, []);
 
+  const saveCategoryBudgets = useCallback(async (budgets: CategoryBudget[]) => {
+    if (!user) throw new Error("Entre na sua conta para definir o orçamento.");
+    const categoryBudgets = validateCategoryBudgets(budgets);
+    await saveUserProfile(user.uid, { categoryBudgets });
+    setUserProfile((previous) => ({ ...previous, categoryBudgets }));
+  }, [user]);
+
   const updateCardLimit = useCallback((cardId: string, newLimit: number) => {
     const validLimit = Math.max(1, Math.round(newLimit * 100) / 100);
     setCards((prev) =>
@@ -775,6 +791,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
               ? get5thBusinessDay(safeTxDate.getFullYear(), safeTxDate.getMonth())
               : tx.recurrenceDay || safeTxDate.getDate() || 10,
           recurrenceType,
+          autoConfirm: tx.autoConfirm === true,
           installmentsCount: requestedInstallments,
           ...(installmentPlan ? { paidInstallmentsCount: installmentPlan.paidInstallmentsCount } : {}),
           startMonth: safeTxDate.getMonth(),
@@ -1096,157 +1113,55 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     await unrealizePlannedOccurrence(user.uid, item.id, periodKey);
   }, [user]);
 
-  const addGoal = useCallback(
-    (
-      goalInput: Omit<GoalItem, "id">,
-      source?: {
-        type: "account" | "already_saved";
-        cardId?: string | null;
-        accountName?: string;
-      }
-    ): GoalItem => {
-    const newGoal: GoalItem = {
-      ...goalInput,
-      id: `goal-${Date.now()}`,
-    };
-    setGoals((prev) => [newGoal, ...prev]);
-    if (user) {
-      saveGoalToFirestore(user.uid, newGoal).catch((e) =>
-        console.error("Erro ao salvar meta no Firestore:", e)
-      );
-    }
+  const resolveGoalAccount = useCallback((input: { cardId?: string | null; accountName?: string }) => {
+    const account = input.cardId
+      ? cards.find((card) => card.id === input.cardId)
+      : cards.find((card) => card.type === "checking" && card.name === input.accountName) || cards.find((card) => card.type === "checking");
+    if (!account || account.type !== "checking") throw new Error("Selecione uma conta corrente v?lida.");
+    return account.id;
+  }, [cards]);
 
-    if (source?.type === "account" && newGoal.current > 0 && user) {
-      const now = new Date();
-      const formattedDate = `${now.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}, ${now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
-      void addTransaction({
-        title: `Aporte inicial: ${newGoal.title}`,
-        amount: newGoal.current,
-        type: "despesa",
-        category: "Investimentos & Metas",
-        account: source.accountName || "Débito/Pix",
-        cardId: source.cardId || null,
-        date: formattedDate,
-        occurredAt: now,
-      });
-    }
-
-    return newGoal;
-  }, [user, addTransaction]);
+  const addGoal = useCallback(async (
+    goalInput: Omit<GoalItem, "id">,
+    source?: { type: "account" | "already_saved"; cardId?: string | null; accountName?: string },
+    operationId = crypto.randomUUID()
+  ): Promise<GoalItem> => {
+    if (!user) throw new Error("Entre na sua conta para criar uma meta.");
+    const goal = { ...goalInput, id: `goal-${operationId}` };
+    return saveGoalOperation(user.uid, {
+      action: "create", goalId: goal.id, operationId, initialGoal: goal,
+      amount: goal.current, occurredAt: new Date().toISOString(),
+      ...(source?.type === "account" && goal.current > 0 ? { accountId: resolveGoalAccount(source) } : {}),
+    });
+  }, [user, resolveGoalAccount]);
 
   const contributeToGoal = useCallback(async (
-    goalId: string,
-    amount: number,
-    source: {
-      type: "account" | "already_saved";
-      cardId?: string | null;
-      accountName?: string;
-    }
+    goalId: string, amount: number,
+    source: { type: "account" | "already_saved"; cardId?: string | null; accountName?: string },
+    operationId = crypto.randomUUID()
   ) => {
-    const targetGoal = goals.find((g) => g.id === goalId);
-    if (!targetGoal) return;
-
-    const nextCurrent = targetGoal.current + amount;
-    const updated = { ...targetGoal, current: nextCurrent };
-
-    setGoals((prev) => prev.map((g) => (g.id === goalId ? updated : g)));
-
-    if (user) {
-      await saveGoalToFirestore(user.uid, updated).catch((e) =>
-        console.error("Erro ao atualizar meta no Firestore:", e)
-      );
-    }
-
-    if (source.type === "account" && amount > 0 && user) {
-      const now = new Date();
-      const formattedDate = `${now.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}, ${now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
-      await addTransaction({
-        title: `Aporte: ${targetGoal.title}`,
-        amount,
-        type: "despesa",
-        category: "Investimentos & Metas",
-        account: source.accountName || "Débito/Pix",
-        cardId: source.cardId || null,
-        date: formattedDate,
-        occurredAt: now,
-      });
-    }
-  }, [goals, user, addTransaction]);
+    if (!user) throw new Error("Entre na sua conta para registrar o aporte.");
+    await saveGoalOperation(user.uid, {
+      action: "contribute", goalId, operationId, amount, occurredAt: new Date().toISOString(),
+      ...(source.type === "account" ? { accountId: resolveGoalAccount(source) } : {}),
+    });
+  }, [user, resolveGoalAccount]);
 
   const withdrawFromGoal = useCallback(async (
-    goalId: string,
-    amount: number,
-    destination: {
-      type: "account" | "already_withdrawn";
-      cardId?: string | null;
-      accountName?: string;
-    }
+    goalId: string, amount: number,
+    destination: { type: "account" | "already_withdrawn"; cardId?: string | null; accountName?: string },
+    operationId = crypto.randomUUID()
   ) => {
-    const targetGoal = goals.find((g) => g.id === goalId);
-    if (!targetGoal) return;
+    if (!user) throw new Error("Entre na sua conta para registrar o resgate.");
+    await saveGoalOperation(user.uid, {
+      action: "withdraw", goalId, operationId, amount, occurredAt: new Date().toISOString(),
+      ...(destination.type === "account" ? { accountId: resolveGoalAccount(destination) } : {}),
+    });
+  }, [user, resolveGoalAccount]);
 
-    const actualAmount = Math.min(targetGoal.current, amount);
-    if (actualAmount <= 0) return;
-
-    const nextCurrent = Math.max(0, targetGoal.current - actualAmount);
-    const updated = { ...targetGoal, current: nextCurrent };
-
-    setGoals((prev) => prev.map((g) => (g.id === goalId ? updated : g)));
-
-    if (user) {
-      await saveGoalToFirestore(user.uid, updated).catch((e) =>
-        console.error("Erro ao atualizar meta no Firestore:", e)
-      );
-    }
-
-    if (destination.type === "account" && user) {
-      const now = new Date();
-      const formattedDate = `${now.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}, ${now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
-      await addTransaction({
-        title: `Resgate: ${targetGoal.title}`,
-        amount: actualAmount,
-        type: "receita",
-        category: "Investimentos & Metas",
-        account: destination.accountName || "Débito/Pix",
-        cardId: destination.cardId || null,
-        date: formattedDate,
-        occurredAt: now,
-      });
-    }
-  }, [goals, user, addTransaction]);
-
-  const updateGoal = useCallback((goalId: string, updates: Partial<GoalItem>) => {
-    setGoals((prev) =>
-      prev.map((g) => {
-        if (g.id === goalId) {
-          const updated = { ...g, ...updates };
-          if (user) {
-            saveGoalToFirestore(user.uid, updated).catch((e) =>
-              console.error("Erro ao atualizar meta no Firestore:", e)
-            );
-          }
-          return updated;
-        }
-        return g;
-      })
-    );
-  }, [user]);
-
-  const updateGoalProgress = useCallback((goalId: string, amountToAdd: number) => {
-    setGoals((prev) =>
-      prev.map((g) => {
-        if (g.id === goalId) {
-          const updated = { ...g, current: Math.max(0, g.current + amountToAdd) };
-          if (user) {
-            saveGoalToFirestore(user.uid, updated).catch((e) =>
-              console.error("Erro ao atualizar meta no Firestore:", e)
-            );
-          }
-          return updated;
-        }
-        return g;
-      })
-    );
+  const updateGoal = useCallback(async (goalId: string, updates: Partial<GoalItem>) => {
+    if (!user) throw new Error("Entre na sua conta para editar uma meta.");
+    await updateGoalDetails(user.uid, goalId, updates);
   }, [user]);
 
   const deleteGoal = useCallback((goalId: string) => {
@@ -1293,18 +1208,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         return occurredAt && getPeriodKey(occurredAt.getFullYear(), occurredAt.getMonth()) === targetPeriodKey;
       });
 
-      const isRecurringAlreadyInTransactions = (item: RecurringItem, effectiveAmount: number) => {
-        const normItemTitle = (item.title || "").trim().toLowerCase();
-        return transactionsInTargetMonth.some((tx) => {
-          if (tx.recurringItemId && tx.recurringItemId === item.id) return true;
-          const normTxTitle = (tx.title || "").trim().toLowerCase();
-          return (
-            normItemTitle.length > 0 &&
-            normTxTitle === normItemTitle &&
-            Math.abs(tx.amount - effectiveAmount) < 0.01
-          );
-        });
-      };
+      const isRecurringAlreadyInTransactions = (item: RecurringItem) =>
+        hasRecordedRecurringOccurrence(item, targetPeriodKey, transactions, cards);
 
       // Recebimentos futuros planejados ativos (ex: salário, rendimentos)
       // Se for mês passado, não há mais receitas futuras planejadas
@@ -1314,7 +1219,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             .filter((r) => r.type === "income" && activeInTargetMonth(r))
             .reduce((acc, r) => {
               const effective = getEffectiveRecurringItemForPeriod(r, targetPeriodKey);
-              if (isRecurringAlreadyInTransactions(r, effective.amount)) return acc;
+              if (isRecurringAlreadyInTransactions(r)) return acc;
               return acc + effective.amount;
             }, 0);
 
@@ -1344,15 +1249,18 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         );
 
       // Contas recorrentes e pagamentos futuros ativos no débito
-      const recurringDebitTotal = isPastMonth
+      const overdueDebitTotal = isCurrentMonth ? getPendingDueOccurrences(
+        recurringItems.filter((item) => item.type !== "income" && isCheckingRecurring(item)), cards, transactions, new Date()
+      ).filter((occurrence) => occurrence.periodKey < targetPeriodKey).reduce((sum, occurrence) => sum + occurrence.amount, 0) : 0;
+      const recurringDebitTotal = overdueDebitTotal + (isPastMonth
         ? 0
         : recurringItems
             .filter((r) => r.type !== "income" && isCheckingRecurring(r) && activeInTargetMonth(r))
             .reduce((acc, r) => {
               const effective = getEffectiveRecurringItemForPeriod(r, targetPeriodKey);
-              if (isRecurringAlreadyInTransactions(r, effective.amount)) return acc;
+              if (isRecurringAlreadyInTransactions(r)) return acc;
               return acc + effective.amount;
-            }, 0);
+            }, 0));
 
       // Faturas de cartão de crédito detalhadas por cartão
       const creditCards = cards.filter((card) => card.type === "credit");
@@ -1503,6 +1411,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       addCard,
       deleteCard,
       updateUserProfile,
+      saveCategoryBudgets,
       addTransaction,
       reconcileCheckingBalance,
       updateTransaction,
@@ -1522,7 +1431,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       contributeToGoal,
       withdrawFromGoal,
       updateGoal,
-      updateGoalProgress,
       deleteGoal,
     }),
     [
@@ -1545,6 +1453,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       addCard,
       deleteCard,
       updateUserProfile,
+      saveCategoryBudgets,
       addTransaction,
       reconcileCheckingBalance,
       updateTransaction,
@@ -1564,7 +1473,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       contributeToGoal,
       withdrawFromGoal,
       updateGoal,
-      updateGoalProgress,
       deleteGoal,
     ]
   );

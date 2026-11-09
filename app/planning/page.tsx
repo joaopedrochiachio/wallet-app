@@ -46,8 +46,12 @@ import {
 } from "@/lib/utils/security";
 import { RecurrenceType, RecurringItem } from "@/types";
 import { auditFinancialIntegrity } from "@/lib/services/financialIntegrityService";
+import { AutoConfirmToggle } from "@/components/ui/AutoConfirmToggle";
+import { getRecurringPaymentStatus } from "@/lib/utils/timeProgression";
+import { useCalendarDay } from "@/lib/hooks/useCalendarDay";
 
 export default function PlanningPage() {
+  const referenceDay = useCalendarDay();
   const {
     recurringItems,
     addRecurringItem,
@@ -70,7 +74,7 @@ export default function PlanningPage() {
   } = useWallet();
 
   const [showArchivedMonths, setShowArchivedMonths] = useState(true);
-  const planningMonths = getPlanningMonthsWindow(showArchivedMonths ? 1 : 0, 3);
+  const planningMonths = getPlanningMonthsWindow(showArchivedMonths ? 1 : 0, 3, referenceDay);
   const currentMonthIdx = planningMonths.findIndex((m) => m.isCurrent);
   const [selectedMonthIndex, setSelectedMonthIndex] = useState(
     currentMonthIdx >= 0 ? currentMonthIdx : 0
@@ -96,6 +100,8 @@ export default function PlanningPage() {
   const [newAmount, setNewAmount] = useState("");
   const [newAccount, setNewAccount] = useState("Débito/Pix");
   const [newCategory, setNewCategory] = useState("Salário / Extra");
+  const [newAutoConfirm, setNewAutoConfirm] = useState(false);
+  const [editAutoConfirm, setEditAutoConfirm] = useState(false);
 
   // Recorrência e cálculo inteligente
   const [recurrenceSelection, setRecurrenceSelection] =
@@ -358,6 +364,7 @@ export default function PlanningPage() {
     setInstallmentsCount(3);
     setInstallmentsInput("3");
     setInstallmentPricingType("total");
+    setNewAutoConfirm(false);
     setIsAddingMenuOpen(false);
     setIsAddingModalOpen(true);
   };
@@ -410,6 +417,7 @@ export default function PlanningPage() {
         category: newCategory,
         dueDay: computedDay,
         recurrenceType: recurrenceSelection,
+        autoConfirm: newAutoConfirm && !cards.some((card) => card.type === "credit" && card.name === newAccount),
         installmentsCount: effectiveInstallments,
         startMonth: targetMonth,
         startYear: targetYear,
@@ -439,6 +447,7 @@ export default function PlanningPage() {
     setEditAccount(effective.account);
     setEditCategory(effective.category);
     setEditType(effective.type || "expense");
+    setEditAutoConfirm(effective.autoConfirm === true);
     setEditRecurrence(effective.recurrenceType || "fixed_day");
     const isSpecialDay = effective.dueDay === 5 || effective.dueDay === 10 || effective.dueDay === 20;
     setEditFixedDay(isSpecialDay ? String(effective.dueDay) : "10");
@@ -514,6 +523,7 @@ export default function PlanningPage() {
       category: editCategory,
       dueDay: computedDay,
       recurrenceType: editRecurrence,
+      autoConfirm: editAutoConfirm && !cards.some((card) => card.type === "credit" && card.name === editAccount),
       installmentsCount: effectiveEditInstallments,
     };
 
@@ -766,6 +776,7 @@ export default function PlanningPage() {
     const currentInstallmentNum = monthOffset >= 0 ? monthOffset + 1 : 1;
     const recurrencePeriodKey = getPeriodKey(plannedYear, plannedMonth);
     const isRealizedInThisMonth = Boolean(item.realizedPeriods?.includes(recurrencePeriodKey));
+    const paymentStatus = getRecurringPaymentStatus(item, plannedYear, plannedMonth);
     const isProcessing = processingItemId === item.id;
 
     let dateDescription = "";
@@ -858,8 +869,10 @@ export default function PlanningPage() {
                       : "bg-gray-100 text-[#1D1D1F] border-black/5"
                   }`}
                 >
-                  {sectionKind === "credit" ? "Na fatura" : "Efetivado"}
+                  {sectionKind === "credit" ? "Na fatura" : sectionKind === "income" ? "Recebido" : "Pago"}
                 </span>
+              ) : sectionKind !== "credit" && item.active ? (
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${paymentStatus === "overdue" ? "bg-rose-50 text-rose-700" : "bg-amber-50 text-amber-800"}`}>{paymentStatus === "overdue" ? sectionKind === "income" ? "Atrasado" : "Vencido" : paymentStatus === "due" ? "Vence hoje" : "Previsto"}</span>
               ) : null}
             </div>
             <p className="text-xs text-[#86868B] truncate mt-0.5">
@@ -888,10 +901,10 @@ export default function PlanningPage() {
                 className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#1D1D1F]/5 hover:bg-[#1D1D1F] hover:text-white text-[#1D1D1F] transition-all cursor-pointer active:scale-95 disabled:opacity-50 shadow-2xs"
                 title={
                   item.type === "income"
-                    ? "Recebi adiantado: efetivar entrada agora"
+                    ? "Confirmar o recebimento e registrar a entrada na conta"
                     : sectionKind === "credit"
                     ? "Registrar que esta cobrança já ocorreu no cartão"
-                    : "Paguei adiantado: debitar e efetivar saída agora"
+                    : "Confirmar o pagamento e registrar a saída da conta"
                 }
               >
                 {isProcessing ? (
@@ -901,10 +914,10 @@ export default function PlanningPage() {
                 )}
                 <span>
                   {item.type === "income"
-                    ? "Recebi antes"
+                    ? "Recebi"
                     : sectionKind === "credit"
                     ? "Já cobrou"
-                    : "Paguei antes"}
+                    : "Paguei"}
                 </span>
               </button>
             </div>
@@ -2201,6 +2214,8 @@ export default function PlanningPage() {
                   )}
                 </div>
 
+                {!cards.some((card) => card.type === "credit" && card.name === newAccount) && <div className="px-6 py-3"><AutoConfirmToggle checked={newAutoConfirm} onChange={setNewAutoConfirm} isIncome={modalType === "income"} /></div>}
+
                 {/* LINHA: CONTA DE DESTINO / CARTÃO */}
                 <div className="flex items-center px-6 py-3.5">
                   <span className="w-24 text-[11px] font-semibold text-[#86868B] uppercase tracking-wider">
@@ -2721,6 +2736,8 @@ export default function PlanningPage() {
                     </div>
                   )}
                 </div>
+
+                {!cards.some((card) => card.type === "credit" && card.name === editAccount) && <div className="px-6 py-3"><AutoConfirmToggle checked={editAutoConfirm} onChange={setEditAutoConfirm} isIncome={editType === "income"} /></div>}
 
                 {/* LINHA: CONTA / CARTÃO */}
                 <div className="flex items-center px-6 py-3.5">

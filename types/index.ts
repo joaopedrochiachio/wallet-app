@@ -24,6 +24,14 @@ export interface UserProfile {
   targetMonthEndBalance?: number;
   isOnboarded?: boolean;
   lgpdConsent?: LgpdConsentRecord;
+  categoryBudgets?: CategoryBudget[];
+}
+
+export interface CategoryBudget {
+  id: string;
+  category: string;
+  amount: number;
+  alertPercent: number;
 }
 
 export interface CardItem {
@@ -90,6 +98,7 @@ export interface RecurringOverride {
   category?: string;
   dueDay?: number;
   recurrenceType?: RecurrenceType;
+  autoConfirm?: boolean;
   isDeleted?: boolean;
   [key: string]: unknown;
 }
@@ -104,6 +113,8 @@ export interface RecurringItem {
   category: string;
   dueDay: number;
   recurrenceType?: RecurrenceType;
+  /** Confirma débito/recebimento na data prevista apenas com autorização explícita. */
+  autoConfirm?: boolean;
   installmentsCount?: number; // Total de meses/parcelas (ex: 3, 4, 5). Se ausente ou 0 = contínuo/fixo
   /** Parcelas iniciais quitadas antes do cadastro, sem movimentar o saldo atual. */
   paidInstallmentsCount?: number;
@@ -111,6 +122,7 @@ export interface RecurringItem {
   startMonth?: number; // Mês calendário inicial (0 = Janeiro, 11 = Dezembro)
   startYear?: number; // Ano de início (ex: 2026)
   realizedPeriods?: string[]; // Competências já realizadas, no formato YYYY-MM
+  manualConfirmationPeriods?: string[];
   active: boolean;
   overrides?: Record<string, RecurringOverride>; // Competências customizadas individualmente, indexadas por YYYY-MM
   excludedPeriods?: string[]; // Competências excluídas individualmente, no formato YYYY-MM

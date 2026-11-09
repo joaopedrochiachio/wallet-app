@@ -6,7 +6,40 @@ import {
   setDoc,
   deleteDoc,
   onSnapshot,
+  runTransaction,
+  Timestamp,
+  serverTimestamp,
+  updateDoc,
 } from "firebase/firestore";
+import { commitGoalOperation, type GoalOperation } from "@/lib/utils/goalOperations";
+
+export async function saveGoalOperation(userId: string, input: GoalOperation): Promise<GoalItem> {
+  if (!userId) throw new Error("Entre na sua conta para movimentar uma meta.");
+  return commitGoalOperation({
+    run: (work) => runTransaction(db, async (firestoreTransaction) => work({
+      get: async <T>(path: string) => {
+        const snapshot = await firestoreTransaction.get(doc(db, "users", userId, ...path.split("/")));
+        return snapshot.exists() ? snapshot.data() as T : undefined;
+      },
+      set: (path, value) => {
+        const payload = sanitizeData(value) as Record<string, unknown>;
+        if (path.startsWith("transactions/")) {
+          payload.occurredAt = Timestamp.fromDate(new Date(input.occurredAt));
+          payload.createdAt = serverTimestamp();
+          payload.userId = userId;
+        }
+        firestoreTransaction.set(doc(db, "users", userId, ...path.split("/")), payload);
+      },
+    })),
+  }, input);
+}
+
+export async function updateGoalDetails(userId: string, goalId: string, updates: Partial<GoalItem>): Promise<void> {
+  if (!userId) throw new Error("Entre na sua conta para editar uma meta.");
+  if (updates.current !== undefined) throw new Error("Ajuste o saldo da meta usando aporte ou resgate.");
+  const details = Object.fromEntries(Object.entries(updates).filter(([key, value]) => ["title", "category", "target", "deadline", "icon"].includes(key) && value !== undefined));
+  await updateDoc(doc(db, "users", userId, "goals", goalId), details);
+}
 
 function sanitizeData<T>(data: T): T {
   return JSON.parse(JSON.stringify(data));

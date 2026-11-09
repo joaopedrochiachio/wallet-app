@@ -13,6 +13,8 @@ import type {
   AIToneId,
 } from "../../types/index.ts";
 import { redactPersonalData } from "./privacyService.ts";
+import { hasRecordedRecurringOccurrence } from "../utils/recurringOccurrences.ts";
+import { getPendingDueOccurrences } from "../utils/timeProgression.ts";
 import {
   getEffectiveDueDay,
   getPeriodKey,
@@ -25,7 +27,6 @@ import {
   matchesLedgerCard,
   getCardInvoiceDetailsForMonth,
   getCardInvoiceRecurringDetails,
-  getLedgerEntryDate,
 } from "../utils/ledger.ts";
 
 export interface TransactionContextItem {
@@ -546,28 +547,8 @@ export function getProjectionPendingCommitted(projection: MonthProjectionSummary
     safeNumber(projection.recurringDebitTotal) + getProjectionPendingInvoices(projection)));
 }
 
-function hasRealizedRecurringTransaction(
-  item: RecurringItem,
-  periodKey: string,
-  transactions: TransactionContextItem[],
-  expectedType: "receita" | "despesa",
-  cards: CardItem[]
-): boolean {
-  const effective = getEffectiveRecurringItemForPeriod(item, periodKey);
-  const accountCard = cards.find((card) => matchesLedgerCard(card, effective.account, effective.cardId));
-  return transactions.some((tx) => {
-    if (tx.type !== expectedType || tx.kind === "balance_reconciliation" ||
-      tx.kind === "invoice_payment" || tx.kind === "invoice_settlement") return false;
-    const date = getLedgerEntryDate(tx);
-    const txPeriod = tx.periodKey || (date ? getPeriodKey(date.getFullYear(), date.getMonth()) : "");
-    if (txPeriod !== periodKey) return false;
-    if (tx.recurringItemId) return tx.recurringItemId === item.id;
-    const sameAccount = accountCard
-      ? matchesLedgerCard(accountCard, tx.account, tx.cardId)
-      : tx.account?.trim().toLowerCase() === effective.account?.trim().toLowerCase();
-    return sameAccount && Math.abs(tx.amount - effective.amount) < 0.005 &&
-      tx.title?.trim().toLocaleLowerCase("pt-BR") === effective.title?.trim().toLocaleLowerCase("pt-BR");
-  });
+function hasRealizedRecurringTransaction(item: RecurringItem, periodKey: string, transactions: TransactionContextItem[], expectedType: "receita" | "despesa", cards: CardItem[]): boolean {
+  return hasRecordedRecurringOccurrence(item, periodKey, transactions, cards, expectedType);
 }
 
 export function computeFortnightBreakdown(
@@ -640,6 +621,16 @@ export function computeFortnightBreakdown(
         account: effective.account,
       };
     });
+
+  const referenceDate = new Date();
+  if (year === referenceDate.getFullYear() && monthIndex === referenceDate.getMonth()) {
+    const overdue = getPendingDueOccurrences(recurringItems.filter((item) => item.type !== "income" && isChecking(item)), cards, transactions, referenceDate)
+      .filter((occurrence) => occurrence.periodKey < targetPeriodKey);
+    plannedDebits.push(...overdue.map((occurrence) => ({
+      title: `${occurrence.description} (vencido em ${occurrence.periodKey})`, amount: occurrence.amount,
+      dueDay: referenceDate.getDate(), type: "debit" as const, account: occurrence.paymentMethod,
+    })));
+  }
 
   // 3. Faturas de cartões de crédito em aberto para o mês (faturas já pagas não contam como despesa pendente)
   const creditCards = cards.filter((c) => c.type === "credit");
@@ -787,9 +778,12 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
   const pendingDebitTotal = activeRecurringExpenses.filter((item) => !creditCards.some(
     (card) => matchesLedgerCard(card, item.account, item.cardId)
   )).reduce((sum, item) => sum + item.amount, 0);
+  const overdueDebitTotal = getPendingDueOccurrences(recurringItems, cards, transactions, nowRef)
+    .filter((occurrence) => !occurrence.isCredit && occurrence.type === "out" && occurrence.periodKey < currentPeriodKey)
+    .reduce((sum, occurrence) => sum + occurrence.amount, 0);
   const commitmentRatioPercent =
     monthlyIncomeBase > 0
-      ? Math.round(((pendingDebitTotal + currentOpenInvoicesTotal) / monthlyIncomeBase) * 100)
+      ? Math.round(((pendingDebitTotal + overdueDebitTotal + currentOpenInvoicesTotal) / monthlyIncomeBase) * 100)
       : 0;
 
   const isOverLimit = commitmentRatioPercent > maxCommitmentAlertPercent;
@@ -1032,7 +1026,7 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
   const currentCheckingBalance = mainBalance;
   const currentPendingBills = currentProj
     ? getProjectionPendingCommitted(currentProj)
-    : pendingDebitTotal + currentOpenInvoicesTotal;
+    : pendingDebitTotal + overdueDebitTotal + currentOpenInvoicesTotal;
   const currentProjectedFree = currentProj?.projectedFreeBalance ??
     (mainBalance + activeRecurringIncomes.reduce((sum, item) => sum + item.amount, 0) - currentPendingBills);
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useWallet } from "@/context/WalletContext";
 import {
   Laptop,
@@ -45,6 +45,13 @@ export default function GoalsPage() {
   const [goalToDelete, setGoalToDelete] = useState<GoalItem | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isSubmittingMovement, setIsSubmittingMovement] = useState(false);
+  const movementBusyRef = useRef(false);
+  const movementRequestRef = useRef<{ key: string; id: string } | null>(null);
+  const getMovementRequestId = (details: unknown[]) => {
+    const key = JSON.stringify(details);
+    if (movementRequestRef.current?.key !== key) movementRequestRef.current = { key, id: crypto.randomUUID() };
+    return movementRequestRef.current.id;
+  };
 
   // Formulário Editar Meta Existente
   const [editTitle, setEditTitle] = useState("");
@@ -129,8 +136,9 @@ export default function GoalsPage() {
     totalTarget > 0 ? Math.min(100, Math.round((totalCurrent / totalTarget) * 100)) : 0;
 
   // Criação de Nova Meta
-  const handleCreateGoal = (e: React.FormEvent) => {
+  const handleCreateGoal = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (movementBusyRef.current) return;
     const targetValidation = validateCurrency(targetAmount, { min: 10, max: 100_000_000 });
     const initialValidation = validateCurrency(initialAmount, { min: 0, max: 100_000_000, fallback: 0 });
     const sanitizedTitle = sanitizeTextInput(title, 80);
@@ -142,41 +150,53 @@ export default function GoalsPage() {
     const hasInitialValue = initialValidation.value > 0;
     const isDeductFromAccount = hasInitialValue && initialSourceType === "account";
 
-    addGoal(
-      {
-        title: sanitizedTitle,
-        category: sanitizedCategory,
-        current: initialValidation.value,
-        target: targetValidation.value,
-        deadline: sanitizedDeadline,
-      },
-      hasInitialValue
-        ? {
-            type: initialSourceType,
-            cardId: isDeductFromAccount && selectedInitialAccount?.id !== "checking-default" ? selectedInitialAccount?.id : null,
-            accountName: isDeductFromAccount ? selectedInitialAccount?.name : undefined,
-          }
-        : undefined
-    );
-
-    if (isDeductFromAccount) {
-      showToast(
-        `Meta "${sanitizedTitle}" criada com ${formatCurrency(initialValidation.value)} debitados de ${selectedInitialAccount?.name}!`
+    movementBusyRef.current = true;
+    setIsSubmittingMovement(true);
+    try {
+      await addGoal(
+        {
+          title: sanitizedTitle,
+          category: sanitizedCategory,
+          current: initialValidation.value,
+          target: targetValidation.value,
+          deadline: sanitizedDeadline,
+        },
+        hasInitialValue
+          ? {
+              type: initialSourceType,
+              cardId: isDeductFromAccount && selectedInitialAccount?.id !== "checking-default" ? selectedInitialAccount?.id : null,
+              accountName: isDeductFromAccount ? selectedInitialAccount?.name : undefined,
+            }
+          : undefined,
+        getMovementRequestId(["create", sanitizedTitle, sanitizedCategory, sanitizedDeadline, targetValidation.value, initialValidation.value, initialSourceType, selectedInitialAccount?.id])
       );
-    } else {
-      showToast(`Meta "${sanitizedTitle}" criada com sucesso!`);
-    }
 
-    setTitle("");
-    setCategory("");
-    setTargetAmount("");
-    setInitialAmount("");
-    setDeadline("");
-    setInitialSourceType("already_saved");
-    setIsNewGoalModalOpen(false);
+      if (isDeductFromAccount) {
+        showToast(
+          `Meta "${sanitizedTitle}" criada com ${formatCurrency(initialValidation.value)} debitados de ${selectedInitialAccount?.name}!`
+        );
+      } else {
+        showToast(`Meta "${sanitizedTitle}" criada com sucesso!`);
+      }
+
+      setTitle("");
+      setCategory("");
+      setTargetAmount("");
+      setInitialAmount("");
+      setDeadline("");
+      setInitialSourceType("already_saved");
+      setIsNewGoalModalOpen(false);
+      movementRequestRef.current = null;
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Não foi possível salvar a meta. Tente novamente.");
+    } finally {
+      movementBusyRef.current = false;
+      setIsSubmittingMovement(false);
+    }
   };
 
   const handleOpenNewGoal = () => {
+    movementRequestRef.current = null;
     setTitle("");
     setCategory("Segurança Financeira");
     setTargetAmount("");
@@ -217,36 +237,35 @@ export default function GoalsPage() {
     setEditDeadline(goal.deadline || "");
   };
 
-  const handleSaveEditGoal = (e: React.FormEvent) => {
+  const handleSaveEditGoal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingGoal) return;
 
     const targetValidation = validateCurrency(editTargetAmount, { min: 1, max: 100_000_000 });
-    const currentValidation = validateCurrency(editCurrentAmount, {
-      min: 0,
-      max: 100_000_000,
-      fallback: editingGoal.current,
-    });
     const sanitizedTitle = sanitizeTextInput(editTitle, 80);
     const sanitizedCategory = sanitizeTextInput(editCategory, 60) || "Objetivo Geral";
     const sanitizedDeadline = sanitizeTextInput(editDeadline, 50) || "Em andamento";
 
     if (!targetValidation.isValid || !sanitizedTitle) return;
 
-    updateGoal(editingGoal.id, {
-      title: sanitizedTitle,
-      category: sanitizedCategory,
-      target: targetValidation.value,
-      current: currentValidation.value,
-      deadline: sanitizedDeadline,
-    });
+    try {
+      await updateGoal(editingGoal.id, {
+        title: sanitizedTitle,
+        category: sanitizedCategory,
+        target: targetValidation.value,
+        deadline: sanitizedDeadline,
+      });
 
-    showToast(`Meta "${sanitizedTitle}" atualizada com sucesso!`);
-    setEditingGoal(null);
+      showToast(`Meta "${sanitizedTitle}" atualizada com sucesso!`);
+      setEditingGoal(null);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Não foi possível salvar as alterações.");
+    }
   };
 
   // Abrir Modal de Movimentação em Aporte
   const handleOpenContribute = (goal: GoalItem) => {
+    movementRequestRef.current = null;
     setActiveMovementGoal(goal);
     setMovementTab("contribute");
     setMovementAmount("");
@@ -256,6 +275,7 @@ export default function GoalsPage() {
 
   // Abrir Modal de Movimentação em Resgate
   const handleOpenWithdraw = (goal: GoalItem) => {
+    movementRequestRef.current = null;
     setActiveMovementGoal(goal);
     setMovementTab("withdraw");
     setMovementAmount("");
@@ -266,19 +286,20 @@ export default function GoalsPage() {
   // Confirmar Aporte na Meta
   const handleContributeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeMovementGoal || isSubmittingMovement) return;
+    if (!activeMovementGoal || movementBusyRef.current) return;
 
     const contributeValidation = validateCurrency(movementAmount, { min: 0.01, max: 50_000_000 });
     if (!contributeValidation.isValid) return;
 
     setIsSubmittingMovement(true);
+    movementBusyRef.current = true;
     try {
       const isAccount = contributeSourceType === "account";
       await contributeToGoal(activeMovementGoal.id, contributeValidation.value, {
         type: contributeSourceType,
         cardId: isAccount && selectedContributeAccount?.id !== "checking-default" ? selectedContributeAccount?.id : null,
         accountName: isAccount ? selectedContributeAccount?.name : undefined,
-      });
+      }, getMovementRequestId(["contribute", activeMovementGoal.id, contributeValidation.value, contributeSourceType, selectedContributeAccount?.id]));
 
       if (isAccount) {
         showToast(
@@ -292,10 +313,12 @@ export default function GoalsPage() {
 
       setActiveMovementGoal(null);
       setMovementAmount("");
+      movementRequestRef.current = null;
     } catch (err) {
       console.error("Erro ao realizar aporte:", err);
-      showToast("Não foi possível registrar o aporte. Tente novamente.");
+      showToast(err instanceof Error ? err.message : "Não foi possível registrar o aporte. Tente novamente.");
     } finally {
+      movementBusyRef.current = false;
       setIsSubmittingMovement(false);
     }
   };
@@ -303,7 +326,7 @@ export default function GoalsPage() {
   // Confirmar Resgate da Meta
   const handleWithdrawSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeMovementGoal || isSubmittingMovement) return;
+    if (!activeMovementGoal || movementBusyRef.current) return;
 
     const maxAllowed = activeMovementGoal.current;
     if (maxAllowed <= 0) return;
@@ -312,13 +335,14 @@ export default function GoalsPage() {
     if (!withdrawValidation.isValid) return;
 
     setIsSubmittingMovement(true);
+    movementBusyRef.current = true;
     try {
       const isAccount = withdrawDestType === "account";
       await withdrawFromGoal(activeMovementGoal.id, withdrawValidation.value, {
         type: withdrawDestType,
         cardId: isAccount && selectedWithdrawAccount?.id !== "checking-default" ? selectedWithdrawAccount?.id : null,
         accountName: isAccount ? selectedWithdrawAccount?.name : undefined,
-      });
+      }, getMovementRequestId(["withdraw", activeMovementGoal.id, withdrawValidation.value, withdrawDestType, selectedWithdrawAccount?.id]));
 
       if (isAccount) {
         showToast(
@@ -332,10 +356,12 @@ export default function GoalsPage() {
 
       setActiveMovementGoal(null);
       setMovementAmount("");
+      movementRequestRef.current = null;
     } catch (err) {
       console.error("Erro ao realizar resgate:", err);
-      showToast("Não foi possível registrar o resgate. Tente novamente.");
+      showToast(err instanceof Error ? err.message : "Não foi possível registrar o resgate. Tente novamente.");
     } finally {
+      movementBusyRef.current = false;
       setIsSubmittingMovement(false);
     }
   };
@@ -877,9 +903,10 @@ export default function GoalsPage() {
               <div className="pt-2">
                 <button
                   type="submit"
+                  disabled={isSubmittingMovement}
                   className="w-full bg-[#1D1D1F] hover:bg-black text-white font-semibold text-sm py-3.5 rounded-xl transition-all cursor-pointer shadow-xs active:scale-[0.99]"
                 >
-                  Salvar Meta
+                  {isSubmittingMovement ? "Salvando..." : "Salvar Meta"}
                 </button>
               </div>
             </form>
@@ -1426,13 +1453,15 @@ export default function GoalsPage() {
                     type="text"
                     inputMode="decimal"
                     value={editCurrentAmount}
-                    onChange={(e) => setEditCurrentAmount(e.target.value)}
+                    readOnly
+                    aria-describedby="goal-balance-edit-help"
                     placeholder="0,00"
                     className="w-full bg-[#F2F2F7] rounded-xl px-4 py-3 text-sm font-semibold text-[#1D1D1F] outline-none font-mono tabular-nums focus:ring-2 focus:ring-black/10 transition-all"
                   />
                 </div>
               </div>
 
+              <p id="goal-balance-edit-help" className="text-xs text-[#86868B]">Para ajustar o valor guardado, use aporte ou resgate. Assim, o saldo da conta e o histórico continuam corretos.</p>
               <div className="space-y-1">
                 <label className="text-xs font-semibold uppercase tracking-wider text-[#86868B]">
                   Prazo Estimado

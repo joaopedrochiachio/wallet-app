@@ -222,6 +222,7 @@ export interface RecurringOverrideLike {
   dueDay?: number;
   recurrenceType?: "business_day_5" | "fixed_day";
   isDeleted?: boolean;
+  autoConfirm?: boolean;
   [key: string]: unknown;
 }
 
@@ -241,6 +242,7 @@ export function getEffectiveRecurringItemForPeriod<T extends {
     ...item,
     ...(override.title !== undefined ? { title: override.title } : {}),
     ...(override.amount !== undefined ? { amount: override.amount } : {}),
+    ...(override.autoConfirm !== undefined ? { autoConfirm: override.autoConfirm } : {}),
     ...(override.type !== undefined ? { type: override.type } : {}),
     ...(override.account !== undefined ? { account: override.account } : {}),
     ...(override.cardId !== undefined ? { cardId: override.cardId } : {}),
@@ -268,6 +270,7 @@ export function buildForwardRecurringUpdate<
     startYear?: number;
     startMonth?: number;
     overrides?: Record<string, RecurringOverrideLike>;
+    autoConfirm?: boolean;
   },
 >(
   item: T,
@@ -309,6 +312,7 @@ export function buildForwardRecurringUpdate<
       account: effectiveBefore.account,
       cardId: effectiveBefore.cardId ?? null,
       category: effectiveBefore.category,
+      autoConfirm: effectiveBefore.autoConfirm === true,
       ...(effectiveBefore.dueDay !== undefined ? { dueDay: effectiveBefore.dueDay } : {}),
       ...(effectiveBefore.recurrenceType !== undefined
         ? { recurrenceType: effectiveBefore.recurrenceType }

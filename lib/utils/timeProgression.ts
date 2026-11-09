@@ -218,3 +218,25 @@ export function getPendingDueOccurrences(
   // Ordenar cronologicamente pelo vencimento
   return allOccurrences.sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
 }
+
+/** Cobranças no cartão entram na fatura; dinheiro em conta exige confirmação por padrão. */
+export function getAutomaticDueOccurrences(
+  recurringItems: RecurringItem[], cards: CardItem[], existingTransactions: ExistingTransactionRef[],
+  asOfDate: Date = new Date()
+): DueOccurrence[] {
+  return getPendingDueOccurrences(recurringItems, cards, existingTransactions, asOfDate).filter((occurrence) => {
+    const item = recurringItems.find((candidate) => candidate.id === occurrence.recurringItemId);
+    if (item?.manualConfirmationPeriods?.includes(occurrence.periodKey)) return false;
+    if (occurrence.isCredit && occurrence.type === "out") return true;
+    return item && getEffectiveRecurringItemForPeriod(item, occurrence.periodKey).autoConfirm === true;
+  });
+}
+
+export function getRecurringPaymentStatus(
+  item: RecurringItem, year: number, month: number, asOfDate: Date = new Date()
+): "paid" | "overdue" | "due" | "scheduled" {
+  if (item.realizedPeriods?.includes(getPeriodKey(year, month)) || isInstallmentPaidInMonth(item, year, month)) return "paid";
+  const due = getOccurrenceDueDate(item, year, month);
+  const today = createSafeMiddayDate(asOfDate.getFullYear(), asOfDate.getMonth(), asOfDate.getDate());
+  return due < today ? "overdue" : due.getTime() === today.getTime() ? "due" : "scheduled";
+}

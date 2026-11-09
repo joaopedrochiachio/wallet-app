@@ -64,7 +64,8 @@ export function TransactionDetailsSheet({
   const [isSaveConfirmOpen, setIsSaveConfirmOpen] = useState(false);
   const [pendingUpdates, setPendingUpdates] = useState<TransactionUpdateInput | null>(null);
 
-  const canEdit = transaction.kind === "regular" || !transaction.kind;
+  const isGoalMovement = transaction.groupId?.startsWith("goal-");
+  const canEdit = !isGoalMovement && (transaction.kind === "regular" || !transaction.kind);
   const fieldsAreEditable = canEdit && isEditing;
   const categories = type === "receita" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
   const checkingAccounts = cards
@@ -213,7 +214,7 @@ export function TransactionDetailsSheet({
           <form onSubmit={handleSubmit} className="space-y-4 p-6">
             {!canEdit && (
               <div className="rounded-xl border border-amber-200/60 bg-amber-50/70 px-4 py-3 text-xs text-amber-800">
-                Pagamentos de fatura possuem lançamentos vinculados e não podem ser editados diretamente.
+                {isGoalMovement ? "Esta movimentação está vinculada a uma meta. Para ajustar o valor, registre um aporte ou resgate na tela de Metas." : "Pagamentos de fatura possuem lançamentos vinculados e não podem ser editados diretamente."}
               </div>
             )}
 

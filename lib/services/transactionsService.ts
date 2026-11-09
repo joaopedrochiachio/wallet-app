@@ -18,7 +18,9 @@ import {
   updateDoc,
   where,
   writeBatch,
+  runTransaction,
 } from "firebase/firestore";
+import { getEffectiveRecurringItemForPeriod } from "@/lib/utils/dateUtils";
 
 const TRANSACTIONS_COLLECTION = "transactions";
 
@@ -246,42 +248,54 @@ export async function realizePlannedOccurrence(
   const recurringRef = doc(db, "users", userId, "recurring", item.id);
 
   const occurredAt = options?.customDate ?? new Date();
-  const amount = options?.customAmount !== undefined ? options.customAmount : item.amount;
   const formattedDate = `${occurredAt.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}, ${occurredAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
 
-  const batch = writeBatch(db);
-  batch.set(
-    txRef,
-    transactionPayload(
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(periodKey) || Number.isNaN(occurredAt.getTime())) {
+    throw new Error("Confira o valor e a data antes de confirmar.");
+  }
+  await runTransaction(db, async (transaction) => {
+    const existing = await transaction.get(txRef);
+    const recurringSnapshot = await transaction.get(recurringRef);
+    if (!recurringSnapshot.exists()) throw new Error("Este planejamento não está mais disponível.");
+    const recurring = recurringSnapshot.data() as RecurringItem;
+    if (existing.exists() || recurring.realizedPeriods?.includes(periodKey)) return;
+    if (recurring.excludedPeriods?.includes(periodKey) || recurring.overrides?.[periodKey]?.isDeleted) throw new Error("Esta ocorrência foi removida do planejamento.");
+    const effective = getEffectiveRecurringItemForPeriod(recurring, periodKey);
+    const amount = options?.customAmount ?? effective.amount;
+    if (!Number.isFinite(amount) || amount < 0.01) throw new Error("Confira o valor antes de confirmar.");
+    transaction.set(
+      txRef,
+      transactionPayload(
+        {
+          amount,
+          type: effective.type === "income" ? "in" : "out",
+          category: effective.category,
+          description: effective.title,
+          paymentMethod: effective.account,
+          cardId: effective.cardId ?? null,
+          kind: "regular",
+          relatedCardId: null,
+          groupId: null,
+          recurringItemId: item.id,
+          periodKey,
+          date: formattedDate,
+          occurredAt,
+        },
+        userId
+      ),
+      { merge: true }
+    );
+
+    transaction.set(
+      recurringRef,
       {
-        amount,
-        type: item.type === "income" ? "in" : "out",
-        category: item.category,
-        description: item.title,
-        paymentMethod: item.account,
-        cardId: item.cardId ?? null,
-        kind: "regular",
-        relatedCardId: null,
-        groupId: null,
-        recurringItemId: item.id,
-        periodKey,
-        date: formattedDate,
-        occurredAt,
+        realizedPeriods: arrayUnion(periodKey),
+        manualConfirmationPeriods: arrayRemove(periodKey),
       },
-      userId
-    ),
-    { merge: true }
-  );
+      { merge: true }
+    );
 
-  batch.set(
-    recurringRef,
-    {
-      realizedPeriods: arrayUnion(periodKey),
-    },
-    { merge: true }
-  );
-
-  await batch.commit();
+  });
   return txId;
 }
 
@@ -317,6 +331,7 @@ export async function unrealizePlannedOccurrence(
   if (recurringSnapshot.exists()) {
     batch.update(recurringRef, {
       realizedPeriods: arrayRemove(periodKey),
+      manualConfirmationPeriods: arrayUnion(periodKey),
     });
   }
 
@@ -329,6 +344,7 @@ export async function deleteTransactionFromFirestore(
   transaction: Pick<Transaction, "id" | "groupId" | "recurringItemId" | "periodKey">
 ): Promise<void> {
   if (!transaction.id) return;
+  if (transaction.groupId?.startsWith("goal-")) throw new Error("Para ajustar uma movimentação de meta, registre um aporte ou resgate na tela de Metas.");
 
   const batch = writeBatch(db);
   batch.delete(doc(db, "users", userId, TRANSACTIONS_COLLECTION, transaction.id));
@@ -393,6 +409,8 @@ export async function updateTransactionInFirestore(
   transactionId: string,
   input: TransactionUpdateInput
 ): Promise<void> {
+  const existing = await getDoc(doc(db, "users", userId, TRANSACTIONS_COLLECTION, transactionId));
+  if (existing.data()?.groupId?.startsWith("goal-")) throw new Error("Para ajustar uma movimentação de meta, registre um aporte ou resgate na tela de Metas.");
   await updateDoc(doc(db, "users", userId, TRANSACTIONS_COLLECTION, transactionId), {
     amount: Number(input.amount),
     type: input.type === "receita" ? "in" : "out",

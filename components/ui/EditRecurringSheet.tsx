@@ -13,6 +13,7 @@ import type { CardItem, RecurringItem } from "@/types";
 import { EXPENSE_CATEGORIES } from "./AddTransactionSheet";
 import { AppleConfirmModal } from "./AppleConfirmModal";
 import { Portal } from "./Portal";
+import { AutoConfirmToggle } from "./AutoConfirmToggle";
 import {
   sanitizeTextInput,
   validateCurrency,
@@ -91,6 +92,7 @@ function EditRecurringModalInner({
   const [account, setAccount] = useState(initialAccount);
   const [category, setCategory] = useState(initialCategory);
   const [dueDay, setDueDay] = useState(String(initialDueDay));
+  const [autoConfirm, setAutoConfirm] = useState(override?.autoConfirm ?? item.autoConfirm ?? false);
   const [durationMode, setDurationMode] = useState<"continuous" | "installments">(initialDurationMode);
   const [installmentsInput, setInstallmentsInput] = useState(initialInstallments);
   const [scope, setScope] = useState<"all" | "single">("all");
@@ -150,6 +152,7 @@ function EditRecurringModalInner({
       category,
       dueDay: safeDueDay,
       installmentsCount: safeInstallments,
+      autoConfirm,
     };
 
     setIsSaving(true);
@@ -321,6 +324,8 @@ function EditRecurringModalInner({
                 </div>
               </div>
             </div>
+
+            {cards.find((card) => card.name === account || card.id === account)?.type !== "credit" && <AutoConfirmToggle checked={autoConfirm} onChange={setAutoConfirm} isIncome={item.type === "income"} />}
 
             {/* Dia de Vencimento / Cobrança e Tipo de Duração */}
             <div className="space-y-3 p-4 rounded-2xl bg-[#F8F8FA] border border-black/[0.04]">
