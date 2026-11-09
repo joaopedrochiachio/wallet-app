@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import Link from "next/link";
 import {
   Building2,
   ChevronDown,
@@ -13,8 +14,7 @@ import {
 import type { CardItem, TransactionItem } from "@/context/WalletContext";
 import type { TransactionUpdateInput } from "@/lib/services/transactionsService";
 import { formatAccountLabel, matchesLedgerCard } from "@/lib/utils/ledger";
-import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "./AddTransactionSheet";
-import { AppleConfirmModal } from "./AppleConfirmModal";
+import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, normalizeCategory } from "@/lib/utils/categories";
 import { Portal } from "./Portal";
 import { sanitizeTextInput, validateCurrency } from "@/lib/utils/security";
 
@@ -55,18 +55,18 @@ export function TransactionDetailsSheet({
     })
   );
   const [type, setType] = useState<TransactionItem["type"]>(transaction.type);
-  const [category, setCategory] = useState(transaction.category);
+  const [category, setCategory] = useState(normalizeCategory(transaction.category));
   const [account, setAccount] = useState(transaction.account);
   const [dateInput, setDateInput] = useState(toDateInput(transaction));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(initialEditing);
-  const [isSaveConfirmOpen, setIsSaveConfirmOpen] = useState(false);
-  const [pendingUpdates, setPendingUpdates] = useState<TransactionUpdateInput | null>(null);
+  const saveInFlight = useRef(false);
 
   const isGoalMovement = transaction.groupId?.startsWith("goal-");
+  const isInvoicePayment = transaction.kind === "invoice_payment" || transaction.kind === "invoice_settlement";
   const canEdit = !isGoalMovement && (transaction.kind === "regular" || !transaction.kind);
-  const fieldsAreEditable = canEdit && isEditing;
+  const fieldsAreEditable = canEdit && isEditing && !saving;
   const categories = type === "receita" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
   const checkingAccounts = cards
     .filter((card) => card.type === "checking")
@@ -101,18 +101,16 @@ export function TransactionDetailsSheet({
       })
     );
     setType(transaction.type);
-    setCategory(transaction.category);
+    setCategory(normalizeCategory(transaction.category));
     setAccount(transaction.account);
     setDateInput(toDateInput(transaction));
     setError(null);
-    setPendingUpdates(null);
-    setIsSaveConfirmOpen(false);
     setIsEditing(false);
   };
 
-  const handleSubmit = (event: React.FormEvent) => {
+  const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!fieldsAreEditable) return;
+    if (!fieldsAreEditable || saveInFlight.current) return;
 
     const currencyCheck = validateCurrency(amountInput, { min: 0.01, max: 50_000_000 });
     const sanitizedTitle = sanitizeTextInput(title, 100);
@@ -133,7 +131,7 @@ export function TransactionDetailsSheet({
       (card) => card.name === account || card.id === account
     );
 
-    setPendingUpdates({
+    const updates: TransactionUpdateInput = {
       title: sanitizedTitle,
       amount: currencyCheck.value,
       type,
@@ -142,19 +140,12 @@ export function TransactionDetailsSheet({
       cardId: selectedCard?.id || null,
       date: occurredAt.toLocaleDateString("pt-BR"),
       occurredAt,
-    });
-    setError(null);
-    setIsSaveConfirmOpen(true);
-  };
-
-  const handleConfirmSave = async () => {
-    if (!pendingUpdates) return;
-
+    };
+    saveInFlight.current = true;
     setSaving(true);
     setError(null);
     try {
-      await onSave(transaction.id, pendingUpdates);
-      setIsSaveConfirmOpen(false);
+      await onSave(transaction.id, updates);
       onClose();
     } catch (saveError: unknown) {
       setError(
@@ -162,21 +153,20 @@ export function TransactionDetailsSheet({
           ? saveError.message
           : "Não foi possível salvar as alterações."
       );
-      setIsSaveConfirmOpen(false);
     } finally {
+      saveInFlight.current = false;
       setSaving(false);
     }
   };
 
   return (
-    <>
       <Portal>
         <div className="fixed inset-0 z-[100] flex items-end justify-center sm:items-center sm:p-4">
           {/* Backdrop com Blur Suave */}
           <button
             type="button"
             className="fixed inset-0 bg-black/40 backdrop-blur-sm animate-apple-backdrop"
-            onClick={onClose}
+            onClick={() => { if (!saving) onClose(); }}
             aria-label="Fechar detalhes"
           />
 
@@ -204,6 +194,7 @@ export function TransactionDetailsSheet({
             <button
               type="button"
               onClick={onClose}
+              disabled={saving}
               className="flex h-7 w-7 items-center justify-center rounded-full bg-[#F2F2F7] text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#E5E5EA] transition-colors cursor-pointer"
               aria-label="Fechar"
             >
@@ -214,7 +205,10 @@ export function TransactionDetailsSheet({
           <form onSubmit={handleSubmit} className="space-y-4 p-6">
             {!canEdit && (
               <div className="rounded-xl border border-amber-200/60 bg-amber-50/70 px-4 py-3 text-xs text-amber-800">
-                {isGoalMovement ? "Esta movimentação está vinculada a uma meta. Para ajustar o valor, registre um aporte ou resgate na tela de Metas." : "Pagamentos de fatura possuem lançamentos vinculados e não podem ser editados diretamente."}
+                {isGoalMovement ? "Esta movimentação está vinculada a uma meta. Para ajustar o valor, registre um aporte ou resgate na tela de Metas." : isInvoicePayment ? "Pagamentos de fatura possuem lançamentos vinculados e não podem ser editados diretamente." : "Este lançamento registra um ajuste do saldo da conta e não pode ser editado diretamente."}
+                {(isGoalMovement || isInvoicePayment) && <Link href={isGoalMovement ? "/goals" : "/cards"} className="mt-2 block font-semibold underline">
+                  {isGoalMovement ? "Abrir Metas" : "Abrir faturas"}
+                </Link>}
               </div>
             )}
 
@@ -454,21 +448,5 @@ export function TransactionDetailsSheet({
         </div>
       </div>
       </Portal>
-
-      <AppleConfirmModal
-        isOpen={isSaveConfirmOpen}
-        onClose={() => {
-          if (!saving) setIsSaveConfirmOpen(false);
-        }}
-        onConfirm={handleConfirmSave}
-        title="Salvar alterações?"
-        description={`Confirma as alterações em "${title.trim()}"? O saldo e a fatura podem ser recalculados.`}
-        confirmLabel="Confirmar e salvar"
-        cancelLabel="Revisar"
-        variant="primary"
-        iconType="alert"
-        isLoading={saving}
-      />
-    </>
   );
 }

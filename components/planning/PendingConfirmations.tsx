@@ -6,6 +6,7 @@ import { Check, Clock3, Loader2 } from "lucide-react";
 import { useWallet } from "@/context/WalletContext";
 import { getPendingDueOccurrences, isSameOrBeforeCalendarDay } from "@/lib/utils/timeProgression";
 import { getEffectiveRecurringItemForPeriod } from "@/lib/utils/dateUtils";
+import { formatAccountLabel } from "@/lib/utils/ledger";
 
 const money = (value: number) => value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -32,7 +33,7 @@ export function PendingConfirmations() {
           const isIncome = occurrence.type === "in";
           const isOverdue = !isSameOrBeforeCalendarDay(today, occurrence.dueDate);
           return <div key={occurrence.occurrenceId} className="flex flex-wrap items-center justify-between gap-3 py-3">
-            <div className="min-w-0 flex-1"><p className="break-words text-sm font-semibold">{occurrence.description}</p><p className={`mt-1 text-xs ${isOverdue ? "text-rose-600" : "text-amber-700"}`}>{isOverdue ? isIncome ? "Recebimento atrasado" : "Vencido" : "Previsto para hoje"} · {occurrence.dueDate.toLocaleDateString("pt-BR")} · {money(occurrence.amount)}</p></div>
+            <div className="min-w-0 flex-1"><p className="break-words text-sm font-semibold">{occurrence.description}</p><p className={`mt-1 text-xs ${isOverdue ? "text-rose-600" : "text-amber-700"}`}>{isOverdue ? isIncome ? "Recebimento atrasado" : "Vencido" : "Previsto para hoje"} · {occurrence.dueDate.toLocaleDateString("pt-BR")} · {money(occurrence.amount)}</p><p className="mt-1 break-words text-xs text-[#86868B]">{isIncome ? "Receber em" : "Debitar de"}: {formatAccountLabel(cards.find((card) => card.id === occurrence.cardId)?.name || occurrence.paymentMethod)}</p></div>
             <button type="button" disabled={processing !== null} className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[#1D1D1F] px-3.5 py-2 text-xs font-semibold text-white disabled:opacity-50 cursor-pointer" onClick={async () => {
               if (busy.current) return;
               const item = recurringItems.find((candidate) => candidate.id === occurrence.recurringItemId);

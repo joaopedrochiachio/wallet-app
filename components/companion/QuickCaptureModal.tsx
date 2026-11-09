@@ -1,15 +1,14 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useWallet } from "@/context/WalletContext";
 import { parseQuickExpenseText } from "@/lib/services/dailyCompanionService";
 import { AgentAvatar } from "./AgentAvatar";
+import { Portal } from "@/components/ui/Portal";
 import {
-  Sparkles,
   X,
   Send,
   CreditCard,
-  Tag,
   CheckCircle2,
   Utensils,
   Car,
@@ -25,29 +24,34 @@ interface QuickCaptureModalProps {
 }
 
 export function QuickCaptureModal({ isOpen, onClose, onSuccess }: QuickCaptureModalProps) {
-  const { cards, addTransaction, userProfile } = useWallet();
+  const { cards, activeCard, addTransaction, userProfile } = useWallet();
   const [inputText, setInputText] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const saveInFlight = useRef(false);
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
+  if (prevIsOpen !== isOpen) {
+    setPrevIsOpen(isOpen);
+    if (isOpen) { setInputText(""); setJustSaved(false); setError(null); }
+  }
 
   // Cartões disponíveis para o parser
   const cardOptions = useMemo(
-    () => cards.map((c) => ({ id: c.id, name: c.name })),
+    () => cards.map((c) => ({ id: c.id, name: c.name, type: c.type })),
     [cards]
   );
 
   // Parse dinâmico em tempo real conforme digita
-  const parsed = useMemo(() => {
-    return parseQuickExpenseText(inputText, cardOptions, "Débito/Pix");
-  }, [inputText, cardOptions]);
+  const defaultAccount = cards.find((card) => card.id === activeCard?.id)?.name || cards.find((card) => card.type === "checking")?.name || "Débito/Pix";
+  const parsed = useMemo(() => parseQuickExpenseText(inputText, cardOptions, defaultAccount), [inputText, cardOptions, defaultAccount]);
+  const formatMoney = (value: number) => value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-  // Se fechar ou abrir, resetar estados
   useEffect(() => {
-    if (isOpen) {
-      setInputText("");
-      setJustSaved(false);
-    }
-  }, [isOpen]);
+    if (!isOpen || !justSaved) return;
+    const timer = window.setTimeout(onClose, 700);
+    return () => window.clearTimeout(timer);
+  }, [isOpen, justSaved, onClose]);
 
   if (!isOpen) return null;
 
@@ -60,10 +64,13 @@ export function QuickCaptureModal({ isOpen, onClose, onSuccess }: QuickCaptureMo
 
   const handleSave = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (parsed.amount <= 0 || isSubmitting) return;
+    if (parsed.amount <= 0 || parsed.error || isSubmitting || saveInFlight.current) return;
 
+    saveInFlight.current = true;
     setIsSubmitting(true);
+    setError(null);
     try {
+      const now = new Date();
       await addTransaction({
         title: parsed.title,
         amount: parsed.amount,
@@ -71,8 +78,8 @@ export function QuickCaptureModal({ isOpen, onClose, onSuccess }: QuickCaptureMo
         category: parsed.category,
         account: parsed.account,
         cardId: parsed.cardId || null,
-        date: new Date().toISOString().split("T")[0],
-        occurredAt: new Date().toISOString(),
+        date: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`,
+        occurredAt: now.toISOString(),
         isRecurring: Boolean(parsed.installmentsCount && parsed.installmentsCount > 1),
         installmentsCount: parsed.installmentsCount,
       });
@@ -80,13 +87,11 @@ export function QuickCaptureModal({ isOpen, onClose, onSuccess }: QuickCaptureMo
       setJustSaved(true);
       if (onSuccess) onSuccess();
 
-      // Fecha suavemente após a animação de sucesso
-      setTimeout(() => {
-        setIsSubmitting(false);
-        onClose();
-      }, 1000);
     } catch (err) {
       console.error("Erro ao salvar captura rápida:", err);
+      setError(err instanceof Error ? err.message : "Não foi possível salvar. Confira sua conexão e tente novamente.");
+    } finally {
+      saveInFlight.current = false;
       setIsSubmitting(false);
     }
   };
@@ -100,7 +105,8 @@ export function QuickCaptureModal({ isOpen, onClose, onSuccess }: QuickCaptureMo
   ];
 
   return (
-    <div className="fixed inset-0 z-[100] flex sm:items-center items-end justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
+    <Portal>
+    <div role="dialog" aria-modal="true" aria-label="Registrar gasto rápido" className="fixed inset-0 z-[100] flex sm:items-center items-end justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
       <div
         className="w-full max-w-lg rounded-t-[32px] sm:rounded-[32px] bg-white/95 backdrop-blur-2xl border border-black/[0.08] shadow-[0_24px_60px_rgba(0,0,0,0.18)] overflow-hidden flex flex-col relative animate-in slide-in-from-bottom sm:zoom-in-95 duration-200 max-h-[92dvh] pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-0"
         onClick={(e) => e.stopPropagation()}
@@ -137,6 +143,8 @@ export function QuickCaptureModal({ isOpen, onClose, onSuccess }: QuickCaptureMo
           <button
             type="button"
             onClick={onClose}
+            disabled={isSubmitting}
+            aria-label="Fechar captura rápida"
             className="w-8 h-8 rounded-full bg-black/5 hover:bg-black/10 text-[#86868B] hover:text-[#1D1D1F] flex items-center justify-center transition-colors cursor-pointer shrink-0"
           >
             <X size={16} />
@@ -155,7 +163,7 @@ export function QuickCaptureModal({ isOpen, onClose, onSuccess }: QuickCaptureMo
                   Gasto Registrado!
                 </h3>
                 <p className="text-xs text-[#86868B] mt-0.5">
-                  {parsed.title} • R$ {parsed.amount.toFixed(2)} lançado em {parsed.account}.
+                  {parsed.title} • {formatMoney(parsed.amount)} lançado em {parsed.account}.
                 </p>
               </div>
             </div>
@@ -185,7 +193,9 @@ export function QuickCaptureModal({ isOpen, onClose, onSuccess }: QuickCaptureMo
                   <input
                     type="text"
                     value={inputText}
-                    onChange={(e) => setInputText(e.target.value)}
+                    onChange={(e) => { setInputText(e.target.value); setError(null); }}
+                    disabled={isSubmitting}
+                    aria-label="Descreva o gasto"
                     placeholder="Ex: Almoço 38,50 no nubank ou Uber 22"
                     autoFocus
                     className="w-full text-base sm:text-lg font-medium px-4 py-3 sm:py-3.5 rounded-2xl bg-[#F2F2F7] border border-black/5 focus:bg-white focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 outline-none transition-all placeholder:text-[#A1A1A6]"
@@ -205,14 +215,14 @@ export function QuickCaptureModal({ isOpen, onClose, onSuccess }: QuickCaptureMo
                 <div className="p-3.5 rounded-2xl bg-[#FAFAFC] border border-black/[0.04] space-y-2 text-xs">
                   <div className="flex items-center justify-between text-[#86868B] text-[11px] font-semibold uppercase tracking-wider">
                     <span>O que o assistente entendeu:</span>
-                    {parsed.amount > 0 && (
+                    {parsed.amount > 0 && !parsed.error && (
                       <span className="text-emerald-600 font-bold">✓ Pronto para salvar</span>
                     )}
                   </div>
 
                   <div className="flex items-baseline justify-between pt-0.5">
                     <span className="text-xl sm:text-2xl font-bold font-mono text-[#1D1D1F] tabular-nums">
-                      {parsed.amount > 0 ? `R$ ${parsed.amount.toFixed(2)}` : "R$ 0,00"}
+                      {formatMoney(parsed.amount)}
                     </span>
                     <span className="text-xs font-semibold text-[#86868B] truncate max-w-[150px]">
                       {parsed.title}
@@ -230,18 +240,19 @@ export function QuickCaptureModal({ isOpen, onClose, onSuccess }: QuickCaptureMo
                     </span>
                     {parsed.installmentsCount && parsed.installmentsCount > 1 && (
                       <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-indigo-50 border border-indigo-200/70 text-indigo-700 font-mono tabular-nums">
-                        {parsed.installmentsCount}x de R$ {(parsed.amount / parsed.installmentsCount).toFixed(2)}
+                        {parsed.installmentsCount}x de {formatMoney(parsed.amount / parsed.installmentsCount)}
                       </span>
                     )}
                   </div>
                 </div>
 
+                {(parsed.error || error) && <p role="alert" className="text-xs text-rose-700">{parsed.error || error}</p>}
                 {/* Botão de Envio */}
                 <button
                   type="submit"
-                  disabled={parsed.amount <= 0 || isSubmitting}
+                  disabled={parsed.amount <= 0 || Boolean(parsed.error) || isSubmitting}
                   className={`w-full py-3.5 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 transition-all cursor-pointer min-h-[48px] ${
-                    parsed.amount > 0 && !isSubmitting
+                    parsed.amount > 0 && !parsed.error && !isSubmitting
                       ? "bg-[#1D1D1F] hover:bg-black text-white shadow-md active:scale-[0.99]"
                       : "bg-[#E5E5EA] text-[#86868B] cursor-not-allowed"
                   }`}
@@ -251,7 +262,7 @@ export function QuickCaptureModal({ isOpen, onClose, onSuccess }: QuickCaptureMo
                   ) : (
                     <>
                       <Send size={15} />
-                      <span>Confirmar Registro • R$ {parsed.amount.toFixed(2)}</span>
+                      <span>Salvar gasto • {formatMoney(parsed.amount)}</span>
                     </>
                   )}
                 </button>
@@ -261,5 +272,6 @@ export function QuickCaptureModal({ isOpen, onClose, onSuccess }: QuickCaptureMo
         </div>
       </div>
     </div>
+    </Portal>
   );
 }

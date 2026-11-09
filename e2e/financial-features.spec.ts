@@ -76,6 +76,7 @@ for (const width of [320, 390, 1280]) {
 test("conta vencida só altera o saldo quando o usuário confirma", async ({ page }) => {
   await open(page);
   await expect(page.getByTestId("balances")).toHaveText("1000");
+  await expect(page.getByTestId("pending-confirmations").getByText("Debitar de: Conta", { exact: true })).toBeVisible();
   await page.getByTestId("pending-confirmations").getByRole("button", { name: "Paguei", exact: true }).click();
   await expect(page.getByTestId("balances")).toHaveText("500");
   await expect(page.getByTestId("pending-confirmations").getByRole("button", { name: "Paguei", exact: true })).toHaveCount(0);

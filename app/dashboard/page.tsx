@@ -582,6 +582,8 @@ export default function DashboardPage() {
         isOpen={isSheetOpen}
         onClose={() => setIsSheetOpen(false)}
         accounts={accountOptions}
+        initialAccount={activeWalletCard?.title}
+        initialType="despesa"
         onAdd={addTransaction}
       />
 

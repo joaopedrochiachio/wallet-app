@@ -1,7 +1,8 @@
 import type { CategoryBudget } from "../../types/index.ts";
 import { getLedgerEntryDate, type LedgerEntry } from "./ledger.ts";
+import { normalizeCategory } from "./categories.ts";
 
-const categoryKey = (category: string) => category.trim().toLocaleLowerCase("pt-BR");
+const categoryKey = (category: string) => normalizeCategory(category).toLocaleLowerCase("pt-BR");
 
 export function validateCategoryBudgets(budgets: CategoryBudget[]): CategoryBudget[] {
   if (!Array.isArray(budgets) || budgets.length > 50) throw new Error("Você pode configurar até 50 categorias.");

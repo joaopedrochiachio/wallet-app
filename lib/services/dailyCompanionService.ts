@@ -22,6 +22,7 @@ import {
   getPeriodKey,
 } from "../utils/dateUtils.ts";
 import { getLedgerEntryDate } from "../utils/ledger.ts";
+import { normalizeCategory } from "../utils/categories.ts";
 
 export interface DailySpendMetric {
   safeDailyAllowance: number;
@@ -52,6 +53,7 @@ export interface QuickExpenseParseResult {
   cardId?: string | null;
   installmentsCount?: number;
   confidence: number;
+  error?: string;
 }
 
 export interface PurchaseSimulationVerdict {
@@ -145,7 +147,7 @@ export function calculateDailySafeSpend(params: {
  */
 export function parseQuickExpenseText(
   rawText: string,
-  availableCards: Array<{ id: string; name: string }> = [],
+  availableCards: Array<{ id: string; name: string; type?: string }> = [],
   defaultAccount = "Débito/Pix"
 ): QuickExpenseParseResult {
   const cleaned = (rawText || "").trim();
@@ -159,71 +161,71 @@ export function parseQuickExpenseText(
     };
   }
 
-  // 0. Detecta menção a parcelamento ("em 3x", "3x", "dividido em 3 vezes") antes de extrair o valor
+  let error: string | undefined;
   let installmentsCount: number | undefined;
   let textForAmount = cleaned;
   const installmentMatch = cleaned.match(
-    /\b(?:em\s+|dividid[oa]\s+em\s+|parcelad[oa]\s+em\s+)?(\d{1,2})\s*(?:x|vezes|parcelas)\b/i
+    /\b(?:dividid[oa]\s+em\s+|parcelad[oa]\s+em\s+|em\s+)?(\d+)\s*(?:x|vezes|parcelas)\b/i
   );
   if (installmentMatch) {
     const parsedInst = parseInt(installmentMatch[1], 10);
-    if (parsedInst >= 2 && parsedInst <= 72) {
-      installmentsCount = parsedInst;
-      textForAmount = cleaned.replace(installmentMatch[0], " ").trim();
-    }
+    if (parsedInst >= 2 && parsedInst <= 360) installmentsCount = parsedInst;
+    else if (parsedInst !== 1) error = "Informe entre 2 e 360 parcelas.";
+    textForAmount = cleaned.replace(installmentMatch[0], " ").trim();
   }
 
-  // Regex para capturar valores monetários: "R$ 45", "45,90", "45.90", "45"
-  const amountMatch = textForAmount.match(/(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)/i);
-  let amount = 0;
-  if (amountMatch) {
-    const rawVal = amountMatch[1].replace(",", ".");
-    amount = parseFloat(rawVal) || 0;
-  }
+  const creditRequested = /\b(cr[eé]dito|cart[aã]o)\b/i.test(textForAmount);
+  const debitRequested = /\b(pix|d[eé]bito)\b/i.test(textForAmount);
+  const eligibleCards = availableCards.filter((card) =>
+    creditRequested ? card.type !== "checking" : debitRequested ? card.type === "checking" : true
+  );
+  const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const namePattern = (name: string) => new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegex(name)}(?![\\p{L}\\p{N}])`, "iu");
+  const namedCards = availableCards.filter((card) => card.name.trim() && namePattern(card.name).test(textForAmount))
+    .sort((a, b) => b.name.length - a.name.length);
+  const namedCard = namedCards.find((card) => eligibleCards.includes(card));
+  const defaultCard = eligibleCards.find((card) => card.name === defaultAccount || card.id === defaultAccount);
+  const chosenCard = namedCard || (creditRequested || debitRequested ? defaultCard || eligibleCards[0] : defaultCard);
 
-  // Remove o trecho numérico para obter as palavras-chave
-  let textWithoutAmount = textForAmount;
-  if (amountMatch) {
-    textWithoutAmount = textForAmount.replace(amountMatch[0], "").trim();
-  }
-
-  // Detecta menção a cartão/conta
   let chosenAccount = defaultAccount;
   let chosenCardId: string | null = null;
-  const lowerWithoutAmount = textWithoutAmount.toLowerCase();
-
-  for (const card of availableCards) {
-    if (lowerWithoutAmount.includes(card.name.toLowerCase())) {
-      chosenAccount = card.name;
-      chosenCardId = card.id;
-      // remove o nome do cartão da descrição para ficar limpo
-      const cardRegex = new RegExp(`\\b(no\\s+|no\\s+cartão\\s+|cartão\\s+)?${card.name}\\b`, "i");
-      textWithoutAmount = textWithoutAmount.replace(cardRegex, "").trim();
-      break;
-    }
-  }
-
-  // Se mencionou "crédito" mas sem nome específico e há cartões
-  if (!chosenCardId && (lowerWithoutAmount.includes("crédito") || lowerWithoutAmount.includes("cartão"))) {
-    if (availableCards.length > 0) {
-      chosenAccount = availableCards[0].name;
-      chosenCardId = availableCards[0].id;
-    }
-    textWithoutAmount = textWithoutAmount.replace(/\b(no\s+)?(crédito|cartão)\b/i, "").trim();
-  }
-
-  // Se mencionou "pix" ou "débito"
-  if (lowerWithoutAmount.includes("pix") || lowerWithoutAmount.includes("débito")) {
+  if (chosenCard) {
+    chosenAccount = chosenCard.name;
+    chosenCardId = chosenCard.id;
+  } else if (debitRequested) {
     chosenAccount = "Débito/Pix";
-    chosenCardId = null;
-    textWithoutAmount = textWithoutAmount.replace(/\b(no\s+)?(pix|débito)\b/i, "").trim();
   }
+  if (creditRequested && debitRequested) error = "Escolha crédito ou Pix/débito para este gasto.";
+  else if (namedCards.length && !namedCard) error = "A conta informada não corresponde à forma de pagamento. Escolha outra conta ou cartão.";
+  else if (creditRequested && !chosenCard) error = "Cadastre ou informe um cartão de crédito para este gasto.";
+  if (installmentsCount && (!chosenCard || chosenCard.type === "checking")) {
+    error = "Informe um cartão de crédito para a compra parcelada.";
+  }
+
+  // Remove nomes como C6 antes de procurar números; R$ tem precedência sobre números da descrição.
+  if (namedCard) textForAmount = textForAmount.replace(namePattern(namedCard.name), " ");
+  const numbers = [...textForAmount.matchAll(/(?<![\p{L}\p{N}.,])(?:r\$\s*)?(-?\d[\d.,]*)(?![\p{L}\p{N}])/giu)];
+  const amountMatch = numbers.find((match) => /^r\$/i.test(match[0])) || numbers.at(-1);
+  let amount = 0;
+  if (amountMatch) {
+    const value = amountMatch[1];
+    if (/^\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?$/.test(value)) {
+      amount = Number(value.replace(/\./g, "").replace(",", "."));
+    } else if (/^\d+(?:[.,]\d{1,2})?$/.test(value)) {
+      amount = Number(value.replace(",", "."));
+    } else error = "Confira o valor. Exemplo: R$ 1.234,56.";
+  }
+  if (!Number.isFinite(amount) || amount > 50_000_000) { amount = 0; error = "Informe um valor de até R$ 50.000.000,00."; }
+  let textWithoutAmount = amountMatch
+    ? textForAmount.slice(0, amountMatch.index) + textForAmount.slice(amountMatch.index! + amountMatch[0].length)
+    : textForAmount;
+  textWithoutAmount = textWithoutAmount.replace(/\b(?:(?:no|na|com|em)\s+)?(?:cr[eé]dito|cart[aã]o|pix|d[eé]bito)\b/gi, " ");
 
   // Limpeza de preposições sobrando: "em", "no", "na", "de"
   let title = textWithoutAmount
     .replace(/^(\s*de|\s*no|\s*na|\s*em|\s*para)+\s+/i, "")
     .replace(/\s+(\s*de|\s*no|\s*na|\s*em|\s*para)+\s*$/i, "")
-    .trim();
+    .replace(/\s+/g, " ").trim();
 
   if (!title) {
     title = "Gasto rápido";
@@ -236,7 +238,11 @@ export function parseQuickExpenseText(
   const lowerTitle = title.toLowerCase();
   let category = "Outros";
 
-  if (
+  if (lowerTitle.includes("mercado livre")) {
+    category = "Compras";
+  } else if (/\b(mercado|supermercado|hortifruti)\b/.test(lowerTitle)) {
+    category = "Supermercado";
+  } else if (
     lowerTitle.includes("almoço") ||
     lowerTitle.includes("jantar") ||
     lowerTitle.includes("comida") ||
@@ -308,11 +314,12 @@ export function parseQuickExpenseText(
   return {
     title,
     amount,
-    category,
+    category: normalizeCategory(category),
     account: chosenAccount,
     cardId: chosenCardId,
     ...(installmentsCount ? { installmentsCount } : {}),
     confidence,
+    ...(error ? { error } : {}),
   };
 }
 

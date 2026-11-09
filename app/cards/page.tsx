@@ -99,6 +99,7 @@ export default function CardsPage() {
     val.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const creditCards = cards.filter((c) => c.type === "credit");
+  const invoicePaymentAccount = cards.find((card) => card.type === "checking");
 
   // Competência padrão da fatura aberta (ou fechada aguardando pagamento no mês atual)
   const defaultReferenceDueDate = useMemo(() => {
@@ -270,12 +271,12 @@ export default function CardsPage() {
       await payInvoice(cardId, amount, periodKey || selectedMonth.periodKey);
       setConfirmPayModal(null);
       setPaymentSuccessMessage(
-        `Fatura do ${cardName} (${monthName}) paga e debitada da conta como planejado!`
+        `Fatura do ${cardName} (${monthName}) marcada como paga. Saída registrada em ${invoicePaymentAccount?.name}.`
       );
       setTimeout(() => setPaymentSuccessMessage(null), 4000);
     } catch (error) {
       setPaymentErrorMessage(
-        error instanceof Error ? error.message : "Não foi possível pagar a fatura."
+        error instanceof Error ? error.message : "Não foi possível registrar o pagamento da fatura."
       );
       setTimeout(() => setPaymentErrorMessage(null), 5000);
     } finally {
@@ -430,8 +431,8 @@ export default function CardsPage() {
           </h1>
         </div>
 
-        <div className="flex items-center gap-3 self-start sm:self-auto">
-          <div className="flex items-center gap-2 bg-white px-3.5 py-2 rounded-full border border-black/[0.04] shadow-xs">
+        <div className="flex max-w-full flex-wrap items-center gap-2 sm:gap-3 self-start sm:self-auto">
+          <div className="flex items-center gap-2 whitespace-nowrap bg-white px-3.5 py-2 rounded-full border border-black/[0.04] shadow-xs">
             <span className="text-xs text-[#86868B]">Saldo Disponível:</span>
             <span className="text-xs font-semibold text-[#1D1D1F] font-mono tabular-nums">
               R$ {formatCurrency(mainBalance)}
@@ -446,7 +447,7 @@ export default function CardsPage() {
             className="bg-white hover:bg-black/5 active:scale-[0.98] text-[#1D1D1F] border border-black/[0.08] text-xs font-semibold px-3.5 py-2 rounded-full transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
           >
             <Plus strokeWidth={2} size={15} />
-            <span>Nova Compra</span>
+            <span className="whitespace-nowrap">Nova Compra</span>
           </button>
 
           <button
@@ -454,7 +455,7 @@ export default function CardsPage() {
             className="bg-[#1D1D1F] hover:bg-black active:scale-[0.98] text-white text-xs font-semibold px-4 py-2 rounded-full transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
           >
             <Plus strokeWidth={2} size={15} />
-            <span>Novo Cartão</span>
+            <span className="whitespace-nowrap">Novo Cartão</span>
           </button>
         </div>
       </header>
@@ -760,7 +761,7 @@ export default function CardsPage() {
                               title={`Marcar fatura de ${details.dueMonthName} do ${card.name} como paga e debitar da Conta Principal`}
                             >
                               <Zap size={12} className="text-amber-400 fill-amber-400 shrink-0" />
-                              <span>{details.isFutureInvoice ? "Adiantar Fatura" : "Paguei a fatura"}</span>
+                              <span>Marcar como paga</span>
                             </button>
                           ) : details.paidAmount > 0 ? (
                             <button
@@ -1371,11 +1372,9 @@ export default function CardsPage() {
             setPaymentSuccessMessage("Lançamento atualizado com sucesso!");
             setTimeout(() => setPaymentSuccessMessage(null), 4000);
           }}
-          onDelete={async (tx) => {
-            await deleteTransaction(tx.id);
+          onDelete={(tx) => {
             setEditingTransaction(null);
-            setPaymentSuccessMessage("Lançamento excluído com sucesso!");
-            setTimeout(() => setPaymentSuccessMessage(null), 4000);
+            setTxToDelete(tx);
           }}
         />
       )}
@@ -1386,9 +1385,9 @@ export default function CardsPage() {
         onClose={() => setConfirmPayModal(null)}
         onConfirm={handleExecutePayInvoice}
         isLoading={isPayingInvoice}
-        title="Confirmar Pagamento de Fatura"
-        description={`Deseja debitar R$ ${formatCurrency(confirmPayModal?.amount || 0)} do seu saldo disponível (R$ ${formatCurrency(mainBalance)}) para quitar a fatura de ${confirmPayModal?.monthName} do cartão ${confirmPayModal?.cardName}?`}
-        confirmLabel="Pagar com W Pay"
+        title="Marcar fatura como paga"
+        description={`Confirme somente se você já pagou a fatura de ${confirmPayModal?.monthName} do cartão ${confirmPayModal?.cardName}. Será registrada uma saída de R$ ${formatCurrency(confirmPayModal?.amount || 0)} na conta ${invoicePaymentAccount?.name || "principal"} (saldo atual: R$ ${formatCurrency(invoicePaymentAccount?.balance || 0)}). O pagamento ao banco é feito por você.`}
+        confirmLabel="Marcar como paga"
         cancelLabel="Cancelar"
         variant="primary"
         iconType="payment"

@@ -13,6 +13,13 @@ const card = { id: "credit", name: "Cartão", type: "credit", limit: 5000, spent
 const now = new Date(2026, 10, 9, 12);
 const bill = { id: "bill", title: "Aluguel", amount: 500, account: account.name, cardId: account.id, category: "Moradia", type: "expense", dueDay: 5, startYear: 2026, startMonth: 10, active: true };
 
+test("orçamento inclui categorias antigas da captura rápida junto às categorias do formulário", () => {
+  const budget = { id: "food", category: "Alimentação & Delivery", amount: 500, alertPercent: 80 };
+  const entries = [{ amount: 35, type: "despesa", category: "Alimentação", occurredAt: now.toISOString() }, { amount: 25, type: "despesa", category: budget.category, occurredAt: now.toISOString() }];
+  assert.equal(getCategoryBudgetProgress([budget], entries, 2026, 10)[0].spent, 60);
+  assert.throws(() => validateCategoryBudgets([budget, { ...budget, id: "legacy", category: "Alimentação" }]));
+});
+
 test("chegar ao vencimento mantém conta e salário pendentes sem alterar o saldo", () => {
   const items = [bill, { ...bill, id: "salary", type: "income", amount: 3000 }];
   assert.equal(getPendingDueOccurrences(items, [account], [], now).length, 2);

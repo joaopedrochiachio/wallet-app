@@ -18,12 +18,16 @@ import { RecurrenceType } from "@/types";
 import { Portal } from "./Portal";
 import { AutoConfirmToggle } from "./AutoConfirmToggle";
 import { getCategoryBudgetProgress } from "@/lib/utils/categoryBudgets";
+import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/utils/categories";
+import { useCalendarDay } from "@/lib/hooks/useCalendarDay";
 import {
   sanitizeTextInput,
   validateCurrency,
   validateDayOfMonth,
   validateInstallmentsCount,
 } from "@/lib/utils/security";
+
+export { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/utils/categories";
 
 export interface AddTransactionSheetProps {
   isOpen: boolean;
@@ -49,30 +53,6 @@ export interface AddTransactionSheetProps {
   }) => void | Promise<void>;
 }
 
-export const EXPENSE_CATEGORIES = [
-  "Alimentação & Delivery",
-  "Supermercado",
-  "Transporte & Combustível",
-  "Moradia & Contas",
-  "Assinaturas & Lazer",
-  "Saúde & Farmácia",
-  "Compras & Roupas",
-  "Educação",
-  "Investimentos & Metas",
-  "Outros",
-];
-
-export const INCOME_CATEGORIES = [
-  "Salário / Pró-labore",
-  "Freelance & Projetos",
-  "Rendimentos & Dividendos",
-  "Resgate de Metas & Investimentos",
-  "Venda & Desapego",
-  "Reembolso & Cashback",
-  "Bônus & 13º",
-  "Outros",
-];
-
 const DEFAULT_ACCOUNTS = ["Débito/Pix"];
 
 const formatCurrency = (value: number) =>
@@ -88,6 +68,13 @@ function formatDateToInput(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+function resolveDateInput(preset: "today" | "yesterday" | "custom", customDate: string): string {
+  if (preset === "custom") return customDate;
+  const date = new Date();
+  if (preset === "yesterday") date.setDate(date.getDate() - 1);
+  return formatDateToInput(date);
+}
+
 export function AddTransactionSheet({
   isOpen,
   onClose,
@@ -101,7 +88,7 @@ export function AddTransactionSheet({
   const [amountInput, setAmountInput] = useState("");
   const [title, setTitle] = useState("");
 
-  const [category, setCategory] = useState(EXPENSE_CATEGORIES[0]);
+  const [category, setCategory] = useState(initialType === "receita" ? INCOME_CATEGORIES[0] : EXPENSE_CATEGORIES[0]);
   const [account, setAccount] = useState(initialAccount || accounts[0] || "Débito/Pix");
   const [dateInput, setDateInput] = useState(() => formatDateToInput(new Date()));
   const [datePreset, setDatePreset] = useState<"today" | "yesterday" | "custom">("today");
@@ -128,6 +115,7 @@ export function AddTransactionSheet({
       if (initialAccount) setAccount(initialAccount);
       if (initialType) {
         setType(initialType);
+        if (initialType !== type) setCategory(initialType === "receita" ? INCOME_CATEGORIES[0] : EXPENSE_CATEGORIES[0]);
         setRecurrenceType(initialType === "receita" ? "business_day_5" : "fixed_day");
       }
       const todayDay = new Date().getDate();
@@ -136,6 +124,8 @@ export function AddTransactionSheet({
     }
   }
 
+  useCalendarDay();
+  const effectiveDateInput = resolveDateInput(datePreset, dateInput);
   const now = new Date();
   const currentMonthIndex = now.getMonth();
   const currentYear = now.getFullYear();
@@ -184,7 +174,7 @@ export function AddTransactionSheet({
   const paidInstallmentsCount = isSelectedAccountCreditCard && isInstallmentModeActive
     ? Math.min(installmentsCount, Math.max(0, Math.trunc(Number(paidInstallmentsInput) || 0)))
     : 0;
-  const [purchaseYear, purchaseMonth, purchaseDay] = dateInput.split("-").map(Number);
+  const [purchaseYear, purchaseMonth, purchaseDay] = effectiveDateInput.split("-").map(Number);
   const purchaseDate = purchaseYear && purchaseMonth && purchaseDay
     ? new Date(purchaseYear, purchaseMonth - 1, purchaseDay, 12)
     : now;
@@ -226,7 +216,7 @@ export function AddTransactionSheet({
     try {
       const txDescription = sanitizedTitle || sanitizedCategory;
 
-      const [y, m, d] = dateInput.split("-").map(Number);
+      const [y, m, d] = resolveDateInput(datePreset, dateInput).split("-").map(Number);
       const chosenDate = (y && m && d) ? new Date(y, m - 1, d, 12, 0, 0) : new Date();
       const isToday =
         chosenDate.getFullYear() === now.getFullYear() &&
@@ -490,7 +480,11 @@ export function AddTransactionSheet({
 
           {/* 4.1 PARCELAMENTO DIRETO NO CARTÃO DE CRÉDITO */}
           {isSelectedAccountCreditCard && (
-            <div className="rounded-2xl border border-indigo-200/70 bg-indigo-50/40 p-3.5 sm:p-4 space-y-3 animate-in fade-in duration-200">
+            <details className="group rounded-2xl border border-indigo-200/70 bg-indigo-50/40 p-3.5 sm:p-4">
+              <summary className="cursor-pointer text-xs font-semibold text-indigo-950">
+                {creditPurchaseMode === "installments" ? `Compra em ${installmentsCount}x` : creditPurchaseMode === "subscription" ? "Assinatura mensal" : "À vista · Parcelar ou repetir"}
+              </summary>
+            <div className="mt-3 space-y-3 animate-in fade-in duration-200">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-indigo-950 flex items-center gap-1.5">
                   <CreditCard size={13} strokeWidth={2} className="text-indigo-700" />
@@ -690,6 +684,7 @@ export function AddTransactionSheet({
                 </div>
               )}
             </div>
+            </details>
           )}
 
           {/* 5. DESCRIÇÃO E CATEGORIA (Campos Suaves e Integrados) */}
@@ -1201,7 +1196,7 @@ export function AddTransactionSheet({
                 <div className="flex items-center gap-2">
                   <Check size={16} strokeWidth={2.5} />
                   <span>
-                    {type === "receita" ? "Confirmar Recebimento" : "Confirmar Pagamento"}
+                    {type === "receita" ? "Salvar recebimento" : "Salvar gasto"}
                   </span>
                 </div>
               )}

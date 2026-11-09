@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { TransactionItem, CardItem, useWallet } from "@/context/WalletContext";
 import { AddTransactionSheet } from "@/components/ui/AddTransactionSheet";
 import { TransactionDetailsSheet } from "@/components/ui/TransactionDetailsSheet";
@@ -144,6 +145,9 @@ function TransactionRow({
   onDelete: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const isGoalMovement = item.groupId?.startsWith("goal-");
+  const isInvoicePayment = item.kind === "invoice_payment" || item.kind === "invoice_settlement";
+  const canEdit = !isGoalMovement && (!item.kind || item.kind === "regular");
   const txDate = getTransactionDate(item);
   const timeStr = formatTimeOrDate(txDate);
   const isIncome = item.type === "receita";
@@ -216,7 +220,10 @@ function TransactionRow({
                 onClick={() => setMenuOpen(false)}
               />
               <div className="absolute right-0 top-full mt-1 w-36 bg-white/95 backdrop-blur-xl border border-black/[0.08] rounded-xl shadow-[0_8px_24px_rgba(0,0,0,0.12)] p-1 z-50 animate-in fade-in zoom-in-95 duration-100">
-                <button
+                {isGoalMovement || isInvoicePayment ? <Link href={isGoalMovement ? "/goals" : "/cards"} className="block rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#1D1D1F] hover:bg-[#F2F2F7]">
+                  {isGoalMovement ? "Abrir Metas" : "Abrir faturas"}
+                </Link> : <>
+                {canEdit && <button
                   type="button"
                   onClick={() => {
                     setMenuOpen(false);
@@ -226,7 +233,7 @@ function TransactionRow({
                 >
                   <Pencil size={12} strokeWidth={1.75} className="text-[#86868B]" />
                   <span>Editar</span>
-                </button>
+                </button>}
                 <button
                   type="button"
                   onClick={() => {
@@ -238,6 +245,7 @@ function TransactionRow({
                   <Trash2 size={12} strokeWidth={1.75} className="text-rose-500" />
                   <span>Excluir</span>
                 </button>
+                </>}
               </div>
             </>
           )}
@@ -299,12 +307,14 @@ export default function TransactionsPage() {
   const [selectedTransaction, setSelectedTransaction] =
     useState<TransactionItem | null>(null);
   const [openTransactionInEditMode, setOpenTransactionInEditMode] = useState(false);
+  const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
 
   const openTransactionDetails = (
     transaction: TransactionItem,
     editMode = false
   ) => {
     setOpenTransactionInEditMode(editMode);
+    setSaveFeedback(null);
     setSelectedTransaction(transaction);
   };
 
@@ -399,6 +409,7 @@ export default function TransactionsPage() {
 
   return (
     <div className="min-h-full bg-[#F2F2F7] p-4 sm:p-6 md:p-10 text-[#1D1D1F] font-sans space-y-6 animate-in fade-in duration-500">
+      {saveFeedback && <p role="status" className="mx-auto max-w-4xl text-sm text-emerald-700">{saveFeedback}</p>}
       {/* 1. CABEÇALHO (Eyebrow, Título Dominante e Controles macOS) */}
       <header className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-4 max-w-4xl mx-auto pt-2 md:pt-0">
         <div>
@@ -663,7 +674,10 @@ export default function TransactionsPage() {
             setSelectedTransaction(null);
             setOpenTransactionInEditMode(false);
           }}
-          onSave={updateTransaction}
+          onSave={async (id, updates) => {
+            await updateTransaction(id, updates);
+            setSaveFeedback("Lançamento atualizado.");
+          }}
           onDelete={(tx) => {
             setSelectedTransaction(null);
             setTxToDelete(tx);

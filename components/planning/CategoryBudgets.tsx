@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useCalendarDay } from "@/lib/hooks/useCalendarDay";
 import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2, Wallet } from "lucide-react";
 import { useWallet } from "@/context/WalletContext";
-import { EXPENSE_CATEGORIES } from "@/components/ui/AddTransactionSheet";
+import { EXPENSE_CATEGORIES, normalizeCategory } from "@/lib/utils/categories";
 import { getCategoryBudgetProgress } from "@/lib/utils/categoryBudgets";
 import { validateCurrency } from "@/lib/utils/security";
 import type { CategoryBudget } from "@/types";
@@ -25,12 +25,12 @@ export function CategoryBudgets() {
   const [alertPercent, setAlertPercent] = useState("80");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const categories = Array.from(new Set([...EXPENSE_CATEGORIES, ...transactions.filter((tx) => tx.type === "despesa").map((tx) => tx.category), ...budgets.map((budget) => budget.category)]));
+  const categories = Array.from(new Set([...EXPENSE_CATEGORIES, ...transactions.filter((tx) => tx.type === "despesa").map((tx) => normalizeCategory(tx.category)), ...budgets.map((budget) => normalizeCategory(budget.category))]));
   const alerts = progress.filter((budget) => budget.status !== "normal");
 
   const openForm = (budget?: CategoryBudget) => {
     setEditingId(budget?.id || null);
-    setCategory(budget?.category || categories.find((name) => !budgets.some((item) => item.category === name)) || categories[0]);
+    setCategory(budget ? normalizeCategory(budget.category) : categories.find((name) => !budgets.some((item) => normalizeCategory(item.category) === name)) || categories[0]);
     setAmount(budget ? budget.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : "");
     setAlertPercent(String(budget?.alertPercent ?? 80));
     setError(null);
@@ -69,7 +69,7 @@ export function CategoryBudgets() {
           <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_7rem]">
             <label className="min-w-0 space-y-1 text-xs font-medium text-[#6E6E73]">Categoria
               <select aria-label="Categoria do orçamento" value={category} onChange={(event) => setCategory(event.target.value)} disabled={isSaving} className="block w-full min-w-0 rounded-xl border border-black/10 bg-white px-3 py-2.5 text-sm text-[#1D1D1F]">
-                {categories.map((name) => <option key={name} value={name} disabled={budgets.some((budget) => budget.category === name && budget.id !== editingId)}>{name}</option>)}
+                {categories.map((name) => <option key={name} value={name} disabled={budgets.some((budget) => normalizeCategory(budget.category) === name && budget.id !== editingId)}>{name}</option>)}
               </select>
             </label>
             <label className="min-w-0 space-y-1 text-xs font-medium text-[#6E6E73]">Limite mensal (R$)

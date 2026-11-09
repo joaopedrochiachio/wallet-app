@@ -49,23 +49,63 @@ test("parseQuickExpenseText: reconhece valor, categoria e cartão de crédito es
   const res1 = parseQuickExpenseText("Almoço 38,50 no nubank", cards);
   assert.equal(res1.amount, 38.5);
   assert.equal(res1.title, "Almoço");
-  assert.equal(res1.category, "Alimentação");
+  assert.equal(res1.category, "Alimentação & Delivery");
   assert.equal(res1.account, "Nubank");
   assert.equal(res1.cardId, "nubank-123");
 
   const res2 = parseQuickExpenseText("Uber 24.90", cards);
   assert.equal(res2.amount, 24.9);
   assert.equal(res2.title, "Uber");
-  assert.equal(res2.category, "Transporte");
+  assert.equal(res2.category, "Transporte & Combustível");
   assert.equal(res2.account, "Débito/Pix");
   assert.equal(res2.cardId, null);
 
   const res3 = parseQuickExpenseText("Farmácia R$ 75 no crédito", cards);
   assert.equal(res3.amount, 75);
   assert.equal(res3.title, "Farmácia");
-  assert.equal(res3.category, "Saúde");
+  assert.equal(res3.category, "Saúde & Farmácia");
   assert.equal(res3.account, "Nubank"); // Primeiro cartão padrão se disse crédito
   assert.equal(res3.cardId, "nubank-123");
+});
+
+test("captura rápida preserva milhares e centavos, sem confundir parcelas ou números do cartão", () => {
+  const cards = [{ id: "c6", name: "C6 (Black)+", type: "credit" }];
+  const result = parseQuickExpenseText("Celular R$ 1.234,56 C6 (Black)+ em 10x", cards);
+  assert.equal(result.amount, 1234.56);
+  assert.equal(result.title, "Celular");
+  assert.equal(result.cardId, "c6");
+  assert.equal(result.installmentsCount, 10);
+  assert.equal(result.error, undefined);
+  for (const [text, expected] of [["TV 1.234", 1234], ["TV 12.345.678,90", 12345678.9], ["Uber 24.90", 24.9], ["99 24,90", 24.9], ["iPhone 15 R$ 2.500,00", 2500]]) {
+    assert.equal(parseQuickExpenseText(text).amount, expected, text);
+  }
+});
+
+test("captura rápida rejeita valores malformados sem registrar parte do número", () => {
+  for (const value of ["1.234,567", "1,234.56", "-35", "50.000.000,01"]) {
+    const result = parseQuickExpenseText(`Compra R$ ${value}`);
+    assert.equal(result.amount, 0, value);
+    assert.ok(result.error, value);
+  }
+});
+
+test("captura rápida distingue crédito e Pix mesmo com conta corrente primeiro", () => {
+  const cards = [{ id: "account", name: "Conta Principal", type: "checking" }, { id: "nu", name: "Nubank", type: "credit" }];
+  const credit = parseQuickExpenseText("Almoço 35 no crédito", cards, "Conta Principal");
+  assert.equal(credit.cardId, "nu"); assert.equal(credit.error, undefined);
+  const pix = parseQuickExpenseText("Almoço 35 no Pix", cards, "Nubank");
+  assert.equal(pix.cardId, "account"); assert.equal(pix.error, undefined);
+  assert.equal(parseQuickExpenseText("Almoço 35", cards, "Nubank").cardId, "nu");
+  assert.ok(parseQuickExpenseText("Almoço 35 no crédito", cards.slice(0, 1)).error);
+  assert.ok(parseQuickExpenseText("Almoço 35 no crédito Conta Principal", cards).error);
+  assert.ok(parseQuickExpenseText("Almoço 35 no Pix Nubank", cards).error);
+  assert.ok(parseQuickExpenseText("Compra 300 em 3x", cards).error);
+});
+
+test("captura rápida usa as categorias do formulário, diferenciando mercado e marketplace", () => {
+  for (const [text, expected] of [["Almoço 35", "Alimentação & Delivery"], ["Mercado 150", "Supermercado"], ["Mercado Livre 150", "Compras & Roupas"], ["Internet 100", "Moradia & Contas"]]) {
+    assert.equal(parseQuickExpenseText(text).category, expected);
+  }
 });
 
 test("simulatePurchaseDecision: libera compra que preserva saldo confortável", () => {

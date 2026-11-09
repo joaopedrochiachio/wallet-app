@@ -10,7 +10,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import type { CardItem, RecurringItem } from "@/types";
-import { EXPENSE_CATEGORIES } from "./AddTransactionSheet";
+import { EXPENSE_CATEGORIES } from "@/lib/utils/categories";
 import { AppleConfirmModal } from "./AppleConfirmModal";
 import { Portal } from "./Portal";
 import { AutoConfirmToggle } from "./AutoConfirmToggle";
