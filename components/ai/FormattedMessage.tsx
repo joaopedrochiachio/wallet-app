@@ -84,7 +84,7 @@ function highlightFinancialTokens(text: string, baseKey: number): React.ReactNod
     parts.push(
       <span
         key={`fin-${baseKey}-${lastIdx}-${m.index}`}
-        className="inline-block font-semibold text-[#1D1D1F] tracking-tight tabular-nums bg-black/[0.04] px-1.5 py-0.2 rounded-md text-[0.95em]"
+        className="inline-block max-w-full font-semibold text-[#1D1D1F] tracking-tight tabular-nums bg-black/[0.04] px-1.5 py-0.2 rounded-md text-[0.95em]"
       >
         {formattedToken}
       </span>
@@ -317,7 +317,7 @@ function parseMessageIntoBlocks(content: string): ParsedBlock[] {
 export function FormattedMessage({ content, role = "assistant" }: FormattedMessageProps) {
   if (role === "user") {
     return (
-      <div className="whitespace-pre-line text-[14px] sm:text-[14.5px] leading-relaxed font-normal text-white">
+      <div className="min-w-0 max-w-full whitespace-pre-wrap [overflow-wrap:anywhere] text-[14px] sm:text-[14.5px] leading-relaxed font-normal text-white">
         {content}
       </div>
     );
@@ -326,7 +326,7 @@ export function FormattedMessage({ content, role = "assistant" }: FormattedMessa
   const blocks = parseMessageIntoBlocks(content);
 
   return (
-    <div className="space-y-3 text-[#1D1D1F] text-[13.5px] sm:text-[14px] leading-[1.6]">
+    <div className="min-w-0 max-w-full space-y-3 [overflow-wrap:anywhere] text-[#1D1D1F] text-[13.5px] sm:text-[14px] leading-[1.6]">
       {blocks.map((block, idx) => {
         switch (block.type) {
           case "heading": {
@@ -444,7 +444,7 @@ export function FormattedMessage({ content, role = "assistant" }: FormattedMessa
                 {block.items.map((item, bIdx) => (
                   <li key={bIdx} className="flex items-start gap-2.5 leading-[1.55]">
                     <span className="w-1.5 h-1.5 rounded-full bg-[#86868B] mt-2 shrink-0" />
-                    <span className="flex-1">{renderInlineContent(item)}</span>
+                    <span className="min-w-0 flex-1">{renderInlineContent(item)}</span>
                   </li>
                 ))}
               </ul>
@@ -458,7 +458,7 @@ export function FormattedMessage({ content, role = "assistant" }: FormattedMessa
                     <span className="w-5 h-5 rounded-full bg-[#1D1D1F] text-white text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
                       {nIdx + 1}
                     </span>
-                    <span className="flex-1">{renderInlineContent(item)}</span>
+                    <span className="min-w-0 flex-1">{renderInlineContent(item)}</span>
                   </li>
                 ))}
               </ol>

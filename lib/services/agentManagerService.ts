@@ -24,6 +24,7 @@ import type {
   SafeFinancialContext,
   PurchaseSimulationResult,
 } from "./financialContextService.ts";
+import { getProjectionPendingCommitted, getProjectionPendingInvoices } from "./financialContextService.ts";
 import type {
   FinancialDiagnosis,
 } from "./financialDiagnosisService.ts";
@@ -495,7 +496,7 @@ ${
             .slice(0, 6)
             .map(
               (p) =>
-                `- **${p.monthName}/${p.year}:** Entradas R$ ${p.plannedIncomesTotal.toFixed(2)} | Compromissos R$ ${p.totalCommitted.toFixed(2)} ➔ **Saldo Livre: R$ ${p.projectedFreeBalance.toFixed(2)}**`
+                `- **${p.monthName}/${p.year}:** Entradas previstas R$ ${p.plannedIncomesTotal.toFixed(2)} | Ainda a pagar R$ ${getProjectionPendingCommitted(p).toFixed(2)} ➔ **Saldo Livre: R$ ${p.projectedFreeBalance.toFixed(2)}**`
             )
             .join("\n")
         : `- **Mês Atual:** Saldo Livre Projetado de **R$ ${projectedEnd.toFixed(2)}**`;
@@ -620,7 +621,7 @@ ${goalsSummary}
 - **Saldo Inicial Projetado:** R$ ${nextProj.openingBalance.toFixed(2)}
 - **Entradas Previstas:** R$ ${nextProj.plannedIncomesTotal.toFixed(2)}
 - **Contas Fixas (Débito/PIX):** R$ ${nextProj.recurringDebitTotal.toFixed(2)}
-- **Faturas / Parcelas de Cartão:** R$ ${(nextProj.cardInstallments + nextProj.recurringCreditTotal).toFixed(2)}
+- **Faturas / Parcelas de Cartão ainda a pagar:** R$ ${getProjectionPendingInvoices(nextProj).toFixed(2)}
 - **Saldo Livre Projetado no Fechamento:** **R$ ${nextProj.projectedFreeBalance.toFixed(2)}**
 
 **Recomendação:** Mantenha os gastos variáveis do dia a dia abaixo de **R$ ${Math.max(0, nextProj.projectedFreeBalance - targetEnd).toFixed(2)}** para preservar sua meta de fechamento mensal.`;
@@ -643,10 +644,10 @@ ${goalsSummary}
         ? context.credit.cardsSummary
             .map(
               (c) =>
-                `- **${c.alias}:** Fatura atual de **R$ ${c.spent.toFixed(2)}** / Limite R$ ${c.limit.toFixed(2)} (${Math.round((c.spent / Math.max(1, c.limit)) * 100)}% utilizado${c.closingDay ? `, fecha dia ${c.closingDay}` : ""}${c.dueDay ? `, vence dia ${c.dueDay}` : ""})`
+                `- **${c.alias}:** ${c.invoiceAmount !== undefined ? `Fatura pendente (${c.invoicePeriod}): **R$ ${c.invoiceAmount.toFixed(2)}**${c.invoiceIsPaid && (c.invoicePaidAmount ?? 0) > 0 ? " (quitada)" : ""}. ` : ""}Limite utilizado: **R$ ${c.spent.toFixed(2)}**, incluindo parcelas futuras / Limite R$ ${c.limit.toFixed(2)} (${Math.round((c.spent / Math.max(1, c.limit)) * 100)}% utilizado${c.closingDay ? `, fecha dia ${c.closingDay}` : ""}${c.dueDay ? `, vence dia ${c.dueDay}` : ""})`
             )
             .join("\n")
-        : `- **Total em Faturas:** R$ ${context.credit.totalSpent.toFixed(2)} (${context.credit.creditUtilizationPercent}% do limite total de R$ ${context.credit.totalLimit.toFixed(2)})`;
+        : `- **Limite utilizado, incluindo parcelas futuras:** R$ ${context.credit.totalSpent.toFixed(2)} (${context.credit.creditUtilizationPercent}% do limite total de R$ ${context.credit.totalLimit.toFixed(2)})`;
 
     return `### 💳 Estratégia de Cartões, Limite e Faturas (Nanquim)
 
@@ -682,7 +683,7 @@ ${statusLine}
 **Indicadores Principais deste Mês:**
 - **Saldo Atual em Conta:** R$ ${context.cashflow.checkingBalance.toFixed(2)}
 - **Fechamento Projetado do Mês:** **R$ ${projectedEnd.toFixed(2)}**
-- **Faturas de Cartão Acumuladas:** R$ ${context.credit.totalSpent.toFixed(2)} (${context.credit.creditUtilizationPercent}% do limite)
+- **Limite utilizado, incluindo parcelas futuras:** R$ ${context.credit.totalSpent.toFixed(2)} (${context.credit.creditUtilizationPercent}% do limite)
 - **Comprometimento da Renda:** ${context.commitments.commitmentRatioPercent}% (teto configurado: ${context.profile.maxCommitmentAlertPercent}%)
 
 **Principais Focos de Gasto Auditados:**

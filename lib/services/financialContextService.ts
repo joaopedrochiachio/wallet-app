@@ -39,6 +39,10 @@ export interface TransactionContextItem {
   date: string;
   occurredAt?: string | number | Date | null;
   createdAt?: string | number | Date | null;
+  recurringItemId?: string | null;
+  periodKey?: string | null;
+  relatedCardId?: string | null;
+  groupId?: string | null;
   kind?: "regular" | "invoice_payment" | "invoice_settlement" | "balance_reconciliation";
 }
 
@@ -119,6 +123,10 @@ export interface FinancialTelemetry {
       available: number;
       closingDay?: number;
       dueDay?: number;
+      invoiceAmount?: number;
+      invoicePaidAmount?: number;
+      invoiceIsPaid?: boolean;
+      invoicePeriod?: string;
     }>;
   };
   commitments: {
@@ -201,6 +209,7 @@ export interface MonthProjectionSummary {
   totalCommitted: number;
   pendingCommitted?: number;
   totalInvoicesPending?: number;
+  actualClosingBalance?: number;
   projectedFreeBalance: number;
   monthNetSurplus?: number;
   firstFortnight?: FortnightProjection;
@@ -261,6 +270,10 @@ export interface SafeFinancialContext {
       available: number;
       closingDay?: number;
       dueDay?: number;
+      invoiceAmount?: number;
+      invoicePaidAmount?: number;
+      invoiceIsPaid?: boolean;
+      invoicePeriod?: string;
     }>;
   };
   commitments: {
@@ -522,6 +535,41 @@ export function inferHabitCategory(title: string, category: string = ""): string
  * Calcula a divisão precisa por quinzena (1ª quinzena: dias 1 a 15 | 2ª quinzena: dias 16 ao fim do mês)
  * para um determinado mês das projeções, discriminando cada recebimento, débito fixo e fatura de cartão.
  */
+/** Valores pendentes são separados dos totais históricos que já saíram da conta. */
+export function getProjectionPendingInvoices(projection: MonthProjectionSummary): number {
+  return Math.max(0, safeNumber(projection.totalInvoicesPending,
+    safeNumber(projection.cardInstallments) + safeNumber(projection.recurringCreditTotal)));
+}
+
+export function getProjectionPendingCommitted(projection: MonthProjectionSummary): number {
+  return Math.max(0, safeNumber(projection.pendingCommitted,
+    safeNumber(projection.recurringDebitTotal) + getProjectionPendingInvoices(projection)));
+}
+
+function hasRealizedRecurringTransaction(
+  item: RecurringItem,
+  periodKey: string,
+  transactions: TransactionContextItem[],
+  expectedType: "receita" | "despesa",
+  cards: CardItem[]
+): boolean {
+  const effective = getEffectiveRecurringItemForPeriod(item, periodKey);
+  const accountCard = cards.find((card) => matchesLedgerCard(card, effective.account, effective.cardId));
+  return transactions.some((tx) => {
+    if (tx.type !== expectedType || tx.kind === "balance_reconciliation" ||
+      tx.kind === "invoice_payment" || tx.kind === "invoice_settlement") return false;
+    const date = getLedgerEntryDate(tx);
+    const txPeriod = tx.periodKey || (date ? getPeriodKey(date.getFullYear(), date.getMonth()) : "");
+    if (txPeriod !== periodKey) return false;
+    if (tx.recurringItemId) return tx.recurringItemId === item.id;
+    const sameAccount = accountCard
+      ? matchesLedgerCard(accountCard, tx.account, tx.cardId)
+      : tx.account?.trim().toLowerCase() === effective.account?.trim().toLowerCase();
+    return sameAccount && Math.abs(tx.amount - effective.amount) < 0.005 &&
+      tx.title?.trim().toLocaleLowerCase("pt-BR") === effective.title?.trim().toLocaleLowerCase("pt-BR");
+  });
+}
+
 export function computeFortnightBreakdown(
   monthProjection: MonthProjectionSummary,
   recurringItems: RecurringItem[],
@@ -549,17 +597,8 @@ export function computeFortnightBreakdown(
       card.type === "checking" && matchesLedgerCard(card, item.account, item.cardId)
     ) || item.account === "Débito/Pix";
 
-  const isAlreadyRealizedInMonth = (item: RecurringItem, expectedType: "receita" | "despesa") => {
-    const normTitle = (item.title || "").trim().toLowerCase();
-    if (!normTitle) return false;
-    return transactions.some((tx) => {
-      if (tx.type !== expectedType) return false;
-      const d = getLedgerEntryDate(tx);
-      if (!d || d.getFullYear() !== year || d.getMonth() !== monthIndex) return false;
-      const txTitle = (tx.title || "").trim().toLowerCase();
-      return txTitle === normTitle || txTitle.includes(normTitle) || normTitle.includes(txTitle);
-    });
-  };
+  const isAlreadyRealizedInMonth = (item: RecurringItem, expectedType: "receita" | "despesa") =>
+    hasRealizedRecurringTransaction(item, targetPeriodKey, transactions, expectedType, cards);
 
   // 1. Recebimentos planejados ativos no mês (excluindo os já lançados no extrato do mês)
   const plannedIncomes: FortnightMovementItem[] = recurringItems
@@ -619,10 +658,7 @@ export function computeFortnightBreakdown(
       continue;
     }
 
-    let pendingInvoice = details.pendingInvoice;
-    if (details.totalInvoice === 0 && (creditCard.invoiceAmount !== undefined ? creditCard.invoiceAmount : creditCard.spent)) {
-      pendingInvoice = creditCard.invoiceAmount !== undefined ? creditCard.invoiceAmount : (creditCard.spent || 0);
-    }
+    const pendingInvoice = details.pendingInvoice;
 
     if (pendingInvoice > 0) {
       cardInvoices.push({
@@ -651,7 +687,7 @@ export function computeFortnightBreakdown(
   const f1IncomeTotal = f1Incomes.reduce((s, i) => s + i.amount, 0);
   const f1ExpenseTotal = f1Expenses.reduce((s, e) => s + e.amount, 0);
   const f1NetSurplus = f1IncomeTotal - f1ExpenseTotal;
-  const f1ProjectedBalance = monthProjection.openingBalance + f1NetSurplus;
+  const f1ProjectedBalance = (monthProjection.actualClosingBalance ?? monthProjection.openingBalance) + f1NetSurplus;
 
   const f2IncomeTotal = f2Incomes.reduce((s, i) => s + i.amount, 0);
   const f2ExpenseTotal = f2Expenses.reduce((s, e) => s + e.amount, 0);
@@ -690,13 +726,17 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
   const {
     userProfile,
     cards,
-    transactions,
+    transactions: rawTransactions,
     recurringItems,
     goals,
     mainBalance,
     monthIncome,
     monthExpense,
   } = data;
+  const transactions = rawTransactions.map((tx) => ({
+    ...tx,
+    account: tx.account || cards.find((card) => card.id === tx.cardId)?.name || "",
+  }));
 
   const monthlyIncomeBase = userProfile?.monthlyIncomeBase || (monthIncome > 0 ? monthIncome : 5000);
   const persona: FinancialPersonaId = userProfile?.persona || "optimizer";
@@ -708,44 +748,56 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
   // Cartões de Crédito
   const creditCards = cards.filter((c) => c.type === "credit");
   const totalLimit = creditCards.reduce((acc, c) => acc + (c.limit || 0), 0);
-  const totalSpent = creditCards.reduce((acc, c) => acc + (c.spent || c.invoiceAmount || 0), 0);
+  const totalSpent = creditCards.reduce((acc, c) => acc + (c.spent ?? c.invoiceAmount ?? 0), 0);
   const availableCredit = Math.max(0, totalLimit - totalSpent);
   const creditUtilizationPercent =
     totalLimit > 0 ? Math.round((totalSpent / totalLimit) * 100) : 0;
 
-  const cardsSummary = creditCards.map((c) => ({
+  const nowRef = new Date();
+  const currentPeriodKey = getPeriodKey(nowRef.getFullYear(), nowRef.getMonth());
+  const currentInvoiceDetails = creditCards.map((card) => getCardInvoiceDetailsForMonth(
+    card, transactions, recurringItems, nowRef.getFullYear(), nowRef.getMonth(), nowRef
+  ));
+  const cardsSummary = creditCards.map((c, index) => ({
     name: c.name,
     brand: c.brand,
     limit: c.limit,
-    spent: c.spent || c.invoiceAmount || 0,
-    available: Math.max(0, c.limit - (c.spent || c.invoiceAmount || 0)),
+    spent: c.spent ?? c.invoiceAmount ?? 0,
+    available: Math.max(0, c.limit - (c.spent ?? c.invoiceAmount ?? 0)),
     closingDay: c.closingDay,
     dueDay: c.dueDay,
+    invoiceAmount: currentInvoiceDetails[index].pendingInvoice,
+    invoicePaidAmount: currentInvoiceDetails[index].paidAmount,
+    invoiceIsPaid: currentInvoiceDetails[index].isPaid,
+    invoicePeriod: currentPeriodKey,
   }));
 
   // Recorrências e Comprometimento Fixo
   // CRÍTICO: Separa rigorosamente despesas recorrentes ativas no mês atual e evita duplicar recorrências de cartão já incluídas na fatura
-  const nowRef = new Date();
   const activeRecurringExpenses = recurringItems.filter(
-    (r) => r.active !== false && r.type !== "income" && isRecurringActiveInMonth(r, nowRef.getFullYear(), nowRef.getMonth())
-  );
+    (r) => r.type !== "income" && isRecurringActiveInMonth(r, nowRef.getFullYear(), nowRef.getMonth()) &&
+      !hasRealizedRecurringTransaction(r, currentPeriodKey, transactions, "despesa", cards)
+  ).map((item) => getEffectiveRecurringItemForPeriod(item, currentPeriodKey));
   const activeRecurringIncomes = recurringItems.filter(
-    (r) => r.active !== false && r.type === "income" && isRecurringActiveInMonth(r, nowRef.getFullYear(), nowRef.getMonth())
-  );
+    (r) => r.type === "income" && isRecurringActiveInMonth(r, nowRef.getFullYear(), nowRef.getMonth()) &&
+      !hasRealizedRecurringTransaction(r, currentPeriodKey, transactions, "receita", cards)
+  ).map((item) => getEffectiveRecurringItemForPeriod(item, currentPeriodKey));
   const recurringMonthlyTotal = activeRecurringExpenses.reduce((acc, r) => acc + (r.amount || 0), 0);
-  const currentOpenInvoicesTotal = creditCards.reduce(
-    (acc, c) => acc + (c.invoiceAmount !== undefined ? c.invoiceAmount : (c.spent || 0)),
-    0
-  );
+  const currentOpenInvoicesTotal = currentInvoiceDetails.reduce((sum, invoice) => sum + invoice.pendingInvoice, 0);
+  const pendingDebitTotal = activeRecurringExpenses.filter((item) => !creditCards.some(
+    (card) => matchesLedgerCard(card, item.account, item.cardId)
+  )).reduce((sum, item) => sum + item.amount, 0);
   const commitmentRatioPercent =
     monthlyIncomeBase > 0
-      ? Math.round(((recurringMonthlyTotal + currentOpenInvoicesTotal) / monthlyIncomeBase) * 100)
+      ? Math.round(((pendingDebitTotal + currentOpenInvoicesTotal) / monthlyIncomeBase) * 100)
       : 0;
 
   const isOverLimit = commitmentRatioPercent > maxCommitmentAlertPercent;
 
   // Lançamentos agrupados por categoria
-  const expenseTransactions = transactions.filter((t) => t.type === "despesa");
+  const expenseTransactions = transactions.filter((t) => t.type === "despesa" &&
+    t.kind !== "invoice_payment" && t.kind !== "invoice_settlement" && t.kind !== "balance_reconciliation" &&
+    !t.id?.startsWith("planned-"));
   const totalExpenses = expenseTransactions.reduce((acc, t) => acc + t.amount, 0);
 
   const categoryMap = new Map<string, { total: number; count: number }>();
@@ -781,7 +833,7 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
   );
 
   const isCreditTx = (t: TransactionContextItem): boolean => {
-    if (t.cardId) return true;
+    if (t.cardId) return creditCards.some((card) => card.id === t.cardId);
     const acc = (t.account || "").toLowerCase().trim();
     if (creditCardNames.has(acc)) return true;
     if (/(cartao|cartão|credito|crédito)/i.test(acc)) return true;
@@ -979,18 +1031,16 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
 
   const currentCheckingBalance = mainBalance;
   const currentPendingBills = currentProj
-    ? (currentProj.pendingCommitted ??
-        ((currentProj.recurringDebitTotal || 0) +
-          (currentProj.cardInstallments || 0) +
-          (currentProj.recurringCreditTotal || 0)))
-    : 0;
-  const currentProjectedFree = currentProj ? currentProj.projectedFreeBalance : Math.max(0, mainBalance);
+    ? getProjectionPendingCommitted(currentProj)
+    : pendingDebitTotal + currentOpenInvoicesTotal;
+  const currentProjectedFree = currentProj?.projectedFreeBalance ??
+    (mainBalance + activeRecurringIncomes.reduce((sum, item) => sum + item.amount, 0) - currentPendingBills);
 
-  const nextIncome = nextProj?.plannedIncomesTotal || (userProfile?.monthlyIncomeBase || monthIncome) || 0;
-  const nextCommitted = nextProj?.totalCommitted || 0;
-  const nextCardInstallments = nextProj?.cardInstallments || 0;
+  const nextIncome = nextProj?.plannedIncomesTotal ?? userProfile?.monthlyIncomeBase ?? monthIncome ?? 0;
+  const nextCommitted = nextProj ? getProjectionPendingCommitted(nextProj) : 0;
+  const nextCardInstallments = nextProj ? getProjectionPendingInvoices(nextProj) : 0;
   const nextRecurringDebit = nextProj?.recurringDebitTotal || 0;
-  const nextRecurringCredit = nextProj?.recurringCreditTotal || 0;
+  const nextRecurringCredit = 0; // Todas as cobranças de crédito já estão no total pendente das faturas.
   const nextProjectedFree = nextProj?.projectedFreeBalance ?? Math.max(0, nextIncome - nextCommitted);
 
   const liquidityAnalysis: LiquidityAnalysis = {
@@ -1040,9 +1090,7 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
 
   // 2. Saldo Projetado = Receitas - (Gastos Já Realizados + Gastos Fixos Previstos)
   // Utiliza a projeção de liquidez do livro-caixa para o fechamento do mês
-  const projectedEndMonthBalance = currentProj
-    ? currentProj.projectedFreeBalance
-    : Math.max(0, mainBalance - monthExpense);
+  const projectedEndMonthBalance = currentProjectedFree;
 
   const targetDiff = projectedEndMonthBalance - targetEndMonthBalance;
   const targetStatus: "on_track" | "at_risk" = targetDiff >= 0 ? "on_track" : "at_risk";
@@ -1101,9 +1149,14 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
     categories,
     goals: goalsSummary,
     monthlyProjections: (data.monthlyProjections || []).map((p) => {
-      const fortnights = computeFortnightBreakdown(p, recurringItems, cards, transactions);
+      const isCurrent = p.year === nowRef.getFullYear() &&
+        p.monthName.toLocaleLowerCase("pt-BR").startsWith(MONTH_NAMES_PT[nowRef.getMonth()].toLocaleLowerCase("pt-BR"));
+      const projection = { ...p, actualClosingBalance: p.actualClosingBalance ?? (isCurrent ? mainBalance : p.openingBalance) };
+      const fortnights = computeFortnightBreakdown(projection, recurringItems, cards, transactions);
       return {
-        ...p,
+        ...projection,
+        pendingCommitted: getProjectionPendingCommitted(p),
+        totalInvoicesPending: getProjectionPendingInvoices(p),
         monthNetSurplus: fortnights.monthNetSurplus,
         firstFortnight: fortnights.firstFortnight,
         secondFortnight: fortnights.secondFortnight,
@@ -1197,6 +1250,10 @@ export function createSafeFinancialContext(telemetry: FinancialTelemetry): SafeF
       available: safeNumber(card.available),
       closingDay: safeOptionalNumber(card.closingDay),
       dueDay: safeOptionalNumber(card.dueDay),
+      invoiceAmount: safeOptionalNumber(card.invoiceAmount),
+      invoicePaidAmount: safeOptionalNumber(card.invoicePaidAmount),
+      invoiceIsPaid: card.invoiceIsPaid,
+      invoicePeriod: card.invoicePeriod,
     };
   });
 
@@ -1329,6 +1386,9 @@ export function createSafeFinancialContext(telemetry: FinancialTelemetry): SafeF
         recurringCreditTotal: safeNumber(p.recurringCreditTotal),
         cardInstallments: safeNumber(p.cardInstallments),
         totalCommitted: safeNumber(p.totalCommitted),
+        pendingCommitted: getProjectionPendingCommitted(p),
+        totalInvoicesPending: getProjectionPendingInvoices(p),
+        actualClosingBalance: safeNumber(p.actualClosingBalance ?? p.openingBalance),
         projectedFreeBalance: safeNumber(p.projectedFreeBalance),
         monthNetSurplus: safeNumber(p.monthNetSurplus),
         firstFortnight: p.firstFortnight ? {
@@ -1393,8 +1453,8 @@ export function createSafeFinancialContext(telemetry: FinancialTelemetry): SafeF
       currentMonth: {
         monthName: "Mês Atual",
         checkingBalance: safeNumber(telemetry.cashflow.checkingBalance),
-        pendingBills: safeNumber(telemetry.cashflow.monthExpenseRealized),
-        projectedFreeBalance: safeNumber(telemetry.cashflow.netCashflow),
+        pendingBills: 0,
+        projectedFreeBalance: safeNumber(telemetry.cashflow.checkingBalance),
       },
       nextMonth: {
         monthName: "Próximo Mês",
@@ -1568,6 +1628,14 @@ export function buildFinancialAnalystSystemPrompt(context: SafeFinancialContext)
   }[profile.aiTone];
 
   return `Você é o ANALISTA FINANCEIRO PESSOAL (Personal CFO) do usuário no Wallet App.
+
+=== ESTADO FINANCEIRO ATUAL: FONTE DOS VALORES DESTA RESPOSTA ===
+- O contexto desta requisição substitui valores e status citados em mensagens antigas. Use o histórico apenas para entender a pergunta; um pagamento posterior pode ter quitado uma dívida mencionada antes.
+- Saídas realizadas e faturas já pagas são histórico: já estão refletidas no saldo atual. Não desconte esses valores novamente nem os apresente como contas a pagar.
+- Para "quanto falta pagar", use pendingCommitted e totalInvoicesPending da competência consultada. Um valor zero confirma que não há pendência nessa competência.
+- totalCommitted reúne saídas realizadas e pendentes. O limite utilizado (spent) inclui parcelas futuras de outros meses e não equivale à fatura pendente deste mês.
+- Gastos por categoria e hábitos descrevem consumo histórico, inclusive compras já quitadas; não comprovam dívida em aberto.
+- Se o pagamento informado pelo usuário ainda não consta nos dados, explique a divergência e oriente a conferir o registro, sem afirmar que o pagamento foi confirmado.
 Você atua como um parceiro e consultor financeiro de alto nível que trabalha lado a lado com o usuário: direto, objetivo, analítico e focado em números reais e padrões de comportamento.
 
 === POSTURA E DIRETRIZES DE COMUNICAÇÃO (OBRIGATÓRIO) ===
@@ -1665,15 +1733,15 @@ Você atua como um parceiro e consultor financeiro de alto nível que trabalha l
 
 2. CARTÕES DE CRÉDITO & FATURAS:
    - Limite Total Consolidado: R$ ${credit.totalLimit.toFixed(2)}
-   - Faturas / Gastos Acumulados no Ciclo Atual: R$ ${credit.totalSpent.toFixed(2)} (${credit.creditUtilizationPercent}% do limite total)
+   - Limite Comprometido, incluindo parcelas futuras: R$ ${credit.totalSpent.toFixed(2)} (${credit.creditUtilizationPercent}% do limite total)
    - Limite Disponível Restante: R$ ${credit.availableCredit.toFixed(2)}
    - Cartões Ativos:
 ${credit.cardsSummary
   .map(
     (c) =>
-      `     • ${c.alias}: Limite R$ ${c.limit.toFixed(2)} | Fatura R$ ${c.spent.toFixed(
+      `     • ${c.alias}: Limite R$ ${c.limit.toFixed(2)} | Limite utilizado R$ ${c.spent.toFixed(
         2
-      )} | Disponível R$ ${c.available.toFixed(2)} | Fecha dia ${c.closingDay ?? "N/A"}, Vence dia ${
+      )} | Fatura pendente em ${c.invoicePeriod ?? "competência atual"}: ${c.invoiceAmount !== undefined ? `R$ ${c.invoiceAmount.toFixed(2)}` : "não informada"} | Já pago: R$ ${(c.invoicePaidAmount ?? 0).toFixed(2)} | Disponível R$ ${c.available.toFixed(2)} | Fecha dia ${c.closingDay ?? "N/A"}, Vence dia ${
         c.dueDay ?? "N/A"
       }`
   )
@@ -1726,13 +1794,15 @@ ${
       context.monthlyProjections
         .map(
           (p, idx) => {
-            const surplus = p.monthNetSurplus ?? (p.plannedIncomesTotal - p.totalCommitted);
+            const surplus = p.monthNetSurplus ?? (p.plannedIncomesTotal - getProjectionPendingCommitted(p));
             let monthBlock = `   • ${p.monthName}/${p.year} (${idx === 0 ? "Mês Atual" : `Mês +${idx}`}):
-     - Saldo Inicial que entra no mês: R$ ${p.openingBalance.toFixed(2)}
+     - Saldo inicial histórico do mês: R$ ${p.openingBalance.toFixed(2)}
+     - Saldo após movimentações já realizadas, base para as pendências: R$ ${(p.actualClosingBalance ?? p.openingBalance).toFixed(2)}
      - Entradas Planejadas: R$ ${p.plannedIncomesTotal.toFixed(2)}
      - Contas Fixas em Débito: R$ ${p.recurringDebitTotal.toFixed(2)}
-     - Faturas de Cartão (Parcelamentos + Assinaturas Crédito): R$ ${(p.cardInstallments + p.recurringCreditTotal).toFixed(2)}
-     - Total Comprometido (Saídas Previstas): R$ ${p.totalCommitted.toFixed(2)}
+     - Faturas de Cartão ainda a pagar (totalInvoicesPending): R$ ${getProjectionPendingInvoices(p).toFixed(2)}
+     - Total ainda a pagar (pendingCommitted): R$ ${getProjectionPendingCommitted(p).toFixed(2)}
+     - Total histórico do mês, realizado + pendente (totalCommitted): R$ ${p.totalCommitted.toFixed(2)}
      - Sobra Líquida das Contas de ${p.monthName}: ${surplus >= 0 ? "+" : "−"}R$ ${Math.abs(surplus).toFixed(2)} (Entradas menos Compromissos do mês)
      - Saldo Final Livre Projetado em Conta: R$ ${p.projectedFreeBalance.toFixed(2)} ${
               p.projectedFreeBalance < 0 ? "⚠️ [DÉFICIT PREVISTO]" : "✅ [SALDO POSITIVO]"

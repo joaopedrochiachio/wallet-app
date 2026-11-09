@@ -83,7 +83,11 @@ export async function POST(req: NextRequest) {
     }
 
     // 4. Extração e validação do corpo da requisição ANTES da reserva de cota
-    const body = await req.json();
+    const rawBody = await req.text();
+    if (new TextEncoder().encode(rawBody).byteLength > MAX_PAYLOAD_BYTES) {
+      return NextResponse.json({ success: false, error: "Tamanho da requisição excede o limite máximo permitido." }, { status: 413 });
+    }
+    const body = JSON.parse(rawBody);
     const {
       messages = [],
       userMessage,
@@ -100,11 +104,12 @@ export async function POST(req: NextRequest) {
       targetEndMonthBalance,
     } = body;
 
-    // Minimiza o volume de dados transmitidos: limita arrays brutos
-    const safeCards = Array.isArray(cards) ? cards.slice(0, 30) : [];
-    const safeTransactions = Array.isArray(transactions) ? transactions.slice(0, 300) : [];
-    const safeRecurring = Array.isArray(recurringItems) ? recurringItems.slice(0, 50) : [];
-    const safeGoals = Array.isArray(goals) ? goals.slice(0, 30) : [];
+    // O cálculo precisa do livro-caixa completo, inclusive pagamentos antigos.
+    // A redução para o modelo acontece depois, na telemetria e no contexto seguro.
+    const safeCards = Array.isArray(cards) ? cards : [];
+    const safeTransactions = Array.isArray(transactions) ? transactions : [];
+    const safeRecurring = Array.isArray(recurringItems) ? recurringItems : [];
+    const safeGoals = Array.isArray(goals) ? goals : [];
 
     // Sintetiza a telemetria com cálculo determinístico em TypeScript antes de qualquer envio à IA
     const telemetry = synthesizeFinancialTelemetry({

@@ -36,6 +36,7 @@ import {
   PanelLeft,
 } from "lucide-react";
 import { FormattedMessage } from "@/components/ai/FormattedMessage";
+import { ChatDialog } from "@/components/ai/ChatDialog";
 import { FinancialHealthRing } from "@/components/ai/FinancialHealthRing";
 import { CashflowBarChart } from "@/components/ai/CashflowBarChart";
 import {
@@ -256,6 +257,7 @@ export default function AIAnalystPage() {
   const lastMessageRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
   const prevMessagesLenRef = useRef<number>(0);
+  const sendingMessageRef = useRef(false);
 
   useEffect(() => {
     if (!isCopilotOpen) return;
@@ -311,6 +313,7 @@ export default function AIAnalystPage() {
           monthName: p.monthName,
           year: p.year,
           openingBalance: p.openingBalance,
+          actualClosingBalance: p.actualClosingBalance,
           plannedIncomesTotal: p.plannedIncomesTotal,
           recurringDebitTotal: p.recurringDebitTotal,
           recurringCreditTotal: p.recurringCreditTotal,
@@ -433,6 +436,7 @@ export default function AIAnalystPage() {
           monthName: p.monthName,
           year: p.year,
           openingBalance: p.openingBalance,
+          actualClosingBalance: p.actualClosingBalance,
           plannedIncomesTotal: p.plannedIncomesTotal,
           recurringDebitTotal: p.recurringDebitTotal,
           recurringCreditTotal: p.recurringCreditTotal,
@@ -540,22 +544,17 @@ export default function AIAnalystPage() {
     const currLen = messages.length;
     prevMessagesLenRef.current = currLen;
 
-    if (isSending) {
-      chatBottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-      return;
-    }
-
-    if (currLen > prevLen && currLen > 0) {
-      const lastMsg = messages[currLen - 1];
-      if (lastMsg?.role === "assistant") {
-        window.setTimeout(() => {
-          lastMessageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-        }, 40);
-        return;
+    const frame = window.requestAnimationFrame(() => {
+      const feed = chatFeedRef.current;
+      if (!feed) return;
+      const lastMessage = lastMessageRef.current;
+      if (!isSending && currLen > prevLen && messages[currLen - 1]?.role === "assistant" && lastMessage) {
+        feed.scrollTo({ top: feed.scrollTop + lastMessage.getBoundingClientRect().top - feed.getBoundingClientRect().top - 16, behavior: "smooth" });
+      } else {
+        feed.scrollTo({ top: feed.scrollHeight, behavior: currLen <= 2 ? "auto" : "smooth" });
       }
-    }
-
-    chatBottomRef.current?.scrollIntoView({ behavior: currLen <= 2 ? "auto" : "smooth", block: "end" });
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [messages, isSending, isCopilotOpen]);
 
   const handleChatScroll = useCallback(() => {
@@ -566,7 +565,8 @@ export default function AIAnalystPage() {
   }, []);
 
   const scrollToChatBottom = useCallback(() => {
-    chatBottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    const feed = chatFeedRef.current;
+    feed?.scrollTo({ top: feed.scrollHeight, behavior: "smooth" });
   }, []);
 
   const handleCopyMessage = useCallback((msgId: string, text: string) => {
@@ -666,8 +666,10 @@ export default function AIAnalystPage() {
   };
 
   const handleSendMessage = async (textToSend?: string, simulationPayload?: unknown) => {
+    if (sendingMessageRef.current) return;
     const text = (textToSend || inputMessage).trim();
     if (!text && !simulationPayload) return;
+    sendingMessageRef.current = true;
     setIsCopilotOpen(true);
 
     const userMsg: ChatMessage = {
@@ -728,6 +730,7 @@ export default function AIAnalystPage() {
           monthName: p.monthName,
           year: p.year,
           openingBalance: p.openingBalance,
+          actualClosingBalance: p.actualClosingBalance,
           plannedIncomesTotal: p.plannedIncomesTotal,
           recurringDebitTotal: p.recurringDebitTotal,
           recurringCreditTotal: p.recurringCreditTotal,
@@ -824,6 +827,7 @@ export default function AIAnalystPage() {
           monthName: p.monthName,
           year: p.year,
           openingBalance: p.openingBalance,
+          actualClosingBalance: p.actualClosingBalance,
           plannedIncomesTotal: p.plannedIncomesTotal,
           recurringDebitTotal: p.recurringDebitTotal,
           recurringCreditTotal: p.recurringCreditTotal,
@@ -889,6 +893,7 @@ export default function AIAnalystPage() {
       setSessions(finalSessionsList);
       void saveChatSessions(finalSessionsList, user?.uid);
     } finally {
+      sendingMessageRef.current = false;
       setIsSending(false);
     }
   };
@@ -1230,28 +1235,14 @@ export default function AIAnalystPage() {
 
           {/* CHAT ÚNICO CENTRALIZADO COM A IA — PADRÃO APPLE (IMESSAGE / APPLE INTELLIGENCE) */}
           {isCopilotOpen && (
-            <div className="fixed inset-0 z-[130] flex items-end justify-center sm:items-center sm:p-5">
-              <button
-                type="button"
-                aria-label="Fechar Chat com a IA"
-                onClick={() => setIsCopilotOpen(false)}
-                className="fixed inset-0 cursor-default bg-black/40 backdrop-blur-md animate-in fade-in duration-200"
-              />
-              <section
-                role="dialog"
-                aria-modal="true"
-                aria-label="Chat com a IA Wallet+"
-                className={`relative z-10 flex h-[92dvh] sm:h-[86dvh] max-h-[820px] w-full flex-col overflow-hidden rounded-t-[32px] sm:rounded-[32px] border border-white/60 bg-[#F5F5F7]/98 shadow-[0_32px_90px_rgba(0,0,0,0.28)] backdrop-blur-2xl transition-all duration-300 animate-in slide-in-from-bottom-4 sm:zoom-in-95 fade-in ${
-                  isHistoryDrawerOpen ? "sm:max-w-4xl" : "sm:max-w-2xl"
-                }`}
-              >
+            <ChatDialog showHistory={isHistoryDrawerOpen} onClose={() => setIsCopilotOpen(false)}>
                 {/* Handle sutil estilo iOS Sheet no mobile */}
-                <div className="flex justify-center pt-2 pb-0.5 sm:hidden">
+                <div className="flex shrink-0 justify-center pt-2 pb-0.5 sm:hidden">
                   <span className="h-1 w-9 rounded-full bg-black/15" />
                 </div>
 
                 {/* TOP BAR APPLE GLASS */}
-                <div className="flex items-center justify-between gap-2 border-b border-black/[0.06] bg-white/85 px-4 py-3 sm:px-5 backdrop-blur-xl">
+                <div className="flex shrink-0 items-center justify-between gap-2 border-b border-black/[0.06] bg-white/85 px-3 py-3 sm:px-5 backdrop-blur-xl">
                   <div className="flex items-center gap-2.5 min-w-0">
                     {/* Botão Sidebar / Conversas Antigas */}
                     <button
@@ -1263,9 +1254,11 @@ export default function AIAnalystPage() {
                           : "bg-[#F2F2F7] text-[#1D1D1F] hover:bg-[#E5E5EA] border-black/[0.05]"
                       }`}
                       title="Ver conversas anteriores"
+                      aria-label="Ver conversas anteriores"
+                      aria-expanded={isHistoryDrawerOpen}
                     >
                       <PanelLeft size={14} />
-                      <span>Conversas</span>
+                      <span className="hidden min-[390px]:inline">Conversas</span>
                       <span
                         className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold tabular-nums ${
                           isHistoryDrawerOpen
@@ -1290,7 +1283,7 @@ export default function AIAnalystPage() {
                   </div>
 
                   {/* Título Central Apple Intelligence */}
-                  <div className="flex items-center gap-2 min-w-0">
+                  <div className="flex min-w-0 flex-1 items-center justify-center gap-2">
                     <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-[#1D1D1F] text-white shadow-2xs">
                       <Sparkles size={13} className="text-emerald-400" />
                     </span>
@@ -1452,10 +1445,10 @@ export default function AIAnalystPage() {
                   )}
 
                   {/* COLUNA PRINCIPAL DE CONVERSA */}
-                  <div className="relative flex min-w-0 flex-1 flex-col justify-between bg-white">
+                  <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-white">
                     {/* Barra rápida de troca entre conversas recentes (quando há mais de 1 conversa salva) */}
                     {sessions.length > 1 && !isHistoryDrawerOpen && (
-                      <div className="flex items-center gap-1.5 overflow-x-auto border-b border-black/[0.04] bg-[#FAFAFC] px-4 py-2 no-scrollbar">
+                      <div className="flex min-w-0 shrink-0 items-center gap-1.5 overflow-x-auto border-b border-black/[0.04] bg-[#FAFAFC] px-4 py-2 no-scrollbar">
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-[#86868B] shrink-0 mr-1">
                           Recentes:
                         </span>
@@ -1506,10 +1499,12 @@ export default function AIAnalystPage() {
                     )}
 
                     {/* STREAM DE MENSAGENS */}
+                    <div className="relative min-h-0 min-w-0 flex-1">
                     <div
                       ref={chatFeedRef}
                       onScroll={handleChatScroll}
-                      className="flex-1 overflow-y-auto px-4 py-5 sm:px-6 space-y-5 overscroll-contain scroll-smooth"
+                      data-testid="ai-chat-feed"
+                      className="h-full min-h-0 min-w-0 overflow-y-auto overflow-x-hidden px-3 py-4 sm:px-6 space-y-5 overscroll-contain touch-scroll"
                     >
                       {messages.length === 0 ? (
                         <div className="flex min-h-full flex-col items-center justify-center py-6 text-center">
@@ -1581,19 +1576,19 @@ export default function AIAnalystPage() {
                             <div
                               key={msg.id}
                               ref={isLast ? lastMessageRef : undefined}
-                              className={`flex flex-col scroll-mt-4 ${
+                              className={`flex min-w-0 max-w-full flex-col scroll-mt-4 ${
                                 isUser ? "items-end" : "items-start"
                               }`}
                             >
                               {isUser ? (
-                                <div className="max-w-[86%] sm:max-w-[78%] rounded-[22px] rounded-br-[6px] bg-[#1D1D1F] px-4 py-3 text-white shadow-xs">
+                                <div className="min-w-0 max-w-[86%] sm:max-w-[78%] rounded-[22px] rounded-br-[6px] bg-[#1D1D1F] px-4 py-3 text-white shadow-xs">
                                   <FormattedMessage content={msg.content} role="user" />
                                   <div className="mt-1.5 flex items-center justify-end gap-1.5 text-[10px] text-white/55">
                                     <span>{msg.timestamp}</span>
                                   </div>
                                 </div>
                               ) : (
-                                <div className="w-full max-w-[96%] sm:max-w-[90%] rounded-[24px] rounded-tl-[8px] border border-black/[0.06] bg-[#FAFAFC] p-4 sm:p-5 text-[#1D1D1F] shadow-[0_2px_12px_rgba(0,0,0,0.025)] space-y-3">
+                                <div className="min-w-0 w-full max-w-[96%] sm:max-w-[90%] rounded-[24px] rounded-tl-[8px] border border-black/[0.06] bg-[#FAFAFC] p-4 sm:p-5 text-[#1D1D1F] shadow-[0_2px_12px_rgba(0,0,0,0.025)] space-y-3">
                                   {/* Cabeçalho sutil da mensagem da IA */}
                                   <div className="flex items-center justify-between gap-2 pb-2 border-b border-black/[0.05]">
                                     <div className="flex items-center gap-2">
@@ -1704,16 +1699,18 @@ export default function AIAnalystPage() {
                       <button
                         type="button"
                         onClick={scrollToChatBottom}
-                        className="absolute bottom-24 right-5 z-20 flex items-center gap-1.5 rounded-full border border-black/10 bg-white/95 px-3 py-1.5 text-[11px] font-semibold text-[#1D1D1F] shadow-md backdrop-blur-md hover:bg-[#F2F2F7] active:scale-95 transition-all cursor-pointer"
+                        className="absolute bottom-3 right-5 z-20 flex items-center gap-1.5 rounded-full border border-black/10 bg-white/95 px-3 py-1.5 text-[11px] font-semibold text-[#1D1D1F] shadow-md backdrop-blur-md hover:bg-[#F2F2F7] active:scale-95 transition-all cursor-pointer"
                       >
                         <ChevronDown size={14} />
                         <span>Ir para o final</span>
                       </button>
                     )}
 
+                    </div>
+
                     {/* SIMULADOR DE COMPRA INLINE (ESTILO APPLE SHEET COMPACTO) */}
                     {isInlineSimOpen && (
-                      <div className="border-t border-black/[0.07] bg-[#F8F8FA] p-3.5 sm:px-5 space-y-2.5 animate-in slide-in-from-bottom-2 duration-200 text-xs">
+                      <div className="max-h-[45%] shrink-0 overflow-y-auto overscroll-contain border-t border-black/[0.07] bg-[#F8F8FA] p-3.5 sm:px-5 space-y-2.5 animate-in slide-in-from-bottom-2 duration-200 text-xs">
                         <div className="flex items-center justify-between">
                           <span className="font-bold text-[#1D1D1F] flex items-center gap-1.5">
                             <Calculator size={14} className="text-emerald-600" />
@@ -1743,7 +1740,7 @@ export default function AIAnalystPage() {
                               placeholder="Valor R$ (ex: 350)"
                               value={simAmount}
                               onChange={(e) => setSimAmount(e.target.value)}
-                              className="flex-1 px-3.5 py-2 rounded-xl bg-white border border-black/10 text-[16px] sm:text-xs font-mono font-bold text-[#1D1D1F] focus:outline-none focus:ring-2 focus:ring-black/10"
+                              className="min-w-0 flex-1 px-3.5 py-2 rounded-xl bg-white border border-black/10 text-[16px] sm:text-xs font-mono font-bold text-[#1D1D1F] focus:outline-none focus:ring-2 focus:ring-black/10"
                             />
                             {simMethod === "credit" && (
                               <select
@@ -1804,7 +1801,8 @@ export default function AIAnalystPage() {
                         e.preventDefault();
                         handleSendMessage();
                       }}
-                      className="border-t border-black/[0.06] bg-white/95 px-3 py-2.5 sm:px-5 sm:py-3.5 pb-[calc(0.65rem+env(safe-area-inset-bottom,0px))] backdrop-blur-xl"
+                      data-testid="ai-chat-composer"
+                      className="min-w-0 shrink-0 border-t border-black/[0.06] bg-white/95 px-3 py-2.5 sm:px-5 sm:py-3.5 pb-[calc(0.65rem+env(safe-area-inset-bottom,0px))] backdrop-blur-xl"
                     >
                       <div className="flex items-end gap-2 rounded-[26px] border border-black/[0.08] bg-[#F2F2F7]/90 px-2.5 py-1.5 transition-all focus-within:border-black/20 focus-within:bg-white focus-within:shadow-[0_4px_20px_rgba(0,0,0,0.06)]">
                         <button
@@ -1831,7 +1829,7 @@ export default function AIAnalystPage() {
                             e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
                           }}
                           onKeyDown={(e) => {
-                            if (e.key === "Enter" && !e.shiftKey) {
+                            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                               e.preventDefault();
                               if (inputMessage.trim() && !isSending) {
                                 void handleSendMessage();
@@ -1840,7 +1838,9 @@ export default function AIAnalystPage() {
                           }}
                           enterKeyHint="send"
                           placeholder="Mensagem para Wallet+ IA..."
-                          className="max-h-[120px] min-h-[36px] flex-1 resize-none bg-transparent px-1.5 py-1.5 text-[16px] sm:text-[14px] leading-snug font-normal text-[#1D1D1F] placeholder:text-[#86868B] focus:outline-none"
+                          aria-label="Mensagem para Wallet+ IA"
+                          maxLength={1000}
+                          className="max-h-[120px] min-h-[36px] min-w-0 flex-1 resize-none bg-transparent px-1.5 py-1.5 text-[16px] sm:text-[14px] leading-snug font-normal text-[#1D1D1F] placeholder:text-[#86868B] focus:outline-none"
                         />
 
                         <button
@@ -1859,8 +1859,7 @@ export default function AIAnalystPage() {
                     </form>
                   </div>
                 </div>
-              </section>
-            </div>
+            </ChatDialog>
           )}
 
 
@@ -2113,7 +2112,8 @@ export default function AIAnalystPage() {
               }}
               enterKeyHint="send"
               placeholder="Pergunte qualquer coisa para a IA Wallet+..."
-              className="flex-1 bg-transparent px-2 py-1.5 text-[16px] sm:text-xs font-medium text-white placeholder:text-white/55 focus:outline-none"
+              maxLength={1000}
+              className="min-w-0 flex-1 bg-transparent px-2 py-1.5 text-[16px] sm:text-xs font-medium text-white placeholder:text-white/55 focus:outline-none"
             />
 
             {sessions.length > 1 && (

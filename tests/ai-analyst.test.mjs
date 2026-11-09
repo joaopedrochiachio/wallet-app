@@ -34,7 +34,8 @@ test("Modelos OpenAI: gpt-6-luna é o principal e gpt-6-sol é preparado por con
   assert.equal(resolveConfiguredModel("gpt-6-sol"), "gpt-6-sol");
 });
 
-test("synthesizeFinancialTelemetry calcula métricas consolidadas corretamente", () => {
+test("synthesizeFinancialTelemetry calcula métricas consolidadas corretamente", (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: new Date(2026, 10, 9, 12) });
   const mockCards = [
     {
       id: "card-1",
@@ -105,10 +106,10 @@ test("synthesizeFinancialTelemetry calcula métricas consolidadas corretamente",
   assert.equal(telemetry.credit.availableCredit, 11500);
   assert.equal(telemetry.credit.creditUtilizationPercent, 23);
 
-  // Verificações de Comprometimento (Recorrentes R$ 2.650 + Cartões R$ 3.500 = R$ 6.150 / R$ 10.000 = 62%)
+  // Comprometimento usa o débito pendente + a fatura do mês; limite utilizado não é fatura.
   assert.equal(telemetry.commitments.recurringMonthlyTotal, 2650);
-  assert.equal(telemetry.commitments.commitmentRatioPercent, 62);
-  assert.equal(telemetry.commitments.isOverLimit, true); // 62% > 60%
+  assert.equal(telemetry.commitments.commitmentRatioPercent, 27);
+  assert.equal(telemetry.commitments.isOverLimit, false);
 
   // Verificações de Categorias
   assert.equal(telemetry.categories[0].category, "Alimentação");
@@ -1257,7 +1258,8 @@ test("safeParseFinancialDiagnosis respeita dismissedPatterns e exclui padrões d
   assert.ok(!patternTitles.some((t) => t.includes("gasolina")), "Gasolina descartada não deve aparecer em spendingPatterns");
 });
 
-test("computeFortnightBreakdown divide rigorosamente entradas, débitos e faturas entre 1ª e 2ª quinzena", () => {
+test("computeFortnightBreakdown divide rigorosamente entradas, débitos e faturas entre 1ª e 2ª quinzena", (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: new Date(2026, 9, 1, 12) });
   const monthProjection = {
     monthName: "Outubro",
     year: 2026,
@@ -1312,8 +1314,8 @@ test("computeFortnightBreakdown divide rigorosamente entradas, débitos e fatura
   ];
 
   const transactions = [
-    { id: "tx-1", title: "Mercado Nubank", amount: 800, type: "despesa", account: "Nubank", cardId: "card-nubank", date: "2026-09-02" },
-    { id: "tx-2", title: "Compra Inter", amount: 1200, type: "despesa", account: "Inter Black", cardId: "card-inter", date: "2026-09-10" },
+    { id: "tx-1", title: "Mercado Nubank", amount: 800, type: "despesa", account: "Nubank", cardId: "card-nubank", date: "2026-09-07" },
+    { id: "tx-2", title: "Compra Inter", amount: 1200, type: "despesa", account: "Inter Black", cardId: "card-inter", date: "2026-09-20" },
   ];
 
   const breakdown = computeFortnightBreakdown(monthProjection, recurringItems, cards, transactions);
