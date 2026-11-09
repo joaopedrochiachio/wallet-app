@@ -31,6 +31,7 @@ import {
   getPendingDueOccurrences,
 } from "../lib/utils/timeProgression.ts";
 import { auditFinancialIntegrity } from "../lib/services/financialIntegrityService.ts";
+import { buildInstallmentPurchasePlan } from "../lib/utils/installments.ts";
 
 const colorScheme = {
   gradient: "",
@@ -2045,4 +2046,124 @@ test("compra parcelada de R$ 275 em 3x no cartão divide as parcelas (91,67 + 91
   assert.equal(novDetailsAfterPay.pendingInvoice, 0);
   assert.equal(novDetailsAfterPay.paidAmount, 91.67);
   assert.equal(novDetailsAfterPay.isPaid, true);
+});
+
+function historicalInstallmentFixture({ total = 6000, count = 12, paid = 8, date = new Date(2026, 2, 5, 12) } = {}) {
+  const plan = buildInstallmentPurchasePlan(total, count, date, paid);
+  const item = {
+    id: "historical-purchase", title: "Celular", amount: plan.installmentAmount,
+    type: "expense", account: credit.name, cardId: credit.id, category: "Compras",
+    dueDay: date.getDate(), recurrenceType: "fixed_day", installmentsCount: count,
+    paidInstallmentsCount: paid, startYear: date.getFullYear(), startMonth: date.getMonth(),
+    realizedPeriods: plan.firstUnpaidOccurrence ? [plan.firstUnpaidOccurrence.periodKey] : [],
+    overrides: plan.overrides, active: true,
+  };
+  const entries = plan.firstUnpaidOccurrence ? [{
+    id: "first-unpaid", title: item.title, amount: plan.firstUnpaidOccurrence.amount,
+    type: "despesa", account: credit.name, cardId: credit.id,
+    occurredAt: plan.firstUnpaidOccurrence.date, recurringItemId: item.id,
+    periodKey: plan.firstUnpaidOccurrence.periodKey,
+  }] : [];
+  return { plan, item, entries };
+}
+
+test("celular comprado em março com 8 de 12 parcelas pagas compromete só R$ 2.000 e mantém a 9ª parcela", () => {
+  const { plan, item, entries } = historicalInstallmentFixture();
+  const now = new Date(2026, 10, 9, 12);
+  assert.equal(plan.remainingAmount, 2000);
+  assert.equal(plan.remainingInstallments, 4);
+  assert.equal(plan.firstUnpaidOccurrence.periodKey, "2026-11");
+  assert.equal(calculateCreditCardUsedLimit(credit, entries, [item], now), 2000);
+  const november = getCardInvoiceDetailsForMonth(credit, entries, [item], 2026, 10, now);
+  assert.equal(november.totalInvoice, 500);
+  assert.equal(november.availableLimit, 3000);
+  assert.equal(november.recurringItemDetails[0].installmentIndex, 9);
+  assert.equal(november.recurringItemDetails[0].totalInstallments, 12);
+  for (let month = 2; month <= 9; month++) {
+    assert.equal(getCardInvoiceRecurringDetails(credit, [item], 2026, month, entries).totalAmount, 0);
+    assert.equal(isRecurringActiveInMonth(item, 2026, month), false);
+  }
+  assert.equal(calculateCheckingBalance({ ...checking, openingBalance: 1000 }, entries), 1000);
+  assert.equal(calculateMonthlyAccountFlow([checking, credit], entries, now).outflow, 0);
+});
+
+test("progressão temporal não recria parcelas pagas antes do cadastro nem duplica a primeira pendente", () => {
+  const { item, entries } = historicalInstallmentFixture();
+  assert.deepEqual(getPendingDueOccurrences([item], [checking, credit], entries, new Date(2026, 10, 9, 12)), []);
+  const due = getPendingDueOccurrences([item], [checking, credit], entries, new Date(2026, 11, 9, 12));
+  assert.equal(due.length, 1);
+  assert.equal(due[0].periodKey, "2026-12");
+  assert.equal(due[0].amount, 500);
+  assert.deepEqual(getPendingDueOccurrences([item], [credit], [...entries, ...due.map((occ) => ({
+    id: occ.occurrenceId, recurringItemId: occ.recurringItemId, periodKey: occ.periodKey,
+  }))], new Date(2026, 11, 9, 12)), []);
+});
+
+test("última parcela restante mantém ajuste de centavos e libera o limite quando a fatura é paga", () => {
+  const { plan, item, entries } = historicalInstallmentFixture({ total: 275, count: 3, paid: 2, date: new Date(2026, 8, 5, 12) });
+  const now = new Date(2026, 10, 9, 12);
+  assert.equal(plan.remainingAmount, 91.66);
+  assert.equal(entries[0].amount, 91.66);
+  assert.equal(calculateCreditCardUsedLimit(credit, entries, [item], now), 91.66);
+  const payment = {
+    id: "pay-last", type: "despesa", amount: 91.66, kind: "invoice_payment",
+    account: checking.name, cardId: checking.id, relatedCardId: credit.id,
+    periodKey: "2026-11", occurredAt: now,
+  };
+  assert.equal(calculateCreditCardUsedLimit(credit, [...entries, payment], [item], now), 0);
+  assert.equal(getCardInvoiceDetailsForMonth(credit, [...entries, payment], [item], 2026, 10, now).isPaid, true);
+});
+
+test("compra totalmente quitada não gera faturas, limite comprometido ou cobranças retroativas", () => {
+  const { plan, item, entries } = historicalInstallmentFixture({ paid: 12 });
+  assert.equal(plan.firstUnpaidOccurrence, null);
+  assert.equal(plan.remainingAmount, 0);
+  assert.equal(plan.remainingInstallments, 0);
+  assert.deepEqual(entries, []);
+  const now = new Date(2027, 2, 9, 12);
+  assert.deepEqual(getPendingDueOccurrences([item], [credit], entries, now), []);
+  assert.equal(calculateCreditCardUsedLimit(credit, entries, [item], now), 0);
+  for (let offset = 0; offset < 14; offset++) {
+    const month = new Date(2026, 2 + offset, 1);
+    assert.equal(getCardInvoiceRecurringDetails(credit, [item], month.getFullYear(), month.getMonth()).totalAmount, 0);
+  }
+});
+
+test("informar zero parcelas pagas mantém o valor integral comprometido para compras novas", () => {
+  const { plan, item, entries } = historicalInstallmentFixture({ paid: 0, date: new Date(2026, 10, 5, 12) });
+  assert.equal(plan.remainingAmount, 6000);
+  assert.equal(calculateCreditCardUsedLimit(credit, entries, [item], new Date(2026, 10, 9, 12)), 6000);
+});
+
+test("parcelas pagas precisam ser um número inteiro entre zero e o total", () => {
+  for (const paid of [-1, 4, 1.5, NaN, Infinity]) {
+    assert.throws(() => buildInstallmentPurchasePlan(275, 3, new Date(2026, 8, 5), paid), /parcelas já pagas/);
+  }
+});
+
+test("compra no dia 31 preserva parcelas na virada do ano e em fevereiro sem duplicar cobranças", () => {
+  const { plan, item, entries } = historicalInstallmentFixture({ total: 300, count: 3, paid: 2, date: new Date(2026, 11, 31, 12) });
+  assert.equal(plan.firstUnpaidOccurrence.periodKey, "2027-02");
+  assert.equal(plan.firstUnpaidOccurrence.date.getDate(), 28);
+  const details = getCardInvoiceRecurringDetails(credit, [item], 2027, 2, entries);
+  assert.equal(details.totalAmount, 100);
+  assert.equal(details.pendingAmount, 0);
+  assert.equal(details.itemDetails[0].installmentIndex, 3);
+  assert.equal(calculateCreditCardUsedLimit(credit, entries, [item], new Date(2027, 1, 28, 12)), 100);
+  assert.deepEqual(getPendingDueOccurrences([item], [credit], entries, new Date(2027, 2, 31, 12)), []);
+});
+
+test("alterar fechamento e vencimento redistribui apenas as parcelas pendentes e mantém o limite restante", () => {
+  const { item, entries } = historicalInstallmentFixture({ date: new Date(2026, 2, 15, 12) });
+  const now = new Date(2026, 10, 16, 12);
+  const changedCard = { ...credit, closingDay: 20, dueDay: 28 };
+  assert.equal(getCardInvoiceDetailsForMonth(credit, entries, [item], 2026, 10, now).totalInvoice, 0);
+  const changed = getCardInvoiceDetailsForMonth(changedCard, entries, [item], 2026, 10, now);
+  assert.equal(changed.totalInvoice, 500);
+  assert.equal(changed.closingDay, 20);
+  assert.equal(changed.dueDay, 28);
+  assert.equal(changed.recurringItemDetails[0].installmentIndex, 9);
+  assert.equal(calculateCreditCardUsedLimit(changedCard, entries, [item], now), 2000);
+  assert.equal(getCardInvoiceRecurringDetails(changedCard, [item], 2026, 9, entries).totalAmount, 0);
+  assert.equal(getInvoiceDueDate({ ...changedCard, closingDay: 31, dueDay: 31 }, new Date(2027, 0, 31)).getDate(), 28);
 });

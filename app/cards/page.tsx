@@ -49,6 +49,7 @@ export default function CardsPage() {
     deleteRecurringItem,
     deleteRecurringItemOccurrence,
     updateCardLimit,
+    updateCardBillingCycle,
     payInvoice,
     unpayInvoice,
     mainBalance,
@@ -60,6 +61,11 @@ export default function CardsPage() {
 
   const [editingCardId, setEditingCardId] = useState<string | null>(null);
   const [newLimitInput, setNewLimitInput] = useState("");
+  const [editingBillingCycle, setEditingBillingCycle] = useState<{
+    cardId: string; closingDay: string; dueDay: string;
+  } | null>(null);
+  const [isSavingBillingCycle, setIsSavingBillingCycle] = useState(false);
+  const [billingCycleError, setBillingCycleError] = useState<string | null>(null);
   const [paymentSuccessMessage, setPaymentSuccessMessage] = useState<string | null>(null);
   const [paymentErrorMessage, setPaymentErrorMessage] = useState<string | null>(null);
   const [isPayingInvoice, setIsPayingInvoice] = useState(false);
@@ -773,6 +779,24 @@ export default function CardsPage() {
 
                           <button
                             type="button"
+                            onClick={() => {
+                              setEditingBillingCycle({
+                                cardId: card.id,
+                                closingDay: String(card.closingDay || 1),
+                                dueDay: String(card.dueDay || 10),
+                              });
+                              setBillingCycleError(null);
+                            }}
+                            disabled={isSavingBillingCycle}
+                            className="inline-flex items-center gap-1 text-xs font-semibold text-[#1D1D1F] bg-[#F2F2F7] hover:bg-[#E5E5EA] px-3 py-1.5 rounded-full transition-colors cursor-pointer shrink-0 disabled:opacity-50"
+                            title={`Alterar fechamento e vencimento do ${card.name}`}
+                          >
+                            <CalendarClock size={12} />
+                            <span>Alterar datas</span>
+                          </button>
+
+                          <button
+                            type="button"
                             onClick={() => handleStartEditLimit(card.id, card.limit)}
                             className="inline-flex items-center gap-1 text-xs font-semibold text-[#1D1D1F] bg-[#F2F2F7] hover:bg-[#E5E5EA] px-3 py-1.5 rounded-full transition-colors cursor-pointer shrink-0"
                             title={`Alterar limite do ${card.name}`}
@@ -810,6 +834,58 @@ export default function CardsPage() {
                         </div>
                       </div>
                     </div>
+
+                    {editingBillingCycle?.cardId === card.id && (
+                      <form
+                        className="space-y-3 rounded-2xl border border-black/[0.08] bg-[#F2F2F7]/90 p-3"
+                        onSubmit={async (event) => {
+                          event.preventDefault();
+                          setIsSavingBillingCycle(true);
+                          setBillingCycleError(null);
+                          try {
+                            await updateCardBillingCycle(card.id, Number(editingBillingCycle.closingDay), Number(editingBillingCycle.dueDay));
+                            setEditingBillingCycle(null);
+                            setPaymentSuccessMessage("Fechamento e vencimento atualizados com sucesso!");
+                            setTimeout(() => setPaymentSuccessMessage(null), 3500);
+                          } catch (error) {
+                            setBillingCycleError(error instanceof Error ? error.message : "Não foi possível salvar as datas. Tente novamente.");
+                          } finally {
+                            setIsSavingBillingCycle(false);
+                          }
+                        }}
+                      >
+                        <div className="flex flex-wrap items-end gap-3">
+                          <label className="flex flex-col gap-1 text-xs font-medium text-[#86868B]">
+                            Dia do fechamento
+                            <input
+                              type="number" min={1} max={31} step={1} required
+                              value={editingBillingCycle.closingDay}
+                              onChange={(event) => setEditingBillingCycle({ ...editingBillingCycle, closingDay: event.target.value })}
+                              disabled={isSavingBillingCycle}
+                              className="w-24 rounded-lg border border-black/10 bg-white px-3 py-2 text-sm text-[#1D1D1F] outline-none focus:border-[#0071E3]"
+                            />
+                          </label>
+                          <label className="flex flex-col gap-1 text-xs font-medium text-[#86868B]">
+                            Dia do vencimento
+                            <input
+                              type="number" min={1} max={31} step={1} required
+                              value={editingBillingCycle.dueDay}
+                              onChange={(event) => setEditingBillingCycle({ ...editingBillingCycle, dueDay: event.target.value })}
+                              disabled={isSavingBillingCycle}
+                              className="w-24 rounded-lg border border-black/10 bg-white px-3 py-2 text-sm text-[#1D1D1F] outline-none focus:border-[#0071E3]"
+                            />
+                          </label>
+                          <button type="submit" disabled={isSavingBillingCycle} className="rounded-full bg-[#0071E3] px-4 py-2 text-xs font-semibold text-white cursor-pointer disabled:opacity-50">
+                            {isSavingBillingCycle ? "Salvando..." : "Salvar datas"}
+                          </button>
+                          <button type="button" disabled={isSavingBillingCycle} onClick={() => setEditingBillingCycle(null)} className="px-2 py-2 text-xs text-[#86868B] cursor-pointer disabled:opacity-50">
+                            Cancelar
+                          </button>
+                        </div>
+                        <p className="text-[11px] text-[#86868B]">As compras e parcelas serão redistribuídas nas faturas conforme essas datas. Em meses mais curtos, usamos o último dia do mês.</p>
+                        {billingCycleError && <p role="alert" className="text-xs text-rose-600">{billingCycleError}</p>}
+                      </form>
+                    )}
 
                     {/* Barra de Progresso de Limite e Ajuste */}
                     <div className="space-y-2 pt-1">

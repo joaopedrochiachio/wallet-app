@@ -2,6 +2,7 @@ import type { CardItem, RecurringItem } from "@/types";
 import {
   getEffectiveDueDay,
   getPeriodKey,
+  isInstallmentPaidInMonth,
   getEffectiveRecurringItemForPeriod,
   MONTH_NAMES_PT,
 } from "./dateUtils.ts";
@@ -128,6 +129,7 @@ export function getDueOccurrencesForRecurringItem(
 
       // Se o período foi excluído pontualmente ou marcado como excluído via override, ignora
       const isExcluded =
+        isInstallmentPaidInMonth(item, curYear, curMonth) ||
         item.excludedPeriods?.includes(periodKey) ||
         item.overrides?.[periodKey]?.isDeleted;
 

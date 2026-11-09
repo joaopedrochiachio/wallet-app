@@ -162,10 +162,30 @@ export function getRecurringMonthOffset(
   return (targetYear - normalizedStartYear) * 12 + targetMonth - startMonth;
 }
 
+/** As parcelas pagas antes do cadastro não geram novas cobranças ou saídas de caixa. */
+export function isInstallmentPaidInMonth(
+  item: {
+    installmentsCount?: number;
+    paidInstallmentsCount?: number;
+    startYear?: number;
+    startMonth?: number;
+    startMonthIndex?: number;
+  },
+  year: number,
+  month: number
+): boolean {
+  const offset = getRecurringMonthOffset(item, year, month);
+  return Boolean(
+    item.installmentsCount && item.installmentsCount > 0 &&
+    offset >= 0 && offset < Math.min(item.installmentsCount, item.paidInstallmentsCount || 0)
+  );
+}
+
 export function isRecurringActiveInMonth(
   item: {
     active: boolean;
     installmentsCount?: number;
+    paidInstallmentsCount?: number;
     startYear?: number;
     startMonth?: number;
     startMonthIndex?: number;
@@ -179,6 +199,7 @@ export function isRecurringActiveInMonth(
   const periodKey = getPeriodKey(targetYear, targetMonth);
   if (
     !item.active ||
+    isInstallmentPaidInMonth(item, targetYear, targetMonth) ||
     item.realizedPeriods?.includes(periodKey) ||
     item.excludedPeriods?.includes(periodKey) ||
     item.overrides?.[periodKey]?.isDeleted
@@ -331,7 +352,8 @@ export function getEffectiveDueDay(
   if (item.recurrenceType === "business_day_5") {
     return get5thBusinessDay(year, monthIndex);
   }
-  return item.dueDay || 10;
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+  return Math.min(daysInMonth, Math.max(1, item.dueDay || 10));
 }
 
 /**

@@ -2,6 +2,7 @@ import type { CardItem, RecurringItem } from "@/types";
 import {
   getPeriodKey,
   getRecurringMonthOffset,
+  isInstallmentPaidInMonth,
   getEffectiveRecurringItemForPeriod,
   getEffectiveDueDay,
   MONTH_NAMES_PT,
@@ -191,6 +192,7 @@ export function getCardInvoiceRecurringDetails(
 
     for (const rawItem of matchingCreditItems) {
       if (!rawItem.active) continue;
+      if (isInstallmentPaidInMonth(rawItem, candYear, candMonth)) continue;
 
       const item = getEffectiveRecurringItemForPeriod(rawItem, candPeriodKey);
 

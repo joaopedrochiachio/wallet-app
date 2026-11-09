@@ -10,6 +10,7 @@ import {
   getEffectiveRecurringItemForPeriod,
   getPeriodKey,
   getRecurringMonthOffset,
+  isInstallmentPaidInMonth,
 } from "../utils/dateUtils.ts";
 
 export interface FinancialCalendarTransaction extends LedgerEntry {
@@ -83,6 +84,7 @@ function isRecurringScheduledForPeriod(
   periodKey: string
 ): boolean {
   if (!item.active) return false;
+  if (isInstallmentPaidInMonth(item, year, month)) return false;
   if (item.excludedPeriods?.includes(periodKey)) return false;
   if (item.overrides?.[periodKey]?.isDeleted) return false;
 

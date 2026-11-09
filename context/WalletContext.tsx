@@ -37,6 +37,7 @@ import {
   deleteRecurringFromFirestore,
 } from "@/lib/services/recurringService";
 import { processDueOccurrencesForUser } from "@/lib/services/timeProgressionService";
+import { buildInstallmentPurchasePlan } from "@/lib/utils/installments";
 import {
   get5thBusinessDay,
   getEffectiveDueDay,
@@ -108,6 +109,7 @@ export interface TransactionItem {
   recurrenceType?: RecurrenceType;
   recurrenceDay?: number;
   installmentsCount?: number;
+  paidInstallmentsCount?: number;
   amountIsTotalPurchase?: boolean;
   kind?: "regular" | "invoice_payment" | "invoice_settlement" | "balance_reconciliation";
   relatedCardId?: string | null;
@@ -174,6 +176,7 @@ interface WalletContextType {
   accountOptions: string[];
   selectCard: (cardId: string) => void;
   updateCardLimit: (cardId: string, newLimit: number) => void;
+  updateCardBillingCycle: (cardId: string, closingDay: number, dueDay: number) => Promise<void>;
   addCard: (card: NewCardInput) => CardItem;
   deleteCard: (cardId: string) => void;
   updateUserProfile: (profile: Partial<UserProfile>) => void;
@@ -611,6 +614,20 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user]);
 
+  const updateCardBillingCycle = useCallback(async (
+    cardId: string, closingDay: number, dueDay: number
+  ) => {
+    if (!user) throw new Error("Entre na sua conta para alterar as datas do cartão.");
+    if (!cards.some((card) => card.id === cardId && card.type === "credit")) {
+      throw new Error("Cartão de crédito não encontrado.");
+    }
+    if (![closingDay, dueDay].every((day) => Number.isInteger(day) && day >= 1 && day <= 31)) {
+      throw new Error("Informe dias entre 1 e 31 para o fechamento e o vencimento.");
+    }
+    await updateCardFieldsInFirestore(user.uid, cardId, { closingDay, dueDay });
+    setCards((prev) => prev.map((card) => card.id === cardId ? { ...card, closingDay, dueDay } : card));
+  }, [user, cards]);
+
   const accountOptions = useMemo(
     () => cards.length > 0
       ? [...cards].sort((a, b) => (a.type === "checking" ? -1 : 1) - (b.type === "checking" ? -1 : 1)).map((card) => card.name)
@@ -701,6 +718,18 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const effectiveTxAmount = isInstallmentPurchase
         ? splitInfo.installmentAmount
         : tx.amount;
+      const installmentPlan = isInstallmentPurchase
+        ? buildInstallmentPurchasePlan(
+            splitInfo.totalAmount, requestedInstallments!, safeTxDate, tx.paidInstallmentsCount ?? 0
+          )
+        : undefined;
+      if (tx.paidInstallmentsCount && (!installmentPlan || !cards.some(
+        (card) => card.id === resolvedCardId && card.type === "credit"
+      ))) {
+        throw new Error("Parcelas já pagas se aplicam a compras parceladas no cartão de crédito.");
+      }
+      const firstUnpaid = installmentPlan?.firstUnpaidOccurrence;
+      const initialPeriodKey = firstUnpaid?.periodKey || periodKey;
 
       const matchingRecurring = !isInstallmentPurchase
         ? recurringItems.find((item) => {
@@ -731,27 +760,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         };
       } else if (tx.isRecurring || isInstallmentPurchase) {
         const recurrenceType: RecurrenceType = tx.recurrenceType || "fixed_day";
-        let overrides: RecurringItem["overrides"] | undefined;
-        if (
-          isInstallmentPurchase &&
-          requestedInstallments &&
-          Math.abs(splitInfo.lastInstallmentAmount - splitInfo.installmentAmount) >= 0.005
-        ) {
-          const lastMonthDate = new Date(
-            safeTxDate.getFullYear(),
-            safeTxDate.getMonth() + requestedInstallments - 1,
-            1
-          );
-          const lastCandPeriodKey = getPeriodKey(
-            lastMonthDate.getFullYear(),
-            lastMonthDate.getMonth()
-          );
-          overrides = {
-            [lastCandPeriodKey]: {
-              amount: splitInfo.lastInstallmentAmount,
-            },
-          };
-        }
+        const overrides = installmentPlan?.overrides;
 
         recurringToPersist = {
           id: `rec-${crypto.randomUUID()}`,
@@ -767,17 +776,24 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
               : tx.recurrenceDay || safeTxDate.getDate() || 10,
           recurrenceType,
           installmentsCount: requestedInstallments,
+          ...(installmentPlan ? { paidInstallmentsCount: installmentPlan.paidInstallmentsCount } : {}),
           startMonth: safeTxDate.getMonth(),
           startYear: safeTxDate.getFullYear(),
-          realizedPeriods: [periodKey],
+          realizedPeriods: installmentPlan && !firstUnpaid ? [] : [initialPeriodKey],
           ...(overrides ? { overrides } : {}),
           active: true,
         };
       }
 
+      // Uma compra já quitada é apenas histórico de planejamento; não gera cobrança.
+      if (installmentPlan && !firstUnpaid && recurringToPersist) {
+        await saveRecurringToFirestore(user.uid, recurringToPersist);
+        return;
+      }
+      const entryDate = firstUnpaid?.date || safeTxDate;
       await addTransactionFirestore(
         {
-          amount: effectiveTxAmount,
+          amount: firstUnpaid?.amount ?? effectiveTxAmount,
           type: tx.type === "receita" ? "in" : "out",
           category: tx.category,
           description: tx.title,
@@ -785,9 +801,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           cardId: resolvedCardId,
           kind: "regular",
           recurringItemId: recurringToPersist?.id || null,
-          periodKey: recurringToPersist ? periodKey : null,
-          date: tx.date,
-          occurredAt: safeTxDate,
+          periodKey: recurringToPersist ? initialPeriodKey : null,
+          date: installmentPlan?.paidInstallmentsCount
+            ? `${entryDate.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}, 12:00`
+            : tx.date,
+          occurredAt: installmentPlan?.paidInstallmentsCount ? entryDate : safeTxDate,
         },
         user.uid,
         recurringToPersist
@@ -1481,6 +1499,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       accountOptions,
       selectCard,
       updateCardLimit,
+      updateCardBillingCycle,
       addCard,
       deleteCard,
       updateUserProfile,
@@ -1522,6 +1541,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       accountOptions,
       selectCard,
       updateCardLimit,
+      updateCardBillingCycle,
       addCard,
       deleteCard,
       updateUserProfile,

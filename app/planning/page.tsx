@@ -27,6 +27,7 @@ import {
   getPlanningMonthsWindow,
   getPeriodKey,
   getRecurringMonthOffset,
+  isInstallmentPaidInMonth,
   isRecurringActiveInMonth,
   groupRecurringItemsByDate,
   getEffectiveRecurringItemForPeriod,
@@ -218,6 +219,7 @@ export default function PlanningPage() {
   );
 
   const isScheduledForSelectedMonth = (item: RecurringItem) => {
+    if (isInstallmentPaidInMonth(item, targetYear, targetMonth)) return false;
     if (item.excludedPeriods?.includes(targetPeriodKey) || item.overrides?.[targetPeriodKey]?.isDeleted) {
       return false;
     }

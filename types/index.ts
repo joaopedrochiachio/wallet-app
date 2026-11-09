@@ -105,6 +105,8 @@ export interface RecurringItem {
   dueDay: number;
   recurrenceType?: RecurrenceType;
   installmentsCount?: number; // Total de meses/parcelas (ex: 3, 4, 5). Se ausente ou 0 = contínuo/fixo
+  /** Parcelas iniciais quitadas antes do cadastro, sem movimentar o saldo atual. */
+  paidInstallmentsCount?: number;
   startMonthIndex?: number; // Mês inicial (0 = Setembro, 1 = Outubro...)
   startMonth?: number; // Mês calendário inicial (0 = Janeiro, 11 = Dezembro)
   startYear?: number; // Ano de início (ex: 2026)

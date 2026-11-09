@@ -12,7 +12,8 @@ import {
 } from "lucide-react";
 import { useWallet } from "@/context/WalletContext";
 import { get5thBusinessDay, MONTH_NAMES_PT } from "@/lib/utils/dateUtils";
-import { formatAccountLabel, splitInstallmentPurchase } from "@/lib/utils/ledger";
+import { formatAccountLabel, getInvoiceDueDate } from "@/lib/utils/ledger";
+import { buildInstallmentPurchasePlan } from "@/lib/utils/installments";
 import { RecurrenceType } from "@/types";
 import { Portal } from "./Portal";
 import {
@@ -41,6 +42,7 @@ export interface AddTransactionSheetProps {
     recurrenceType?: RecurrenceType;
     recurrenceDay?: number;
     installmentsCount?: number;
+    paidInstallmentsCount?: number;
   }) => void | Promise<void>;
 }
 
@@ -109,6 +111,7 @@ export function AddTransactionSheet({
   const [customDayInput, setCustomDayInput] = useState(() => String(new Date().getDate()));
   const [durationMode, setDurationMode] = useState<"continuous" | "limited">("continuous");
   const [installmentsInput, setInstallmentsInput] = useState("3");
+  const [paidInstallmentsInput, setPaidInstallmentsInput] = useState("0");
   const [creditPurchaseMode, setCreditPurchaseMode] = useState<"single" | "installments" | "subscription">("single");
 
   const [loading, setLoading] = useState(false);
@@ -174,10 +177,22 @@ export function AddTransactionSheet({
   const isInstallmentModeActive = isSelectedAccountCreditCard
     ? creditPurchaseMode === "installments"
     : isRecurring && durationMode === "limited";
-  const installmentSplit = splitInstallmentPurchase(
+  const paidInstallmentsCount = isSelectedAccountCreditCard && isInstallmentModeActive
+    ? Math.min(installmentsCount, Math.max(0, Math.trunc(Number(paidInstallmentsInput) || 0)))
+    : 0;
+  const [purchaseYear, purchaseMonth, purchaseDay] = dateInput.split("-").map(Number);
+  const purchaseDate = purchaseYear && purchaseMonth && purchaseDay
+    ? new Date(purchaseYear, purchaseMonth - 1, purchaseDay, 12)
+    : now;
+  const installmentSplit = buildInstallmentPurchasePlan(
     parsedAmount,
-    isInstallmentModeActive ? installmentsCount : 1
+    isInstallmentModeActive ? installmentsCount : 1,
+    purchaseDate,
+    paidInstallmentsCount
   );
+  const firstUnpaidInvoiceDate = selectedCardObj && installmentSplit.firstUnpaidOccurrence
+    ? getInvoiceDueDate(selectedCardObj, installmentSplit.firstUnpaidOccurrence.date)
+    : null;
   const effectiveDueDay =
     recurrenceType === "business_day_5"
       ? current5thBusinessDay
@@ -194,6 +209,12 @@ export function AddTransactionSheet({
     }
 
     const safeAmount = currencyCheck.value;
+    if (isSelectedAccountCreditCard && isInstallmentModeActive && (
+      !/^\d+$/.test(paidInstallmentsInput) || Number(paidInstallmentsInput) > installmentsCount
+    )) {
+      setErrorMessage(`Informe entre 0 e ${installmentsCount} parcelas já pagas.`);
+      return;
+    }
     const sanitizedTitle = sanitizeTextInput(title, 100);
     const sanitizedCategory = sanitizeTextInput(category, 60) || "Outros";
 
@@ -252,6 +273,9 @@ export function AddTransactionSheet({
         recurrenceType: effectiveIsRecurring ? effectiveRecurrenceType : undefined,
         recurrenceDay: effectiveIsRecurring ? effectiveRecurrenceDay : undefined,
         installmentsCount: effectiveInstallmentsCount,
+        paidInstallmentsCount: isSelectedAccountCreditCard && isInstallmentModeActive
+          ? paidInstallmentsCount
+          : undefined,
       });
 
       setAmountInput("");
@@ -266,6 +290,7 @@ export function AddTransactionSheet({
       setCustomDayInput(String(today.getDate()));
       setDurationMode("continuous");
       setInstallmentsInput("3");
+      setPaidInstallmentsInput("0");
       setErrorMessage(null);
       onClose();
     } catch (err: unknown) {
@@ -568,6 +593,33 @@ export function AddTransactionSheet({
                     </div>
                   </div>
 
+                  <div className="bg-white rounded-xl p-3 border border-indigo-200/70 space-y-2 text-xs">
+                    <div className="flex items-center justify-between gap-3">
+                      <label htmlFor="paid-installments" className="font-medium text-[#1D1D1F]">Parcelas já pagas</label>
+                      <input
+                        id="paid-installments"
+                        type="number"
+                        inputMode="numeric"
+                        min={0}
+                        max={installmentsCount}
+                        step={1}
+                        required
+                        value={paidInstallmentsInput}
+                        onChange={(e) => setPaidInstallmentsInput(e.target.value)}
+                        aria-describedby="paid-installments-help"
+                        className="w-16 rounded-lg border border-indigo-200 px-2 py-1.5 text-center font-semibold outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                    <p id="paid-installments-help" className="text-[11px] text-[#86868B] leading-relaxed">
+                      Comprou antes de usar o app? Informe a data original da compra e quantas parcelas já quitou. Esses pagamentos não serão debitados do seu saldo atual.
+                    </p>
+                    <p className="font-medium text-indigo-700" aria-live="polite">
+                      {installmentSplit.remainingInstallments > 0
+                        ? `Restam ${installmentSplit.remainingInstallments} de ${installmentsCount} parcelas. Próxima: ${paidInstallmentsCount + 1}/${installmentsCount}${firstUnpaidInvoiceDate ? ` na fatura de ${firstUnpaidInvoiceDate.toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}` : ""}.`
+                        : "Compra quitada. Nenhum valor será descontado do limite."}
+                    </p>
+                  </div>
+
                   <div className="bg-white rounded-xl p-3 border border-indigo-200/70 space-y-1.5 text-xs">
                     <div className="flex items-center justify-between">
                       <span className="text-[#86868B]">Valor de cada parcela:</span>
@@ -586,7 +638,7 @@ export function AddTransactionSheet({
                     <div className="flex items-center justify-between border-t border-black/[0.04] pt-1.5">
                       <span className="text-[#86868B]">Limite descontado agora:</span>
                       <strong className="text-[#1D1D1F] font-mono tabular-nums">
-                        R$ {formatCurrency(parsedAmount)} (total)
+                        R$ {formatCurrency(installmentSplit.remainingAmount)}
                       </strong>
                     </div>
                     {selectedCardObj && selectedCardObj.limit > 0 && (
@@ -597,7 +649,7 @@ export function AddTransactionSheet({
                           {formatCurrency(
                             Math.max(
                               0,
-                              selectedCardObj.limit - (selectedCardObj.spent || 0) - parsedAmount
+                              selectedCardObj.limit - (selectedCardObj.spent || 0) - installmentSplit.remainingAmount
                             )
                           )}
                         </span>
@@ -1045,7 +1097,7 @@ export function AddTransactionSheet({
           <div className="space-y-1.5 pt-2 border-t border-black/[0.04]">
             <div className="flex justify-between items-center text-xs text-[#86868B]">
               <span>
-                {isInstallmentModeActive ? "Valor total da compra (limite)" : "Subtotal"}
+                {isInstallmentModeActive ? "Valor total da compra" : "Subtotal"}
               </span>
               <span className="font-mono text-[#1D1D1F]">
                 R$ {formatCurrency(parsedAmount)}
@@ -1067,18 +1119,26 @@ export function AddTransactionSheet({
                 </span>
               </div>
             )}
+            {isSelectedAccountCreditCard && isInstallmentModeActive && paidInstallmentsCount > 0 && (
+              <div className="flex justify-between items-center text-xs text-[#86868B]">
+                <span>Saldo pendente no limite</span>
+                <span className="font-mono text-[#1D1D1F]">R$ {formatCurrency(installmentSplit.remainingAmount)}</span>
+              </div>
+            )}
             <div className="flex justify-between items-baseline pt-1">
               <span className="text-xs font-semibold uppercase tracking-wider text-[#86868B]">
                 {type === "receita"
                   ? "Total a receber"
                   : isInstallmentModeActive
-                    ? "1ª parcela na fatura"
+                    ? installmentSplit.remainingInstallments > 0
+                      ? `${paidInstallmentsCount + 1}ª parcela na fatura`
+                      : "Compra quitada"
                     : "Total a pagar"}
               </span>
               <span className="text-2xl font-bold tracking-tight text-[#1D1D1F] font-mono tabular-nums">
                 R${" "}
                 {formatCurrency(
-                  isInstallmentModeActive ? installmentSplit.installmentAmount : parsedAmount
+                  isInstallmentModeActive ? installmentSplit.firstUnpaidOccurrence?.amount ?? 0 : parsedAmount
                 )}
               </span>
             </div>
