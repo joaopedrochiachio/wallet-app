@@ -8,6 +8,8 @@ import {
 import { redactPersonalData } from "../../../../lib/services/privacyService.ts";
 import { callOpenAIResponses } from "../../../../lib/services/openaiService.ts";
 import { checkRateLimit } from "../../../../lib/utils/rateLimiter.ts";
+import { verifyServerAuth } from "../../../../lib/auth/serverAuth.ts";
+import { reserveAIQuota, reconcileAIQuota } from "../../../../lib/services/aiUsageService.ts";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -147,71 +149,91 @@ export async function POST(req: NextRequest) {
       existingRecurringItems: Array.isArray(existingRecurringItems) ? existingRecurringItems.slice(0, 100) : [],
     });
 
-    // 2. Refinamento Opcional por IA para lançamentos com categoria "Outros" (se solicitado e chave configurada)
+    // 2. Refinamento Opcional por IA para lançamentos com categoria "Outros" (somente para usuário autenticado e dentro da cota)
     const uncategorizedItems = analysis.transactions.filter((t) => t.category === "Outros");
     if (useAI && uncategorizedItems.length > 0 && process.env.OPENAI_API_KEY?.trim()) {
-      try {
-        const sanitizedList = uncategorizedItems.slice(0, 25).map((item) => ({
-          id: item.id,
-          title: redactPersonalData(item.title),
-          type: item.type,
-          amount: item.amount,
-        }));
+      const authResult = await verifyServerAuth(req);
+      if ("user" in authResult) {
+        const quotaRes = await reserveAIQuota({
+          uid: authResult.user.uid,
+          route: "patterns",
+        });
+        if (quotaRes.allowed && quotaRes.reservation) {
+          let aiSucceeded = false;
+          let actualCostUsd = 0;
+          try {
+            const sanitizedList = uncategorizedItems.slice(0, 25).map((item) => ({
+              id: item.id,
+              title: redactPersonalData(item.title),
+              type: item.type,
+              amount: item.amount,
+            }));
 
-        const aiResult = await callOpenAIResponses({
-          systemPrompt:
-            "Você é um classificador contábil brasileiro. Classifique cada lançamento em uma das categorias oficiais: Alimentação, Supermercado, Transporte, Moradia, Lazer, Saúde, Educação, Compras, Serviços, Renda, Transferências, Investimentos & Metas. E indique se é uma conta fixa mensal (isRecurring: boolean).",
-          prompt: `Classifique os seguintes lançamentos bancários (JSON):\n${JSON.stringify(sanitizedList)}`,
-          reasoningEffort: "none",
-          maxOutputTokens: 1000,
-          timeoutMs: 12000,
-          jsonSchema: {
-            name: "StatementCategoryEnrichment",
-            strict: true,
-            schema: {
-              type: "object",
-              properties: {
-                items: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    properties: {
-                      id: { type: "string" },
-                      category: { type: "string" },
-                      cleanTitle: { type: "string" },
-                      isRecurring: { type: "boolean" },
+            const aiResult = await callOpenAIResponses({
+              systemPrompt:
+                "Você é um classificador contábil brasileiro. Classifique cada lançamento em uma das categorias oficiais: Alimentação, Supermercado, Transporte, Moradia, Lazer, Saúde, Educação, Compras, Serviços, Renda, Transferências, Investimentos & Metas. E indique se é uma conta fixa mensal (isRecurring: boolean).",
+              prompt: `Classifique os seguintes lançamentos bancários (JSON):\n${JSON.stringify(sanitizedList)}`,
+              reasoningEffort: "none",
+              maxOutputTokens: 1000,
+              timeoutMs: 12000,
+              jsonSchema: {
+                name: "StatementCategoryEnrichment",
+                strict: true,
+                schema: {
+                  type: "object",
+                  properties: {
+                    items: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          id: { type: "string" },
+                          category: { type: "string" },
+                          cleanTitle: { type: "string" },
+                          isRecurring: { type: "boolean" },
+                        },
+                        required: ["id", "category", "cleanTitle", "isRecurring"],
+                        additionalProperties: false,
+                      },
                     },
-                    required: ["id", "category", "cleanTitle", "isRecurring"],
-                    additionalProperties: false,
                   },
+                  required: ["items"],
+                  additionalProperties: false,
                 },
               },
-              required: ["items"],
-              additionalProperties: false,
-            },
-          },
-        });
+            });
 
-        const parsedAI = JSON.parse(aiResult.text) as {
-          items?: Array<{ id: string; category: string; cleanTitle: string; isRecurring: boolean }>;
-        };
+            aiSucceeded = true;
+            actualCostUsd = aiResult.estimatedCostUsd;
 
-        if (Array.isArray(parsedAI.items)) {
-          const mapById = new Map(parsedAI.items.map((i) => [i.id, i]));
-          for (const tx of analysis.transactions) {
-            const enriched = mapById.get(tx.id);
-            if (enriched) {
-              tx.category = enriched.category || tx.category;
-              if (enriched.cleanTitle && enriched.cleanTitle.length >= 2) {
-                tx.title = enriched.cleanTitle;
+            const parsedAI = JSON.parse(aiResult.text) as {
+              items?: Array<{ id: string; category: string; cleanTitle: string; isRecurring: boolean }>;
+            };
+
+            if (Array.isArray(parsedAI.items)) {
+              const mapById = new Map(parsedAI.items.map((i) => [i.id, i]));
+              for (const tx of analysis.transactions) {
+                const enriched = mapById.get(tx.id);
+                if (enriched) {
+                  tx.category = enriched.category || tx.category;
+                  if (enriched.cleanTitle && enriched.cleanTitle.length >= 2) {
+                    tx.title = enriched.cleanTitle;
+                  }
+                  tx.isRecurringCandidate = tx.isRecurringCandidate || enriched.isRecurring;
+                }
               }
-              tx.isRecurringCandidate = tx.isRecurringCandidate || enriched.isRecurring;
+              analysis.summary.aiEnhanced = true;
             }
+          } catch (aiErr) {
+            console.warn("[STATEMENT_IMPORT_AI_FALLBACK] Mantendo classificação determinística:", aiErr);
+          } finally {
+            await reconcileAIQuota({
+              reservation: quotaRes.reservation,
+              success: aiSucceeded,
+              actualCostUsd,
+            });
           }
-          analysis.summary.aiEnhanced = true;
         }
-      } catch (aiErr) {
-        console.warn("[STATEMENT_IMPORT_AI_FALLBACK] Mantendo classificação determinística:", aiErr);
       }
     }
 

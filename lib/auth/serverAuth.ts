@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { NextRequest, NextResponse } from "next/server.js";
 import { getAdminAuth, isAdminAuthMockActive } from "../firebaseAdmin.ts";
 
@@ -7,10 +8,32 @@ export interface AuthenticatedUser {
   authTime?: number;
 }
 
+let cachedGoogleCerts: { certs: Record<string, string>; expiresAt: number } | null = null;
+
+async function getGooglePublicCerts(): Promise<Record<string, string> | null> {
+  const now = Date.now();
+  if (cachedGoogleCerts && cachedGoogleCerts.expiresAt > now) {
+    return cachedGoogleCerts.certs;
+  }
+  try {
+    const res = await fetch(
+      "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com"
+    );
+    if (!res.ok) return null;
+    const certs = (await res.json()) as Record<string, string>;
+    cachedGoogleCerts = {
+      certs,
+      expiresAt: now + 60 * 60 * 1000,
+    };
+    return certs;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Fallback de verificação em produção via API REST oficial do Firebase Identity Toolkit
- * ou validação de claims do token Firebase do projeto caso o FIREBASE_SERVICE_ACCOUNT_KEY
- * não esteja configurado na Vercel.
+ * Fallback de verificação criptográfica em produção via API REST oficial do Firebase Identity Toolkit
+ * e verificação de assinatura RSA-SHA256 com certificados públicos x509 da Google.
  */
 function cleanEnvString(val?: string): string {
   if (!val) return "";
@@ -24,7 +47,47 @@ async function verifyFirebaseTokenProdFallback(token: string): Promise<Authentic
     "wallet-ia-c8e77";
   const apiKey = cleanEnvString(process.env.NEXT_PUBLIC_FIREBASE_API_KEY);
 
-  // 1. Tenta validar diretamente na API oficial do Firebase Auth (Google Identity Toolkit)
+  // 1. Decodifica e valida estritamente os claims obrigatórios do JWT antes de qualquer chamada externa
+  let header: { alg?: string; kid?: string };
+  let payload: {
+    iss?: string;
+    aud?: string;
+    sub?: string;
+    user_id?: string;
+    email?: string;
+    exp?: number;
+    auth_time?: number;
+  };
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+
+  try {
+    const headerJson = Buffer.from(parts[0], "base64url").toString("utf-8");
+    const payloadJson = Buffer.from(parts[1], "base64url").toString("utf-8");
+    header = JSON.parse(headerJson);
+    payload = JSON.parse(payloadJson);
+  } catch {
+    return null;
+  }
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  const expectedIssuer = `https://securetoken.google.com/${projectId}`;
+  const uid = (payload.sub || payload.user_id || "").trim();
+
+  if (
+    header.alg !== "RS256" ||
+    typeof header.kid !== "string" ||
+    header.kid.length === 0 ||
+    payload.iss !== expectedIssuer ||
+    payload.aud !== projectId ||
+    !uid ||
+    typeof payload.exp !== "number" ||
+    payload.exp <= nowSec
+  ) {
+    return null;
+  }
+
+  // 2. Valida diretamente na API oficial do Firebase Auth (Google Identity Toolkit)
   if (apiKey && !apiKey.includes("your-api-key")) {
     try {
       const res = await fetch(
@@ -40,61 +103,45 @@ async function verifyFirebaseTokenProdFallback(token: string): Promise<Authentic
           users?: Array<{ localId?: string; email?: string; disabled?: boolean }>;
         };
         const userRecord = data?.users?.[0];
-        if (userRecord && userRecord.localId && !userRecord.disabled) {
+        if (userRecord && userRecord.localId === uid && !userRecord.disabled) {
           return {
             uid: userRecord.localId,
-            email: userRecord.email,
+            email: userRecord.email || payload.email,
+            authTime: payload.auth_time,
           };
         }
+        return null;
+      }
+      // Se o Identity Toolkit respondeu 400 (token inválido, forjado ou revogado), bloqueia imediatamente
+      if (res.status === 400) {
+        return null;
       }
     } catch {
-      // Prossegue para verificação de estrutura JWT do Firebase
+      // Prossegue para verificação criptográfica RSA-SHA256 com certificados públicos x509 da Google
     }
   }
 
-  // 2. Validação estrita de estrutura e claims do JWT emitido pelo securetoken.google.com para este projeto
+  // 3. Verificação criptográfica RSA-SHA256 contra os certificados públicos x509 oficiais da Google
   try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return null;
-    const headerJson = Buffer.from(parts[0], "base64url").toString("utf-8");
-    const payloadJson = Buffer.from(parts[1], "base64url").toString("utf-8");
-    const header = JSON.parse(headerJson) as { alg?: string; kid?: string };
-    const payload = JSON.parse(payloadJson) as {
-      iss?: string;
-      aud?: string;
-      sub?: string;
-      user_id?: string;
-      email?: string;
-      exp?: number;
-      auth_time?: number;
+    const certs = await getGooglePublicCerts();
+    const certPem = certs?.[header.kid];
+    if (!certPem) return null;
+
+    const verifier = crypto.createVerify("RSA-SHA256");
+    verifier.update(`${parts[0]}.${parts[1]}`);
+    verifier.end();
+    const signatureBuf = Buffer.from(parts[2], "base64url");
+    const isSignatureValid = verifier.verify(certPem, signatureBuf);
+    if (!isSignatureValid) return null;
+
+    return {
+      uid,
+      email: payload.email,
+      authTime: payload.auth_time,
     };
-
-    const nowSec = Math.floor(Date.now() / 1000);
-    const expectedIssuer = `https://securetoken.google.com/${projectId}`;
-    const uid = payload.sub || payload.user_id;
-
-    if (
-      header.alg === "RS256" &&
-      typeof header.kid === "string" &&
-      header.kid.length > 0 &&
-      payload.iss === expectedIssuer &&
-      payload.aud === projectId &&
-      typeof uid === "string" &&
-      uid.trim().length > 0 &&
-      typeof payload.exp === "number" &&
-      payload.exp > nowSec
-    ) {
-      return {
-        uid: uid.trim(),
-        email: payload.email,
-        authTime: payload.auth_time,
-      };
-    }
   } catch {
     return null;
   }
-
-  return null;
 }
 
 /**

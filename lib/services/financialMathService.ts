@@ -200,7 +200,7 @@ export function calculateGoalEfficiency(params: {
   const goalProgress = totalGoalsTarget > 0 ? (currentGoalsSaved / totalGoalsTarget) * 100 : 0;
 
   // Eficiência Sharpe didática: sobra positiva + progresso de metas com consistência
-  let sharpeEfficiencyScore = Math.min(100, Math.round(30 + goalProgress * 0.4 + (surplus > 0 ? 30 : 0)));
+  const sharpeEfficiencyScore = Math.min(100, Math.round(30 + goalProgress * 0.4 + (surplus > 0 ? 30 : 0)));
   let diversificationStatus: "otimizada" | "concentrada" | "em_risco" = "concentrada";
 
   if (sharpeEfficiencyScore >= 75) diversificationStatus = "otimizada";

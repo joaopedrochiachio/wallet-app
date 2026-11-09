@@ -301,9 +301,13 @@ export function StatementImportModal({
         }
       }
 
+      const idToken = user ? await user.getIdToken() : "";
       const response = await fetch("/api/ai/statement-import", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+        },
         body: JSON.stringify({
           files: inputMode === "file" ? filesPayload : [],
           rawText: inputMode === "paste" ? textToAnalyze : "",

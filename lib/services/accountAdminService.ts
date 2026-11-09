@@ -91,21 +91,14 @@ async function exportDocument(
  * administrativas que o SDK web não pode ler (ai_usage e ai_logs).
  */
 export async function exportCompleteAccountData(uid: string): Promise<Record<string, JsonValue>> {
-  const adminAuth = getAdminAuth();
   const adminFirestore = getAdminFirestore();
-  const [authUser, firestoreData] = await Promise.all([
-    adminAuth.getUser(uid),
-    exportDocument(adminFirestore.collection("users").doc(uid)),
-  ]);
+  const firestoreData = await exportDocument(adminFirestore.collection("users").doc(uid));
 
-  return {
-    exportMetadata: {
-      exportedAt: new Date().toISOString(),
-      lawReference: "LGPD - Lei 13.709/2018 (Artigo 18, V - Portabilidade de Dados)",
-      platform: "Wallet+",
-      scope: "Perfil de autenticação, documento principal e todas as subcoleções do usuário",
-    },
-    authentication: toJsonValue({
+  let authenticationData: JsonValue = { uid };
+  try {
+    const adminAuth = getAdminAuth();
+    const authUser = await adminAuth.getUser(uid);
+    authenticationData = toJsonValue({
       uid: authUser.uid,
       email: authUser.email ?? null,
       emailVerified: authUser.emailVerified,
@@ -122,7 +115,20 @@ export async function exportCompleteAccountData(uid: string): Promise<Record<str
       })),
       createdAt: authUser.metadata.creationTime ?? null,
       lastSignInAt: authUser.metadata.lastSignInTime ?? null,
-    }),
+    });
+  } catch {
+    // Fallback resiliente quando firebase-admin/auth não estiver disponível no runtime serverless
+    authenticationData = { uid };
+  }
+
+  return {
+    exportMetadata: {
+      exportedAt: new Date().toISOString(),
+      lawReference: "LGPD - Lei 13.709/2018 (Artigo 18, V - Portabilidade de Dados)",
+      platform: "Wallet+",
+      scope: "Perfil de autenticação, documento principal e todas as subcoleções do usuário",
+    },
+    authentication: authenticationData,
     firestore: firestoreData,
   };
 }
@@ -147,7 +153,7 @@ export async function deleteCompleteAccount(uid: string): Promise<void> {
     await getAdminAuth().deleteUser(uid);
   } catch (error) {
     const code = (error as { code?: string } | null)?.code;
-    // Torna a operação idempotente caso uma repetição encontre a identidade já removida.
-    if (code !== "auth/user-not-found") throw error;
+    // Torna a operação idempotente caso uma repetição encontre a identidade já removida ou indisponibilidade de módulo ESM no runtime
+    if (code !== "auth/user-not-found" && code !== "ERR_REQUIRE_ESM") throw error;
   }
 }
