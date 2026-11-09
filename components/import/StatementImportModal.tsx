@@ -6,6 +6,7 @@ import { useWallet } from "@/context/WalletContext";
 import {
   extractTextFromPdfBytes,
   analyzeBankStatementText,
+  mergeMultipleStatementAnalyses,
   generateSampleBankStatementPdf,
   type StatementAnalysisResult,
   type DetectedStatementAccount,
@@ -346,24 +347,38 @@ export function StatementImportModal({
 
       if (!response.ok || !data.success || !data.analysis) {
         // Fallback local direto no navegador caso a API retorne erro de rede
-        let localCombinedText = inputMode === "paste" ? textToAnalyze : "";
-        if (inputMode === "file") {
+        const localAnalyses: StatementAnalysisResult[] = [];
+        if (inputMode === "paste" && textToAnalyze.trim()) {
+          localAnalyses.push(
+            analyzeBankStatementText({
+              rawText: textToAnalyze,
+              fileName: "texto-colado",
+              existingCards: cards,
+              existingTransactions: transactions,
+              existingRecurringItems: recurringItems,
+            })
+          );
+        } else if (inputMode === "file") {
           for (const f of filesToAnalyze) {
             const buf = await f.arrayBuffer();
             const extracted = await decompressPdfInBrowserFallback(new Uint8Array(buf));
-            localCombinedText += "\n" + extracted;
+            if (extracted.trim()) {
+              localAnalyses.push(
+                analyzeBankStatementText({
+                  rawText: extracted,
+                  fileName: f.name,
+                  existingCards: cards,
+                  existingTransactions: transactions,
+                  existingRecurringItems: recurringItems,
+                })
+              );
+            }
           }
         }
 
-        if (localCombinedText.trim().length > 10) {
-          const localAnalysis = analyzeBankStatementText({
-            rawText: localCombinedText,
-            fileName: filesToAnalyze.map((f) => f.name).join(", "),
-            existingCards: cards,
-            existingTransactions: transactions,
-            existingRecurringItems: recurringItems,
-          });
-          applyAnalysisState(localAnalysis);
+        if (localAnalyses.length > 0) {
+          const merged = mergeMultipleStatementAnalyses(localAnalyses);
+          applyAnalysisState(merged);
           return;
         }
 

@@ -6,8 +6,11 @@ import {
   generateSampleBankStatementPdf,
   detectBankInstitution,
   analyzeBankStatementText,
+  mergeMultipleStatementAnalyses,
   convertOfxToStandardLines,
   extractInstallmentInfo,
+  stripEmbeddedDateTokens,
+  simplifyTransferDescription,
 } from "../lib/services/statementImportService.ts";
 import {
   PAGE_TUTORIALS,
@@ -207,6 +210,71 @@ test("extractInstallmentInfo: detecta diferentes formatos de parcelamento brasil
     totalInstallments: 12,
   });
   assert.equal(extractInstallmentInfo("SUPERMERCADO COMPRA A VISTA"), null);
+
+  // Não confunde datas coladas em Pix (ex.: Itaú "PIX TRANSF ISADORA06/11", "PIX TRANSF WELLING04/11") com parcelamento
+  assert.equal(extractInstallmentInfo("PIX TRANSF Isadora06/11"), null);
+  assert.equal(extractInstallmentInfo("PIX TRANSF Welling04/11"), null);
+  assert.equal(extractInstallmentInfo("PIX TRANSF João Pe04/11"), null);
+  assert.equal(extractInstallmentInfo("PIX Qrs Imperial Pr03/11"), null);
+
+  // Em conta corrente não assume data X/Y como parcela
+  assert.equal(
+    extractInstallmentInfo("TRANSFERENCIA FULANO 06/11", { accountType: "checking" }),
+    null
+  );
+});
+
+test("stripEmbeddedDateTokens & simplifyTransferDescription: limpa datas embutidas e normaliza Pix", () => {
+  assert.equal(
+    stripEmbeddedDateTokens("PIX TRANSF Isadora06/11", false),
+    "PIX TRANSF Isadora"
+  );
+  assert.equal(
+    simplifyTransferDescription("PIX TRANSF João Pe"),
+    "Pix - João Pe"
+  );
+});
+
+test("mergeMultipleStatementAnalyses: combina extratos de múltiplos bancos (Nubank + Itaú) sem duplicar e preserva contas", () => {
+  const nubankAnalysis = analyzeBankStatementText({
+    rawText: `
+      Nubank S.A.
+      Saldo em conta: R$ 1.500,00
+      01/10/2026 SALARIO +R$ 5.000,00
+      05/10/2026 NETFLIX.COM -R$ 55,90
+    `,
+    fileName: "extrato-nubank-outubro.pdf",
+  });
+
+  const itauAnalysis = analyzeBankStatementText({
+    rawText: `
+      Banco Itaú S.A.
+      Saldo em conta: R$ 3.200,00
+      04/11/2026 PIX TRANSF Welling04/11 -R$ 150,00
+      06/11/2026 PIX TRANSF Isadora06/11 -R$ 35,00
+    `,
+    fileName: "extrato-itau-novembro.pdf",
+  });
+
+  const merged = mergeMultipleStatementAnalyses([nubankAnalysis, itauAnalysis]);
+
+  // Deve identificar as duas contas distintas (Nubank e Itaú)
+  assert.equal(merged.accounts.length, 2);
+  const hasNubank = merged.accounts.some((a) => a.institutionId === "nubank");
+  const hasItau = merged.accounts.some((a) => a.institutionId === "itau");
+  assert.ok(hasNubank);
+  assert.ok(hasItau);
+
+  // Lançamentos foram consolidados e não há falsos parcelamentos de Pix
+  assert.equal(merged.transactions.length, 4);
+  const pixTx = merged.transactions.find((t) => t.rawDescription.includes("Isadora"));
+  assert.ok(pixTx);
+  assert.equal(pixTx.installmentCurrent, undefined);
+  assert.equal(pixTx.installmentTotal, undefined);
+
+  // Não gerou falsas recorrências de parcelamento para os Pix
+  const pixRec = merged.recurringItems.find((r) => r.title.toLowerCase().includes("isadora"));
+  assert.equal(pixRec, undefined);
 });
 
 test("PAGE_TUTORIALS & ONBOARDING_DIRECT_STEPS: fornece passo a passo didático e direto para todas as telas do app", () => {

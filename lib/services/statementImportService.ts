@@ -1293,29 +1293,110 @@ export function classifyStatementMerchant(
   };
 }
 
+/** Descrições de transferência (Pix/TED/DOC) nunca representam compra parcelada sem a palavra "parcela". */
+const TRANSFER_DESCRIPTION_RE = /\b(?:pix|ted|doc|transf\w*|transfer[eê]ncia)\b/i;
+
+export interface InstallmentDetectionContext {
+  /** Conta corrente não tem parcela de cartão: só aceita parcela com palavra explícita ("Parcela 2/10"). */
+  accountType?: "checking" | "credit";
+  /** Dia do lançamento (1-31). Usado para não confundir a própria data "06/11" com parcela 6/11. */
+  transactionDay?: number;
+  /** Mês do lançamento (0-11). */
+  transactionMonth?: number;
+}
+
 /**
- * Extrai informações de parcelamento de uma descrição (ex: "02/10", "Parc 3/12", "Parcela 1 de 6")
+ * Extrai informações de parcelamento de uma descrição (ex: "Parc 3/12", "Parcela 1 de 6", "AMAZON 02/10" na fatura).
+ *
+ * Regras (para não confundir datas com parcelas):
+ *  1. Com palavra explícita ("parc", "parcela", "prestação") é sempre parcela.
+ *  2. Sem palavra explícita, "X/Y" só é parcela em fatura de cartão, quando o token está isolado
+ *     (não colado a letras como em "Isadora06/11"), a descrição não é Pix/TED e o X/Y não é a própria data do lançamento.
  */
-export function extractInstallmentInfo(description: string): {
+export function extractInstallmentInfo(
+  description: string,
+  context: InstallmentDetectionContext = {}
+): {
   currentInstallment: number;
   totalInstallments: number;
 } | null {
-  // Padrão explícito: "Parc 02/10", "Parcela 2 de 10", "02/10", "2/12"
-  const explicitMatch = description.match(
-    /(?:\bparc(?:ela)?\.?\s*)?(\d{1,2})\s*(?:\/|de)\s*(\d{1,2})\b/i
-  );
+  const isValid = (current: number, total: number) =>
+    current >= 1 && total >= 2 && total <= 48 && current <= total;
 
+  // 1. Parcela explícita: "Parc 02/10", "PARC02/10", "Parcela 2 de 10", "Prestação 3/24"
+  const explicitMatch = description.match(
+    /\b(?:parc(?:ela)?s?|prest(?:a[cç][aã]o)?)\.?\s*(\d{1,2})\s*(?:\/|de)\s*(\d{1,2})\b/i
+  );
   if (explicitMatch) {
     const current = parseInt(explicitMatch[1], 10);
     const total = parseInt(explicitMatch[2], 10);
-    // Evita confundir com datas DD/MM se não houver contexto de parcela e for maior que 12
-    // Porém, em descrições onde a data já foi removida, 01/10 ou 02/12 é parcela!
-    if (current >= 1 && total >= 2 && total <= 48 && current <= total) {
-      return { currentInstallment: current, totalInstallments: total };
-    }
+    return isValid(current, total) ? { currentInstallment: current, totalInstallments: total } : null;
   }
 
-  return null;
+  // 2. Parcela implícita (padrão de fatura de cartão: "LOJA X 02/10")
+  if (context.accountType === "checking") return null;
+  if (TRANSFER_DESCRIPTION_RE.test(description)) return null;
+
+  const implicitMatch = description.match(/(?:^|\s)(\d{1,2})\/(\d{1,2})(?=\s|$)/);
+  if (!implicitMatch) return null;
+
+  const current = parseInt(implicitMatch[1], 10);
+  const total = parseInt(implicitMatch[2], 10);
+  if (!isValid(current, total)) return null;
+
+  const isOwnDate =
+    typeof context.transactionDay === "number" &&
+    typeof context.transactionMonth === "number" &&
+    current === context.transactionDay &&
+    total === context.transactionMonth + 1;
+  if (isOwnDate) return null;
+
+  return { currentInstallment: current, totalInstallments: total };
+}
+
+/**
+ * Remove datas e horários embutidos na descrição (ex.: Itaú "PIX TRANSF ISADORA06/11" → "PIX TRANSF ISADORA").
+ * Preserva o token de parcela quando ele foi identificado.
+ */
+export function stripEmbeddedDateTokens(description: string, keepInstallmentToken: boolean): string {
+  let out = description
+    .replace(/(?<=[A-Za-zÀ-ÿ.*])\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b/g, " ")
+    .replace(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g, " ")
+    .replace(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g, " ");
+
+  if (!keepInstallmentToken) {
+    out = out.replace(/(?:^|\s)\d{1,2}\/\d{1,2}(?=\s|$)/g, " ");
+  }
+
+  return out.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Deixa descrições de Pix legíveis (Nubank: "Transferência enviada pelo Pix FULANO - •••.123.456-•• - BANCO ...").
+ */
+export function simplifyTransferDescription(description: string): string {
+  let out = description;
+
+  const nubankPix = out.match(/^transfer[eê]ncia\s+(enviada|recebida)\s+pelo\s+pix\s*[-–]?\s*(.*)$/i);
+  if (nubankPix) {
+    const direction = nubankPix[1].toLowerCase() === "enviada" ? "Pix enviado" : "Pix recebido";
+    const counterpart = nubankPix[2].split(/\s+[-–]\s+/)[0]?.trim() || "";
+    out = counterpart ? `${direction} - ${counterpart}` : direction;
+  }
+
+  out = out
+    .replace(/^PIX\s+TRANSF(?:ERENCIA)?\s+/i, "Pix - ")
+    .replace(/^PIX\s+QRS?\s+/i, "Pix QR - ")
+    // CPF/CNPJ mascarados, agência e conta
+    .replace(/[•*]{2,3}\.?\d{3}\.?\d{3}-?[•*]{2}/g, " ")
+    .replace(/\bag[eê]ncia:?\s*\d+\b/gi, " ")
+    .replace(/\bconta:?\s*[\d.-]+\b/gi, " ")
+    .replace(/\(\d{3,4}\)/g, " ")
+    .replace(/\s+[-–]\s*$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return out || description;
 }
 
 /**
@@ -1331,20 +1412,22 @@ function isSummaryOrNoiseLine(line: string): boolean {
   if (lower.length < 5) return true;
 
   const noisePatterns = [
-    /^saldo\s+(?:anterior|do\s+dia|final|atual|bloqueado|disponivel|em\s+conta|total)/,
+    /^saldo\s+(?:anterior|do\s+dia|final|atual|bloqueado|disponivel|em\s+conta|total|inicial|liquido|aplicado)/,
     /^total\s+(?:de\s+entradas|de\s+saidas|da\s+fatura|geral|do\s+periodo|a\s+pagar)/,
+    /^(?:entradas|saidas)\s+(?:do\s+periodo|totais)/,
     /^resumo\s+(?:da\s+fatura|do\s+mes|financeiro)/,
     /^limite\s+(?:total|disponivel|utilizado|de\s+credito)/,
     /^pagamento\s+minimo/,
     /^sac\b|^ouvidoria\b|^central\s+de\s+atendimento/,
     /^pagina\s+\d+/,
     /^extrato\s+(?:de\s+conta|bancario|mensal|consolidado)/,
-    /^data\s+historico\s+valor/,
-    /^data\s+descricao\s+valor/,
+    /^data\s+(?:historico|descricao|lancamento)/,
     /^movimentacoes\s+da\s+conta/,
     /^lancamentos\s+no\s+cartao/,
     /^fechamento\s*:|^vencimento\s*:/,
     /^titular\s*:/,
+    /^valores\s+em\s+r\$/,
+    /^periodo\s*:?\s*\d/,
   ];
 
   return noisePatterns.some((regex) => regex.test(lower));
@@ -1486,15 +1569,16 @@ export function extractStatementHeaderMetadata(text: string): {
   let closingDay: number | null = null;
   let dueDay: number | null = null;
 
-  // Saldo em conta / Saldo final / Saldo disponível
+  // Saldo em conta / Saldo final / Saldo disponível — usa a ÚLTIMA ocorrência (saldo mais recente do período)
   const balanceRegexes = [
-    /saldo\s+(?:em\s+conta(?:\s+final)?|final|atual|dispon[ií]vel\s+em\s+conta)\s*[:=-]?\s*(?:R\$\s*)?([+-]?\d{1,3}(?:\.\d{3})*,\d{2}|\d+(?:[.,]\d{2}))/i,
-    /saldo\s+do\s+dia\s*[:=-]?\s*(?:R\$\s*)?([+-]?\d{1,3}(?:\.\d{3})*,\d{2}|\d+(?:[.,]\d{2}))/i,
+    /saldo\s+(?:em\s+conta(?:\s+final)?|final(?:\s+do\s+per[ií]odo)?|atual|dispon[ií]vel\s+em\s+conta)\s*[:=-]?\s*(?:R\$\s*)?([+-]?\s*\d{1,3}(?:\.\d{3})*,\d{2}|[+-]?\d+(?:[.,]\d{2}))/gi,
+    /saldo\s+do\s+dia\s*[:=-]?\s*(?:R\$\s*)?([+-]?\s*\d{1,3}(?:\.\d{3})*,\d{2}|[+-]?\d+(?:[.,]\d{2}))/gi,
   ];
   for (const rx of balanceRegexes) {
-    const m = text.match(rx);
-    if (m) {
-      const parsed = parseStatementAmountToken(m[1]);
+    const matches = Array.from(text.matchAll(rx));
+    const last = matches[matches.length - 1];
+    if (last) {
+      const parsed = parseStatementAmountToken(last[1]);
       if (parsed) {
         checkingBalance = parsed.explicitSign === "out" ? -parsed.amount : parsed.amount;
         break;
@@ -1790,10 +1874,21 @@ export function analyzeBankStatementText(params: AnalyzeStatementParams): Statem
 
   for (let idx = 0; idx < rawExtractedTransactions.length; idx++) {
     const rawTx = rawExtractedTransactions[idx];
-    const installmentInfo = extractInstallmentInfo(rawTx.rawDescription);
+    const installmentInfo = extractInstallmentInfo(rawTx.rawDescription, {
+      accountType: rawTx.accountType,
+      transactionDay: rawTx.dateInfo.day,
+      transactionMonth: rawTx.dateInfo.month,
+    });
 
     // Se tem parcela X/Y, é tipicamente cartão de crédito (ou financiamento/boleto parcelado)
     const classified = classifyStatementMerchant(rawTx.rawDescription, rawTx.type);
+
+    let cleanTitle = classified.cleanTitle;
+    if (rawTx.accountType === "checking" && TRANSFER_DESCRIPTION_RE.test(rawTx.rawDescription)) {
+      cleanTitle = simplifyTransferDescription(stripEmbeddedDateTokens(cleanTitle, false));
+    } else {
+      cleanTitle = stripEmbeddedDateTokens(cleanTitle, Boolean(installmentInfo));
+    }
 
     const isInvoicePaymentOnCredit =
       rawTx.accountType === "credit" &&
@@ -1829,7 +1924,7 @@ export function analyzeBankStatementText(params: AnalyzeStatementParams): Statem
 
     detectedTransactions.push({
       id: `stmt-tx-${idx + 1}`,
-      title: classified.cleanTitle,
+      title: cleanTitle,
       rawDescription: rawTx.rawDescription,
       amount: rawTx.amount,
       type: rawTx.type,
@@ -2076,6 +2171,159 @@ export function analyzeBankStatementText(params: AnalyzeStatementParams): Statem
     recurringItems,
     transactions: detectedTransactions,
     extractedRawTextPreview: normalizedInputText.slice(0, 1500),
+  };
+}
+
+/**
+ * Combina os resultados de análise de múltiplos arquivos de extrato (ex.: 4 extratos do Nubank + 1 extrato do Itaú)
+ * preservando todas as contas distintas (Conta Nubank, Conta Itaú, etc.), unificando lançamentos sem duplicatas e
+ * consolidando compromissos recorrentes e de planejamento de forma harmonizada.
+ */
+export function mergeMultipleStatementAnalyses(
+  analyses: StatementAnalysisResult[]
+): StatementAnalysisResult {
+  if (analyses.length === 0) {
+    return analyzeBankStatementText({ rawText: "" });
+  }
+  if (analyses.length === 1) {
+    return analyses[0];
+  }
+
+  // 1. Unificar Contas & Cartões por ID / Instituição + Tipo
+  const mergedAccountsMap = new Map<string, DetectedStatementAccount>();
+  for (const a of analyses) {
+    for (const acc of a.accounts) {
+      const key = `${acc.institutionId}-${acc.type}`;
+      if (!mergedAccountsMap.has(key)) {
+        mergedAccountsMap.set(key, { ...acc });
+      } else {
+        const existing = mergedAccountsMap.get(key)!;
+        // Prioriza saldo mais recente ou maior limite detectado
+        if (acc.balance > 0 && (existing.balance === 0 || acc.updateExistingBalance)) {
+          existing.balance = acc.balance;
+          existing.updateExistingBalance = existing.updateExistingBalance || acc.updateExistingBalance;
+        }
+        if (acc.limit > existing.limit) {
+          existing.limit = acc.limit;
+        }
+      }
+    }
+  }
+  const mergedAccounts = Array.from(mergedAccountsMap.values());
+
+  // 2. Unificar Transações (evitando duplicatas entre extratos sobrepostos do mesmo banco/período)
+  const mergedTransactions: DetectedStatementTransaction[] = [];
+  const txSignatureSet = new Set<string>();
+
+  for (const a of analyses) {
+    for (const tx of a.transactions) {
+      // Assinatura única baseada em conta, data, valor e título normalizado
+      const normTitle = tx.title.toLowerCase().replace(/\s+/g, " ").trim();
+      const sig = `${tx.accountName}|${tx.date}|${tx.amount.toFixed(2)}|${tx.type}|${normTitle}`;
+      if (txSignatureSet.has(sig)) {
+        continue;
+      }
+      txSignatureSet.add(sig);
+      mergedTransactions.push({
+        ...tx,
+        id: `stmt-tx-${mergedTransactions.length + 1}`,
+      });
+    }
+  }
+
+  // Ordena por data decrescente
+  mergedTransactions.sort((t1, t2) => t2.date.localeCompare(t1.date));
+
+  // 3. Unificar Recorrências / Contas Fixas / Parcelas
+  const mergedRecurringMap = new Map<string, DetectedStatementRecurring>();
+  for (const a of analyses) {
+    for (const rec of a.recurringItems) {
+      const key = `${rec.title.toLowerCase().trim()}-${rec.type}`;
+      if (!mergedRecurringMap.has(key)) {
+        mergedRecurringMap.set(key, {
+          ...rec,
+          id: `stmt-rec-${mergedRecurringMap.size + 1}`,
+        });
+      } else {
+        const existing = mergedRecurringMap.get(key)!;
+        // Se for parcelado, preserva o parcelamento mais avançado
+        if (rec.currentInstallment && (!existing.currentInstallment || rec.currentInstallment > existing.currentInstallment)) {
+          existing.currentInstallment = rec.currentInstallment;
+          existing.totalInstallments = rec.totalInstallments;
+          existing.installmentsCount = rec.installmentsCount;
+          existing.startMonth = rec.startMonth;
+          existing.startYear = rec.startYear;
+        }
+      }
+    }
+  }
+  const mergedRecurring = Array.from(mergedRecurringMap.values());
+
+  // 4. Consolidar Totais
+  const totalIncome = mergedTransactions
+    .filter((t) => t.type === "receita" && !t.isInvoicePaymentOnCreditStatement)
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  const totalExpense = mergedTransactions
+    .filter((t) => t.type === "despesa" && !t.isInvoicePaymentOnCreditStatement)
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  const salaryRecurring = mergedRecurring
+    .filter((r) => r.type === "income")
+    .reduce((sum, r) => sum + r.amount, 0);
+  const estimatedMonthlyIncome =
+    salaryRecurring > 0 ? salaryRecurring : Math.round(totalIncome * 100) / 100;
+
+  const distinctInstitutions = Array.from(
+    new Set(analyses.map((a) => a.summary.institutionName).filter(Boolean))
+  );
+  const institutionName =
+    distinctInstitutions.length === 1
+      ? distinctInstitutions[0]
+      : distinctInstitutions.slice(0, 2).join(" + ") +
+        (distinctInstitutions.length > 2 ? ` (+${distinctInstitutions.length - 2})` : "");
+
+  const sortedDates = mergedTransactions.map((t) => t.date).sort();
+  const periodLabel =
+    sortedDates.length >= 2
+      ? `${sortedDates[0].split("-").reverse().join("/")} a ${sortedDates[sortedDates.length - 1].split("-").reverse().join("/")}`
+      : sortedDates.length === 1
+      ? sortedDates[0].split("-").reverse().join("/")
+      : analyses[0]?.summary.periodLabel || "";
+
+  const duplicatesCount = mergedTransactions.filter((t) => t.isDuplicate).length;
+
+  return {
+    summary: {
+      institutionName,
+      statementKind: mergedAccounts.some((a) => a.type === "credit") && mergedAccounts.some((a) => a.type === "checking")
+        ? "mixed"
+        : mergedAccounts.some((a) => a.type === "credit")
+        ? "credit"
+        : "checking",
+      periodLabel,
+      totalIncome: Math.round(totalIncome * 100) / 100,
+      totalExpense: Math.round(totalExpense * 100) / 100,
+      netFlow: Math.round((totalIncome - totalExpense) * 100) / 100,
+      detectedCheckingBalance: mergedAccounts.find((a) => a.type === "checking")?.balance ?? null,
+      detectedCreditLimit: mergedAccounts.find((a) => a.type === "credit")?.limit ?? null,
+      estimatedMonthlyIncome,
+      transactionsCount: mergedTransactions.length,
+      recurringCount: mergedRecurring.length,
+      accountsCount: mergedAccounts.length,
+      duplicatesCount,
+      confidence: 0.98,
+      aiEnhanced: analyses.some((a) => a.summary.aiEnhanced),
+      insights: [
+        `Identificamos ${mergedAccounts.length} conta(s)/cartão(ões) a partir dos extratos enviados (${distinctInstitutions.join(", ")}).`,
+        `${mergedRecurring.length} compromissos recorrentes e contas fixas consolidados no Planejamento Mensal.`,
+        `${mergedTransactions.length} lançamentos processados no total sem duplicações.`,
+      ],
+    },
+    accounts: mergedAccounts,
+    recurringItems: mergedRecurring,
+    transactions: mergedTransactions,
+    extractedRawTextPreview: analyses.map((a) => a.extractedRawTextPreview).join("\n---\n").slice(0, 2000),
   };
 }
 

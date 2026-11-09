@@ -3,7 +3,9 @@ import zlib from "node:zlib";
 import {
   extractTextFromPdfBytes,
   analyzeBankStatementText,
+  mergeMultipleStatementAnalyses,
   type AnalyzeStatementParams,
+  type StatementAnalysisResult,
 } from "../../../../lib/services/statementImportService.ts";
 import { redactPersonalData } from "../../../../lib/services/privacyService.ts";
 import { callOpenAIResponses } from "../../../../lib/services/openaiService.ts";
@@ -83,16 +85,15 @@ export async function POST(req: NextRequest) {
       useAI?: boolean;
     };
 
-    const extractedParts: string[] = [];
-    const fileNames: string[] = [];
+    const parsedFilesData: Array<{ fileName: string; text: string }> = [];
 
     if (Array.isArray(files)) {
-      for (const file of files.slice(0, 5)) {
+      for (const file of files.slice(0, 10)) {
         if (!file) continue;
-        if (file.fileName) fileNames.push(file.fileName);
+        const currentFileName = file.fileName || "extrato";
 
         if (typeof file.textContent === "string" && file.textContent.trim()) {
-          extractedParts.push(file.textContent.trim());
+          parsedFilesData.push({ fileName: currentFileName, text: file.textContent.trim() });
           continue;
         }
 
@@ -111,12 +112,12 @@ export async function POST(req: NextRequest) {
           if (isPdf) {
             const pdfText = extractTextFromPdfBytes(bytes, decompressPdfFlateStream);
             if (pdfText.trim()) {
-              extractedParts.push(pdfText);
+              parsedFilesData.push({ fileName: currentFileName, text: pdfText.trim() });
             }
           } else {
             const decodedText = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
             if (decodedText.trim()) {
-              extractedParts.push(decodedText);
+              parsedFilesData.push({ fileName: currentFileName, text: decodedText.trim() });
             }
           }
         }
@@ -124,30 +125,34 @@ export async function POST(req: NextRequest) {
     }
 
     if (typeof rawText === "string" && rawText.trim()) {
-      extractedParts.push(rawText.trim());
+      parsedFilesData.push({ fileName: "texto-colado", text: rawText.trim() });
     }
 
-    const combinedText = extractedParts.join("\n\n");
-    if (!combinedText.trim()) {
+    if (parsedFilesData.length === 0) {
       return NextResponse.json(
         {
           success: false,
           error:
-            "Não foi possível extrair texto legível do arquivo enviado. Verifique se o PDF possui texto selecionável (não é apenas uma foto escaneada) ou cole o texto do extrato.",
+            "Não foi possível extrair texto legível dos arquivos enviados. Verifique se o PDF possui texto selecionável (não é apenas uma foto escaneada) ou cole o texto do extrato.",
           code: "EMPTY_EXTRACTED_TEXT",
         },
         { status: 422 }
       );
     }
 
-    // 1. Análise Contábil e Determinística Local (Instantânea e 100% exata)
-    const analysis = analyzeBankStatementText({
-      rawText: combinedText,
-      fileName: fileNames.join(", "),
-      existingCards: Array.isArray(existingCards) ? existingCards.slice(0, 30) : [],
-      existingTransactions: Array.isArray(existingTransactions) ? existingTransactions.slice(0, 500) : [],
-      existingRecurringItems: Array.isArray(existingRecurringItems) ? existingRecurringItems.slice(0, 100) : [],
-    });
+    // 1. Análise Contábil e Determinística de cada arquivo separadamente (preserva contas e regras de cada banco)
+    const perFileAnalyses: StatementAnalysisResult[] = parsedFilesData.map((fileData) =>
+      analyzeBankStatementText({
+        rawText: fileData.text,
+        fileName: fileData.fileName,
+        existingCards: Array.isArray(existingCards) ? existingCards.slice(0, 30) : [],
+        existingTransactions: Array.isArray(existingTransactions) ? existingTransactions.slice(0, 500) : [],
+        existingRecurringItems: Array.isArray(existingRecurringItems) ? existingRecurringItems.slice(0, 100) : [],
+      })
+    );
+
+    // 2. Unificação inteligente de múltiplos extratos (Nubank + Itaú, ou múltiplos meses do mesmo banco)
+    const analysis = mergeMultipleStatementAnalyses(perFileAnalyses);
 
     // 2. Refinamento Opcional por IA para lançamentos com categoria "Outros" (somente para usuário autenticado e dentro da cota)
     const uncategorizedItems = analysis.transactions.filter((t) => t.category === "Outros");
