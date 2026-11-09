@@ -11,6 +11,7 @@ import {
   extractInstallmentInfo,
   stripEmbeddedDateTokens,
   simplifyTransferDescription,
+  cleanCorruptedPdfFontArtifacts,
 } from "../lib/services/statementImportService.ts";
 import {
   PAGE_TUTORIALS,
@@ -275,6 +276,84 @@ test("mergeMultipleStatementAnalyses: combina extratos de múltiplos bancos (Nub
   // Não gerou falsas recorrências de parcelamento para os Pix
   const pixRec = merged.recurringItems.find((r) => r.title.toLowerCase().includes("isadora"));
   assert.equal(pixRec, undefined);
+});
+
+test("cleanCorruptedPdfFontArtifacts: corrige glifos danificados de fontes TrueType bancárias (E->( e F->))", () => {
+  const corruptedSample =
+    "01 S(T 2026\n01 D( S(T(MBRO D( 2026\nVALOR(S (M R$\nCP)\n)(RR(IRA\nMaster)ormula\n)inanceira";
+  const cleaned = cleanCorruptedPdfFontArtifacts(corruptedSample);
+
+  assert.ok(cleaned.includes("01 SET 2026"));
+  assert.ok(cleaned.includes("01 DE SETEMBRO DE 2026"));
+  assert.ok(cleaned.includes("VALORES EM R$"));
+  assert.ok(cleaned.includes("CPF"));
+  assert.ok(cleaned.includes("FERREIRA"));
+  assert.ok(cleaned.includes("Masterformula"));
+  assert.ok(cleaned.includes("Financeira"));
+});
+
+test("simplifyTransferDescription: limpa contrapartes mascaradas e títulos longos em transferências", () => {
+  const nubankLong =
+    "Transferência Recebida - Bartolomeu Chiachio de Paiva - •••.345.506-•• - NU 49119149-3";
+  assert.equal(
+    simplifyTransferDescription(nubankLong),
+    "Transferência Recebida - Bartolomeu Chiachio de Paiva"
+  );
+
+  const pixEnv =
+    "Transferência enviada pelo Pix - Cecília Pereira Januário - •••.913.206-•• - NU 448704942-1";
+  assert.equal(
+    simplifyTransferDescription(pixEnv),
+    "Pix enviado - Cecília Pereira Januário"
+  );
+});
+
+test("mergeMultipleStatementAnalyses: preserva saldo da competência mais recente e identifica padrões de múltiplos meses", () => {
+  const augustText = `
+    Nubank S.A.
+    Saldo final do período R$ 46,63
+    05 AGO 2026
+    Total de entradas
+    + 150,00
+    Transferência Recebida - Bartolomeu Chiachio - NU 123
+    150,00
+    10 AGO 2026
+    Total de saídas
+    - 400,00
+    Transferência enviada pelo Pix - CEMIG DISTRIBUICAO S.A
+    400,00
+  `;
+  const octoberText = `
+    Nubank S.A.
+    Saldo final do período R$ 0,00
+    01 OUT 2026
+    Total de entradas
+    + 150,00
+    Transferência Recebida - Bartolomeu Chiachio - NU 123
+    150,00
+    10 OUT 2026
+    Total de saídas
+    - 400,00
+    Transferência enviada pelo Pix - CEMIG DISTRIBUICAO S.A
+    400,00
+  `;
+
+  const resAug = analyzeBankStatementText({ rawText: augustText, fileName: "ago.pdf" });
+  const resOct = analyzeBankStatementText({ rawText: octoberText, fileName: "out.pdf" });
+
+  const merged = mergeMultipleStatementAnalyses([resAug, resOct]);
+
+  // Conta Nubank tem saldo 0,00 (do extrato de outubro mais recente, e não 46,63 de agosto)
+  const nubankAcc = merged.accounts.find((a) => a.institutionId === "nubank");
+  assert.ok(nubankAcc);
+  assert.equal(nubankAcc.balance, 0);
+
+  // Não inventou cartão de crédito
+  assert.equal(merged.accounts.some((a) => a.type === "credit"), false);
+
+  // Identificou Bartolomeu e Cemig como padrões recorrentes através dos meses
+  assert.ok(merged.recurringItems.some((r) => r.title.toLowerCase().includes("bartolomeu")));
+  assert.ok(merged.recurringItems.some((r) => r.title.toLowerCase().includes("cemig")));
 });
 
 test("PAGE_TUTORIALS & ONBOARDING_DIRECT_STEPS: fornece passo a passo didático e direto para todas as telas do app", () => {

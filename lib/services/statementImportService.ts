@@ -637,6 +637,40 @@ function extractTextFromPdfContentStreams(streams: string[], cmap: Map<number, s
 }
 
 /**
+ * Normaliza artefatos de fontes TrueType corrompidas em PDFs bancários brasileiros (ex.: Nubank, Itaú).
+ * Em fontes com ToUnicode parcial, caracteres como 'E' e 'F' podem ser emitidos como '(' ou ')'.
+ * Exemplo real: "01 S(T 2026" → "01 SET 2026", "D(" → "DE", "CP)" → "CPF", ")UNDACAO" → "FUNDACAO".
+ */
+export function cleanCorruptedPdfFontArtifacts(text: string): string {
+  // Limpa caracteres de controle binários e caracteres de marcadores de máscara corrompidos (\x01c -> •)
+  let curr = text
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
+    .replace(/\x01c/g, "•")
+    .replace(/\)\(/g, "FE");
+
+  if (!curr.includes("(") && !curr.includes(")")) return curr;
+
+  for (let i = 0; i < 3; i++) {
+    const prev = curr;
+    curr = curr
+      // Rule A: Letra + ( + Letra (ex: S(T -> SET, P(DRO -> PEDRO, M(RCADO -> MERCADO)
+      .replace(/([A-Za-z])\(([A-Za-z])/g, (_m, a, b) => a + (a === a.toUpperCase() ? "E" : "e") + b)
+      // Rule B: Letra + ( no fim de palavra (ex: D( -> DE, WAND( -> WANDE)
+      .replace(/([A-Za-z])\((?=\s|[.,;:!?-]|$)/g, (_m, a) => a + (a === a.toUpperCase() ? "E" : "e"))
+      // Rule C: ( + 1 ou 2 letras maiúsculas isoladas (ex: (M R$ -> EM R$)
+      .replace(/(^|\s)\(([A-Z]{1,2})(?=\s|[.,;:!?-]|$)/g, (_m, sp, a) => sp + "E" + a)
+      // Rule D: Letra + ) + Letra (ex: RA)A(L -> RAFAEL, Master)ormula -> Masterformula)
+      .replace(/([A-Za-z])\)([A-Za-z])/g, (_m, a, b) => a + (a === a.toUpperCase() ? "F" : "f") + b)
+      // Rule E: Letra + ) no fim de palavra isolada sem abre-parêntese (ex: CP) -> CPF)
+      .replace(/([A-Za-z])\)(?=\s|[.,;:!?-]|$)/g, (_m, a) => a + (a === a.toUpperCase() ? "F" : "f"))
+      // Rule F: ) no início de palavra (ex: )inanceira -> Financeira, )UNDACAO -> FUNDACAO)
+      .replace(/(^|\s)\)([A-Za-z])/g, (_m, sp, a) => sp + (a === a.toUpperCase() ? "F" + a : "F" + a.toLowerCase()));
+    if (prev === curr) break;
+  }
+  return curr;
+}
+
+/**
  * Extrai texto de um PDF binário (`Uint8Array`).
  * Aceita uma função opcional `decompressFlate` (ex: usando `zlib.inflateSync` no servidor Node)
  * para descompactar streams `/FlateDecode`.
@@ -650,9 +684,10 @@ export function extractTextFromPdfBytes(
   // Se o arquivo na verdade já for texto puro (ex: arquivo .txt/.csv renomeado ou string)
   if (!rawLatin1.startsWith("%PDF-")) {
     try {
-      return new TextDecoder("utf-8", { fatal: false }).decode(pdfBytes);
+      const decoded = new TextDecoder("utf-8", { fatal: false }).decode(pdfBytes);
+      return cleanCorruptedPdfFontArtifacts(decoded);
     } catch {
-      return rawLatin1;
+      return cleanCorruptedPdfFontArtifacts(rawLatin1);
     }
   }
 
@@ -693,16 +728,16 @@ export function extractTextFromPdfBytes(
   const extracted = extractTextFromPdfContentStreams(decompressedStreams, cmap);
 
   if (extracted.trim().length > 10) {
-    return extracted;
+    return cleanCorruptedPdfFontArtifacts(extracted);
   }
 
   // Fallback: tenta extrair de todo o documento se não encontrou em streams isolados
   const fallbackFromWhole = extractTextFromPdfContentStreams([rawLatin1], cmap);
   if (fallbackFromWhole.trim().length > 0) {
-    return fallbackFromWhole;
+    return cleanCorruptedPdfFontArtifacts(fallbackFromWhole);
   }
 
-  return extracted;
+  return cleanCorruptedPdfFontArtifacts(extracted);
 }
 
 /**
@@ -987,11 +1022,33 @@ export function classifyStatementMerchant(
     };
   }
 
-  // Internet & Telecomunicações (Recorrentes)
+  // Concessionárias de Energia, Água, Gás e Conectividade
   if (
-    lower.includes("vivo") ||
-    lower.includes("claro") ||
-    lower.includes("tim") ||
+    lower.includes("cemig") ||
+    lower.includes("copasa") ||
+    lower.includes("sabesp") ||
+    lower.includes("enel") ||
+    lower.includes("cpfl") ||
+    lower.includes("light") ||
+    lower.includes("energisa") ||
+    lower.includes("comgas") ||
+    lower.includes("neoenergia")
+  ) {
+    return {
+      cleanTitle: cleaned,
+      category: "Moradia",
+      isRecurringCandidate: true,
+      recurringReason: "Conta de consumo / concessionária de energia ou água",
+      recurrenceType: "fixed_day",
+    };
+  }
+
+  // Internet & Telecomunicações (Recorrentes) - usando regex de palavra para não confundir 'empréstimo' com TIM
+  if (
+    /\bvivo\b/i.test(lower) ||
+    /\bclaro\b/i.test(lower) ||
+    /\btim\b/i.test(lower) ||
+    /\boi\b/i.test(lower) ||
     lower.includes("fibra") ||
     lower.includes("internet") ||
     lower.includes("net virtua") ||
@@ -1004,6 +1061,38 @@ export function classifyStatementMerchant(
       isRecurringCandidate: true,
       recurringReason: "Assinatura mensal de internet / telecom",
       recurrenceType: "fixed_day",
+    };
+  }
+
+  // Tributos e Guias Mensais (DAS MEI, Receita Federal, DARF)
+  if (
+    lower.includes("receita federal") ||
+    lower.includes("simples nacional") ||
+    lower.includes("das-mei") ||
+    lower.includes("darf") ||
+    lower.includes("guia gps")
+  ) {
+    return {
+      cleanTitle: cleaned,
+      category: "Moradia",
+      isRecurringCandidate: true,
+      recurringReason: "Tributo / guia fixa mensal",
+      recurrenceType: "fixed_day",
+    };
+  }
+
+  // Empréstimos, Financiamentos e Resgates (NÃO são assinaturas telecom)
+  if (
+    lower.includes("emprestimo") ||
+    lower.includes("empréstimo") ||
+    lower.includes("financiamento") ||
+    lower.includes("resgate de emprestimo") ||
+    lower.includes("resgate de empréstimo")
+  ) {
+    return {
+      cleanTitle: cleaned,
+      category: "Outros",
+      isRecurringCandidate: false,
     };
   }
 
@@ -1074,6 +1163,9 @@ export function classifyStatementMerchant(
     lower.includes("escola") ||
     lower.includes("colegio") ||
     lower.includes("mensalidade") ||
+    lower.includes("inatel") ||
+    lower.includes("instituto nacional de telecomunicacoes") ||
+    lower.includes("instituto nacional de telecomunicações") ||
     lower.includes("alura") ||
     lower.includes("rocketseat") ||
     lower.includes("ingles") ||
@@ -1372,10 +1464,12 @@ export function stripEmbeddedDateTokens(description: string, keepInstallmentToke
 }
 
 /**
- * Deixa descrições de Pix legíveis (Nubank: "Transferência enviada pelo Pix FULANO - •••.123.456-•• - BANCO ...").
+ * Deixa descrições de Pix e transferências legíveis e elegantes (padrão Apple HIG).
+ * Exemplo: "Transferência Recebida - Bartolomeu Chiachio de Paiva - •••.345.506-•• - NU 49119149-3"
+ *          → "Transferência Recebida - Bartolomeu Chiachio de Paiva"
  */
 export function simplifyTransferDescription(description: string): string {
-  let out = description;
+  let out = description.replace(/\\/g, "");
 
   const nubankPix = out.match(/^transfer[eê]ncia\s+(enviada|recebida)\s+pelo\s+pix\s*[-–]?\s*(.*)$/i);
   if (nubankPix) {
@@ -1384,13 +1478,21 @@ export function simplifyTransferDescription(description: string): string {
     out = counterpart ? `${direction} - ${counterpart}` : direction;
   }
 
+  const generalTransfer = out.match(/^transfer[eê]ncia\s+(recebida|enviada)\s*[-–]?\s*(.*)$/i);
+  if (generalTransfer && !out.toLowerCase().includes("pelo pix")) {
+    const direction = generalTransfer[1].toLowerCase() === "recebida" ? "Transferência Recebida" : "Transferência Enviada";
+    const counterpart = generalTransfer[2].split(/\s+[-–]\s+/)[0]?.trim() || "";
+    out = counterpart ? `${direction} - ${counterpart}` : direction;
+  }
+
   out = out
     .replace(/^PIX\s+TRANSF(?:ERENCIA)?\s+/i, "Pix - ")
     .replace(/^PIX\s+QRS?\s+/i, "Pix QR - ")
     // CPF/CNPJ mascarados, agência e conta
-    .replace(/[•*]{2,3}\.?\d{3}\.?\d{3}-?[•*]{2}/g, " ")
+    .replace(/[•*c\s]{2,4}\.?\d{3}\.?\d{3}-?[•*c\s]{2,4}/gi, " ")
     .replace(/\bag[eê]ncia:?\s*\d+\b/gi, " ")
     .replace(/\bconta:?\s*[\d.-]+\b/gi, " ")
+    .replace(/\bNU\s+\d+[\d.-]*/gi, " ")
     .replace(/\(\d{3,4}\)/g, " ")
     .replace(/\s+[-–]\s*$/g, "")
     .replace(/\s+/g, " ")
@@ -1469,7 +1571,7 @@ export function parseStatementAmountToken(rawToken: string): {
   }
 
   const value = parseFloat(numericPart);
-  if (!Number.isFinite(value) || value <= 0 || value > 50_000_000) {
+  if (!Number.isFinite(value) || value < 0 || value > 50_000_000) {
     return null;
   }
 
@@ -1569,19 +1671,32 @@ export function extractStatementHeaderMetadata(text: string): {
   let closingDay: number | null = null;
   let dueDay: number | null = null;
 
-  // Saldo em conta / Saldo final / Saldo disponível — usa a ÚLTIMA ocorrência (saldo mais recente do período)
-  const balanceRegexes = [
-    /saldo\s+(?:em\s+conta(?:\s+final)?|final(?:\s+do\s+per[ií]odo)?|atual|dispon[ií]vel\s+em\s+conta)\s*[:=-]?\s*(?:R\$\s*)?([+-]?\s*\d{1,3}(?:\.\d{3})*,\d{2}|[+-]?\d+(?:[.,]\d{2}))/gi,
-    /saldo\s+do\s+dia\s*[:=-]?\s*(?:R\$\s*)?([+-]?\s*\d{1,3}(?:\.\d{3})*,\d{2}|[+-]?\d+(?:[.,]\d{2}))/gi,
-  ];
-  for (const rx of balanceRegexes) {
-    const matches = Array.from(text.matchAll(rx));
-    const last = matches[matches.length - 1];
-    if (last) {
-      const parsed = parseStatementAmountToken(last[1]);
-      if (parsed) {
-        checkingBalance = parsed.explicitSign === "out" ? -parsed.amount : parsed.amount;
-        break;
+  // 1. Saldo em conta / Saldo final: prioriza correspondência explícita com "R$" (ex.: "Saldo final do período\nR$ 46,63")
+  const explicitCurrencyMatch = text.match(
+    /saldo\s+(?:em\s+conta(?:\s+final)?|final(?:\s+do\s+per[ií]odo)?|atual|dispon[ií]vel\s+em\s+conta)\s*[:=-]?\s*R\$\s*([+-]?\s*\d{1,3}(?:\.\d{3})*,\d{2}|[+-]?\d+(?:[.,]\d{2}))/i
+  );
+  if (explicitCurrencyMatch) {
+    const parsed = parseStatementAmountToken(explicitCurrencyMatch[1]);
+    if (parsed) {
+      checkingBalance = parsed.explicitSign === "out" ? -parsed.amount : parsed.amount;
+    }
+  }
+
+  // 2. Fallback caso não haja "R$" explícito
+  if (checkingBalance === null) {
+    const balanceRegexes = [
+      /saldo\s+(?:em\s+conta(?:\s+final)?|final(?:\s+do\s+per[ií]odo)?|atual|dispon[ií]vel\s+em\s+conta)\s*[:=-]?\s*(?:R\$\s*)?([+-]?\s*\d{1,3}(?:\.\d{3})*,\d{2}|[+-]?\d+(?:[.,]\d{2}))/gi,
+      /saldo\s+do\s+dia\s*[:=-]?\s*(?:R\$\s*)?([+-]?\s*\d{1,3}(?:\.\d{3})*,\d{2}|[+-]?\d+(?:[.,]\d{2}))/gi,
+    ];
+    for (const rx of balanceRegexes) {
+      const matches = Array.from(text.matchAll(rx));
+      const first = matches[0];
+      if (first) {
+        const parsed = parseStatementAmountToken(first[1]);
+        if (parsed) {
+          checkingBalance = parsed.explicitSign === "out" ? -parsed.amount : parsed.amount;
+          break;
+        }
       }
     }
   }
@@ -1609,8 +1724,14 @@ export function extractStatementHeaderMetadata(text: string): {
   }
 
   const lower = text.toLowerCase();
+  // "pagamento de fatura" dentro de extrato de conta corrente NÃO significa que o arquivo é fatura de cartão!
+  const hasPureInvoiceKeyword =
+    (lower.includes("fatura") && !lower.includes("pagamento de fatura") && !lower.includes("pagamento da fatura")) ||
+    lower.includes("fatura fechada") ||
+    lower.includes("resumo da fatura");
+
   const hasCreditKeywords =
-    lower.includes("fatura") ||
+    hasPureInvoiceKeyword ||
     lower.includes("cartao de credito") ||
     lower.includes("cartão de crédito") ||
     lower.includes("lancamentos no cartao") ||
@@ -1621,10 +1742,15 @@ export function extractStatementHeaderMetadata(text: string): {
   const hasCheckingKeywords =
     lower.includes("conta corrente") ||
     lower.includes("extrato de conta") ||
+    lower.includes("movimentacoes da conta") ||
+    lower.includes("movimentações da conta") ||
     lower.includes("pix enviado") ||
     lower.includes("pix recebido") ||
     lower.includes("saldo em conta") ||
-    lower.includes("saldo anterior");
+    lower.includes("saldo anterior") ||
+    lower.includes("total de entradas") ||
+    lower.includes("total de saídas") ||
+    lower.includes("total de saidas");
 
   return {
     checkingBalance,
@@ -1632,7 +1758,7 @@ export function extractStatementHeaderMetadata(text: string): {
     closingDay,
     dueDay,
     hasCheckingSection: hasCheckingKeywords || !hasCreditKeywords,
-    hasCreditSection: hasCreditKeywords,
+    hasCreditSection: hasCreditKeywords && !hasCheckingKeywords ? true : Boolean(creditLimit && creditLimit > 0),
   };
 }
 
@@ -1778,7 +1904,146 @@ export function analyzeBankStatementText(params: AnalyzeStatementParams): Statem
       }
     }
 
-    // Tentativa 2: Layout multi-linha (Linha atual é apenas Data, próxima é Descrição e/ou Valor)
+    // Tentativa 2: Layout por blocos com Data no topo (padrão oficial Nubank Conta e outros bancos digitais)
+    // Exemplo:
+    // 01 OUT 2026
+    // Total de entradas
+    // + 342,93
+    // Transferência recebida pelo Pix
+    // JOAO PEDRO CHIACHIO DE PAIVA - ...
+    // 342,93
+    const sectionDate = parseStatementDateToken(line, refYear);
+    if (sectionDate) {
+      let currentSectionSign: "in" | "out" | null = null;
+      let j = i + 1;
+
+      while (j < rawLines.length) {
+        const subLine = rawLines[j];
+        // Se encontramos uma nova data, para o bloco atual
+        if (parseStatementDateToken(subLine, refYear)) {
+          break;
+        }
+
+        const subLower = subLine.toLowerCase();
+
+        // Pula linhas de cabeçalho/rodapé de quebra de página sem quebrar o bloco da data atual
+        if (
+          isSummaryOrNoiseLine(subLine) ||
+          subLower.includes("tem alguma duvida") ||
+          subLower.includes("tem alguma dúvida") ||
+          subLower.includes("extrato gerado dia") ||
+          /^\d+\s+de\s+\d+$/i.test(subLine) ||
+          subLower === "valores em r$" ||
+          subLower.startsWith("nu financeira") ||
+          subLower.startsWith("nu pagamentos")
+        ) {
+          j++;
+          continue;
+        }
+
+        if (subLower === "total de entradas" || subLower.startsWith("entradas")) {
+          currentSectionSign = "in";
+          j++;
+          // Pula o somatório que costuma vir logo abaixo (ex: '+ 342,93')
+          if (j < rawLines.length && parseStatementAmountToken(rawLines[j])) {
+            j++;
+          }
+          continue;
+        }
+
+        if (subLower === "total de saidas" || subLower === "total de saídas" || subLower.startsWith("saidas") || subLower.startsWith("saídas")) {
+          currentSectionSign = "out";
+          j++;
+          // Pula o somatório que costuma vir logo abaixo (ex: '- 356,43')
+          if (j < rawLines.length && parseStatementAmountToken(rawLines[j])) {
+            j++;
+          }
+          continue;
+        }
+
+        const isTxStart =
+          subLine.startsWith("Transferência") ||
+          subLine.startsWith("Transferencia") ||
+          subLine.startsWith("Pix") ||
+          subLine.startsWith("PIX") ||
+          subLine.startsWith("Compra no débito") ||
+          subLine.startsWith("Compra no debito") ||
+          subLine.startsWith("Pagamento de fatura") ||
+          subLine.startsWith("Pagamento de boleto") ||
+          subLine.startsWith("Resgate de empréstimo") ||
+          subLine.startsWith("Resgate de emprestimo") ||
+          subLine.startsWith("Estorno") ||
+          subLine.startsWith("Aplicação RDB") ||
+          subLine.startsWith("Aplicacao RDB") ||
+          subLine.startsWith("Resgate RDB") ||
+          subLine.startsWith("Depósito") ||
+          subLine.startsWith("Deposito");
+
+        if (isTxStart) {
+          const headerTitle = subLine;
+          let details = "";
+          let itemAmount: number | null = null;
+          let k = j + 1;
+
+          while (k < rawLines.length && k < j + 8) {
+            const detailLine = rawLines[k];
+            if (
+              parseStatementDateToken(detailLine, refYear) ||
+              detailLine.toLowerCase().startsWith("total de") ||
+              detailLine.startsWith("Transferência") ||
+              detailLine.startsWith("Compra no débito") ||
+              detailLine.startsWith("Pagamento") ||
+              detailLine.startsWith("Resgate") ||
+              detailLine.startsWith("Tem alguma dúvida")
+            ) {
+              break;
+            }
+
+            const amtCheck = parseStatementAmountToken(detailLine);
+            // Um valor numérico isolado na linha final do item é o valor da transação (ignora números de conta tipo 12345-6)
+            if (amtCheck && !/conta:?\s*[\d.-]+/i.test(detailLine) && !detailLine.toLowerCase().includes("agencia") && !detailLine.toLowerCase().includes("agência")) {
+              itemAmount = amtCheck.amount;
+              k++;
+              break;
+            } else {
+              if (!details) {
+                details = detailLine;
+              } else if (!detailLine.includes("PAGAMENTOS") && !detailLine.includes("Conta:") && !detailLine.includes("Agência:")) {
+                details += " " + detailLine;
+              }
+            }
+            k++;
+          }
+
+          if (itemAmount !== null) {
+            const rawDescription = details ? `${headerTitle} - ${details}` : headerTitle;
+            const explicitIncome = /recebida|recebido|deposito|depósito|salario|salário|rendimento/i.test(headerTitle);
+            const explicitExpense = /enviada|enviado|compra|pagamento|aplicacao|aplicação/i.test(headerTitle);
+            const txType: "despesa" | "receita" =
+              explicitIncome ? "receita" : explicitExpense ? "despesa" : currentSectionSign === "in" ? "receita" : "despesa";
+
+            rawExtractedTransactions.push({
+              dateInfo: sectionDate,
+              rawDescription,
+              amount: itemAmount,
+              type: txType,
+              accountType: currentSectionMode,
+            });
+            j = k;
+            continue;
+          }
+        }
+
+        j++;
+      }
+
+      if (j > i + 1) {
+        i = j;
+        continue;
+      }
+    }
+
+    // Tentativa 3: Layout multi-linha clássico (Data em linha isolada, descrição + valor nas seguintes)
     const standaloneDate = parseStatementDateToken(line, refYear);
     if (standaloneDate && i + 1 < rawLines.length) {
       const nextLine = rawLines[i + 1];
@@ -2190,16 +2455,23 @@ export function mergeMultipleStatementAnalyses(
   }
 
   // 1. Unificar Contas & Cartões por ID / Instituição + Tipo
+  // Ordena análises cronologicamente para que o extrato mais recente forneça o saldo atual da conta
+  const analysesWithLatestDate = analyses.map((a) => {
+    const latestTxDate = a.transactions.reduce((max, t) => (t.date > max ? t.date : max), "");
+    return { a, latestTxDate };
+  });
+  analysesWithLatestDate.sort((x, y) => x.latestTxDate.localeCompare(y.latestTxDate));
+
   const mergedAccountsMap = new Map<string, DetectedStatementAccount>();
-  for (const a of analyses) {
+  for (const { a } of analysesWithLatestDate) {
     for (const acc of a.accounts) {
       const key = `${acc.institutionId}-${acc.type}`;
       if (!mergedAccountsMap.has(key)) {
         mergedAccountsMap.set(key, { ...acc });
       } else {
         const existing = mergedAccountsMap.get(key)!;
-        // Prioriza saldo mais recente ou maior limite detectado
-        if (acc.balance > 0 && (existing.balance === 0 || acc.updateExistingBalance)) {
+        // O extrato mais recente no tempo define o saldo da conta corrente
+        if (acc.updateExistingBalance || acc.balance !== existing.balance) {
           existing.balance = acc.balance;
           existing.updateExistingBalance = existing.updateExistingBalance || acc.updateExistingBalance;
         }
@@ -2254,6 +2526,56 @@ export function mergeMultipleStatementAnalyses(
           existing.startMonth = rec.startMonth;
           existing.startYear = rec.startYear;
         }
+      }
+    }
+  }
+
+  // 3.1. Identifica empiricamente compromissos que se repetem através de múltiplos meses/extratos
+  const txGroupMap = new Map<string, DetectedStatementTransaction[]>();
+  for (const tx of mergedTransactions) {
+    if (tx.isInvoicePaymentOnCreditStatement) continue;
+    const cleanKey = tx.title
+      .toLowerCase()
+      .replace(/r\$\s*[\d,.]+/g, "")
+      .replace(/[-–•*]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (cleanKey.length < 4) continue;
+    if (!txGroupMap.has(cleanKey)) txGroupMap.set(cleanKey, []);
+    txGroupMap.get(cleanKey)!.push(tx);
+  }
+
+  for (const [_key, groupTxs] of txGroupMap.entries()) {
+    const distinctMonths = new Set(groupTxs.map((t) => t.date.slice(0, 7)));
+    if (distinctMonths.size >= 2) {
+      const sampleTx = groupTxs[0];
+      const recKey = `${sampleTx.title.toLowerCase().trim()}-${sampleTx.type}`;
+      if (!mergedRecurringMap.has(recKey)) {
+        const txDateObj = new Date(`${sampleTx.date}T12:00:00`);
+        const dueDay = Number.isNaN(txDateObj.getTime()) ? 10 : txDateObj.getDate();
+        const avgAmount =
+          Math.round((groupTxs.reduce((s, t) => s + t.amount, 0) / groupTxs.length) * 100) / 100;
+
+        const startMonth = Number.isNaN(txDateObj.getTime()) ? new Date().getMonth() : txDateObj.getMonth();
+        const startYear = Number.isNaN(txDateObj.getTime()) ? new Date().getFullYear() : txDateObj.getFullYear();
+
+        mergedRecurringMap.set(recKey, {
+          id: `stmt-rec-${mergedRecurringMap.size + 1}`,
+          title: sampleTx.title,
+          amount: avgAmount,
+          type: sampleTx.type === "receita" ? "income" : "expense",
+          category: sampleTx.category,
+          accountName: sampleTx.accountName,
+          accountType: sampleTx.accountType,
+          dueDay,
+          recurrenceType: "fixed_day",
+          startMonth,
+          startYear,
+          sourceTransactionId: sampleTx.id,
+          alreadyExists: false,
+          selected: true,
+          reason: `Compromisso recorrente identificado em ${distinctMonths.size} meses no extrato`,
+        });
       }
     }
   }
