@@ -79,13 +79,14 @@ function highlightFinancialTokens(text: string, baseKey: number): React.ReactNod
     if (m.index > lastIdx) {
       parts.push(sanitized.substring(lastIdx, m.index));
     }
-    const token = m[1];
+    const token = m[1].replace(/^R\$\s+/, "R$ ").replace(/\s+/g, "");
+    const formattedToken = token.startsWith("R$") ? `R$ ${token.slice(2)}` : token;
     parts.push(
       <span
         key={`fin-${baseKey}-${lastIdx}-${m.index}`}
-        className="font-semibold text-[#1D1D1F] tracking-tight font-mono tabular-nums"
+        className="inline-block font-semibold text-[#1D1D1F] tracking-tight tabular-nums bg-black/[0.04] px-1.5 py-0.2 rounded-md text-[0.95em]"
       >
-        {token}
+        {formattedToken}
       </span>
     );
     lastIdx = tokenRegex.lastIndex;
@@ -257,7 +258,18 @@ function parseMessageIntoBlocks(content: string): ParsedBlock[] {
           break;
         }
       }
-      blocks.push({ type: "numbered_list", items: numItems });
+      // If it's a single numbered line that looks like a section header (ends with ":" or is short bold title),
+      // render it as a clean heading instead of an isolated "1" badge
+      if (
+        numItems.length === 1 &&
+        (numItems[0].endsWith(":") ||
+          /^\*\*[^*]+\*\*:?$/.test(numItems[0]))
+      ) {
+        const cleanTitle = numItems[0].replace(/\*\*/g, "").replace(/:$/, "").trim();
+        blocks.push({ type: "heading", title: cleanTitle, level: 3 });
+      } else {
+        blocks.push({ type: "numbered_list", items: numItems });
+      }
       continue;
     }
 
@@ -304,13 +316,17 @@ function parseMessageIntoBlocks(content: string): ParsedBlock[] {
 
 export function FormattedMessage({ content, role = "assistant" }: FormattedMessageProps) {
   if (role === "user") {
-    return <div className="whitespace-pre-line font-normal text-white">{content}</div>;
+    return (
+      <div className="whitespace-pre-line text-[14px] sm:text-[14.5px] leading-relaxed font-normal text-white">
+        {content}
+      </div>
+    );
   }
 
   const blocks = parseMessageIntoBlocks(content);
 
   return (
-    <div className="space-y-3.5 text-[#1D1D1F]">
+    <div className="space-y-3 text-[#1D1D1F] text-[13.5px] sm:text-[14px] leading-[1.6]">
       {blocks.map((block, idx) => {
         switch (block.type) {
           case "heading": {
@@ -321,21 +337,22 @@ export function FormattedMessage({ content, role = "assistant" }: FormattedMessa
             } else if (
               titleLower.includes("cfo") ||
               titleLower.includes("diagnóstico") ||
-              titleLower.includes("parecer")
+              titleLower.includes("parecer") ||
+              titleLower.includes("conclus")
             ) {
               Icon = ShieldCheck;
             } else if (titleLower.includes("simula") || titleLower.includes("compra")) {
               Icon = Calculator;
-            } else if (titleLower.includes("recomenda") || titleLower.includes("plano")) {
+            } else if (titleLower.includes("recomenda") || titleLower.includes("plano") || titleLower.includes("passo")) {
               Icon = ArrowRight;
             }
 
             return (
-              <div key={idx} className="flex items-center gap-2 pt-1.5 pb-0.5 border-b border-black/[0.04]">
-                <div className="w-5 h-5 rounded-md bg-[#1D1D1F] text-white flex items-center justify-center shrink-0 shadow-2xs">
-                  <Icon size={12} />
+              <div key={idx} className="flex items-center gap-2 pt-2 pb-1 border-b border-black/[0.05]">
+                <div className="w-5 h-5 rounded-lg bg-[#1D1D1F] text-white flex items-center justify-center shrink-0 shadow-2xs">
+                  <Icon size={11} />
                 </div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-[#1D1D1F]">
+                <h4 className="text-[12px] font-bold uppercase tracking-[0.06em] text-[#1D1D1F]">
                   {block.title}
                 </h4>
               </div>
@@ -343,7 +360,7 @@ export function FormattedMessage({ content, role = "assistant" }: FormattedMessa
           }
 
           case "divider":
-            return <div key={idx} className="border-t border-black/[0.06] my-2" />;
+            return <div key={idx} className="border-t border-black/[0.06] my-2.5" />;
 
           case "category_breakdown":
             return (
@@ -351,36 +368,36 @@ export function FormattedMessage({ content, role = "assistant" }: FormattedMessa
                 {block.items.map((cat, cIdx) => (
                   <div
                     key={cIdx}
-                    className="p-3 rounded-2xl bg-white border border-black/[0.06] shadow-[0_1px_4px_rgba(0,0,0,0.02)] space-y-2 hover:border-black/15 transition-colors"
+                    className="p-3 rounded-2xl bg-[#F8F8FA] border border-black/[0.05] space-y-2 transition-colors"
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5">
-                        <span className="font-semibold text-xs text-[#1D1D1F]">
+                        <span className="font-semibold text-[13px] text-[#1D1D1F]">
                           {cat.category}
                         </span>
                         {cat.count && (
-                          <span className="text-[10px] font-medium text-[#86868B] bg-[#F2F2F7] px-2 py-0.5 rounded-full">
+                          <span className="text-[10px] font-medium text-[#86868B] bg-white px-2 py-0.5 rounded-full border border-black/[0.04]">
                             {cat.count}
                           </span>
                         )}
                       </div>
 
                       {cat.amount && (
-                        <span className="text-xs font-bold text-[#1D1D1F] bg-emerald-50 text-emerald-800 border border-emerald-200/50 px-2.5 py-0.5 rounded-full font-mono tabular-nums">
+                        <span className="text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200/60 px-2.5 py-0.5 rounded-full tabular-nums">
                           {cat.amount}
                         </span>
                       )}
                     </div>
 
                     {cat.merchants && cat.merchants.length > 0 && (
-                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5 border-t border-black/[0.03]">
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-black/[0.04]">
                         <span className="text-[10px] font-medium text-[#86868B]">
                           Lançamentos:
                         </span>
                         {cat.merchants.map((m, mIdx) => (
                           <span
                             key={mIdx}
-                            className="text-[10px] font-medium text-[#48484A] bg-[#F7F7FA] border border-black/[0.04] px-2 py-0.5 rounded-md"
+                            className="text-[10px] font-medium text-[#48484A] bg-white border border-black/[0.05] px-2 py-0.5 rounded-lg"
                           >
                             {m}
                           </span>
@@ -398,21 +415,21 @@ export function FormattedMessage({ content, role = "assistant" }: FormattedMessa
                 {block.items.map((item, kIdx) => {
                   const keyLower = item.key.toLowerCase();
                   const isAlert = keyLower.includes("alerta") || keyLower.includes("risco");
-                  const isCard = keyLower.includes("pagamento") || keyLower.includes("cartão");
-                  const dotColor = isAlert ? "bg-amber-500" : isCard ? "bg-blue-600" : "bg-[#1D1D1F]";
+                  const isCard = keyLower.includes("pagamento") || keyLower.includes("cartão") || keyLower.includes("fatura");
+                  const dotColor = isAlert ? "bg-amber-500" : isCard ? "bg-blue-600" : "bg-emerald-500";
 
                   return (
                     <div
                       key={kIdx}
-                      className="p-3 rounded-2xl bg-white border border-black/[0.05] shadow-[0_1px_4px_rgba(0,0,0,0.02)] space-y-1"
+                      className="p-3 rounded-2xl bg-[#F8F8FA] border border-black/[0.05] space-y-1"
                     >
-                      <div className="flex items-center gap-1.5">
-                        <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
+                      <div className="flex items-center gap-2">
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} />
                         <span className="text-[11px] font-bold text-[#1D1D1F] uppercase tracking-wide">
                           {item.key}
                         </span>
                       </div>
-                      <div className="text-xs text-[#3A3A3C] leading-relaxed pl-3 font-normal">
+                      <div className="text-[13px] text-[#3A3A3C] leading-relaxed pl-3.5 font-normal">
                         {renderInlineContent(item.value)}
                       </div>
                     </div>
@@ -423,11 +440,11 @@ export function FormattedMessage({ content, role = "assistant" }: FormattedMessa
 
           case "bullet_list":
             return (
-              <ul key={idx} className="space-y-1.5 pl-1 text-xs text-[#3A3A3C]">
+              <ul key={idx} className="space-y-2 pl-1 text-[13.5px] sm:text-[14px] text-[#2C2C2E]">
                 {block.items.map((item, bIdx) => (
-                  <li key={bIdx} className="flex items-start gap-2 leading-relaxed">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#86868B] mt-1.5 shrink-0" />
-                    <span>{renderInlineContent(item)}</span>
+                  <li key={bIdx} className="flex items-start gap-2.5 leading-[1.55]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#86868B] mt-2 shrink-0" />
+                    <span className="flex-1">{renderInlineContent(item)}</span>
                   </li>
                 ))}
               </ul>
@@ -435,13 +452,13 @@ export function FormattedMessage({ content, role = "assistant" }: FormattedMessa
 
           case "numbered_list":
             return (
-              <ol key={idx} className="space-y-2 pl-0.5 text-xs text-[#3A3A3C]">
+              <ol key={idx} className="space-y-2.5 pl-0.5 text-[13.5px] sm:text-[14px] text-[#2C2C2E]">
                 {block.items.map((item, nIdx) => (
-                  <li key={nIdx} className="flex items-start gap-2.5 leading-relaxed">
-                    <span className="w-4 h-4 rounded-full bg-[#1D1D1F] text-white text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
+                  <li key={nIdx} className="flex items-start gap-2.5 leading-[1.55]">
+                    <span className="w-5 h-5 rounded-full bg-[#1D1D1F] text-white text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
                       {nIdx + 1}
                     </span>
-                    <span className="pt-0.5">{renderInlineContent(item)}</span>
+                    <span className="flex-1">{renderInlineContent(item)}</span>
                   </li>
                 ))}
               </ol>
@@ -451,7 +468,7 @@ export function FormattedMessage({ content, role = "assistant" }: FormattedMessa
             return (
               <p
                 key={idx}
-                className="text-xs sm:text-[13px] text-[#1D1D1F] leading-relaxed font-normal"
+                className="text-[13.5px] sm:text-[14px] text-[#1D1D1F] leading-[1.6] font-normal"
               >
                 {renderInlineContent(block.text)}
               </p>

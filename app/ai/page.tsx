@@ -28,6 +28,12 @@ import {
   Flame,
   Shield,
   History,
+  ArrowUp,
+  Copy,
+  Check,
+  Search,
+  MessageSquare,
+  PanelLeft,
 } from "lucide-react";
 import { FormattedMessage } from "@/components/ai/FormattedMessage";
 import { FinancialHealthRing } from "@/components/ai/FinancialHealthRing";
@@ -241,22 +247,38 @@ export default function AIAnalystPage() {
     return () => window.clearTimeout(timer);
   }, []);
   const [payingBillId, setPayingBillId] = useState<string | null>(null);
+  const [sessionSearchQuery, setSessionSearchQuery] = useState<string>("");
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [showScrollToBottom, setShowScrollToBottom] = useState<boolean>(false);
 
   const chatBottomRef = useRef<HTMLDivElement>(null);
-  const chatInputRef = useRef<HTMLInputElement>(null);
+  const chatFeedRef = useRef<HTMLDivElement>(null);
+  const lastMessageRef = useRef<HTMLDivElement>(null);
+  const chatInputRef = useRef<HTMLTextAreaElement>(null);
+  const prevMessagesLenRef = useRef<number>(0);
 
   useEffect(() => {
     if (!isCopilotOpen) return;
-    const focusTimer = window.setTimeout(() => chatInputRef.current?.focus(), 260);
+    const focusTimer = window.setTimeout(() => {
+      if (window.innerWidth >= 640) {
+        chatInputRef.current?.focus();
+      }
+    }, 180);
     const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setIsCopilotOpen(false);
+      if (event.key === "Escape") {
+        if (isHistoryDrawerOpen) {
+          setIsHistoryDrawerOpen(false);
+        } else {
+          setIsCopilotOpen(false);
+        }
+      }
     };
     window.addEventListener("keydown", handleEscape);
     return () => {
       window.clearTimeout(focusTimer);
       window.removeEventListener("keydown", handleEscape);
     };
-  }, [isCopilotOpen]);
+  }, [isCopilotOpen, isHistoryDrawerOpen]);
 
   // Sessão atual ativa
   const currentSession =
@@ -511,10 +533,51 @@ export default function AIAnalystPage() {
     };
   }, [user?.uid]);
 
-  // Scroll automático no chat
+  // Scroll inteligente no chat: quando envia mensagem vai ao fim; quando chega resposta da IA posiciona no início da resposta para leitura fluida
   useEffect(() => {
-    chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isSending]);
+    if (!isCopilotOpen) return;
+    const prevLen = prevMessagesLenRef.current;
+    const currLen = messages.length;
+    prevMessagesLenRef.current = currLen;
+
+    if (isSending) {
+      chatBottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+      return;
+    }
+
+    if (currLen > prevLen && currLen > 0) {
+      const lastMsg = messages[currLen - 1];
+      if (lastMsg?.role === "assistant") {
+        window.setTimeout(() => {
+          lastMessageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 40);
+        return;
+      }
+    }
+
+    chatBottomRef.current?.scrollIntoView({ behavior: currLen <= 2 ? "auto" : "smooth", block: "end" });
+  }, [messages, isSending, isCopilotOpen]);
+
+  const handleChatScroll = useCallback(() => {
+    const el = chatFeedRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setShowScrollToBottom(distanceFromBottom > 140);
+  }, []);
+
+  const scrollToChatBottom = useCallback(() => {
+    chatBottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, []);
+
+  const handleCopyMessage = useCallback((msgId: string, text: string) => {
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      void navigator.clipboard.writeText(text);
+      setCopiedMessageId(msgId);
+      window.setTimeout(() => {
+        setCopiedMessageId((prev) => (prev === msgId ? null : prev));
+      }, 2000);
+    }
+  }, []);
 
   const handleDismissPattern = (patternKey: string) => {
     const updated = dismissPattern(patternKey, user?.uid);
@@ -650,7 +713,12 @@ export default function AIAnalystPage() {
     setActiveSessionId(currentId);
     void saveChatSessions(updatedSessionsList, user?.uid);
 
-    if (!textToSend) setInputMessage("");
+    if (!textToSend) {
+      setInputMessage("");
+      if (chatInputRef.current) {
+        chatInputRef.current.style.height = "auto";
+      }
+    }
     setIsSending(true);
 
     try {
@@ -826,14 +894,19 @@ export default function AIAnalystPage() {
   };
 
   const openCopilotWithContext = (
-    _context?: CopilotContext,
-    _prompt?: string
+    context?: CopilotContext,
+    prompt?: string
   ) => {
-    setCopilotContext(null);
+    setCopilotContext(context || null);
     setIsCopilotOpen(true);
+    if (prompt && prompt.trim()) {
+      setInputMessage(prompt.trim());
+    }
     setTimeout(() => {
-      chatInputRef.current?.focus();
-    }, 60);
+      if (typeof window !== "undefined" && window.innerWidth >= 640) {
+        chatInputRef.current?.focus();
+      }
+    }, 80);
   };
 
   const handleNewChat = () => {
@@ -842,6 +915,7 @@ export default function AIAnalystPage() {
     setSessions(updated);
     setActiveSessionId(newSess.id);
     setMessages([]);
+    setIsHistoryDrawerOpen(false);
     void saveChatSessions(updated, user?.uid);
   };
 
@@ -1154,256 +1228,636 @@ export default function AIAnalystPage() {
            ========================================================= */}
         <div className="flex flex-col gap-5">
 
-          {/* CHAT ÚNICO CENTRALIZADO COM A IA (SEM AGENTES ESPECÍFICOS E SEM PRÉ-PROMPTS) */}
+          {/* CHAT ÚNICO CENTRALIZADO COM A IA — PADRÃO APPLE (IMESSAGE / APPLE INTELLIGENCE) */}
           {isCopilotOpen && (
-            <div className="fixed inset-0 z-[130] flex items-center justify-center p-3 sm:p-6">
+            <div className="fixed inset-0 z-[130] flex items-end justify-center sm:items-center sm:p-5">
               <button
                 type="button"
                 aria-label="Fechar Chat com a IA"
                 onClick={() => setIsCopilotOpen(false)}
-                className="fixed inset-0 cursor-default bg-black/35 backdrop-blur-md animate-in fade-in duration-200"
+                className="fixed inset-0 cursor-default bg-black/40 backdrop-blur-md animate-in fade-in duration-200"
               />
               <section
                 role="dialog"
                 aria-modal="true"
                 aria-label="Chat com a IA Wallet+"
-                className="relative z-10 flex h-[82dvh] max-h-[680px] w-full max-w-2xl flex-col rounded-[32px] border border-black/[0.08] bg-white/98 p-4 shadow-[0_24px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl animate-in zoom-in-95 fade-in duration-200 sm:p-5"
+                className={`relative z-10 flex h-[92dvh] sm:h-[86dvh] max-h-[820px] w-full flex-col overflow-hidden rounded-t-[32px] sm:rounded-[32px] border border-white/60 bg-[#F5F5F7]/98 shadow-[0_32px_90px_rgba(0,0,0,0.28)] backdrop-blur-2xl transition-all duration-300 animate-in slide-in-from-bottom-4 sm:zoom-in-95 fade-in ${
+                  isHistoryDrawerOpen ? "sm:max-w-4xl" : "sm:max-w-2xl"
+                }`}
               >
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#1D1D1F] text-white shadow-xs">
-                      <Sparkles size={18} className="text-emerald-400" />
-                    </span>
-                    <div className="min-w-0">
-                      <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-emerald-700">
-                        Chat Único · IA Generativa Wallet+
+                {/* Handle sutil estilo iOS Sheet no mobile */}
+                <div className="flex justify-center pt-2 pb-0.5 sm:hidden">
+                  <span className="h-1 w-9 rounded-full bg-black/15" />
+                </div>
+
+                {/* TOP BAR APPLE GLASS */}
+                <div className="flex items-center justify-between gap-2 border-b border-black/[0.06] bg-white/85 px-4 py-3 sm:px-5 backdrop-blur-xl">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    {/* Botão Sidebar / Conversas Antigas */}
+                    <button
+                      type="button"
+                      onClick={() => setIsHistoryDrawerOpen((prev) => !prev)}
+                      className={`flex h-9 items-center gap-1.5 rounded-full px-3 text-xs font-semibold transition-all cursor-pointer active:scale-95 border ${
+                        isHistoryDrawerOpen
+                          ? "bg-[#1D1D1F] text-white border-[#1D1D1F] shadow-2xs"
+                          : "bg-[#F2F2F7] text-[#1D1D1F] hover:bg-[#E5E5EA] border-black/[0.05]"
+                      }`}
+                      title="Ver conversas anteriores"
+                    >
+                      <PanelLeft size={14} />
+                      <span>Conversas</span>
+                      <span
+                        className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold tabular-nums ${
+                          isHistoryDrawerOpen
+                            ? "bg-white/20 text-white"
+                            : "bg-black/[0.07] text-[#48484A]"
+                        }`}
+                      >
+                        {sessions.length}
                       </span>
-                      <h2 className="text-base sm:text-lg font-bold tracking-tight text-[#1D1D1F] truncate">
-                        Converse livremente com a IA
-                      </h2>
+                    </button>
+
+                    {/* Botão Nova Conversa Rápida */}
+                    <button
+                      type="button"
+                      onClick={handleNewChat}
+                      className="flex h-9 items-center gap-1 rounded-full bg-[#F2F2F7] hover:bg-[#E5E5EA] active:scale-95 px-3 text-xs font-semibold text-[#1D1D1F] border border-black/[0.05] transition-all cursor-pointer"
+                      title="Iniciar uma nova conversa"
+                    >
+                      <Plus size={14} />
+                      <span className="hidden xs:inline">Nova</span>
+                    </button>
+                  </div>
+
+                  {/* Título Central Apple Intelligence */}
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-[#1D1D1F] text-white shadow-2xs">
+                      <Sparkles size={13} className="text-emerald-400" />
+                    </span>
+                    <div className="min-w-0 text-left">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs sm:text-sm font-bold tracking-tight text-[#1D1D1F] truncate max-w-[140px] sm:max-w-[240px]">
+                          {currentSession?.title && currentSession.title !== "Nova Consulta"
+                            ? currentSession.title
+                            : "Wallet+ Intelligence"}
+                        </span>
+                      </div>
+                      <span className="block text-[10px] font-medium text-[#86868B] truncate">
+                        Livre: R$ {formatCurrency(effectiveProjectedFree)} · Hoje: R$ {formatCurrency(safeSpendMetric.safeDailyAllowance)}
+                      </span>
                     </div>
                   </div>
+
+                  {/* Fechar */}
                   <button
                     type="button"
                     onClick={() => setIsCopilotOpen(false)}
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#F2F2F7] text-[#6E6E73] transition-colors hover:bg-[#E5E5EA] hover:text-[#1D1D1F] cursor-pointer"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F2F2F7] text-[#6E6E73] transition-all hover:bg-[#E5E5EA] hover:text-[#1D1D1F] active:scale-95 cursor-pointer"
                     aria-label="Fechar Chat"
                   >
-                    <X size={15} />
+                    <X size={16} />
                   </button>
                 </div>
 
-                {/* FEED DE CONVERSA */}
-                <div className="flex min-h-0 flex-1 flex-col justify-between overflow-hidden rounded-[24px] border border-black/[0.06] bg-white">
-                  {/* Header da conversa ativa */}
-                  <div className="p-3.5 px-4 border-b border-black/[0.05] flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                      <span className="font-bold text-[#1D1D1F] truncate max-w-[240px]">
-                        {currentSession?.title || "Conversa com a IA"}
-                      </span>
-                      <span className="text-[10px] font-medium text-[#86868B] bg-[#F2F2F7] px-2 py-0.5 rounded-full">
-                        {messages.length} msgs
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-1.5">
+                {/* CORPO PRINCIPAL: SIDEBAR DE CONVERSAS + FEED DE MENSAGENS */}
+                <div className="relative flex min-h-0 flex-1 overflow-hidden">
+                  {/* SIDEBAR / SLIDE-OVER DE CONVERSAS ANTIGAS (PADRÃO APPLE NOTES / CHATGPT MACOS) */}
+                  {isHistoryDrawerOpen && (
+                    <>
+                      {/* Backdrop interno apenas no mobile */}
                       <button
                         type="button"
-                        onClick={() => setIsHistoryDrawerOpen(!isHistoryDrawerOpen)}
-                        className="p-1.5 rounded-lg text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#F2F2F7] transition-colors cursor-pointer"
-                        title="Histórico de conversas salvas"
-                      >
-                        <History size={14} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleNewChat}
-                        className="p-1.5 rounded-lg text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#F2F2F7] transition-colors cursor-pointer"
-                        title="Iniciar nova conversa"
-                      >
-                        <Plus size={15} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Mensagens */}
-                  <div className="flex-1 overflow-y-auto p-4 space-y-3.5 touch-scroll">
-                    {messages.length === 0 ? (
-                      <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-3">
-                        <div className="w-12 h-12 rounded-2xl bg-[#1D1D1F] text-white flex items-center justify-center shadow-xs">
-                          <Sparkles size={22} className="text-emerald-400" />
-                        </div>
-                        <div className="max-w-sm space-y-1">
-                          <h4 className="text-sm font-bold text-[#1D1D1F]">
-                            Envie sua mensagem para a IA
-                          </h4>
-                          <p className="text-[11px] text-[#86868B]">
-                            Digite qualquer dúvida sobre seu saldo, cartões, faturas, hábitos ou metas abaixo e receba uma resposta generativa completa.
-                          </p>
-                        </div>
-                      </div>
-                    ) : (
-                      messages.map((msg) => (
-                        <div
-                          key={msg.id}
-                          className={`flex flex-col ${
-                            msg.role === "user" ? "items-end" : "items-start"
-                          }`}
-                        >
-                          <div
-                            className={`max-w-[88%] sm:max-w-[84%] rounded-[22px] p-3.5 sm:p-4 text-xs leading-relaxed space-y-2 ${
-                              msg.role === "user"
-                                ? "bg-[#1D1D1F] text-white rounded-br-xs shadow-2xs"
-                                : "bg-[#FAFAFC] text-[#1D1D1F] border border-black/[0.06] rounded-bl-xs shadow-2xs"
-                            }`}
-                          >
-                            {/* Card de Simulação de Compra se houver */}
-                            {msg.simulationResult && (
-                              <div
-                                className={`p-3 rounded-xl border text-[11px] font-medium space-y-1 ${
-                                  msg.simulationResult.verdict === "safe"
-                                    ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-                                    : msg.simulationResult.verdict === "warning"
-                                    ? "bg-amber-50 text-amber-800 border-amber-200"
-                                    : "bg-rose-50 text-rose-800 border-rose-200"
-                                }`}
-                              >
-                                <div className="flex items-center gap-1.5 font-bold">
-                                  <CheckCircle2 size={13} />
-                                  <span>Veredito da IA: {msg.simulationResult.verdict === "safe" ? "Compra Viável" : "Requer Atenção"}</span>
-                                </div>
-                                <p className="text-[10px] leading-relaxed">{msg.simulationResult.verdictMessage}</p>
-                              </div>
-                            )}
-
-                            <FormattedMessage content={msg.content} role={msg.role} />
-
-                            <div
-                              className={`flex items-center justify-between text-[9px] pt-1 border-t ${
-                                msg.role === "user"
-                                  ? "text-white/60 border-white/10"
-                                  : "text-[#86868B] border-black/[0.04]"
-                              }`}
+                        aria-label="Fechar lista de conversas"
+                        onClick={() => setIsHistoryDrawerOpen(false)}
+                        className="absolute inset-0 z-20 bg-black/25 backdrop-blur-xs sm:hidden"
+                      />
+                      <aside className="absolute inset-y-0 left-0 z-30 flex w-[84%] max-w-[300px] sm:relative sm:w-72 shrink-0 flex-col border-r border-black/[0.06] bg-[#FAFAFC]/98 backdrop-blur-2xl animate-in slide-in-from-left duration-200">
+                        <div className="p-3.5 border-b border-black/[0.05] space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#86868B]">
+                              Suas Conversas ({sessions.length})
+                            </span>
+                            <button
+                              type="button"
+                              onClick={handleNewChat}
+                              className="inline-flex items-center gap-1 rounded-full bg-[#1D1D1F] px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-black active:scale-95 transition-all cursor-pointer"
                             >
-                              <span>{msg.role === "assistant" ? "Wallet+ IA" : "Você"}</span>
-                              <span>{msg.timestamp}</span>
-                            </div>
+                              <Plus size={12} />
+                              <span>Nova conversa</span>
+                            </button>
+                          </div>
+
+                          {/* Busca rápida de conversas antigas */}
+                          <div className="relative flex items-center">
+                            <Search size={13} className="absolute left-3 text-[#86868B] pointer-events-none" />
+                            <input
+                              type="text"
+                              value={sessionSearchQuery}
+                              onChange={(e) => setSessionSearchQuery(e.target.value)}
+                              placeholder="Buscar nas conversas..."
+                              className="w-full rounded-xl bg-[#EFEFF4] pl-8 pr-7 py-1.5 text-[16px] sm:text-xs text-[#1D1D1F] placeholder:text-[#86868B] focus:bg-white focus:outline-none focus:ring-2 focus:ring-black/10 transition-all"
+                            />
+                            {sessionSearchQuery && (
+                              <button
+                                type="button"
+                                onClick={() => setSessionSearchQuery("")}
+                                className="absolute right-2 text-[#86868B] hover:text-[#1D1D1F]"
+                              >
+                                <X size={12} />
+                              </button>
+                            )}
                           </div>
                         </div>
-                      ))
-                    )}
 
-                    {isSending && (
-                      <div className="flex items-center gap-2 p-3 text-xs text-[#86868B] bg-[#FAFAFC] rounded-2xl w-fit border border-black/[0.04]">
-                        <RefreshCw size={13} className="animate-spin text-[#1D1D1F]" />
-                        <span>A IA está analisando seus números...</span>
+                        {/* Lista de sessões com preview */}
+                        <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 overscroll-contain">
+                          {sessions
+                            .filter((s) => {
+                              if (!sessionSearchQuery.trim()) return true;
+                              const q = sessionSearchQuery.toLowerCase();
+                              const inTitle = (s.title || "").toLowerCase().includes(q);
+                              const inMsgs = (s.messages || []).some((m) =>
+                                m.content.toLowerCase().includes(q)
+                              );
+                              return inTitle || inMsgs;
+                            })
+                            .map((sess) => {
+                              const isActive = sess.id === activeSessionId;
+                              const lastMsg =
+                                sess.messages && sess.messages.length > 0
+                                  ? sess.messages[sess.messages.length - 1]
+                                  : null;
+                              const previewText = lastMsg
+                                ? lastMsg.content.replace(/[#*`]/g, "").slice(0, 68)
+                                : "Sem mensagens ainda";
+
+                              return (
+                                <div
+                                  key={sess.id}
+                                  onClick={() => handleSelectSession(sess.id)}
+                                  className={`group relative rounded-2xl p-3 transition-all cursor-pointer border ${
+                                    isActive
+                                      ? "bg-[#1D1D1F] text-white border-[#1D1D1F] shadow-sm"
+                                      : "bg-white hover:bg-[#F2F2F7]/80 text-[#1D1D1F] border-black/[0.04]"
+                                  }`}
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex items-center gap-1.5">
+                                        <MessageSquare
+                                          size={12}
+                                          className={isActive ? "text-emerald-400 shrink-0" : "text-[#86868B] shrink-0"}
+                                        />
+                                        <strong className="block text-xs font-semibold truncate">
+                                          {sess.title || "Nova Consulta"}
+                                        </strong>
+                                      </div>
+                                      <p
+                                        className={`mt-1 text-[11px] line-clamp-1 leading-snug ${
+                                          isActive ? "text-white/75" : "text-[#6E6E73]"
+                                        }`}
+                                      >
+                                        {previewText}
+                                      </p>
+                                      <div
+                                        className={`mt-1.5 flex items-center gap-2 text-[10px] ${
+                                          isActive ? "text-white/55" : "text-[#86868B]"
+                                        }`}
+                                      >
+                                        <span>{formatSessionDate(sess.updatedAt || sess.createdAt)}</span>
+                                        <span>•</span>
+                                        <span>{sess.messages?.length || 0} msgs</span>
+                                      </div>
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={(e) => handleDeleteSession(sess.id, e)}
+                                      title="Excluir conversa"
+                                      className={`rounded-full p-1.5 transition-colors shrink-0 ${
+                                        isActive
+                                          ? "text-white/60 hover:bg-white/15 hover:text-rose-300"
+                                          : "text-[#AEAEB2] hover:bg-rose-50 hover:text-rose-600"
+                                      }`}
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      </aside>
+                    </>
+                  )}
+
+                  {/* COLUNA PRINCIPAL DE CONVERSA */}
+                  <div className="relative flex min-w-0 flex-1 flex-col justify-between bg-white">
+                    {/* Barra rápida de troca entre conversas recentes (quando há mais de 1 conversa salva) */}
+                    {sessions.length > 1 && !isHistoryDrawerOpen && (
+                      <div className="flex items-center gap-1.5 overflow-x-auto border-b border-black/[0.04] bg-[#FAFAFC] px-4 py-2 no-scrollbar">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-[#86868B] shrink-0 mr-1">
+                          Recentes:
+                        </span>
+                        {sessions.slice(0, 6).map((sess) => {
+                          const isCurrent = sess.id === activeSessionId;
+                          return (
+                            <button
+                              key={sess.id}
+                              type="button"
+                              onClick={() => handleSelectSession(sess.id)}
+                              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-medium transition-all shrink-0 cursor-pointer max-w-[180px] ${
+                                isCurrent
+                                  ? "bg-[#1D1D1F] text-white shadow-2xs"
+                                  : "bg-white text-[#48484A] hover:bg-[#EFEFF4] border border-black/[0.06]"
+                              }`}
+                            >
+                              <span
+                                className={`h-1.5 w-1.5 rounded-full shrink-0 ${
+                                  isCurrent ? "bg-emerald-400" : "bg-[#AEAEB2]"
+                                }`}
+                              />
+                              <span className="truncate">{sess.title || "Nova Consulta"}</span>
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
-                    <div ref={chatBottomRef} />
-                  </div>
 
-                  {/* SIMULADOR DE COMPRA INLINE (DROPDOWN RETRÁTIL) */}
-                  {isInlineSimOpen && (
-                    <div className="p-3 bg-[#F8F8FA] border-t border-black/[0.06] space-y-2 animate-in slide-in-from-bottom duration-200 text-xs">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-[#1D1D1F] flex items-center gap-1.5">
-                          <Calculator size={14} className="text-emerald-600" />
-                          <span>Simulador Rápido de Compra</span>
-                        </span>
+                    {/* Contexto opcional quando aberto a partir de um módulo */}
+                    {copilotContext && (
+                      <div className="flex items-center justify-between gap-2 bg-emerald-50/70 border-b border-emerald-200/60 px-4 py-2 text-xs">
+                        <div className="min-w-0">
+                          <span className="font-bold uppercase tracking-wider text-[9px] text-emerald-700 mr-2">
+                            {copilotContext.eyebrow}
+                          </span>
+                          <span className="font-semibold text-[#1D1D1F] truncate">
+                            {copilotContext.title}
+                          </span>
+                        </div>
                         <button
                           type="button"
-                          onClick={() => setIsInlineSimOpen(false)}
+                          onClick={() => setCopilotContext(null)}
                           className="text-[#86868B] hover:text-[#1D1D1F]"
                         >
-                          <X size={14} />
+                          <X size={13} />
                         </button>
                       </div>
+                    )}
 
-                      <div className="grid grid-cols-2 gap-2">
-                        <input
-                          type="text"
-                          placeholder="Descrição (ex: Tênis)"
-                          value={simDescription}
-                          onChange={(e) => setSimDescription(e.target.value)}
-                          className="px-3 py-1.5 rounded-xl bg-white border border-black/10 text-xs"
-                        />
-                        <input
-                          type="text"
-                          placeholder="Valor R$ (ex: 350)"
-                          value={simAmount}
-                          onChange={(e) => setSimAmount(e.target.value)}
-                          className="px-3 py-1.5 rounded-xl bg-white border border-black/10 text-xs font-mono font-bold"
-                        />
-                      </div>
+                    {/* STREAM DE MENSAGENS */}
+                    <div
+                      ref={chatFeedRef}
+                      onScroll={handleChatScroll}
+                      className="flex-1 overflow-y-auto px-4 py-5 sm:px-6 space-y-5 overscroll-contain scroll-smooth"
+                    >
+                      {messages.length === 0 ? (
+                        <div className="flex min-h-full flex-col items-center justify-center py-6 text-center">
+                          <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-[20px] bg-[#1D1D1F] text-white shadow-md">
+                            <Sparkles size={24} className="text-emerald-400" />
+                          </div>
+                          <h4 className="text-base sm:text-lg font-bold tracking-tight text-[#1D1D1F]">
+                            Como posso ajudar nas suas finanças hoje?
+                          </h4>
+                          <p className="mt-1 max-w-md text-xs sm:text-[13px] text-[#86868B] leading-relaxed">
+                            Pergunte livremente sobre compras, parcelamentos, faturas, fluxo de caixa ou metas. A IA responde em tempo real com base nos seus dados.
+                          </p>
 
-                      <div className="flex items-center justify-between gap-2 pt-1">
-                        <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-black/5 text-[11px]">
+                          {/* Sugestões de 1 toque estilo Apple Intelligence */}
+                          <div className="mt-5 grid w-full max-w-lg grid-cols-1 gap-2 sm:grid-cols-2 text-left">
+                            {[
+                              {
+                                label: "Simular compra ou parcela",
+                                prompt: "Se eu fizer uma compra parcelada hoje, qual o impacto no meu fluxo e na minha meta do mês?",
+                              },
+                              {
+                                label: "Melhor cartão para usar hoje",
+                                prompt: "Qual dos meus cartões vale mais a pena usar hoje considerando limite e fechamento?",
+                              },
+                              {
+                                label: "Onde posso economizar",
+                                prompt: "Analise meus gastos atuais e me diga de forma direta onde posso economizar neste mês.",
+                              },
+                              {
+                                label: "Garantir minha meta do mês",
+                                prompt: `O que preciso fazer para fechar o mês com pelo menos R$ ${formatCurrency(targetEndMonthBalance)} livres?`,
+                              },
+                            ].map((item, idx) => (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={() => handleSendMessage(item.prompt)}
+                                className="group flex flex-col justify-between rounded-2xl border border-black/[0.06] bg-[#FAFAFC] p-3.5 hover:bg-[#F2F2F7] hover:border-black/15 active:scale-[0.99] transition-all cursor-pointer"
+                              >
+                                <span className="text-xs font-bold text-[#1D1D1F] group-hover:text-black flex items-center justify-between gap-2">
+                                  <span>{item.label}</span>
+                                  <ArrowUpRight size={13} className="text-[#86868B] group-hover:text-[#1D1D1F] shrink-0" />
+                                </span>
+                                <span className="mt-1 text-[11px] text-[#86868B] line-clamp-2 leading-snug">
+                                  {item.prompt}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+
+                          {/* Atalho para retomar conversas anteriores se existirem */}
+                          {sessions.some((s) => (s.messages?.length || 0) > 0 && s.id !== activeSessionId) && (
+                            <button
+                              type="button"
+                              onClick={() => setIsHistoryDrawerOpen(true)}
+                              className="mt-5 inline-flex items-center gap-2 rounded-full bg-[#F2F2F7] hover:bg-[#E5E5EA] px-4 py-2 text-xs font-semibold text-[#1D1D1F] transition-all cursor-pointer"
+                            >
+                              <History size={13} />
+                              <span>Ver conversas anteriores ({sessions.filter((s) => (s.messages?.length || 0) > 0).length})</span>
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        messages.map((msg, index) => {
+                          const isLast = index === messages.length - 1;
+                          const isUser = msg.role === "user";
+
+                          return (
+                            <div
+                              key={msg.id}
+                              ref={isLast ? lastMessageRef : undefined}
+                              className={`flex flex-col scroll-mt-4 ${
+                                isUser ? "items-end" : "items-start"
+                              }`}
+                            >
+                              {isUser ? (
+                                <div className="max-w-[86%] sm:max-w-[78%] rounded-[22px] rounded-br-[6px] bg-[#1D1D1F] px-4 py-3 text-white shadow-xs">
+                                  <FormattedMessage content={msg.content} role="user" />
+                                  <div className="mt-1.5 flex items-center justify-end gap-1.5 text-[10px] text-white/55">
+                                    <span>{msg.timestamp}</span>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="w-full max-w-[96%] sm:max-w-[90%] rounded-[24px] rounded-tl-[8px] border border-black/[0.06] bg-[#FAFAFC] p-4 sm:p-5 text-[#1D1D1F] shadow-[0_2px_12px_rgba(0,0,0,0.025)] space-y-3">
+                                  {/* Cabeçalho sutil da mensagem da IA */}
+                                  <div className="flex items-center justify-between gap-2 pb-2 border-b border-black/[0.05]">
+                                    <div className="flex items-center gap-2">
+                                      <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-[#1D1D1F] text-white">
+                                        <Sparkles size={11} className="text-emerald-400" />
+                                      </span>
+                                      <span className="text-xs font-bold text-[#1D1D1F]">
+                                        Wallet+ IA
+                                      </span>
+                                      <span className="text-[10px] text-[#86868B]">
+                                        • {msg.timestamp}
+                                      </span>
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCopyMessage(msg.id, msg.content)}
+                                      className="inline-flex items-center gap-1 rounded-full bg-white hover:bg-[#EFEFF4] border border-black/[0.06] px-2.5 py-1 text-[10px] font-semibold text-[#48484A] transition-colors cursor-pointer"
+                                      title="Copiar resposta"
+                                    >
+                                      {copiedMessageId === msg.id ? (
+                                        <>
+                                          <Check size={11} className="text-emerald-600" />
+                                          <span className="text-emerald-700">Copiado</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Copy size={11} />
+                                          <span>Copiar</span>
+                                        </>
+                                      )}
+                                    </button>
+                                  </div>
+
+                                  {/* Card de Simulação de Compra se houver */}
+                                  {msg.simulationResult && (
+                                    <div
+                                      className={`p-3.5 rounded-2xl border text-xs font-medium space-y-1 ${
+                                        msg.simulationResult.verdict === "safe"
+                                          ? "bg-emerald-50/90 text-emerald-900 border-emerald-200"
+                                          : msg.simulationResult.verdict === "warning"
+                                          ? "bg-amber-50/90 text-amber-900 border-amber-200"
+                                          : "bg-rose-50/90 text-rose-900 border-rose-200"
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-1.5 font-bold">
+                                        <CheckCircle2 size={14} />
+                                        <span>
+                                          Veredito da Simulação:{" "}
+                                          {msg.simulationResult.verdict === "safe"
+                                            ? "Compra Viável"
+                                            : "Requer Atenção"}
+                                        </span>
+                                      </div>
+                                      <p className="text-[11px] leading-relaxed">
+                                        {msg.simulationResult.verdictMessage}
+                                      </p>
+                                    </div>
+                                  )}
+
+                                  <FormattedMessage content={msg.content} role="assistant" />
+
+                                  {/* Ações rápidas de continuação na última resposta da IA */}
+                                  {isLast && !isSending && (
+                                    <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-black/[0.05]">
+                                      {[
+                                        "E se for em menos parcelas?",
+                                        "Como reduzir esse impacto?",
+                                        "Simular outro valor",
+                                      ].map((followUp, fIdx) => (
+                                        <button
+                                          key={fIdx}
+                                          type="button"
+                                          onClick={() => {
+                                            if (followUp === "Simular outro valor") {
+                                              setIsInlineSimOpen(true);
+                                            } else {
+                                              handleSendMessage(followUp);
+                                            }
+                                          }}
+                                          className="rounded-full bg-white hover:bg-[#EFEFF4] border border-black/[0.07] px-3 py-1 text-[11px] font-semibold text-[#1D1D1F] transition-all active:scale-95 cursor-pointer"
+                                        >
+                                          {followUp}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })
+                      )}
+
+                      {isSending && (
+                        <div className="flex items-center gap-3 rounded-2xl border border-black/[0.05] bg-[#FAFAFC] px-4 py-3 text-xs font-medium text-[#48484A] w-fit shadow-2xs animate-pulse">
+                          <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-[#1D1D1F] text-white">
+                            <RefreshCw size={12} className="animate-spin text-emerald-400" />
+                          </span>
+                          <span>Analisando seu fluxo de caixa e cartões...</span>
+                        </div>
+                      )}
+                      <div ref={chatBottomRef} className="h-1" />
+                    </div>
+
+                    {/* Botão flutuante para descer até o final quando o usuário rola para cima */}
+                    {showScrollToBottom && messages.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={scrollToChatBottom}
+                        className="absolute bottom-24 right-5 z-20 flex items-center gap-1.5 rounded-full border border-black/10 bg-white/95 px-3 py-1.5 text-[11px] font-semibold text-[#1D1D1F] shadow-md backdrop-blur-md hover:bg-[#F2F2F7] active:scale-95 transition-all cursor-pointer"
+                      >
+                        <ChevronDown size={14} />
+                        <span>Ir para o final</span>
+                      </button>
+                    )}
+
+                    {/* SIMULADOR DE COMPRA INLINE (ESTILO APPLE SHEET COMPACTO) */}
+                    {isInlineSimOpen && (
+                      <div className="border-t border-black/[0.07] bg-[#F8F8FA] p-3.5 sm:px-5 space-y-2.5 animate-in slide-in-from-bottom-2 duration-200 text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-[#1D1D1F] flex items-center gap-1.5">
+                            <Calculator size={14} className="text-emerald-600" />
+                            <span>Simulador Rápido de Compra</span>
+                          </span>
                           <button
                             type="button"
-                            onClick={() => setSimMethod("credit")}
-                            className={`px-2.5 py-0.5 rounded-lg font-semibold ${simMethod === "credit" ? "bg-[#1D1D1F] text-white" : "text-[#86868B]"}`}
+                            onClick={() => setIsInlineSimOpen(false)}
+                            className="rounded-full p-1 text-[#86868B] hover:bg-black/5 hover:text-[#1D1D1F]"
                           >
-                            Crédito
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setSimMethod("cash")}
-                            className={`px-2.5 py-0.5 rounded-lg font-semibold ${simMethod === "cash" ? "bg-[#1D1D1F] text-white" : "text-[#86868B]"}`}
-                          >
-                            À vista
+                            <X size={14} />
                           </button>
                         </div>
 
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <input
+                            type="text"
+                            placeholder="O que deseja comprar? (ex: Tênis)"
+                            value={simDescription}
+                            onChange={(e) => setSimDescription(e.target.value)}
+                            className="px-3.5 py-2 rounded-xl bg-white border border-black/10 text-[16px] sm:text-xs text-[#1D1D1F] focus:outline-none focus:ring-2 focus:ring-black/10"
+                          />
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              placeholder="Valor R$ (ex: 350)"
+                              value={simAmount}
+                              onChange={(e) => setSimAmount(e.target.value)}
+                              className="flex-1 px-3.5 py-2 rounded-xl bg-white border border-black/10 text-[16px] sm:text-xs font-mono font-bold text-[#1D1D1F] focus:outline-none focus:ring-2 focus:ring-black/10"
+                            />
+                            {simMethod === "credit" && (
+                              <select
+                                value={simInstallments}
+                                onChange={(e) => setSimInstallments(Number(e.target.value))}
+                                className="px-2.5 py-2 rounded-xl bg-white border border-black/10 text-[16px] sm:text-xs font-semibold text-[#1D1D1F]"
+                              >
+                                {[1, 2, 3, 4, 5, 6, 8, 10, 12].map((n) => (
+                                  <option key={n} value={n}>
+                                    {n}x
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+                          <div className="flex items-center gap-1 bg-white p-1 rounded-full border border-black/[0.06] text-[11px]">
+                            <button
+                              type="button"
+                              onClick={() => setSimMethod("credit")}
+                              className={`px-3 py-1 rounded-full font-semibold transition-all cursor-pointer ${
+                                simMethod === "credit"
+                                  ? "bg-[#1D1D1F] text-white"
+                                  : "text-[#86868B] hover:text-[#1D1D1F]"
+                              }`}
+                            >
+                              Crédito
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSimMethod("cash")}
+                              className={`px-3 py-1 rounded-full font-semibold transition-all cursor-pointer ${
+                                simMethod === "cash"
+                                  ? "bg-[#1D1D1F] text-white"
+                                  : "text-[#86868B] hover:text-[#1D1D1F]"
+                              }`}
+                            >
+                              À vista
+                            </button>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={executeSimulation}
+                            className="px-4 py-2 rounded-full bg-[#1D1D1F] hover:bg-black text-white font-bold text-xs active:scale-95 transition-all cursor-pointer shadow-xs"
+                          >
+                            Simular na IA
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* COMPOSER / TECLADO PADRÃO APPLE IMESSAGE */}
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        handleSendMessage();
+                      }}
+                      className="border-t border-black/[0.06] bg-white/95 px-3 py-2.5 sm:px-5 sm:py-3.5 pb-[calc(0.65rem+env(safe-area-inset-bottom,0px))] backdrop-blur-xl"
+                    >
+                      <div className="flex items-end gap-2 rounded-[26px] border border-black/[0.08] bg-[#F2F2F7]/90 px-2.5 py-1.5 transition-all focus-within:border-black/20 focus-within:bg-white focus-within:shadow-[0_4px_20px_rgba(0,0,0,0.06)]">
                         <button
                           type="button"
-                          onClick={executeSimulation}
-                          className="px-4 py-1.5 rounded-xl bg-[#1D1D1F] hover:bg-black text-white font-bold text-xs active:scale-95 transition-all cursor-pointer"
+                          onClick={() => setIsInlineSimOpen(!isInlineSimOpen)}
+                          title="Simular impacto de uma compra"
+                          className={`flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-semibold transition-all cursor-pointer ${
+                            isInlineSimOpen
+                              ? "bg-emerald-600 text-white shadow-2xs"
+                              : "bg-white text-[#48484A] hover:text-[#1D1D1F] border border-black/[0.06]"
+                          }`}
                         >
-                          Calcular Impacto
+                          <Calculator size={14} />
+                          <span className="hidden sm:inline">Simular</span>
+                        </button>
+
+                        <textarea
+                          ref={chatInputRef}
+                          rows={1}
+                          value={inputMessage}
+                          onChange={(e) => {
+                            setInputMessage(e.target.value);
+                            e.target.style.height = "auto";
+                            e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && !e.shiftKey) {
+                              e.preventDefault();
+                              if (inputMessage.trim() && !isSending) {
+                                void handleSendMessage();
+                              }
+                            }
+                          }}
+                          enterKeyHint="send"
+                          placeholder="Mensagem para Wallet+ IA..."
+                          className="max-h-[120px] min-h-[36px] flex-1 resize-none bg-transparent px-1.5 py-1.5 text-[16px] sm:text-[14px] leading-snug font-normal text-[#1D1D1F] placeholder:text-[#86868B] focus:outline-none"
+                        />
+
+                        <button
+                          type="submit"
+                          disabled={!inputMessage.trim() || isSending}
+                          aria-label="Enviar mensagem"
+                          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-all cursor-pointer ${
+                            inputMessage.trim() && !isSending
+                              ? "bg-[#1D1D1F] text-white shadow-xs hover:bg-black active:scale-90"
+                              : "bg-black/[0.07] text-[#86868B] opacity-50 cursor-not-allowed"
+                          }`}
+                        >
+                          <ArrowUp size={17} strokeWidth={2.5} />
                         </button>
                       </div>
-                    </div>
-                  )}
-
-                  {/* BARRA DE ENTRADA DO CHAT */}
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      handleSendMessage();
-                    }}
-                    className="p-3 border-t border-black/[0.05] flex items-center gap-2 bg-white"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => setIsInlineSimOpen(!isInlineSimOpen)}
-                      title="Simular compra antes de gastar"
-                      className={`p-2.5 rounded-full transition-all cursor-pointer border ${
-                        isInlineSimOpen
-                          ? "bg-emerald-50 text-emerald-700 border-emerald-300"
-                          : "bg-[#F2F2F7] text-[#86868B] hover:text-[#1D1D1F] border-black/[0.04]"
-                      }`}
-                    >
-                      <Calculator size={15} />
-                    </button>
-
-                    <input
-                      ref={chatInputRef}
-                      type="text"
-                      value={inputMessage}
-                      onChange={(e) => setInputMessage(e.target.value)}
-                      placeholder="Digite sua mensagem para a IA..."
-                      className="flex-1 px-4 py-2.5 rounded-full bg-[#F2F2F7] text-xs font-medium text-[#1D1D1F] border border-black/5 focus:outline-none focus:bg-white focus:ring-2 focus:ring-black/10 placeholder:text-[#86868B] transition-all"
-                    />
-
-                    <button
-                      type="submit"
-                      disabled={!inputMessage.trim() || isSending}
-                      className="w-9 h-9 rounded-full bg-[#1D1D1F] hover:bg-black text-white flex items-center justify-center transition-all disabled:opacity-40 cursor-pointer shadow-xs shrink-0 active:scale-95"
-                    >
-                      <Send size={14} />
-                    </button>
-                  </form>
+                    </form>
+                  </div>
                 </div>
               </section>
             </div>
@@ -1638,15 +2092,15 @@ export default function AIAnalystPage() {
                 openCopilotWithContext();
               }
             }}
-            className="flex items-center gap-2 rounded-full border border-white/70 bg-[#1D1D1F]/95 p-1.5 pl-3 text-white shadow-[0_18px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl transition-all"
+            className="flex items-center gap-2 rounded-full border border-white/70 bg-[#1D1D1F]/95 p-1.5 pl-2.5 text-white shadow-[0_18px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl transition-all"
           >
             <button
               type="button"
               onClick={() => openCopilotWithContext()}
-              className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors cursor-pointer"
-              title="Abrir histórico do Chat IA"
+              className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors cursor-pointer"
+              title="Abrir Chat IA"
             >
-              <Sparkles size={14} className="text-emerald-400" />
+              <Sparkles size={15} className="text-emerald-400" />
               <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full border-2 border-[#1D1D1F] bg-emerald-400" />
             </button>
 
@@ -1657,16 +2111,32 @@ export default function AIAnalystPage() {
               onFocus={() => {
                 if (messages.length > 0) setIsCopilotOpen(true);
               }}
+              enterKeyHint="send"
               placeholder="Pergunte qualquer coisa para a IA Wallet+..."
-              className="flex-1 bg-transparent px-2 py-1.5 text-xs font-medium text-white placeholder:text-white/55 focus:outline-none"
+              className="flex-1 bg-transparent px-2 py-1.5 text-[16px] sm:text-xs font-medium text-white placeholder:text-white/55 focus:outline-none"
             />
+
+            {sessions.length > 1 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCopilotOpen(true);
+                  setIsHistoryDrawerOpen(true);
+                }}
+                className="flex h-8 items-center gap-1 rounded-full bg-white/10 hover:bg-white/20 px-2.5 text-[11px] font-semibold text-white/90 transition-colors cursor-pointer shrink-0"
+                title="Ver conversas salvas"
+              >
+                <History size={12} />
+                <span className="hidden xs:inline">{sessions.length}</span>
+              </button>
+            )}
 
             <button
               type="submit"
-              className="flex h-8 items-center gap-1.5 rounded-full bg-white px-3.5 text-[11px] font-bold text-[#1D1D1F] hover:bg-white/90 active:scale-95 transition-all cursor-pointer shrink-0"
+              className="flex h-9 items-center gap-1.5 rounded-full bg-white px-3.5 text-xs font-bold text-[#1D1D1F] hover:bg-white/90 active:scale-95 transition-all cursor-pointer shrink-0"
             >
-              <span>{inputMessage.trim() ? "Enviar" : "Abrir Chat"}</span>
-              <Send size={12} />
+              <span>{inputMessage.trim() ? "Enviar" : "Chat"}</span>
+              <ArrowUp size={14} strokeWidth={2.5} />
             </button>
           </form>
         </div>
@@ -1696,56 +2166,6 @@ export default function AIAnalystPage() {
               </button>
             </div>
             <InteractiveFinancialCalendar />
-          </div>
-        </div>
-      )}
-
-      {/* 2. Drawer de Histórico de Conversas */}
-      {isHistoryDrawerOpen && (
-        <div className="fixed inset-0 z-[160] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="w-full max-w-md rounded-[28px] bg-white border border-black/[0.08] shadow-[0_24px_60px_rgba(0,0,0,0.2)] p-5 space-y-4 max-h-[85dvh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-black/[0.06] pb-3">
-              <div className="flex items-center gap-2">
-                <History size={16} className="text-[#1D1D1F]" />
-                <h4 className="text-sm font-bold text-[#1D1D1F]">Histórico de Consultas</h4>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsHistoryDrawerOpen(false)}
-                className="w-7 h-7 rounded-full bg-[#F2F2F7] hover:bg-[#E5E5EA] text-[#1D1D1F] flex items-center justify-center"
-              >
-                <X size={14} />
-              </button>
-            </div>
-
-            <div className="space-y-2">
-              {sessions.map((sess) => (
-                <div
-                  key={sess.id}
-                  onClick={() => handleSelectSession(sess.id)}
-                  className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
-                    sess.id === activeSessionId
-                      ? "bg-[#1D1D1F] text-white border-black shadow-xs"
-                      : "bg-[#FAFAFC] hover:bg-white text-[#1D1D1F] border-black/[0.05]"
-                  }`}
-                >
-                  <div className="min-w-0 flex-1">
-                    <strong className="block text-xs font-semibold truncate">{sess.title}</strong>
-                    <span className={`text-[10px] ${sess.id === activeSessionId ? "text-white/70" : "text-[#86868B]"}`}>
-                      {formatSessionDate(sess.updatedAt || sess.createdAt)} • {sess.messages?.length || 0} msgs
-                    </span>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={(e) => handleDeleteSession(sess.id, e)}
-                    className="p-1 text-[#86868B] hover:text-rose-500 transition-colors ml-2"
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              ))}
-            </div>
           </div>
         </div>
       )}
