@@ -195,7 +195,7 @@ export function TransactionDetailsSheet({
               type="button"
               onClick={onClose}
               disabled={saving}
-              className="flex h-7 w-7 items-center justify-center rounded-full bg-[#F2F2F7] text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#E5E5EA] transition-colors cursor-pointer"
+              className="touch-min flex h-7 w-7 items-center justify-center rounded-full bg-[#F2F2F7] text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#E5E5EA] transition-colors cursor-pointer"
               aria-label="Fechar"
             >
               <X size={14} strokeWidth={2} />
@@ -218,7 +218,7 @@ export function TransactionDetailsSheet({
                 type="button"
                 disabled={!fieldsAreEditable}
                 onClick={() => handleTypeChange("despesa")}
-                className={`rounded-full py-1.5 text-xs transition-all select-none cursor-pointer ${
+                className={`touch-target rounded-full py-1.5 text-xs transition-all select-none cursor-pointer ${
                   type === "despesa"
                     ? "bg-white text-[#1D1D1F] font-semibold shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
                     : "text-[#86868B] hover:text-[#1D1D1F] font-medium"
@@ -230,7 +230,7 @@ export function TransactionDetailsSheet({
                 type="button"
                 disabled={!fieldsAreEditable}
                 onClick={() => handleTypeChange("receita")}
-                className={`rounded-full py-1.5 text-xs transition-all select-none cursor-pointer ${
+                className={`touch-target rounded-full py-1.5 text-xs transition-all select-none cursor-pointer ${
                   type === "receita"
                     ? "bg-white text-emerald-700 font-semibold shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
                     : "text-[#86868B] hover:text-[#1D1D1F] font-medium"
@@ -377,7 +377,7 @@ export function TransactionDetailsSheet({
                   <button
                     type="button"
                     onClick={() => onDelete(transaction)}
-                    className="text-xs font-medium text-rose-600 hover:text-rose-700 flex items-center gap-1.5 transition-colors cursor-pointer py-1.5 px-1"
+                    className="touch-target text-xs font-medium text-rose-600 hover:text-rose-700 flex items-center gap-1.5 transition-colors cursor-pointer py-1.5 px-1"
                   >
                     <Trash2 size={13} strokeWidth={1.75} />
                     <span>Excluir</span>
@@ -402,7 +402,7 @@ export function TransactionDetailsSheet({
                   <button
                     type="button"
                     onClick={() => onDelete(transaction)}
-                    className="text-xs font-medium text-rose-600 hover:text-rose-700 flex items-center gap-1.5 transition-colors cursor-pointer py-1.5 px-1"
+                    className="touch-target text-xs font-medium text-rose-600 hover:text-rose-700 flex items-center gap-1.5 transition-colors cursor-pointer py-1.5 px-1"
                   >
                     <Trash2 size={13} strokeWidth={1.75} />
                     <span>Excluir</span>

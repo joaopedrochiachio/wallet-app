@@ -272,6 +272,8 @@
 .backface-hidden {
   backface-visibility: hidden;
 }
+/* Componentes do kit em @layer components: utilitários do Tailwind (hidden, w-full…) têm precedência sobre eles. */
+@layer components {
 /* ==========================================================================
    macOS 27 — Materiais (Liquid Glass) e componentes base
    Fonte: kit Figma "macOS 27 (Community)". Os valores de sombra/raio vêm direto
@@ -507,6 +509,8 @@
   }
 }
 
+}
+
 /* ==========================================================================
    macOS 27 — Pointers
    No Mac, botões e controles usam a seta; a mãozinha fica só para links.
@@ -562,6 +566,7 @@ button:disabled,
   cursor: progress;
 }
 
+@layer components {
 /* Alert — botões empilhados em cápsula de 28px (Figma: Alerts › _Buttons) */
 .mac-alert-button {
   display: flex;
@@ -738,7 +743,8 @@ button:disabled,
 .mac-segmented[data-full-width] { display: flex; width: 100%; }
 .mac-segment {
   position: relative;
-  flex: 1 1 auto;
+  /* Nunca encolhe abaixo do texto: se não couber, o contêiner rola (sem rótulos cortados) */
+  flex: 1 0 auto;
   min-width: 0;
   display: inline-flex;
   align-items: center;
@@ -1046,4 +1052,29 @@ button:disabled,
 .mac-slider:focus-visible::-webkit-slider-thumb { box-shadow: var(--mac-focus-ring); }
 @media (pointer: coarse) {
   .mac-slider::-webkit-slider-thumb { width: 28px; height: 24px; margin-top: -10px; }
+}
+}
+
+/* Alvos de toque (HIG: 44pt). Só em telas touch; o visual do desktop não muda. */
+@media (pointer: coarse) {
+  /* Área invisível centralizada de no mínimo 44x44 para links/botões isolados */
+  .touch-target { position: relative; }
+  .touch-target::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+  }
+  /* Ícones lado a lado: aumenta o próprio botão (área invisível roubaria o toque do vizinho) */
+  .touch-pad { padding: 10px !important; }
+  /* Ícones quadrados compactos: tamanho mínimo de 36px */
+  .touch-min { min-width: 36px !important; min-height: 36px !important; }
+  /* Switch: área de toque maior sem mudar o desenho (o ::after é o botão branco) */
+  .mac-switch::before { content: ""; position: absolute; inset: -6px -4px; }
+  /* Botões pequenos do kit ganham 32px no toque */
+  .mac-button[data-size="small"] { min-height: 32px; }
+  .mac-button[data-size="small"][data-icon-only] { min-width: 32px; }
 }

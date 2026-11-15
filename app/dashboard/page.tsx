@@ -174,7 +174,7 @@ export default function DashboardPage() {
             <button
               type="button"
               onClick={() => setIsSheetOpen(true)}
-              className="inline-flex sm:hidden items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#1D1D1F] text-white text-xs font-semibold shadow-xs active:scale-95 transition-transform"
+              className="touch-target inline-flex sm:hidden items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#1D1D1F] text-white text-xs font-semibold shadow-xs active:scale-95 transition-transform"
             >
               <Plus size={13} strokeWidth={2.5} />
               <span>Lançar Gasto</span>
@@ -364,7 +364,7 @@ export default function DashboardPage() {
             </h2>
             <Link
               href="/transactions"
-              className="text-xs font-medium text-[#86868B] hover:text-[#1D1D1F] flex items-center gap-0.5 transition-colors group"
+              className="touch-target text-xs font-medium text-[#86868B] hover:text-[#1D1D1F] flex items-center gap-0.5 transition-colors group"
             >
               <span>Ver tudo</span>
               <ChevronRight strokeWidth={1.5} size={13} className="text-[#86868B] group-hover:translate-x-0.5 transition-transform" />
@@ -411,7 +411,7 @@ export default function DashboardPage() {
             </h2>
             <Link
               href="/goals"
-              className="text-xs font-semibold text-[#1D1D1F] hover:underline flex items-center gap-0.5 transition-colors"
+              className="touch-target text-xs font-semibold text-[#1D1D1F] hover:underline flex items-center gap-0.5 transition-colors"
             >
               Ver todas <ChevronRight strokeWidth={1.5} size={14} />
             </Link>
@@ -515,7 +515,7 @@ export default function DashboardPage() {
             </div>
             <Link
               href="/ai"
-              className="text-xs font-semibold text-[#1D1D1F] hover:underline flex items-center gap-1"
+              className="touch-target text-xs font-semibold text-[#1D1D1F] hover:underline flex items-center gap-1"
             >
               <span>Abrir Diagnóstico</span>
               <ChevronRight size={13} />

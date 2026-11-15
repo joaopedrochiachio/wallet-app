@@ -145,6 +145,8 @@ export function FloatingCompanionDock() {
               : "bg-white/90 hover:bg-white text-[#1D1D1F] border-black/10 hover:shadow-[0_12px_32px_rgba(0,0,0,0.22)] hover:scale-105"
           }`}
           title="Atalho Rápido do Companheiro"
+          aria-label="Atalho Rápido do Companheiro"
+          aria-expanded={isOpen}
         >
           {isOpen ? (
             <X size={20} />

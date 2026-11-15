@@ -576,7 +576,7 @@ export function InteractiveAppTourModal({
               key={p.route}
               type="button"
               onClick={() => setActiveIndex(idx)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 flex items-center gap-1.5 transition-all cursor-pointer ${
+              className={`touch-target px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 flex items-center gap-1.5 transition-all cursor-pointer ${
                 idx === activeIndex
                   ? "bg-[#1D1D1F] text-white shadow-2xs"
                   : "bg-white text-[#86868B] hover:text-[#1D1D1F] border border-black/[0.05]"

@@ -222,7 +222,7 @@ function MobileAiNavItem({
     <Link
       href={href}
       aria-label={label}
-      className="relative flex items-center justify-center shrink-0 -my-0.5 px-0.5"
+      className="touch-target relative flex items-center justify-center shrink-0 -my-0.5 px-0.5"
     >
       <div
         className={`relative flex items-center px-3 py-1.5 rounded-full transition-all duration-200 cursor-pointer select-none ${

@@ -96,7 +96,7 @@ export function PassStack({ passes, className = "" }: PassStackProps) {
               setIsStackCollapsed(!isStackCollapsed);
             }
           }}
-          className="text-xs text-[#0071E3] hover:text-[#0077ED] font-semibold flex items-center gap-0.5 cursor-pointer"
+          className="touch-target text-xs text-[#0071E3] hover:text-[#0077ED] font-semibold flex items-center gap-0.5 cursor-pointer"
         >
           <span>{activePassId ? "Recolher" : isStackCollapsed ? "Expandir Tudo" : "Empilhar"}</span>
           {isStackCollapsed && !activePassId ? (

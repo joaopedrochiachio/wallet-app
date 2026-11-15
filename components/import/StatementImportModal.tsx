@@ -683,7 +683,7 @@ export function StatementImportModal({
                             <button
                               type="button"
                               onClick={() => removeFile(idx)}
-                              className="p-1.5 rounded-lg text-[#86868B] hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                              className="touch-pad p-1.5 rounded-lg text-[#86868B] hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                             >
                               <Trash2 size={14} />
                             </button>

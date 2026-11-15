@@ -289,7 +289,7 @@ export function DailyBriefingCard() {
 
             <Link
               href="/ai"
-              className="inline-flex items-center gap-1 text-xs font-bold text-amber-800 hover:text-black transition-colors shrink-0"
+              className="touch-target inline-flex items-center gap-1 text-xs font-bold text-amber-800 hover:text-black transition-colors shrink-0"
             >
               <span>Conversar com {advice.agentName}</span>
               <ArrowRight size={13} />

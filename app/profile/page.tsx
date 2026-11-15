@@ -407,7 +407,7 @@ export default function ProfilePage() {
                       updateUserProfile({ maxCommitmentAlertPercent: pct });
                       showToast(`Teto de alerta ajustado para ${pct}%`);
                     }}
-                    className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer active:scale-95 ${
+                    className={`touch-target px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer active:scale-95 ${
                       maxCommitment === pct
                         ? "bg-[#1D1D1F] text-white shadow-2xs"
                         : "bg-[#F2F2F7] text-[#86868B] hover:text-[#1D1D1F]"

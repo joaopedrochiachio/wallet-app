@@ -179,7 +179,7 @@ export function QuickCaptureModal({ isOpen, onClose, onSuccess }: QuickCaptureMo
                     key={chip.label}
                     type="button"
                     onClick={() => handleQuickChip(chip.label)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#F2F2F7] hover:bg-[#E5E5EA] text-[#1D1D1F] text-xs font-medium transition-all shrink-0 cursor-pointer active:scale-95 border border-black/5"
+                    className="touch-min inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#F2F2F7] hover:bg-[#E5E5EA] text-[#1D1D1F] text-xs font-medium transition-all shrink-0 cursor-pointer active:scale-95 border border-black/5"
                   >
                     {chip.icon}
                     <span>{chip.label}</span>

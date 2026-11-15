@@ -528,7 +528,7 @@ export default function PresentationPage() {
             </span>
             <Link
               href="/login"
-              className="font-semibold text-[#1D1D1F] hover:underline flex items-center gap-1 shrink-0"
+              className="touch-target font-semibold text-[#1D1D1F] hover:underline flex items-center gap-1 shrink-0"
             >
               <span>Ajustar meu Arquétipo no Perfil</span>
               <ChevronRight size={14} />

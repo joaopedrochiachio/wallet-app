@@ -93,8 +93,8 @@ export function CategoryBudgets() {
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0"><h3 className="break-words text-sm font-semibold">{budget.category}</h3><p className={`mt-1 text-xs font-medium ${budget.status === "exceeded" ? "text-rose-600" : budget.status === "warning" ? "text-amber-700" : "text-emerald-700"}`}>{budget.status === "exceeded" ? "Limite atingido" : budget.status === "warning" ? "Perto do limite" : "Dentro do limite"}</p></div>
               <div className="flex shrink-0 gap-1">
-                <button type="button" onClick={() => openForm(budget)} disabled={isSaving} aria-label={`Editar limite de ${budget.category}`} className="rounded-full p-2 text-[#86868B] hover:bg-[#F2F2F7] cursor-pointer"><Pencil size={14} /></button>
-                <button type="button" disabled={isSaving} aria-label={`Remover limite de ${budget.category}`} className="rounded-full p-2 text-[#86868B] hover:bg-rose-50 cursor-pointer" onClick={async () => {
+                <button type="button" onClick={() => openForm(budget)} disabled={isSaving} aria-label={`Editar limite de ${budget.category}`} className="touch-min rounded-full p-2 text-[#86868B] hover:bg-[#F2F2F7] cursor-pointer"><Pencil size={14} /></button>
+                <button type="button" disabled={isSaving} aria-label={`Remover limite de ${budget.category}`} className="touch-min rounded-full p-2 text-[#86868B] hover:bg-rose-50 cursor-pointer" onClick={async () => {
                   setIsSaving(true); setError(null);
                   try { await saveCategoryBudgets(budgets.filter((item) => item.id !== budget.id)); }
                   catch (failure) { setError(failure instanceof Error ? failure.message : "Não foi possível remover o limite."); }

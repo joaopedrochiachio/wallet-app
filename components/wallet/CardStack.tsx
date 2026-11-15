@@ -263,21 +263,24 @@ export function CardStack({ cards, onSelectCard, className = "" }: CardStackProp
           {isExpanded ? "Fechar carteira" : "Ver todos os cartões"}
         </button>
 
-        <div className="flex items-center justify-center gap-2" aria-label="Selecionar cartão">
+        <div className="flex items-center justify-center" aria-label="Selecionar cartão">
           {orderedCards.map((card, index) => (
             <button
               key={card.id}
               type="button"
               onClick={() => selectCard(card.id)}
-              className={`h-2 rounded-full transition-all duration-300 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-500/25 ${
-                index === 0
-                  ? "w-8 bg-[#1D1D1F]"
-                  : "w-2 bg-gray-300 hover:bg-gray-400"
-              }`}
+              className="group flex h-8 items-center px-1 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:px-3 focus-visible:outline-none"
               aria-label={`Selecionar ${card.title}`}
               aria-current={index === 0 ? "true" : undefined}
               title={card.title}
-            />
+            >
+              <span
+                aria-hidden
+                className={`block h-2 rounded-full transition-all duration-300 group-focus-visible:ring-4 group-focus-visible:ring-blue-500/25 ${
+                  index === 0 ? "w-8 bg-[#1D1D1F]" : "w-2 bg-gray-300 group-hover:bg-gray-400"
+                }`}
+              />
+            </button>
           ))}
         </div>
       </div>

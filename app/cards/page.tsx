@@ -757,7 +757,7 @@ export default function CardsPage() {
                                   periodKey: details.periodKey,
                                 })
                               }
-                              className="inline-flex items-center gap-1.5 text-xs font-semibold bg-[#1D1D1F] hover:bg-black text-white px-3.5 py-1.5 rounded-full transition-all cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                              className="touch-target inline-flex items-center gap-1.5 text-xs font-semibold bg-[#1D1D1F] hover:bg-black text-white px-3.5 py-1.5 rounded-full transition-all cursor-pointer shadow-2xs active:scale-95 shrink-0"
                               title={`Marcar fatura de ${details.dueMonthName} do ${card.name} como paga e debitar da Conta Principal`}
                             >
                               <Zap size={12} className="text-amber-400 fill-amber-400 shrink-0" />
@@ -770,7 +770,7 @@ export default function CardsPage() {
                                 void handleUndoPayInvoice(card.id, card.name, details.periodKey)
                               }
                               disabled={isPayingInvoice}
-                              className="inline-flex items-center gap-1.5 text-xs font-semibold bg-emerald-50 hover:bg-rose-50 hover:text-rose-600 text-emerald-700 border border-emerald-200/70 hover:border-rose-200 px-3 py-1.5 rounded-full transition-all cursor-pointer active:scale-95 shrink-0 group"
+                              className="touch-target inline-flex items-center gap-1.5 text-xs font-semibold bg-emerald-50 hover:bg-rose-50 hover:text-rose-600 text-emerald-700 border border-emerald-200/70 hover:border-rose-200 px-3 py-1.5 rounded-full transition-all cursor-pointer active:scale-95 shrink-0 group"
                               title="Desfazer pagamento da fatura"
                             >
                               <RotateCcw size={12} className="group-hover:rotate-[-45deg] transition-transform" />
@@ -789,7 +789,7 @@ export default function CardsPage() {
                               setBillingCycleError(null);
                             }}
                             disabled={isSavingBillingCycle}
-                            className="inline-flex items-center gap-1 text-xs font-semibold text-[#1D1D1F] bg-[#F2F2F7] hover:bg-[#E5E5EA] px-3 py-1.5 rounded-full transition-colors cursor-pointer shrink-0 disabled:opacity-50"
+                            className="touch-target inline-flex items-center gap-1 text-xs font-semibold text-[#1D1D1F] bg-[#F2F2F7] hover:bg-[#E5E5EA] px-3 py-1.5 rounded-full transition-colors cursor-pointer shrink-0 disabled:opacity-50"
                             title={`Alterar fechamento e vencimento do ${card.name}`}
                           >
                             <CalendarClock size={12} />
@@ -799,7 +799,7 @@ export default function CardsPage() {
                           <button
                             type="button"
                             onClick={() => handleStartEditLimit(card.id, card.limit)}
-                            className="inline-flex items-center gap-1 text-xs font-semibold text-[#1D1D1F] bg-[#F2F2F7] hover:bg-[#E5E5EA] px-3 py-1.5 rounded-full transition-colors cursor-pointer shrink-0"
+                            className="touch-target inline-flex items-center gap-1 text-xs font-semibold text-[#1D1D1F] bg-[#F2F2F7] hover:bg-[#E5E5EA] px-3 py-1.5 rounded-full transition-colors cursor-pointer shrink-0"
                             title={`Alterar limite do ${card.name}`}
                           >
                             <SlidersHorizontal size={12} />
@@ -812,7 +812,7 @@ export default function CardsPage() {
                               setSelectedCardForTx(card.name);
                               setIsAddTransactionOpen(true);
                             }}
-                            className="text-xs font-semibold text-[#0071E3] hover:text-[#0077ED] px-2.5 py-1.5 rounded-full hover:bg-blue-50/50 transition-colors cursor-pointer shrink-0"
+                            className="touch-target text-xs font-semibold text-[#0071E3] hover:text-[#0077ED] px-2.5 py-1.5 rounded-full hover:bg-blue-50/50 transition-colors cursor-pointer shrink-0"
                             title={`Adicionar compra no ${card.name}`}
                           >
                             + Compra
@@ -827,7 +827,7 @@ export default function CardsPage() {
                                 cardName: card.name,
                               })
                             }
-                            className="w-7 h-7 rounded-full text-[#86868B] hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors cursor-pointer"
+                            className="touch-min w-7 h-7 rounded-full text-[#86868B] hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors cursor-pointer"
                             title="Excluir Cartão"
                           >
                             <Trash2 size={13} strokeWidth={1.5} />
@@ -905,7 +905,7 @@ export default function CardsPage() {
                             <button
                               type="button"
                               onClick={() => handleStartEditLimit(card.id, card.limit)}
-                              className="text-[#0071E3] hover:text-[#0077ED] font-semibold flex items-center gap-1 cursor-pointer text-xs"
+                              className="touch-target text-[#0071E3] hover:text-[#0077ED] font-semibold flex items-center gap-1 cursor-pointer text-xs"
                             >
                               <Pencil size={11} />
                               <span>Editar limite</span>
@@ -1049,7 +1049,7 @@ export default function CardsPage() {
                                     <button
                                       type="button"
                                       onClick={() => handleStartEditRecurring(item)}
-                                      className="p-1.5 rounded-lg text-violet-700 hover:text-violet-900 hover:bg-violet-100 transition-colors cursor-pointer"
+                                      className="touch-pad p-1.5 rounded-lg text-violet-700 hover:text-violet-900 hover:bg-violet-100 transition-colors cursor-pointer"
                                       title="Editar compra programada"
                                     >
                                       <Pencil size={13} strokeWidth={1.75} />
@@ -1057,7 +1057,7 @@ export default function CardsPage() {
                                     <button
                                       type="button"
                                       onClick={() => handleStartDeleteRecurring(item)}
-                                      className="p-1.5 rounded-lg text-[#86868B] hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                      className="touch-pad p-1.5 rounded-lg text-[#86868B] hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                                       title="Excluir compra programada"
                                     >
                                       <Trash2 size={13} strokeWidth={1.75} />
@@ -1130,7 +1130,7 @@ export default function CardsPage() {
                                           setEditingTransaction(tx as TransactionItem);
                                         }
                                       }}
-                                      className="p-1.5 rounded-lg text-violet-700 hover:text-violet-900 hover:bg-violet-100 transition-colors cursor-pointer"
+                                      className="touch-pad p-1.5 rounded-lg text-violet-700 hover:text-violet-900 hover:bg-violet-100 transition-colors cursor-pointer"
                                       title="Editar compra programada"
                                     >
                                       <Pencil size={13} strokeWidth={1.75} />
@@ -1144,7 +1144,7 @@ export default function CardsPage() {
                                           setTxToDelete(tx as TransactionItem);
                                         }
                                       }}
-                                      className="p-1.5 rounded-lg text-[#86868B] hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                      className="touch-pad p-1.5 rounded-lg text-[#86868B] hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                                       title="Excluir compra programada"
                                     >
                                       <Trash2 size={13} strokeWidth={1.75} />
@@ -1193,7 +1193,7 @@ export default function CardsPage() {
                                   <button
                                     type="button"
                                     onClick={() => setEditingTransaction(tx as TransactionItem)}
-                                    className="text-[#86868B] hover:text-[#1D1D1F] transition-colors p-1 rounded-md hover:bg-black/5 cursor-pointer"
+                                    className="touch-pad text-[#86868B] hover:text-[#1D1D1F] transition-colors p-1 rounded-md hover:bg-black/5 cursor-pointer"
                                     title="Editar lançamento"
                                   >
                                     <Pencil size={12} strokeWidth={1.5} />
@@ -1201,7 +1201,7 @@ export default function CardsPage() {
                                   <button
                                     type="button"
                                     onClick={() => setTxToDelete(tx as TransactionItem)}
-                                    className="text-[#86868B] hover:text-rose-600 transition-colors opacity-70 group-hover:opacity-100 p-1 rounded-md hover:bg-rose-50 cursor-pointer"
+                                    className="touch-pad text-[#86868B] hover:text-rose-600 transition-colors opacity-70 group-hover:opacity-100 p-1 rounded-md hover:bg-rose-50 cursor-pointer"
                                     title="Excluir lançamento"
                                   >
                                     <Trash2 size={12} strokeWidth={1.5} />

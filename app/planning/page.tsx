@@ -856,7 +856,7 @@ export default function PlanningPage() {
                 e.stopPropagation();
                 void handleToggleRecurring(item.id);
               }}
-              className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors shrink-0 cursor-pointer ${
+              className={`touch-target w-5 h-5 rounded-full border flex items-center justify-center transition-colors shrink-0 cursor-pointer ${
                 item.active
                   ? sectionKind === "income"
                     ? "bg-emerald-600 border-emerald-600 text-white"
@@ -922,7 +922,7 @@ export default function PlanningPage() {
                   void handleRealizeNow(item);
                 }}
                 disabled={isProcessing}
-                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#1D1D1F]/5 hover:bg-[#1D1D1F] hover:text-white text-[#1D1D1F] transition-all cursor-pointer active:scale-95 disabled:opacity-50 shadow-2xs"
+                className="touch-target inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#1D1D1F]/5 hover:bg-[#1D1D1F] hover:text-white text-[#1D1D1F] transition-all cursor-pointer active:scale-95 disabled:opacity-50 shadow-2xs"
                 title={
                   item.type === "income"
                     ? "Confirmar o recebimento e registrar a entrada na conta"
@@ -954,7 +954,7 @@ export default function PlanningPage() {
                   void handleUnrealize(item);
                 }}
                 disabled={isProcessing}
-                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-50 hover:bg-rose-50 hover:text-rose-600 text-indigo-700 border border-indigo-200/60 hover:border-rose-200 transition-all cursor-pointer active:scale-95 disabled:opacity-50 group"
+                className="touch-target inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-50 hover:bg-rose-50 hover:text-rose-600 text-indigo-700 border border-indigo-200/60 hover:border-rose-200 transition-all cursor-pointer active:scale-95 disabled:opacity-50 group"
                 title="Desfazer efetivação"
               >
                 <RotateCcw size={12} className="group-hover:rotate-[-45deg] transition-transform" />
@@ -989,7 +989,7 @@ export default function PlanningPage() {
               e.stopPropagation();
               handleOpenEditModal(item);
             }}
-            className="text-gray-400 hover:text-[#1D1D1F] transition-colors p-1.5 rounded-lg hover:bg-black/5 cursor-pointer"
+            className="touch-pad text-gray-400 hover:text-[#1D1D1F] transition-colors p-1.5 rounded-lg hover:bg-black/5 cursor-pointer"
             title="Editar planejamento"
           >
             <Pencil size={14} />
@@ -1002,7 +1002,7 @@ export default function PlanningPage() {
               e.stopPropagation();
               setItemToDelete(item);
             }}
-            className="text-gray-300 hover:text-rose-500 transition-colors p-1.5 rounded-lg hover:bg-rose-50 cursor-pointer"
+            className="touch-pad text-gray-300 hover:text-rose-500 transition-colors p-1.5 rounded-lg hover:bg-rose-50 cursor-pointer"
             title="Excluir"
           >
             <Trash2 size={14} />
@@ -1116,7 +1116,7 @@ export default function PlanningPage() {
           <button
             type="button"
             onClick={toggleArchivePastMonths}
-            className="text-[11px] font-medium text-[#86868B] hover:text-[#1D1D1F] px-3 py-1.5 rounded-full bg-white border border-black/[0.06] hover:bg-[#F2F2F7] transition-all cursor-pointer shrink-0 self-end sm:self-auto shadow-2xs active:scale-95"
+            className="touch-target text-[11px] font-medium text-[#86868B] hover:text-[#1D1D1F] px-3 py-1.5 rounded-full bg-white border border-black/[0.06] hover:bg-[#F2F2F7] transition-all cursor-pointer shrink-0 self-end sm:self-auto shadow-2xs active:scale-95"
             title={showArchivedMonths ? "Ocultar meses anteriores no planejamento" : "Exibir Setembro e histórico de meses anteriores"}
           >
             {showArchivedMonths ? "Arquivar Setembro" : "Exibir Setembro"}
@@ -1375,7 +1375,7 @@ export default function PlanningPage() {
                 <button
                   type="button"
                   onClick={() => handleOpenModal("income")}
-                  className="text-xs font-semibold text-[#0071E3] hover:text-[#0077ED] cursor-pointer"
+                  className="touch-target text-xs font-semibold text-[#0071E3] hover:text-[#0077ED] cursor-pointer"
                 >
                   Adicionar
                 </button>
@@ -1441,7 +1441,7 @@ export default function PlanningPage() {
                 <button
                   type="button"
                   onClick={() => handleOpenModal("expense-debit")}
-                  className="text-xs font-semibold text-[#0071E3] hover:text-[#0077ED] cursor-pointer"
+                  className="touch-target text-xs font-semibold text-[#0071E3] hover:text-[#0077ED] cursor-pointer"
                 >
                   Adicionar
                 </button>
@@ -1602,7 +1602,7 @@ export default function PlanningPage() {
                                 })
                               }
                               disabled={isPayingInvoice}
-                              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-[#1D1D1F] hover:bg-black text-white transition-all cursor-pointer active:scale-95 disabled:opacity-50 shadow-2xs"
+                              className="touch-target inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-[#1D1D1F] hover:bg-black text-white transition-all cursor-pointer active:scale-95 disabled:opacity-50 shadow-2xs"
                               title="Marcar fatura como paga e debitar da conta corrente como planejado"
                             >
                               {isPayingInvoice ? (
@@ -1643,7 +1643,7 @@ export default function PlanningPage() {
                                 })
                               }
                               disabled={isPayingInvoice}
-                              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white transition-all cursor-pointer active:scale-95 disabled:opacity-50 shadow-2xs"
+                              className="touch-target inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white transition-all cursor-pointer active:scale-95 disabled:opacity-50 shadow-2xs"
                               title={`Antecipar e pagar agora a fatura de ${nextCardInvoice.invoiceDueMonthName}`}
                             >
                               <Zap size={12} className="text-amber-300 fill-amber-300 shrink-0" />
@@ -1712,7 +1712,7 @@ export default function PlanningPage() {
                                 <button
                                   type="button"
                                   onClick={() => setTxToDelete(tx)}
-                                  className="text-gray-300 hover:text-rose-500 transition-colors p-1 rounded-lg hover:bg-rose-50 cursor-pointer"
+                                  className="touch-pad text-gray-300 hover:text-rose-500 transition-colors p-1 rounded-lg hover:bg-rose-50 cursor-pointer"
                                   title="Excluir lançamento"
                                 >
                                   <Trash2 size={13} />
@@ -1756,7 +1756,7 @@ export default function PlanningPage() {
                 <button
                   type="button"
                   onClick={() => setIsAddingModalOpen(false)}
-                  className="text-[#0071E3] hover:text-[#0077ED] font-normal text-sm sm:text-base cursor-pointer active:opacity-60 transition-opacity py-1 px-1"
+                  className="touch-target text-[#0071E3] hover:text-[#0077ED] font-normal text-sm sm:text-base cursor-pointer active:opacity-60 transition-opacity py-1 px-1"
                 >
                   Cancelar
                 </button>
@@ -1778,7 +1778,7 @@ export default function PlanningPage() {
                 <button
                   type="submit"
                   disabled={!newTitle.trim() || !newAmount.trim()}
-                  className="text-[#0071E3] hover:text-[#0077ED] font-semibold text-sm sm:text-base cursor-pointer active:opacity-60 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed py-1 px-1"
+                  className="touch-target text-[#0071E3] hover:text-[#0077ED] font-semibold text-sm sm:text-base cursor-pointer active:opacity-60 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed py-1 px-1"
                 >
                   Salvar
                 </button>
@@ -1803,7 +1803,7 @@ export default function PlanningPage() {
                           cards.find((card) => card.type === "checking")?.name || "Débito/Pix";
                         setNewAccount(checkingAcc);
                       }}
-                      className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                      className={`touch-target flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1 cursor-pointer ${
                         modalType === "income"
                           ? "bg-emerald-600 text-white shadow-2xs"
                           : "bg-[#F2F2F7] text-[#86868B] hover:text-[#1D1D1F]"
@@ -1818,7 +1818,7 @@ export default function PlanningPage() {
                         setModalType("expense");
                         setNewCategory("Moradia & Contas");
                       }}
-                      className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                      className={`touch-target flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1 cursor-pointer ${
                         modalType === "expense"
                           ? "bg-[#1D1D1F] text-white shadow-2xs"
                           : "bg-[#F2F2F7] text-[#86868B] hover:text-[#1D1D1F]"
@@ -1965,7 +1965,7 @@ export default function PlanningPage() {
                         setRecurrenceSelection("fixed_day");
                         setIsCustomDayActive(true);
                       }}
-                      className={`text-xs font-semibold hover:underline cursor-pointer ${
+                      className={`touch-target text-xs font-semibold hover:underline cursor-pointer ${
                         isCustomDayActive ? "text-[#1D1D1F] font-bold" : "text-[#86868B]"
                       }`}
                     >
@@ -2277,7 +2277,7 @@ export default function PlanningPage() {
                     setIsEditModalOpen(false);
                     setEditingItem(null);
                   }}
-                  className="text-[#0071E3] hover:text-[#0077ED] font-normal text-sm sm:text-base cursor-pointer active:opacity-60 transition-opacity py-1 px-1"
+                  className="touch-target text-[#0071E3] hover:text-[#0077ED] font-normal text-sm sm:text-base cursor-pointer active:opacity-60 transition-opacity py-1 px-1"
                 >
                   Cancelar
                 </button>
@@ -2299,7 +2299,7 @@ export default function PlanningPage() {
                 <button
                   type="submit"
                   disabled={!editTitle.trim() || !editAmount.trim()}
-                  className="text-[#0071E3] hover:text-[#0077ED] font-semibold text-sm sm:text-base cursor-pointer active:opacity-60 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed py-1 px-1"
+                  className="touch-target text-[#0071E3] hover:text-[#0077ED] font-semibold text-sm sm:text-base cursor-pointer active:opacity-60 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed py-1 px-1"
                 >
                   Salvar
                 </button>
@@ -2318,7 +2318,7 @@ export default function PlanningPage() {
                     <button
                       type="button"
                       onClick={() => setEditType("income")}
-                      className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                      className={`touch-target flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1 cursor-pointer ${
                         editType === "income"
                           ? "bg-emerald-600 text-white shadow-2xs"
                           : "bg-[#F2F2F7] text-[#86868B] hover:text-[#1D1D1F]"
@@ -2330,7 +2330,7 @@ export default function PlanningPage() {
                     <button
                       type="button"
                       onClick={() => setEditType("expense")}
-                      className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                      className={`touch-target flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1 cursor-pointer ${
                         editType === "expense"
                           ? "bg-[#1D1D1F] text-white shadow-2xs"
                           : "bg-[#F2F2F7] text-[#86868B] hover:text-[#1D1D1F]"
@@ -2468,7 +2468,7 @@ export default function PlanningPage() {
                         setEditRecurrence("fixed_day");
                         setEditIsCustomDay(true);
                       }}
-                      className={`text-xs font-semibold hover:underline cursor-pointer ${
+                      className={`touch-target text-xs font-semibold hover:underline cursor-pointer ${
                         editIsCustomDay ? "text-[#1D1D1F] font-bold" : "text-[#86868B]"
                       }`}
                     >

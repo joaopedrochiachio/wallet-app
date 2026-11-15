@@ -679,6 +679,8 @@ function OfficeWorker({
       onMouseLeave={() => onHover(false)}
       onFocus={() => onHover(true)}
       onBlur={() => onHover(false)}
+      // Parte da ilustração (escala com a tela). No toque, a lista "Especialistas" oferece a mesma ação com alvo adequado.
+      data-touch-exempt=""
       className={`absolute z-30 flex origin-center scale-[0.58] flex-col items-center rounded-2xl p-1 outline-none transition-all duration-300 hover:brightness-105 focus-visible:ring-2 focus-visible:ring-white sm:scale-[0.82] lg:scale-100 ${className}`}
       aria-label={`Abrir a mesa de ${agent.name}`}
     >

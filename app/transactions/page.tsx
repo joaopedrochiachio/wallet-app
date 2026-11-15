@@ -518,7 +518,7 @@ export default function TransactionsPage() {
                     key={filter}
                     type="button"
                     onClick={() => setSelectedFilter(filter)}
-                    className={`px-3 py-1 rounded-full text-xs transition-all shrink-0 select-none cursor-pointer ${
+                    className={`touch-target px-3 py-1 rounded-full text-xs transition-all shrink-0 select-none cursor-pointer ${
                       isSelected
                         ? "bg-[#1D1D1F] text-white font-semibold shadow-2xs"
                         : "text-[#86868B] hover:text-[#1D1D1F] bg-[#F2F2F7] hover:bg-[#E5E5EA] font-medium"
@@ -535,7 +535,7 @@ export default function TransactionsPage() {
                 <button
                   type="button"
                   onClick={clearAllFilters}
-                  className="inline-flex items-center gap-1 text-xs font-semibold text-[#0071E3] hover:text-[#0077ED] cursor-pointer"
+                  className="touch-target inline-flex items-center gap-1 text-xs font-semibold text-[#0071E3] hover:text-[#0077ED] cursor-pointer"
                 >
                   <RotateCcw size={11} />
                   <span>Limpar filtros</span>

@@ -26,6 +26,7 @@ import {
   validateInstallmentsCount,
 } from "@/lib/utils/security";
 import { PopUpButton } from "@/components/ui/macos/PopUpButton";
+import { MacSwitch } from "@/components/ui/macos/Switch";
 
 export { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/utils/categories";
 
@@ -336,7 +337,7 @@ export function AddTransactionSheet({
           <button
             type="button"
             onClick={onClose}
-            className="text-xs font-semibold text-[#86868B] hover:text-[#1D1D1F] transition-colors cursor-pointer select-none py-1 px-2"
+            className="touch-target text-xs font-semibold text-[#86868B] hover:text-[#1D1D1F] transition-colors cursor-pointer select-none py-1 px-2"
           >
             Cancelar
           </button>
@@ -354,7 +355,7 @@ export function AddTransactionSheet({
             <button
               type="button"
               onClick={() => handleTypeChange("despesa")}
-              className={`rounded-full py-1.5 text-xs transition-all select-none cursor-pointer ${
+              className={`touch-target rounded-full py-1.5 text-xs transition-all select-none cursor-pointer ${
                 type === "despesa"
                   ? "bg-white text-[#1D1D1F] font-semibold shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
                   : "text-[#86868B] hover:text-[#1D1D1F] font-medium"
@@ -365,7 +366,7 @@ export function AddTransactionSheet({
             <button
               type="button"
               onClick={() => handleTypeChange("receita")}
-              className={`rounded-full py-1.5 text-xs transition-all select-none cursor-pointer ${
+              className={`touch-target rounded-full py-1.5 text-xs transition-all select-none cursor-pointer ${
                 type === "receita"
                   ? "bg-white text-emerald-700 font-semibold shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
                   : "text-[#86868B] hover:text-[#1D1D1F] font-medium"
@@ -407,7 +408,7 @@ export function AddTransactionSheet({
               <button
                 type="button"
                 onClick={() => setAmountInput("")}
-                className="text-[11px] font-medium text-[#86868B] hover:text-[#1D1D1F] transition-colors cursor-pointer"
+                className="touch-target text-[11px] font-medium text-[#86868B] hover:text-[#1D1D1F] transition-colors cursor-pointer"
               >
                 Limpar valor
               </button>
@@ -503,7 +504,7 @@ export function AddTransactionSheet({
                 <button
                   type="button"
                   onClick={() => setCreditPurchaseMode("single")}
-                  className={`rounded-full py-1.5 text-xs transition-all select-none cursor-pointer ${
+                  className={`touch-target rounded-full py-1.5 text-xs transition-all select-none cursor-pointer ${
                     creditPurchaseMode === "single"
                       ? "bg-[#1D1D1F] text-white font-semibold shadow-2xs"
                       : "text-[#86868B] hover:text-[#1D1D1F] font-medium"
@@ -514,7 +515,7 @@ export function AddTransactionSheet({
                 <button
                   type="button"
                   onClick={() => setCreditPurchaseMode("installments")}
-                  className={`rounded-full py-1.5 text-xs transition-all select-none cursor-pointer ${
+                  className={`touch-target rounded-full py-1.5 text-xs transition-all select-none cursor-pointer ${
                     creditPurchaseMode === "installments"
                       ? "bg-[#1D1D1F] text-white font-semibold shadow-2xs"
                       : "text-[#86868B] hover:text-[#1D1D1F] font-medium"
@@ -525,7 +526,7 @@ export function AddTransactionSheet({
                 <button
                   type="button"
                   onClick={() => setCreditPurchaseMode("subscription")}
-                  className={`rounded-full py-1.5 text-xs transition-all select-none cursor-pointer ${
+                  className={`touch-target rounded-full py-1.5 text-xs transition-all select-none cursor-pointer ${
                     creditPurchaseMode === "subscription"
                       ? "bg-[#1D1D1F] text-white font-semibold shadow-2xs"
                       : "text-[#86868B] hover:text-[#1D1D1F] font-medium"
@@ -754,7 +755,7 @@ export function AddTransactionSheet({
                   setDatePreset("today");
                   setDateInput(formatDateToInput(new Date()));
                 }}
-                className={`rounded-full py-1.5 text-xs transition-all select-none cursor-pointer ${
+                className={`touch-target rounded-full py-1.5 text-xs transition-all select-none cursor-pointer ${
                   datePreset === "today"
                     ? "bg-white text-[#1D1D1F] font-semibold shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
                     : "text-[#86868B] hover:text-[#1D1D1F] font-medium"
@@ -770,7 +771,7 @@ export function AddTransactionSheet({
                   yest.setDate(yest.getDate() - 1);
                   setDateInput(formatDateToInput(yest));
                 }}
-                className={`rounded-full py-1.5 text-xs transition-all select-none cursor-pointer ${
+                className={`touch-target rounded-full py-1.5 text-xs transition-all select-none cursor-pointer ${
                   datePreset === "yesterday"
                     ? "bg-white text-[#1D1D1F] font-semibold shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
                     : "text-[#86868B] hover:text-[#1D1D1F] font-medium"
@@ -781,7 +782,7 @@ export function AddTransactionSheet({
               <button
                 type="button"
                 onClick={() => setDatePreset("custom")}
-                className={`rounded-full py-1.5 text-xs transition-all select-none cursor-pointer ${
+                className={`touch-target rounded-full py-1.5 text-xs transition-all select-none cursor-pointer ${
                   datePreset === "custom"
                     ? "bg-white text-[#1D1D1F] font-semibold shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
                     : "text-[#86868B] hover:text-[#1D1D1F] font-medium"
@@ -831,25 +832,8 @@ export function AddTransactionSheet({
                 </div>
               </div>
 
-              {/* Switch iOS Nativo */}
-              <button
-                type="button"
-                onClick={() => setIsRecurring((prev) => !prev)}
-                className={`w-11 h-6.5 rounded-full transition-colors relative p-0.5 cursor-pointer select-none ${
-                  isRecurring
-                    ? type === "receita"
-                      ? "bg-emerald-600"
-                      : "bg-[#1D1D1F]"
-                    : "bg-[#E5E5EA]"
-                }`}
-                aria-label="Repetir todo mês"
-              >
-                <div
-                  className={`w-5.5 h-5.5 rounded-full bg-white transition-transform shadow-xs ${
-                    isRecurring ? "translate-x-4.5" : "translate-x-0"
-                  }`}
-                />
-              </button>
+              {/* Switch do kit macOS 27 */}
+              <MacSwitch checked={isRecurring} onChange={setIsRecurring} ariaLabel="Repetir todo mês" />
             </div>
 
             {/* Progressive Disclosure: Área compacta expandida */}

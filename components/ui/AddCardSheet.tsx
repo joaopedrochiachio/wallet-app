@@ -257,7 +257,7 @@ export function AddCardSheet({ isOpen, onClose, onAddCard }: AddCardSheetProps) 
                     key={b}
                     type="button"
                     onClick={() => setBrand(b)}
-                    className={`px-3 py-1 rounded-full text-xs transition-all ${
+                    className={`touch-target px-3 py-1 rounded-full text-xs transition-all ${
                       brand === b
                         ? "bg-[#1D1D1F] text-white font-medium shadow-2xs"
                         : "bg-white text-[#86868B] border border-black/[0.04] hover:text-[#1D1D1F]"

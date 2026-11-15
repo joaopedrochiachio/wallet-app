@@ -210,7 +210,7 @@ export function MonthlyMovementOverview({
                 key={option.id}
                 type="button"
                 onClick={() => handlePaymentFilterChange(option.id)}
-                className={`flex h-7.5 items-center gap-1.5 rounded-[9px] px-3 text-xs transition-all select-none cursor-pointer ${
+                className={`touch-target flex h-7.5 items-center gap-1.5 rounded-[9px] px-3 text-xs transition-all select-none cursor-pointer ${
                   paymentFilter === option.id
                     ? "bg-white text-[#1D1D1F] shadow-[0_1px_3px_rgba(0,0,0,0.06)] font-semibold"
                     : "text-[#86868B] hover:text-[#1D1D1F] font-medium"
@@ -277,7 +277,7 @@ export function MonthlyMovementOverview({
                 <button
                   type="button"
                   onClick={resetFilters}
-                  className="text-xs font-semibold text-[#0071E3] hover:text-[#0077ED] transition-colors cursor-pointer"
+                  className="touch-target text-xs font-semibold text-[#0071E3] hover:text-[#0077ED] transition-colors cursor-pointer"
                 >
                   Limpar filtros
                 </button>
@@ -445,7 +445,7 @@ export function MonthlyMovementOverview({
                     type="button"
                     onClick={() => handlePageChange(Math.max(1, validCurrentPage - 1))}
                     disabled={validCurrentPage === 1}
-                    className="px-3 py-1.5 rounded-xl text-xs font-semibold border border-black/[0.06] bg-white text-[#1D1D1F] hover:bg-black/[0.03] active:scale-[0.98] transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer shadow-2xs flex items-center gap-1"
+                    className="touch-target px-3 py-1.5 rounded-xl text-xs font-semibold border border-black/[0.06] bg-white text-[#1D1D1F] hover:bg-black/[0.03] active:scale-[0.98] transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer shadow-2xs flex items-center gap-1"
                   >
                     <ChevronLeft size={14} />
                     <span>Anterior</span>
@@ -480,7 +480,7 @@ export function MonthlyMovementOverview({
                           key={pageNum}
                           type="button"
                           onClick={() => handlePageChange(pageNum)}
-                          className={`w-7.5 h-7.5 rounded-xl text-xs font-semibold transition-all flex items-center justify-center cursor-pointer ${
+                          className={`touch-min w-7.5 h-7.5 rounded-xl text-xs font-semibold transition-all flex items-center justify-center cursor-pointer ${
                             isActive
                               ? "bg-[#1D1D1F] text-white shadow-2xs"
                               : "bg-white border border-black/[0.06] text-[#86868B] hover:text-[#1D1D1F] hover:bg-black/[0.03]"
@@ -496,7 +496,7 @@ export function MonthlyMovementOverview({
                     type="button"
                     onClick={() => handlePageChange(Math.min(totalPages, validCurrentPage + 1))}
                     disabled={validCurrentPage === totalPages}
-                    className="px-3 py-1.5 rounded-xl text-xs font-semibold border border-black/[0.06] bg-white text-[#1D1D1F] hover:bg-black/[0.03] active:scale-[0.98] transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer shadow-2xs flex items-center gap-1"
+                    className="touch-target px-3 py-1.5 rounded-xl text-xs font-semibold border border-black/[0.06] bg-white text-[#1D1D1F] hover:bg-black/[0.03] active:scale-[0.98] transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer shadow-2xs flex items-center gap-1"
                   >
                     <span>Próxima</span>
                     <ChevronRight size={14} />

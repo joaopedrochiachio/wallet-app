@@ -568,7 +568,7 @@ export default function GoalsPage() {
                       <button
                         type="button"
                         onClick={() => handleOpenEditGoal(goal)}
-                        className="text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#F2F2F7] rounded-lg transition-colors p-1.5 cursor-pointer"
+                        className="touch-pad text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#F2F2F7] rounded-lg transition-colors p-1.5 cursor-pointer"
                         title="Editar detalhes da meta"
                       >
                         <Pencil size={14} />
@@ -576,7 +576,7 @@ export default function GoalsPage() {
                       <button
                         type="button"
                         onClick={() => setGoalToDelete(goal)}
-                        className="text-gray-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors p-1.5 cursor-pointer"
+                        className="touch-pad text-gray-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors p-1.5 cursor-pointer"
                         title="Excluir meta"
                       >
                         <Trash2 size={15} />
@@ -616,7 +616,7 @@ export default function GoalsPage() {
                         <button
                           type="button"
                           onClick={() => handleOpenEditGoal(goal)}
-                          className="text-xs font-medium px-2.5 py-1 rounded-full bg-[#F2F2F7] hover:bg-[#E5E5EA] text-[#1D1D1F] transition-all flex items-center gap-1 cursor-pointer"
+                          className="touch-target text-xs font-medium px-2.5 py-1 rounded-full bg-[#F2F2F7] hover:bg-[#E5E5EA] text-[#1D1D1F] transition-all flex items-center gap-1 cursor-pointer"
                           title="Editar nome, valor alvo, valor guardado ou prazo desta meta"
                         >
                           <Pencil size={12} />
@@ -626,7 +626,7 @@ export default function GoalsPage() {
                         {goal.current > 0 && (
                           <button
                             onClick={() => handleOpenWithdraw(goal)}
-                            className="text-xs font-medium px-2.5 py-1 rounded-full bg-white hover:bg-rose-50 text-rose-600 border border-black/[0.08] hover:border-rose-200 transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
+                            className="touch-target text-xs font-medium px-2.5 py-1 rounded-full bg-white hover:bg-rose-50 text-rose-600 border border-black/[0.08] hover:border-rose-200 transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
                             title="Resgatar valor guardado desta meta para sua conta"
                           >
                             <ArrowDownLeft size={13} />
@@ -636,7 +636,7 @@ export default function GoalsPage() {
 
                         <button
                           onClick={() => handleOpenContribute(goal)}
-                          className="text-xs font-semibold px-3 py-1 rounded-full bg-[#1D1D1F] hover:bg-black text-white transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
+                          className="touch-target text-xs font-semibold px-3 py-1 rounded-full bg-[#1D1D1F] hover:bg-black text-white transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
                           title="Aportar e guardar dinheiro nesta meta"
                         >
                           <Plus size={13} />
@@ -713,7 +713,7 @@ export default function GoalsPage() {
                       setTargetAmount(tmpl.target.toLocaleString("pt-BR", { minimumFractionDigits: 2 }));
                       setDeadline(tmpl.deadline);
                     }}
-                    className="text-[11px] font-medium bg-white hover:bg-black hover:text-white px-2.5 py-1 rounded-full border border-black/[0.05] shadow-2xs transition-all cursor-pointer text-[#1D1D1F]"
+                    className="touch-target text-[11px] font-medium bg-white hover:bg-black hover:text-white px-2.5 py-1 rounded-full border border-black/[0.05] shadow-2xs transition-all cursor-pointer text-[#1D1D1F]"
                   >
                     {tmpl.title}
                   </button>

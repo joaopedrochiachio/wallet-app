@@ -387,7 +387,7 @@ export default function LoginPage() {
                   setError(null);
                   setSuccessMessage(null);
                 }}
-                className={`flex-1 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                className={`touch-target flex-1 py-1.5 rounded-full text-xs font-semibold transition-all ${
                   mode === "login"
                     ? "bg-white text-[#1D1D1F] shadow-xs"
                     : "text-[#86868B] hover:text-[#1D1D1F]"
@@ -402,7 +402,7 @@ export default function LoginPage() {
                   setError(null);
                   setSuccessMessage(null);
                 }}
-                className={`flex-1 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                className={`touch-target flex-1 py-1.5 rounded-full text-xs font-semibold transition-all ${
                   mode === "register"
                     ? "bg-white text-[#1D1D1F] shadow-xs"
                     : "text-[#86868B] hover:text-[#1D1D1F]"
@@ -421,7 +421,7 @@ export default function LoginPage() {
                 setError(null);
                 setSuccessMessage(null);
               }}
-              className="text-xs font-medium text-[#86868B] hover:text-[#1D1D1F] transition-colors cursor-pointer flex items-center gap-1"
+              className="touch-target text-xs font-medium text-[#86868B] hover:text-[#1D1D1F] transition-colors cursor-pointer flex items-center gap-1"
             >
               ← Voltar ao login
             </button>
@@ -480,7 +480,7 @@ export default function LoginPage() {
                       setError(null);
                       setSuccessMessage(null);
                     }}
-                    className="text-[11px] font-medium text-[#86868B] hover:text-[#1D1D1F] transition-colors cursor-pointer"
+                    className="touch-target text-[11px] font-medium text-[#86868B] hover:text-[#1D1D1F] transition-colors cursor-pointer"
                   >
                     Esqueceu a senha?
                   </button>
@@ -588,7 +588,7 @@ export default function LoginPage() {
         <div className="pt-2 border-t border-black/[0.04] text-center">
           <Link
             href="/"
-            className="text-xs text-[#86868B] hover:text-[#1D1D1F] transition-colors"
+            className="touch-target text-xs text-[#86868B] hover:text-[#1D1D1F] transition-colors"
           >
             ← Voltar para a apresentação
           </Link>
