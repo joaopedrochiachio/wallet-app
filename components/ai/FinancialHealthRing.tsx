@@ -2,6 +2,8 @@
 
 import React, { useState } from "react";
 import { Calculator, Check, CreditCard, Edit3, MessageCircle, Target, TrendingUp, X } from "lucide-react";
+import { MacButton } from "@/components/ui/macos/Button";
+import { MacTextField } from "@/components/ui/macos/TextField";
 
 interface FinancialHealthRingProps {
   score: number;
@@ -93,15 +95,15 @@ export function FinancialHealthRing({
           <div className="flex items-center justify-between gap-3">
             <span className="flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-[0.11em] text-[#86868B]"><Target size={12} />Fechamento projetado</span>
             {isEditingTarget ? (
-              <span className="flex items-center gap-1"><input type="number" value={tempTarget} onChange={(event) => setTempTarget(event.target.value)} className="w-20 rounded-lg border border-black/10 bg-white px-2 py-1 text-[10px] font-semibold tabular-nums" autoFocus /><button type="button" onClick={saveTarget} className="rounded-lg bg-emerald-600 p-1.5 text-white"><Check size={11} /></button><button type="button" onClick={() => setIsEditingTarget(false)} className="rounded-lg bg-black/5 p-1.5 text-[#6E6E73]"><X size={11} /></button></span>
+              <form className="flex items-center gap-1" onSubmit={(event) => { event.preventDefault(); saveTarget(); }}><MacTextField type="number" inputMode="decimal" aria-label="Nova meta de fechamento" value={tempTarget} onChange={(event) => setTempTarget(event.target.value)} className="!w-24 tabular-nums" autoFocus /><MacButton type="submit" variant="prominent" size="small" iconOnly aria-label="Salvar meta" icon={<Check size={11} />} /><MacButton variant="bordered" size="small" iconOnly aria-label="Cancelar" onClick={() => setIsEditingTarget(false)} icon={<X size={11} />} /></form>
             ) : (
-              <button type="button" onClick={() => { setTempTarget(String(targetEndMonthBalance)); setIsEditingTarget(true); }} className="inline-flex items-center gap-1 text-[9px] font-semibold text-blue-600">Meta R$ {formatCurrency(targetEndMonthBalance)} <Edit3 size={10} /></button>
+              <MacButton variant="borderless" size="small" shape="capsule" onClick={() => { setTempTarget(String(targetEndMonthBalance)); setIsEditingTarget(true); }} icon={<Edit3 size={10} />}>Meta R$ {formatCurrency(targetEndMonthBalance)}</MacButton>
             )}
           </div>
           <strong className={`mt-4 block text-3xl font-semibold tracking-tight tabular-nums ${isTargetMet ? "text-emerald-700" : "text-amber-700"}`}>R$ {formatCurrency(effectiveProjected)}</strong>
           <p className="mt-1 text-[10px] text-[#6E6E73]">{isTargetMet ? `${formatCurrency(margin)} acima da meta definida.` : `${formatCurrency(margin)} abaixo da meta definida.`}</p>
           <div className="mt-5 h-2 overflow-hidden rounded-full bg-black/[0.06]"><div className={`h-full rounded-full transition-all duration-700 ${isTargetMet ? "bg-emerald-500" : "bg-amber-500"}`} style={{ width: `${Math.max(3, targetProgress)}%` }} /></div>
-          <div className="mt-5 flex flex-wrap gap-2"><button type="button" onClick={onOpenSimulator} className="inline-flex items-center gap-1.5 rounded-full bg-[#1D1D1F] px-3.5 py-2 text-[10px] font-semibold text-white transition-transform active:scale-95"><Calculator size={12} /> Simular compra</button><button type="button" onClick={() => onDiscussWithAI(`Niko, explique meu score de ${score} pontos, o saldo projetado de R$ ${effectiveProjected.toFixed(2)} e como proteger minha meta.`)} className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-[10px] font-semibold text-blue-600 hover:bg-blue-50"><MessageCircle size={12} /> Discutir</button></div>
+          <div className="mt-5 flex flex-wrap gap-2"><MacButton variant="prominent" shape="capsule" size="large" onClick={onOpenSimulator} icon={<Calculator size={12} />}>Simular compra</MacButton><MacButton variant="tinted" shape="capsule" size="large" onClick={() => onDiscussWithAI(`Niko, explique meu score de ${score} pontos, o saldo projetado de R$ ${effectiveProjected.toFixed(2)} e como proteger minha meta.`)} icon={<MessageCircle size={12} />}>Discutir</MacButton></div>
         </div>
       </div>
 

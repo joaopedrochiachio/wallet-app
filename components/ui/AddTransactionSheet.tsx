@@ -3,7 +3,6 @@
 import React, { useState } from "react";
 import {
   Building2,
-  ChevronDown,
   CreditCard,
   Repeat,
   Sparkles,
@@ -26,6 +25,7 @@ import {
   validateDayOfMonth,
   validateInstallmentsCount,
 } from "@/lib/utils/security";
+import { PopUpButton } from "@/components/ui/macos/PopUpButton";
 
 export { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/utils/categories";
 
@@ -710,24 +710,13 @@ export function AddTransactionSheet({
               <span className="text-[11px] font-semibold uppercase tracking-wider text-[#86868B]">
                 Categoria
               </span>
-              <div className="relative">
-                <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="w-full appearance-none rounded-xl border border-black/[0.05] bg-[#F2F2F7]/60 pl-3.5 pr-8 py-2.5 text-xs font-medium text-[#1D1D1F] outline-none transition-all focus:bg-white focus:border-black/20 focus:ring-2 focus:ring-black/5 cursor-pointer"
-                >
-                  {categoriesList.map((cat) => (
-                    <option key={cat} value={cat}>
-                      {cat}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown
-                  size={14}
-                  strokeWidth={2}
-                  className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#86868B]"
-                />
-              </div>
+              <PopUpButton
+                value={category}
+                onChange={setCategory}
+                ariaLabel="Categoria"
+                fullWidth
+                options={categoriesList.map((cat) => ({ value: cat, label: cat }))}
+              />
             </div>
           </div>
 

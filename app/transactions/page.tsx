@@ -1,11 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { TransactionItem, CardItem, useWallet } from "@/context/WalletContext";
 import { AddTransactionSheet } from "@/components/ui/AddTransactionSheet";
 import { TransactionDetailsSheet } from "@/components/ui/TransactionDetailsSheet";
 import { AppleConfirmModal } from "@/components/ui/AppleConfirmModal";
+import { useNotify } from "@/components/ui/macos/Notifications";
+import { PullDownButton } from "@/components/ui/macos/PullDownButton";
+import { PopUpButton } from "@/components/ui/macos/PopUpButton";
+import type { MacMenuEntry } from "@/components/ui/macos/Menu";
 import { StatementImportModal } from "@/components/import/StatementImportModal";
 import { getPeriodKey, MONTH_NAMES_PT } from "@/lib/utils/dateUtils";
 import { formatAccountLabel, matchesLedgerCard } from "@/lib/utils/ledger";
@@ -30,6 +33,7 @@ import {
   X,
   RotateCcw,
 } from "lucide-react";
+import { MacSegmentedControl } from "@/components/ui/macos/SegmentedControl";
 
 interface DayGroup {
   dateKey: string;
@@ -144,7 +148,6 @@ function TransactionRow({
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const [menuOpen, setMenuOpen] = useState(false);
   const isGoalMovement = item.groupId?.startsWith("goal-");
   const isInvoicePayment = item.kind === "invoice_payment" || item.kind === "invoice_settlement";
   const canEdit = !isGoalMovement && (!item.kind || item.kind === "regular");
@@ -162,100 +165,87 @@ function TransactionRow({
   if (timeStr) metaParts.push(timeStr);
   metaParts.push(formatAccountLabel(item.account));
 
+  // Menu de ações no padrão macOS 27 (Pull-down "•••")
+  const menuItems: MacMenuEntry<"edit" | "delete" | "open">[] =
+    isGoalMovement || isInvoicePayment
+      ? [
+          {
+            value: "open",
+            label: isGoalMovement ? "Abrir Metas" : "Abrir faturas",
+            href: isGoalMovement ? "/goals" : "/cards",
+            icon: isGoalMovement ? <Target size={13} strokeWidth={1.75} /> : <CreditCard size={13} strokeWidth={1.75} />,
+          },
+        ]
+      : [
+          ...(canEdit
+            ? [
+                { value: "edit" as const, label: "Editar", icon: <Pencil size={13} strokeWidth={1.75} /> },
+                { type: "separator" as const },
+              ]
+            : []),
+          {
+            value: "delete",
+            label: "Excluir",
+            destructive: true,
+            icon: <Trash2 size={13} strokeWidth={1.75} />,
+          },
+        ];
+
   return (
     <div
       onClick={onSelect}
-      className="group relative flex items-center justify-between gap-4 px-5 sm:px-6 py-3.5 sm:py-4 transition-colors hover:bg-black/[0.015] cursor-pointer select-none"
+      data-interactive="true"
+      className="mac-row group flex items-center justify-between gap-4 px-5 sm:px-6 md:px-5 py-3 md:py-2 select-none"
     >
       {/* Lado Esquerdo: Ícone Discreto + Título & Metadados */}
-      <div className="flex items-center gap-3.5 min-w-0 flex-1">
-        <div className="w-8.5 h-8.5 rounded-full bg-[#F2F2F7] text-[#1D1D1F]/70 flex items-center justify-center shrink-0">
+      <div className="flex items-center gap-3.5 md:gap-3 min-w-0 flex-1">
+        <div className="w-8.5 h-8.5 md:w-7 md:h-7 rounded-full bg-mac-fill-3 text-mac-label flex items-center justify-center shrink-0">
           {getTransactionIcon(item.category, item.type)}
         </div>
 
-        <div className="min-w-0 flex-1 space-y-0.5">
-          <h3 className="text-sm font-medium text-[#1D1D1F] tracking-tight truncate">
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm md:text-[13px] md:leading-4 font-medium text-mac-label tracking-tight truncate">
             {item.title}
           </h3>
-          <p className="text-xs text-[#86868B] truncate">
+          <p className="text-xs md:text-[11px] md:leading-[14px] text-mac-label-2 truncate">
             {metaParts.join(" · ")}
           </p>
         </div>
       </div>
 
-      {/* Lado Direito: Valor + Menu de Ações no Hover */}
-      <div className="flex items-center gap-3 shrink-0">
+      {/* Lado Direito: Valor + Menu de Ações */}
+      <div className="flex items-center gap-2 shrink-0">
         <div className="text-right">
           <span
-            className={`text-sm sm:text-[15px] font-semibold tracking-tight block font-mono tabular-nums ${
-              isIncome ? "text-emerald-600" : "text-[#1D1D1F]"
+            className={`text-sm sm:text-[15px] md:text-[13px] font-semibold tracking-tight block font-mono tabular-nums ${
+              isIncome ? "text-[#248a3d]" : "text-mac-label"
             }`}
           >
             {isIncome ? "+ " : "− "}R$ {formatCurrency(item.amount)}
           </span>
-          <span className="text-[10px] text-[#86868B] font-normal block">
+          <span className="text-[10px] text-mac-label-2 font-normal block">
             {isIncome ? "Entrada" : isCredit ? "Fatura" : "Débito"}
           </span>
         </div>
 
-        {/* Menu Contextual ••• (Aparece suavemente no hover em desktop) */}
-        <div
-          className="relative"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            type="button"
-            onClick={() => setMenuOpen((prev) => !prev)}
-            className="w-8 h-8 rounded-full text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#E5E5EA]/70 transition-all flex items-center justify-center opacity-70 sm:opacity-0 group-hover:opacity-100 focus:opacity-100 cursor-pointer"
-            title="Ações do lançamento"
-            aria-label={`Opções para ${item.title}`}
-          >
-            <MoreHorizontal size={16} strokeWidth={1.75} />
-          </button>
-
-          {menuOpen && (
-            <>
-              <div
-                className="fixed inset-0 z-40"
-                onClick={() => setMenuOpen(false)}
-              />
-              <div className="absolute right-0 top-full mt-1 w-36 bg-white/95 backdrop-blur-xl border border-black/[0.08] rounded-xl shadow-[0_8px_24px_rgba(0,0,0,0.12)] p-1 z-50 animate-in fade-in zoom-in-95 duration-100">
-                {isGoalMovement || isInvoicePayment ? <Link href={isGoalMovement ? "/goals" : "/cards"} className="block rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#1D1D1F] hover:bg-[#F2F2F7]">
-                  {isGoalMovement ? "Abrir Metas" : "Abrir faturas"}
-                </Link> : <>
-                {canEdit && <button
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onEdit();
-                  }}
-                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-[#1D1D1F] hover:bg-[#F2F2F7] transition-colors text-left cursor-pointer"
-                >
-                  <Pencil size={12} strokeWidth={1.75} className="text-[#86868B]" />
-                  <span>Editar</span>
-                </button>}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onDelete();
-                  }}
-                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-rose-600 hover:bg-rose-50 transition-colors text-left cursor-pointer"
-                >
-                  <Trash2 size={12} strokeWidth={1.75} className="text-rose-500" />
-                  <span>Excluir</span>
-                </button>
-                </>}
-              </div>
-            </>
-          )}
-        </div>
+        <PullDownButton
+          items={menuItems}
+          align="end"
+          ariaLabel={`Opções para ${item.title}`}
+          icon={<MoreHorizontal size={16} strokeWidth={1.75} />}
+          className="opacity-70 sm:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100"
+          onAction={(action) => {
+            if (action === "edit") onEdit();
+            if (action === "delete") onDelete();
+          }}
+        />
       </div>
     </div>
   );
 }
 
 export default function TransactionsPage() {
+  const notify = useNotify();
   const {
     accountOptions,
     addTransaction,
@@ -424,22 +414,12 @@ export default function TransactionsPage() {
         {/* Controles de Topo: Segmented Control do Mês + Botão Secundário Nova Transação */}
         <div className="flex items-center gap-3 flex-wrap self-start sm:self-auto">
           {/* Mês Segmented Control (Padrão Apple idêntico ao Planejamento Mensal) */}
-          <div className="bg-[#E5E5EA]/60 p-1 rounded-full flex items-center gap-0.5 border border-black/[0.04]">
-            {monthOptions.map((month) => (
-              <button
-                key={month.periodKey}
-                type="button"
-                onClick={() => setSelectedMonth(month.periodKey)}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all select-none cursor-pointer ${
-                  selectedMonth === month.periodKey
-                    ? "bg-white text-[#1D1D1F] shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
-                    : "text-[#86868B] hover:text-[#1D1D1F]"
-                }`}
-              >
-                {month.label}
-              </button>
-            ))}
-          </div>
+          <MacSegmentedControl
+            ariaLabel="Mês"
+            value={selectedMonth}
+            onChange={setSelectedMonth}
+            options={monthOptions.map((month) => ({ value: month.periodKey, label: month.label }))}
+          />
 
           {/* Botão Importar Extrato PDF */}
           <button
@@ -495,43 +475,33 @@ export default function TransactionsPage() {
             </div>
 
             {/* Filtro de Tipo (Segmented Control) */}
-            <div className="bg-[#F2F2F7] p-1 rounded-xl flex items-center gap-0.5 shrink-0">
-              {(
-                [
-                  { id: "all", label: "Todos" },
-                  { id: "receita", label: "Entradas" },
-                  { id: "despesa", label: "Saídas" },
-                ] as const
-              ).map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => setSelectedType(t.id)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                    selectedType === t.id
-                      ? "bg-white text-[#1D1D1F] shadow-2xs"
-                      : "text-[#86868B] hover:text-[#1D1D1F]"
-                  }`}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
+            <MacSegmentedControl
+              ariaLabel="Tipo de lançamento"
+              className="shrink-0"
+              value={selectedType}
+              onChange={setSelectedType}
+              options={[
+                { value: "all", label: "Todos" },
+                { value: "receita", label: "Entradas" },
+                { value: "despesa", label: "Saídas" },
+              ]}
+            />
 
             {/* Filtro de Categoria */}
-            <select
+            <PopUpButton
               value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-              className="bg-[#F2F2F7] hover:bg-[#E5E5EA]/80 rounded-xl px-3 py-2 text-xs font-medium text-[#1D1D1F] outline-none border border-transparent focus:border-black/15 cursor-pointer shrink-0"
-              aria-label="Filtrar por categoria"
-            >
-              <option value="Todas">Categoria: Todas</option>
-              {categoryOptions.map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat}
-                </option>
-              ))}
-            </select>
+              onChange={setSelectedCategory}
+              ariaLabel="Filtrar por categoria"
+              className="shrink-0 max-w-[220px]"
+              renderValue={(option) =>
+                !option || option.value === "Todas" ? "Categoria: Todas" : option.label
+              }
+              options={[
+                { value: "Todas", label: "Todas as categorias" },
+                { type: "separator" },
+                ...categoryOptions.map((cat) => ({ value: cat, label: cat })),
+              ]}
+            />
           </div>
 
           {/* Linha 2: Filtro por Conta/Cartão + Contador e Resumo */}
@@ -616,18 +586,15 @@ export default function TransactionsPage() {
             </div>
           ) : (
             <div>
-              {groupedTransactions.map((group, groupIndex) => (
-                <div
-                  key={group.dateKey}
-                  className={groupIndex > 0 ? "border-t border-black/[0.04]" : ""}
-                >
-                  {/* Divisor Discreto de Data */}
-                  <div className="px-5 sm:px-6 pt-4 pb-1 text-[11px] font-semibold uppercase tracking-wider text-[#86868B]/90">
+              {groupedTransactions.map((group) => (
+                <div key={group.dateKey}>
+                  {/* Título de grupo (Group Title do kit) */}
+                  <div className="mac-group-title px-5 sm:px-6 md:px-5 pt-5 pb-1.5">
                     {group.label}
                   </div>
 
-                  {/* Lançamentos do Dia */}
-                  <div className="divide-y divide-black/[0.035]">
+                  {/* Lançamentos do Dia — linhas macOS (sem divisórias) */}
+                  <div className="pb-1.5">
                     {group.items.map((item) => (
                       <TransactionRow
                         key={item.id}
@@ -695,7 +662,7 @@ export default function TransactionsPage() {
               await deleteTransaction(txToDelete.id);
               setTxToDelete(null);
             } catch (error) {
-              alert(
+              notify.error(
                 error instanceof Error
                   ? error.message
                   : "Não foi possível excluir o lançamento."

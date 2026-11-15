@@ -16,7 +16,9 @@ test.beforeAll(async () => {
     import GoalsPage from ${importFile("app/goals/page.tsx")};
     function Page(){const [open,setOpen]=useState(false);const wallet=useWallet();return location.pathname==="/goals"?<GoalsPage/>:<main className="mx-auto max-w-3xl space-y-5 p-3"><p data-testid="balances">{wallet.mainBalance}</p><PendingConfirmations/><CategoryBudgets/><button onClick={()=>setOpen(true)}>Novo gasto</button><AddTransactionSheet isOpen={open} onClose={()=>setOpen(false)} accounts={wallet.cards.map(c=>c.name)}/></main>}
     createRoot(document.getElementById("root")).render(<FixtureProvider><Page/></FixtureProvider>);
-  `, { "@/context/WalletContext": `
+  `, {
+    "next/link": `import React from "react";export default function Link({children,href,...props}){return <a href={href} {...props}>{children}</a>}`,
+    "@/context/WalletContext": `
     import React,{createContext,useContext,useRef,useState} from "react";
     import {commitGoalOperation} from ${importFile("lib/utils/goalOperations.ts")};
     import {calculateCheckingBalance} from ${importFile("lib/utils/ledger.ts")};
@@ -63,7 +65,8 @@ for (const width of [320, 390, 1280]) {
     await budgets.getByRole("button", { name: "Salvar limite", exact: true }).click();
     await expect(budgets.getByText("Dentro do limite", { exact: true })).toBeVisible();
     await budgets.getByRole("button", { name: "Definir limite" }).click();
-    await budgets.getByRole("combobox", { name: "Categoria do orçamento" }).selectOption("Transporte & Combustível");
+    await budgets.getByRole("combobox", { name: "Categoria do orçamento" }).click();
+    await page.getByRole("option", { name: "Transporte & Combustível", exact: true }).click();
     await budgets.getByRole("textbox", { name: "Limite mensal em reais" }).fill("300,00");
     await budgets.getByRole("button", { name: "Salvar limite", exact: true }).click();
     await expect(budgets.getByRole("progressbar")).toHaveCount(2);

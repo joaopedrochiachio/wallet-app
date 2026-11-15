@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useWallet, TransactionItem } from "@/context/WalletContext";
 import {
   Plus,
@@ -49,6 +49,28 @@ import { auditFinancialIntegrity } from "@/lib/services/financialIntegrityServic
 import { AutoConfirmToggle } from "@/components/ui/AutoConfirmToggle";
 import { getRecurringPaymentStatus } from "@/lib/utils/timeProgression";
 import { useCalendarDay } from "@/lib/hooks/useCalendarDay";
+import { useNotify } from "@/components/ui/macos/Notifications";
+import { PopUpButton } from "@/components/ui/macos/PopUpButton";
+import { MacMenu } from "@/components/ui/macos/Menu";
+import { MacSegmentedControl } from "@/components/ui/macos/SegmentedControl";
+
+const PLANNING_INCOME_CATEGORIES = [
+  { value: "Salário / Extra", label: "Salário / Renda Principal" },
+  { value: "13º / Bônus", label: "13º / Bônus / PLR" },
+  { value: "Freelance / Extra", label: "Freelance / Extra" },
+  { value: "Rendimentos", label: "Rendimentos de Investimento" },
+  { value: "Reembolso", label: "Reembolso / Outros" },
+];
+
+const PLANNING_EXPENSE_CATEGORIES = [
+  { value: "Moradia & Contas", label: "Moradia & Contas Fixas" },
+  { value: "Assinaturas & Lazer", label: "Assinaturas & Lazer" },
+  { value: "Alimentação", label: "Alimentação & Supermercado" },
+  { value: "Transporte", label: "Transporte & Mobilidade" },
+  { value: "Saúde & Bem-estar", label: "Saúde & Bem-estar" },
+  { value: "Educação", label: "Educação" },
+  { value: "Outros", label: "Outros Compromissos" },
+];
 
 export default function PlanningPage() {
   const referenceDay = useCalendarDay();
@@ -72,6 +94,7 @@ export default function PlanningPage() {
     unpayInvoice,
     mainBalance,
   } = useWallet();
+  const notify = useNotify();
 
   const [showArchivedMonths, setShowArchivedMonths] = useState(true);
   const planningMonths = getPlanningMonthsWindow(showArchivedMonths ? 1 : 0, 3, referenceDay);
@@ -89,6 +112,7 @@ export default function PlanningPage() {
   };
   const [isAddingModalOpen, setIsAddingModalOpen] = useState(false);
   const [isAddingMenuOpen, setIsAddingMenuOpen] = useState(false);
+  const addMenuAnchorRef = useRef<HTMLButtonElement>(null);
   const [modalType, setModalType] = useState<"income" | "expense">("income");
   const [itemToDelete, setItemToDelete] = useState<RecurringItem | null>(null);
   const [isCardAddSheetOpen, setIsCardAddSheetOpen] = useState(false);
@@ -373,13 +397,13 @@ export default function PlanningPage() {
     e.preventDefault();
     const sanitizedTitle = sanitizeTextInput(newTitle, 80);
     if (!sanitizedTitle) {
-      alert("Por favor, informe uma descrição válida para o planejamento.");
+      notify.warning("Por favor, informe uma descrição válida para o planejamento.");
       return;
     }
 
     const amountValidation = validateCurrency(newAmount);
     if (!amountValidation.isValid) {
-      alert(amountValidation.error || "Valor informado é inválido.");
+      notify.warning(amountValidation.error || "Valor informado é inválido.");
       return;
     }
     const cleanAmount = amountValidation.value;
@@ -427,7 +451,7 @@ export default function PlanningPage() {
       setNewAmount("");
       setIsAddingModalOpen(false);
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Não foi possível salvar o planejamento.");
+      notify.error(error instanceof Error ? error.message : "Não foi possível salvar o planejamento.");
     }
   };
 
@@ -435,7 +459,7 @@ export default function PlanningPage() {
     try {
       await toggleRecurringItem(id);
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Não foi possível alterar o planejamento.");
+      notify.error(error instanceof Error ? error.message : "Não foi possível alterar o planejamento.");
     }
   };
 
@@ -480,13 +504,13 @@ export default function PlanningPage() {
 
     const sanitizedTitle = sanitizeTextInput(editTitle, 80);
     if (!sanitizedTitle) {
-      alert("Por favor, informe uma descrição válida para a edição.");
+      notify.warning("Por favor, informe uma descrição válida para a edição.");
       return;
     }
 
     const amountValidation = validateCurrency(editAmount);
     if (!amountValidation.isValid) {
-      alert(amountValidation.error || "Valor informado é inválido.");
+      notify.warning(amountValidation.error || "Valor informado é inválido.");
       return;
     }
     const cleanAmount = amountValidation.value;
@@ -544,7 +568,7 @@ export default function PlanningPage() {
       setIsEditModalOpen(false);
       setEditingItem(null);
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Não foi possível atualizar o planejamento.");
+      notify.error(error instanceof Error ? error.message : "Não foi possível atualizar o planejamento.");
     }
   };
 
@@ -562,7 +586,7 @@ export default function PlanningPage() {
       setIsEditModalOpen(false);
       setEditingItem(null);
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Não foi possível atualizar o planejamento.");
+      notify.error(error instanceof Error ? error.message : "Não foi possível atualizar o planejamento.");
     }
   };
 
@@ -575,7 +599,7 @@ export default function PlanningPage() {
         await deleteRecurringItem(itemToDelete.id);
       }
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Não foi possível excluir o planejamento.");
+      notify.error(error instanceof Error ? error.message : "Não foi possível excluir o planejamento.");
     } finally {
       setItemToDelete(null);
     }
@@ -617,7 +641,7 @@ export default function PlanningPage() {
       setIsEditModalOpen(false);
       setEditingItem(null);
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Não foi possível efetivar o planejamento.");
+      notify.error(error instanceof Error ? error.message : "Não foi possível efetivar o planejamento.");
     } finally {
       setProcessingItemId(null);
     }
@@ -701,7 +725,7 @@ export default function PlanningPage() {
 
       await realizeRecurringItemNow(item, plannedYear, plannedMonth, undefined, effectiveRealizeDate);
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Não foi possível efetivar o lançamento.");
+      notify.error(error instanceof Error ? error.message : "Não foi possível efetivar o lançamento.");
     } finally {
       setProcessingItemId(null);
     }
@@ -735,7 +759,7 @@ export default function PlanningPage() {
 
       await unrealizeRecurringItem(item, plannedYear, plannedMonth);
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Não foi possível desfazer a efetivação.");
+      notify.error(error instanceof Error ? error.message : "Não foi possível desfazer a efetivação.");
     } finally {
       setProcessingItemId(null);
     }
@@ -1016,80 +1040,50 @@ export default function PlanningPage() {
             </span>
           </div>
 
-          {/* Ação Principal: + Adicionar com Menu Contextual Elegante */}
+          {/* Ação Principal: + Adicionar com Menu do macOS 27 */}
           <div className="relative">
             <button
+              ref={addMenuAnchorRef}
               type="button"
+              aria-haspopup="menu"
+              aria-expanded={isAddingMenuOpen}
               onClick={() => setIsAddingMenuOpen((prev) => !prev)}
-              className="bg-[#1D1D1F] hover:bg-black active:scale-[0.98] text-white text-xs font-semibold px-4 py-2 rounded-full transition-all flex items-center gap-1.5 shadow-xs cursor-pointer select-none"
+              className="bg-[#1D1D1F] hover:bg-black active:scale-[0.98] text-white text-xs font-semibold px-4 py-2 rounded-full transition-all flex items-center gap-1.5 shadow-xs select-none"
             >
               <Plus strokeWidth={2} size={15} />
               <span>Adicionar</span>
             </button>
 
-          {isAddingMenuOpen && (
-            <>
-              <div
-                className="fixed inset-0 z-40"
-                onClick={() => setIsAddingMenuOpen(false)}
-              />
-              <div className="absolute right-0 mt-2 w-60 bg-white/95 backdrop-blur-xl border border-black/[0.08] rounded-2xl shadow-[0_12px_32px_rgba(0,0,0,0.12)] p-1.5 z-50 animate-in fade-in zoom-in-95 duration-150 font-sans">
-                <button
-                  type="button"
-                  onClick={() => handleOpenModal("income")}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[#F2F2F7] transition-colors text-left group cursor-pointer"
-                >
-                  <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
-                    <ArrowDownLeft size={16} strokeWidth={2} />
-                  </div>
-                  <div>
-                    <span className="block text-xs font-semibold text-[#1D1D1F]">
-                      Recebimento futuro
-                    </span>
-                    <span className="block text-[10px] text-[#86868B]">
-                      Entrada prevista no saldo
-                    </span>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleOpenModal("expense-debit")}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[#F2F2F7] transition-colors text-left group cursor-pointer"
-                >
-                  <div className="w-8 h-8 rounded-lg bg-[#F2F2F7] text-[#1D1D1F] flex items-center justify-center shrink-0">
-                    <Building2 size={16} strokeWidth={1.75} />
-                  </div>
-                  <div>
-                    <span className="block text-xs font-semibold text-[#1D1D1F]">
-                      Conta planejada
-                    </span>
-                    <span className="block text-[10px] text-[#86868B]">
-                      Desconto direto da conta
-                    </span>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleOpenModal("expense-credit")}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[#F2F2F7] transition-colors text-left group cursor-pointer"
-                >
-                  <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center shrink-0">
-                    <CreditCard size={16} strokeWidth={1.75} />
-                  </div>
-                  <div>
-                    <span className="block text-xs font-semibold text-[#1D1D1F]">
-                      Compra no cartão
-                    </span>
-                    <span className="block text-[10px] text-[#86868B]">
-                      Entra na fatura futura
-                    </span>
-                  </div>
-                </button>
-              </div>
-            </>
-          )}
+            <MacMenu
+              open={isAddingMenuOpen}
+              onClose={() => setIsAddingMenuOpen(false)}
+              anchorRef={addMenuAnchorRef}
+              align="end"
+              matchAnchorWidth={false}
+              ariaLabel="Adicionar ao planejamento"
+              onSelect={(mode) => handleOpenModal(mode)}
+              entries={[
+                { type: "header", label: "Novo planejamento" },
+                {
+                  value: "income",
+                  label: "Recebimento futuro",
+                  subtitle: "Entrada prevista no saldo",
+                  icon: <ArrowDownLeft size={14} strokeWidth={2} className="text-[#248a3d]" />,
+                },
+                {
+                  value: "expense-debit",
+                  label: "Conta planejada",
+                  subtitle: "Desconto direto da conta",
+                  icon: <Building2 size={14} strokeWidth={1.75} />,
+                },
+                {
+                  value: "expense-credit",
+                  label: "Compra no cartão",
+                  subtitle: "Entra na fatura futura",
+                  icon: <CreditCard size={14} strokeWidth={1.75} className="text-mac-indigo" />,
+                },
+              ]}
+            />
           </div>
         </div>
       </header>
@@ -1109,21 +1103,14 @@ export default function PlanningPage() {
 
         {/* Navegação entre Meses (Controle Segmentado Suave Estilo iOS com opção de arquivar) */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-          <div className="bg-[#E5E5EA]/60 p-1 rounded-full flex items-center gap-1 overflow-x-auto border border-black/5 scrollbar-none touch-pan-x flex-1">
-            {planningMonths.map((m, idx) => (
-              <button
-                key={m.name}
-                type="button"
-                onClick={() => setSelectedMonthIndex(idx)}
-                className={`flex-1 min-w-[76px] sm:min-w-[90px] py-1.5 px-2.5 sm:px-3 rounded-full text-xs font-semibold transition-all select-none text-center cursor-pointer ${
-                  selectedMonthIndex === idx
-                    ? "bg-white text-[#1D1D1F] shadow-xs"
-                    : "text-[#86868B] hover:text-[#1D1D1F]"
-                }`}
-              >
-                {m.name}
-              </button>
-            ))}
+          <div className="min-w-0 flex-1 overflow-x-auto scrollbar-none touch-pan-x">
+            <MacSegmentedControl
+              ariaLabel="Mês do planejamento"
+              fullWidth
+              value={String(selectedMonthIndex)}
+              onChange={(value) => setSelectedMonthIndex(Number(value))}
+              options={planningMonths.map((m, idx) => ({ value: String(idx), label: m.name }))}
+            />
           </div>
 
           <button
@@ -2221,17 +2208,14 @@ export default function PlanningPage() {
                   <span className="w-24 text-[11px] font-semibold text-[#86868B] uppercase tracking-wider">
                     {modalType === "income" ? "DESTINO" : "FORMA"}
                   </span>
-                  <select
+                  <PopUpButton
                     value={newAccount}
-                    onChange={(e) => setNewAccount(e.target.value)}
-                    className="flex-1 text-xs font-medium text-[#1D1D1F] bg-transparent outline-none cursor-pointer"
-                  >
-                    {accountOptions.map((acc) => (
-                      <option key={acc} value={acc}>
-                        {formatAccountLabel(acc)}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setNewAccount}
+                    variant="plain"
+                    className="flex-1 min-w-0"
+                    ariaLabel={modalType === "income" ? "Conta de destino" : "Forma de pagamento"}
+                    options={accountOptions.map((acc) => ({ value: acc, label: formatAccountLabel(acc) }))}
+                  />
                 </div>
 
                 {/* LINHA: CATEGORIA */}
@@ -2239,31 +2223,14 @@ export default function PlanningPage() {
                   <span className="w-24 text-[11px] font-semibold text-[#86868B] uppercase tracking-wider">
                     CATEGORIA
                   </span>
-                  <select
+                  <PopUpButton
                     value={newCategory}
-                    onChange={(e) => setNewCategory(e.target.value)}
-                    className="flex-1 text-xs font-medium text-[#1D1D1F] bg-transparent outline-none cursor-pointer"
-                  >
-                    {modalType === "income" ? (
-                      <>
-                        <option value="Salário / Extra">Salário / Renda Principal</option>
-                        <option value="13º / Bônus">13º / Bônus / PLR</option>
-                        <option value="Freelance / Extra">Freelance / Extra</option>
-                        <option value="Rendimentos">Rendimentos de Investimento</option>
-                        <option value="Reembolso">Reembolso / Outros</option>
-                      </>
-                    ) : (
-                      <>
-                        <option value="Moradia & Contas">Moradia & Contas Fixas</option>
-                        <option value="Assinaturas & Lazer">Assinaturas & Lazer</option>
-                        <option value="Alimentação">Alimentação & Supermercado</option>
-                        <option value="Transporte">Transporte & Mobilidade</option>
-                        <option value="Saúde & Bem-estar">Saúde & Bem-estar</option>
-                        <option value="Educação">Educação</option>
-                        <option value="Outros">Outros Compromissos</option>
-                      </>
-                    )}
-                  </select>
+                    onChange={setNewCategory}
+                    variant="plain"
+                    className="flex-1 min-w-0"
+                    ariaLabel="Categoria"
+                    options={modalType === "income" ? PLANNING_INCOME_CATEGORIES : PLANNING_EXPENSE_CATEGORIES}
+                  />
                 </div>
                 </div>
               </div>
@@ -2744,17 +2711,14 @@ export default function PlanningPage() {
                   <span className="w-24 text-[11px] font-semibold text-[#86868B] uppercase tracking-wider">
                     {editType === "income" ? "DESTINO" : "FORMA"}
                   </span>
-                  <select
+                  <PopUpButton
                     value={editAccount}
-                    onChange={(e) => setEditAccount(e.target.value)}
-                    className="flex-1 text-xs font-medium text-[#1D1D1F] bg-transparent outline-none cursor-pointer"
-                  >
-                    {accountOptions.map((acc) => (
-                      <option key={acc} value={acc}>
-                        {formatAccountLabel(acc)}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setEditAccount}
+                    variant="plain"
+                    className="flex-1 min-w-0"
+                    ariaLabel={editType === "income" ? "Conta de destino" : "Forma de pagamento"}
+                    options={accountOptions.map((acc) => ({ value: acc, label: formatAccountLabel(acc) }))}
+                  />
                 </div>
 
                 {/* LINHA: CATEGORIA */}
@@ -2762,31 +2726,14 @@ export default function PlanningPage() {
                   <span className="w-24 text-[11px] font-semibold text-[#86868B] uppercase tracking-wider">
                     CATEGORIA
                   </span>
-                  <select
+                  <PopUpButton
                     value={editCategory}
-                    onChange={(e) => setEditCategory(e.target.value)}
-                    className="flex-1 text-xs font-medium text-[#1D1D1F] bg-transparent outline-none cursor-pointer"
-                  >
-                    {editType === "income" ? (
-                      <>
-                        <option value="Salário / Extra">Salário / Renda Principal</option>
-                        <option value="13º / Bônus">13º / Bônus / PLR</option>
-                        <option value="Freelance / Extra">Freelance / Extra</option>
-                        <option value="Rendimentos">Rendimentos de Investimento</option>
-                        <option value="Reembolso">Reembolso / Outros</option>
-                      </>
-                    ) : (
-                      <>
-                        <option value="Moradia & Contas">Moradia & Contas Fixas</option>
-                        <option value="Assinaturas & Lazer">Assinaturas & Lazer</option>
-                        <option value="Alimentação">Alimentação & Supermercado</option>
-                        <option value="Transporte">Transporte & Mobilidade</option>
-                        <option value="Saúde & Bem-estar">Saúde & Bem-estar</option>
-                        <option value="Educação">Educação</option>
-                        <option value="Outros">Outros Compromissos</option>
-                      </>
-                    )}
-                  </select>
+                    onChange={setEditCategory}
+                    variant="plain"
+                    className="flex-1 min-w-0"
+                    ariaLabel="Categoria"
+                    options={editType === "income" ? PLANNING_INCOME_CATEGORIES : PLANNING_EXPENSE_CATEGORIES}
+                  />
                 </div>
                 </div>
               </div>
@@ -2868,7 +2815,7 @@ export default function PlanningPage() {
               try {
                 await deleteRecurringItem(itemToDelete.id);
               } catch (error) {
-                alert(error instanceof Error ? error.message : "Não foi possível excluir o planejamento.");
+                notify.error(error instanceof Error ? error.message : "Não foi possível excluir o planejamento.");
               } finally {
                 setItemToDelete(null);
               }
@@ -2917,7 +2864,7 @@ export default function PlanningPage() {
               try {
                 await deleteTransaction(txToDelete.id);
               } catch (error) {
-                alert(error instanceof Error ? error.message : "Não foi possível excluir o lançamento.");
+                notify.error(error instanceof Error ? error.message : "Não foi possível excluir o lançamento.");
               } finally {
                 setTxToDelete(null);
               }

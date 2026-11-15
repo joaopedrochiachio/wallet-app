@@ -42,6 +42,7 @@ import {
   calculateDailySafeSpend,
   getBestCardToSpendToday,
 } from "@/lib/services/dailyCompanionService";
+import { MacSegmentedControl } from "@/components/ui/macos/SegmentedControl";
 
 export default function DashboardPage() {
   useCalendarDay();
@@ -271,30 +272,16 @@ export default function DashboardPage() {
             </div>
 
             {/* Alternador Pilha 3D vs Grade */}
-            <div className="flex items-center gap-1 bg-[#E5E5EA]/80 p-1 rounded-full text-[11px] font-semibold border border-black/5">
-              <button
-                type="button"
-                onClick={() => setIs3DStackView(true)}
-                className={`px-3.5 py-1 rounded-full transition-all cursor-pointer ${
-                  is3DStackView
-                    ? "bg-white text-[#1D1D1F] shadow-xs"
-                    : "text-[#86868B] hover:text-[#1D1D1F]"
-                }`}
-              >
-                Pilha 3D
-              </button>
-              <button
-                type="button"
-                onClick={() => setIs3DStackView(false)}
-                className={`px-3.5 py-1 rounded-full transition-all cursor-pointer ${
-                  !is3DStackView
-                    ? "bg-white text-[#1D1D1F] shadow-xs"
-                    : "text-[#86868B] hover:text-[#1D1D1F]"
-                }`}
-              >
-                Grade
-              </button>
-            </div>
+            <MacSegmentedControl
+              ariaLabel="Visualização dos cartões"
+              size="small"
+              value={is3DStackView ? "stack" : "grid"}
+              onChange={(value) => setIs3DStackView(value === "stack")}
+              options={[
+                { value: "stack", label: "Pilha 3D" },
+                { value: "grid", label: "Grade" },
+              ]}
+            />
           </div>
 
           {!isDataLoaded ? (

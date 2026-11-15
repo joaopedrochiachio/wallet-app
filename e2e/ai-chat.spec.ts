@@ -41,6 +41,7 @@ test.beforeAll(async () => {
       export const loadDismissedPatterns = () => [];
       export const dismissPattern = () => [];
     `,
+    "next-link.tsx": `import React from "react"; export default function Link({children,href,...props}) { return <a href={href} {...props}>{children}</a>; }`,
     "entry.tsx": `
       import React from "react";
       import {createRoot} from "react-dom/client";
@@ -56,6 +57,7 @@ test.beforeAll(async () => {
     "context/WalletContext": "wallet.ts", "context/AuthContext": "auth.ts", "lib/firebase": "firebase.ts",
     "lib/services/aiChatService": "chats.ts", "lib/services/agentManagerService": "agent.ts",
   })) aliases[`@/${source}$`] = path.join(fixtureDir, target);
+  aliases["next/link$"] = path.join(fixtureDir, "next-link.tsx");
   aliases["@"] = root;
   await new Promise<void>((resolve, reject) => {
     const compiler = webpack({

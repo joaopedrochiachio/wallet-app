@@ -30,6 +30,7 @@ import {
   summarizeFinancialCalendar,
   type FinancialCalendarBillItem,
 } from "@/lib/services/financialCalendarService";
+import { MacButton, MacToolbarButton, MacToolbarGroup } from "@/components/ui/macos/Button";
 
 interface SpendingCalendarHeatmapProps {
   recurringItems: RecurringItem[];
@@ -178,25 +179,11 @@ export function SpendingCalendarHeatmap({
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto">
-          <button
-            type="button"
-            onClick={handleToday}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
-              isCurrentMonth
-                ? "bg-[#1D1D1F] text-white border-black"
-                : "bg-white hover:bg-[#F2F2F7] text-[#1D1D1F] border-black/10"
-            }`}
-          >
-            Hoje
-          </button>
-          <div className="flex items-center bg-[#F2F2F7] rounded-xl p-0.5 border border-black/[0.05]">
-            <button type="button" onClick={() => moveMonth(-1)} className="p-1.5 rounded-lg hover:bg-white" aria-label="Mês anterior">
-              <ChevronLeft size={16} />
-            </button>
-            <button type="button" onClick={() => moveMonth(1)} className="p-1.5 rounded-lg hover:bg-white" aria-label="Próximo mês">
-              <ChevronRight size={16} />
-            </button>
-          </div>
+          <MacToolbarGroup>
+            <MacToolbarButton onClick={() => moveMonth(-1)} aria-label="Mês anterior" icon={<ChevronLeft size={16} />} />
+            <MacToolbarButton onClick={handleToday} aria-pressed={isCurrentMonth} label="Hoje" />
+            <MacToolbarButton onClick={() => moveMonth(1)} aria-label="Próximo mês" icon={<ChevronRight size={16} />} />
+          </MacToolbarGroup>
         </div>
       </header>
 
@@ -233,9 +220,9 @@ export function SpendingCalendarHeatmap({
                 aria-label={`Abrir ${day} de ${MONTH_NAMES_PT[targetMonth]}`}
                 className={`min-h-[64px] sm:min-h-[88px] rounded-xl sm:rounded-2xl p-1.5 sm:p-2 text-left flex flex-col transition-all active:scale-95 border overflow-hidden ${
                   isSelected
-                    ? "bg-[#1D1D1F] text-white border-black shadow-md ring-2 ring-black/10"
+                    ? "bg-mac-blue text-white border-transparent shadow-md"
                     : isToday
-                      ? "bg-blue-50 text-blue-950 border-blue-300"
+                      ? "bg-mac-blue/10 text-mac-blue border-mac-blue/40"
                       : data.hasUrgentBill
                         ? "bg-amber-50/70 text-[#1D1D1F] border-amber-200"
                         : "bg-white hover:bg-[#F2F2F7] text-[#1D1D1F] border-black/[0.05]"
@@ -289,9 +276,12 @@ export function SpendingCalendarHeatmap({
           <button
             type="button"
             onClick={() => onDiscussWithAI(`Analise meu dia ${selectedDay} de ${MONTH_NAMES_PT[targetMonth]}. Realizado: entrou R$ ${formatCurrency(selectedDayData.realizedIncome)} e saiu R$ ${formatCurrency(selectedDayData.realizedExpense)}. Previsto: entra R$ ${formatCurrency(selectedDayData.plannedIncome)} e sai R$ ${formatCurrency(selectedDayData.plannedExpense)}. Como isso afeta minha meta de R$ ${formatCurrency(targetEndMonthBalance)}?`)}
-            className="px-3 py-1.5 rounded-full bg-white hover:bg-[#F2F2F7] active:scale-95 text-xs font-semibold text-[#1D1D1F] border border-black/[0.08] flex items-center gap-1.5 cursor-pointer transition-all self-start"
+            className="mac-button self-start"
+            data-variant="tinted"
+            data-shape="capsule"
+            data-size="large"
           >
-            <MessageSquare size={13} className="text-blue-600" />
+            <MessageSquare size={13} />
             Perguntar ao assistente
           </button>
         </div>
@@ -345,9 +335,9 @@ export function SpendingCalendarHeatmap({
                       <strong className="font-mono font-bold text-[#1D1D1F]">R$ {formatCurrency(bill.amount)}</strong>
                       {bill.status === "pending" && bill.sourceItem && onRealizeItem && (
                         <div className="flex items-center gap-1">
-                          <button type="button" onClick={() => handleRealize(bill)} disabled={actionLoadingId === bill.id} className="px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-[10px] transition-all cursor-pointer disabled:opacity-50">
+                          <MacButton variant="tinted" size="small" onClick={() => handleRealize(bill)} disabled={actionLoadingId === bill.id}>
                             {actionLoadingId === bill.id ? "Salvando..." : bill.type === "income" ? "Receber" : "Baixar"}
-                          </button>
+                          </MacButton>
                         </div>
                       )}
                       {bill.status === "paid" && (

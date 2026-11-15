@@ -23,6 +23,8 @@ import {
   type OfficeAnalysis,
 } from "@/lib/services/agentOfficeService";
 import type { WalletCharacterId } from "@/components/companion/WalletCharacters";
+import { MacButton } from "@/components/ui/macos/Button";
+import { MacSegmentedControl } from "@/components/ui/macos/SegmentedControl";
 
 type OfficeAgentId = WalletCharacterId;
 
@@ -742,14 +744,14 @@ function ExecutiveMeetingBanner({
             </h3>
           </div>
         </div>
-        <button
-          type="button"
+        <MacButton
+          variant="glass"
+          iconOnly
+          size="large"
           onClick={onClose}
-          className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/10 text-white/70 transition-colors hover:bg-white/20 hover:text-white"
           aria-label="Fechar resumo executivo"
-        >
-          <X size={15} />
-        </button>
+          icon={<X size={15} />}
+        />
       </div>
 
       <div className="mt-4 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
@@ -1091,25 +1093,17 @@ function AgentWorkbench({
   return (
     <div className="bg-white p-4 sm:p-6">
       {/* Seletor rápido de mesas */}
-      <div className="mb-5 flex gap-2 overflow-x-auto pb-1 no-scrollbar">
-        {AGENTS.map((item) => (
-          <button
-            type="button"
-            key={item.id}
-            onClick={() => onSelectAgent(item.id)}
-            className={`flex shrink-0 items-center gap-2 rounded-full border px-3.5 py-2 text-xs font-semibold transition-all ${
-              agent.id === item.id
-                ? "border-[#1D1D1F] bg-[#1D1D1F] text-white shadow-sm"
-                : "border-black/[0.08] bg-white text-[#6E6E73] hover:bg-[#F5F5F7]"
-            }`}
-          >
-            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />
-            {item.name}
-            <span className={`hidden text-[11px] sm:inline ${agent.id === item.id ? "text-white/70" : "text-[#86868B]"}`}>
-              · {item.area}
-            </span>
-          </button>
-        ))}
+      <div className="mb-5 overflow-x-auto pb-1 no-scrollbar">
+        <MacSegmentedControl
+          ariaLabel="Mesas dos agentes"
+          value={agent.id}
+          onChange={onSelectAgent}
+          options={AGENTS.map((item) => ({
+            value: item.id,
+            label: item.name,
+            icon: <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: item.color }} aria-hidden />,
+          }))}
+        />
       </div>
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -1130,14 +1124,16 @@ function AgentWorkbench({
             <p className="mt-0.5 text-xs text-[#6E6E73]">{workbench.description}</p>
           </div>
         </div>
-        <button
-          type="button"
+        <MacButton
+          variant="prominent"
+          shape="capsule"
+          size="large"
+          className="shrink-0"
           onClick={onDiscuss}
-          className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-[#1D1D1F] px-4 text-xs font-bold text-white transition-transform active:scale-95"
+          icon={<MessageCircle size={14} />}
         >
-          <MessageCircle size={14} />
           Conversar com a IA
-        </button>
+        </MacButton>
       </div>
 
       {/* KPIs e Gráfico da Mesa */}

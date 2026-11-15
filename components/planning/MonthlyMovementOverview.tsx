@@ -5,7 +5,6 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   Building2,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CreditCard,
@@ -14,6 +13,7 @@ import {
 } from "lucide-react";
 import type { CardItem, TransactionItem } from "@/context/WalletContext";
 import { formatAccountLabel } from "@/lib/utils/ledger";
+import { PopUpButton } from "@/components/ui/macos/PopUpButton";
 
 type PaymentFilter = "all" | "balance" | "credit";
 type DirectionFilter = "all" | TransactionItem["type"];
@@ -257,27 +257,12 @@ export function MonthlyMovementOverview({
             </div>
 
             {/* Select Estilizado iOS com Chevron */}
-            <div className="relative">
-              <select
-                value={directionFilter}
-                onChange={(event) =>
-                  handleDirectionFilterChange(event.target.value as DirectionFilter)
-                }
-                className="h-8.5 appearance-none rounded-xl border border-black/[0.05] bg-[#F2F2F7]/60 pl-3.5 pr-8 text-xs font-medium text-[#1D1D1F] outline-none transition-all focus:bg-white focus:border-black/15 focus:ring-2 focus:ring-black/5 cursor-pointer"
-                aria-label="Filtrar entradas e saídas"
-              >
-                {directionOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown
-                size={13}
-                strokeWidth={2}
-                className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[#86868B]"
-              />
-            </div>
+            <PopUpButton
+              value={directionFilter}
+              onChange={handleDirectionFilterChange}
+              ariaLabel="Filtrar entradas e saídas"
+              options={directionOptions.map((option) => ({ value: option.id, label: option.label }))}
+            />
           </div>
         </div>
 

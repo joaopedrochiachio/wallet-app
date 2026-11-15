@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { ArrowDownRight, ArrowUpRight, CalendarRange, Rows3 } from "lucide-react";
+import { MacSegmentedControl } from "@/components/ui/macos/SegmentedControl";
 
 interface CashflowBarChartProps {
   currentMonthName: string;
@@ -52,10 +53,17 @@ export function CashflowBarChart({
             <p className="text-[11px] text-[#86868B]">Comparativo compacto entre o ciclo atual e o próximo.</p>
           </div>
         </div>
-        <div className="flex self-start rounded-xl bg-[#F2F2F7] p-1 sm:self-auto">
-          <ViewButton active={viewMode === "monthly"} onClick={() => setViewMode("monthly")}>Mensal</ViewButton>
-          <ViewButton active={viewMode === "fortnight"} onClick={() => setViewMode("fortnight")}>Quinzenas</ViewButton>
-        </div>
+        <MacSegmentedControl
+          ariaLabel="Período do fluxo de caixa"
+          size="small"
+          className="self-start sm:self-auto"
+          value={viewMode}
+          onChange={setViewMode}
+          options={[
+            { value: "monthly", label: "Mensal" },
+            { value: "fortnight", label: "Quinzenas" },
+          ]}
+        />
       </header>
 
       {viewMode === "monthly" ? (
@@ -123,6 +131,3 @@ function FortnightPanel({ label, income, bills }: { label: string; income: numbe
   );
 }
 
-function ViewButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return <button type="button" onClick={onClick} className={`rounded-lg px-3 py-1.5 text-[10px] font-semibold transition-all ${active ? "bg-white text-[#1D1D1F] shadow-sm" : "text-[#86868B] hover:text-[#1D1D1F]"}`}>{children}</button>;
-}

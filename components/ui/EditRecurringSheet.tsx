@@ -7,7 +7,8 @@ import {
   Repeat,
   Trash2,
   Save,
-  ChevronDown,
+  CreditCard,
+  Landmark,
 } from "lucide-react";
 import type { CardItem, RecurringItem } from "@/types";
 import { EXPENSE_CATEGORIES } from "@/lib/utils/categories";
@@ -21,6 +22,7 @@ import {
   validateInstallmentsCount,
 } from "@/lib/utils/security";
 import { formatAccountLabel } from "@/lib/utils/ledger";
+import { PopUpButton } from "@/components/ui/macos/PopUpButton";
 
 export interface EditRecurringSheetProps {
   isOpen: boolean;
@@ -273,55 +275,44 @@ function EditRecurringModalInner({
                 <label className="text-xs font-medium text-[#86868B]">
                   Cartão ou Conta
                 </label>
-                <div className="relative">
-                  <select
-                    value={account}
-                    onChange={(e) => setAccount(e.target.value)}
-                    className="w-full appearance-none px-3.5 py-2.5 bg-[#F2F2F7] focus:bg-white text-[#1D1D1F] rounded-xl border border-transparent focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 text-xs font-medium outline-none transition-all pr-8 cursor-pointer"
-                  >
-                    {cards
+                <PopUpButton
+                  value={account}
+                  onChange={setAccount}
+                  ariaLabel="Cartão ou Conta"
+                  fullWidth
+                  options={[
+                    { type: "header", label: "Cartões de crédito" },
+                    ...cards
                       .filter((c) => c.type === "credit")
-                      .map((c) => (
-                        <option key={c.id} value={c.name}>
-                          💳 {c.name} (Crédito)
-                        </option>
-                      ))}
-                    {accounts
+                      .map((c) => ({
+                        value: c.name,
+                        label: c.name,
+                        icon: <CreditCard size={13} strokeWidth={1.75} />,
+                      })),
+                    { type: "separator" },
+                    { type: "header", label: "Contas" },
+                    ...accounts
                       .filter((acc) => !cards.some((c) => c.type === "credit" && c.name === acc))
-                      .map((acc) => (
-                        <option key={acc} value={acc}>
-                          🏛️ {formatAccountLabel(acc)}
-                        </option>
-                      ))}
-                  </select>
-                  <ChevronDown
-                    size={14}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#86868B] pointer-events-none"
-                  />
-                </div>
+                      .map((acc) => ({
+                        value: acc,
+                        label: formatAccountLabel(acc),
+                        icon: <Landmark size={13} strokeWidth={1.75} />,
+                      })),
+                  ]}
+                />
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-[#86868B]">
                   Categoria
                 </label>
-                <div className="relative">
-                  <select
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    className="w-full appearance-none px-3.5 py-2.5 bg-[#F2F2F7] focus:bg-white text-[#1D1D1F] rounded-xl border border-transparent focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 text-xs font-medium outline-none transition-all pr-8 cursor-pointer"
-                  >
-                    {EXPENSE_CATEGORIES.map((cat) => (
-                      <option key={cat} value={cat}>
-                        {cat}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown
-                    size={14}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#86868B] pointer-events-none"
-                  />
-                </div>
+                <PopUpButton
+                  value={category}
+                  onChange={setCategory}
+                  ariaLabel="Categoria"
+                  fullWidth
+                  options={EXPENSE_CATEGORIES.map((cat) => ({ value: cat, label: cat }))}
+                />
               </div>
             </div>
 

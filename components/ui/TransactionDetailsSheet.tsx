@@ -4,7 +4,6 @@ import { useRef, useState } from "react";
 import Link from "next/link";
 import {
   Building2,
-  ChevronDown,
   CreditCard,
   Pencil,
   Save,
@@ -17,6 +16,7 @@ import { formatAccountLabel, matchesLedgerCard } from "@/lib/utils/ledger";
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, normalizeCategory } from "@/lib/utils/categories";
 import { Portal } from "./Portal";
 import { sanitizeTextInput, validateCurrency } from "@/lib/utils/security";
+import { PopUpButton } from "@/components/ui/macos/PopUpButton";
 
 interface TransactionDetailsSheetProps {
   transaction: TransactionItem;
@@ -354,28 +354,14 @@ export function TransactionDetailsSheet({
               <span className="text-[11px] font-semibold uppercase tracking-wider text-[#86868B]">
                 Categoria
               </span>
-              <div className="relative">
-                <select
-                  value={category}
-                  onChange={(event) => setCategory(event.target.value)}
-                  disabled={!fieldsAreEditable}
-                  className="w-full appearance-none rounded-xl border border-black/[0.05] bg-[#F2F2F7]/60 pl-3.5 pr-8 py-2.5 text-xs font-medium text-[#1D1D1F] outline-none transition-all focus:bg-white focus:border-black/20 focus:ring-2 focus:ring-black/5 disabled:text-[#86868B] disabled:cursor-not-allowed cursor-pointer"
-                >
-                  {!categories.includes(category) && (
-                    <option value={category}>{category}</option>
-                  )}
-                  {categories.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown
-                  size={14}
-                  strokeWidth={2}
-                  className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#86868B]"
-                />
-              </div>
+              <PopUpButton
+                value={category}
+                onChange={setCategory}
+                disabled={!fieldsAreEditable}
+                ariaLabel="Categoria"
+                fullWidth
+                options={categories.map((option) => ({ value: option, label: option }))}
+              />
             </div>
 
             {error && (

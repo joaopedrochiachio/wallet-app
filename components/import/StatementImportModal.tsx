@@ -37,6 +37,7 @@ import {
   SlidersHorizontal,
   ShieldCheck,
 } from "lucide-react";
+import { PopUpButton } from "@/components/ui/macos/PopUpButton";
 
 export interface StatementImportModalProps {
   isOpen: boolean;
@@ -1152,24 +1153,19 @@ export function StatementImportModal({
                           </div>
 
                           <div className="flex items-center gap-2.5 self-end sm:self-center shrink-0">
-                            <select
+                            <PopUpButton
                               value={rec.category}
-                              onChange={(e) => {
-                                const val = e.target.value;
+                              ariaLabel={`Categoria de ${rec.title}`}
+                              className="max-w-[200px]"
+                              onChange={(val) =>
                                 setEditableRecurring((prev) =>
                                   prev.map((item, i) =>
                                     i === index ? { ...item, category: val } : item
                                   )
-                                );
-                              }}
-                              className="rounded-xl bg-[#F2F2F7] px-2.5 py-1.5 text-xs font-medium text-[#1D1D1F] outline-none"
-                            >
-                              {OFFICIAL_CATEGORIES.map((cat) => (
-                                <option key={cat} value={cat}>
-                                  {cat}
-                                </option>
-                              ))}
-                            </select>
+                                )
+                              }
+                              options={OFFICIAL_CATEGORIES.map((cat) => ({ value: cat, label: cat }))}
+                            />
 
                             <div className="flex items-center gap-1 bg-[#F2F2F7] rounded-xl px-2.5 py-1.5">
                               <span className="text-[10px] text-[#86868B]">Dia</span>
@@ -1353,24 +1349,19 @@ export function StatementImportModal({
                               <span>Fixa</span>
                             </button>
 
-                            <select
+                            <PopUpButton
                               value={tx.category}
-                              onChange={(e) => {
-                                const val = e.target.value;
+                              ariaLabel={`Categoria de ${tx.title}`}
+                              className="max-w-[200px]"
+                              onChange={(val) =>
                                 setEditableTransactions((prev) =>
                                   prev.map((item) =>
                                     item.id === tx.id ? { ...item, category: val } : item
                                   )
-                                );
-                              }}
-                              className="rounded-xl bg-[#F2F2F7] px-2.5 py-1.5 text-xs font-medium text-[#1D1D1F] outline-none"
-                            >
-                              {OFFICIAL_CATEGORIES.map((cat) => (
-                                <option key={cat} value={cat}>
-                                  {cat}
-                                </option>
-                              ))}
-                            </select>
+                                )
+                              }
+                              options={OFFICIAL_CATEGORIES.map((cat) => ({ value: cat, label: cat }))}
+                            />
 
                             <span
                               className={`text-xs sm:text-sm font-mono font-semibold tabular-nums min-w-[92px] text-right ${

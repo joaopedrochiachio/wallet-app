@@ -33,6 +33,7 @@ import {
   Lock,
   BookOpen,
 } from "lucide-react";
+import { MacSegmentedControl } from "@/components/ui/macos/SegmentedControl";
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -423,26 +424,17 @@ export default function ProfilePage() {
               <label className="text-xs font-semibold text-[#1D1D1F]">
                 Perfil de Risco & Alavancagem
               </label>
-              <div className="bg-[#E5E5EA]/80 p-1 rounded-xl grid grid-cols-3 gap-1 border border-black/5">
-                {[
-                  { id: "low" as RiskToleranceId, label: "Conservador" },
-                  { id: "moderate" as RiskToleranceId, label: "Equilibrado" },
-                  { id: "high" as RiskToleranceId, label: "Arrojado" },
-                ].map((r) => (
-                  <button
-                    key={r.id}
-                    type="button"
-                    onClick={() => handleSelectRisk(r.id)}
-                    className={`py-2 px-2 text-center rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                      userProfile.riskTolerance === r.id
-                        ? "bg-white text-[#1D1D1F] shadow-xs"
-                        : "text-[#86868B] hover:text-[#1D1D1F]"
-                    }`}
-                  >
-                    {r.label}
-                  </button>
-                ))}
-              </div>
+              <MacSegmentedControl
+                ariaLabel="Perfil de risco"
+                fullWidth
+                value={userProfile.riskTolerance}
+                onChange={(value) => handleSelectRisk(value)}
+                options={[
+                  { value: "low" as RiskToleranceId, label: "Conservador" },
+                  { value: "moderate" as RiskToleranceId, label: "Equilibrado" },
+                  { value: "high" as RiskToleranceId, label: "Arrojado" },
+                ]}
+              />
             </div>
           </section>
         </div>

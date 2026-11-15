@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 import type { TransactionItem } from "@/context/WalletContext";
 import type { FinancialDiagnosis, SpecificExpenseAlert } from "@/lib/services/financialDiagnosisService";
+import { MacButton, MacSpinner } from "@/components/ui/macos/Button";
+import { MacSegmentedControl } from "@/components/ui/macos/SegmentedControl";
 
 interface VisualPatternStorytellingProps {
   diagnosis: FinancialDiagnosis | null;
@@ -127,8 +129,8 @@ export function VisualPatternStorytelling({
               Priorizamos impacto real e escondemos o ruído. Abra somente o hábito que merece sua atenção agora.
             </p>
             <div className="mt-5 flex flex-wrap items-center gap-2">
-              <button type="button" onClick={() => onDiscussWithAI(`Niko, analise meu saldo projetado de R$ ${effectiveProjectedFree.toFixed(2)} contra a meta de R$ ${targetEndMonthBalance.toFixed(2)} e priorize três ações.`)} className="inline-flex items-center gap-1.5 rounded-full bg-[#1D1D1F] px-3.5 py-2 text-[10px] font-semibold text-white transition-transform active:scale-95"><MessageCircle size={12} /> Aprofundar com Niko</button>
-              {onOpenSimulator && <button type="button" onClick={() => onOpenSimulator()} className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-[10px] font-semibold text-[#6E6E73] transition-colors hover:bg-[#F2F2F7] hover:text-[#1D1D1F]"><Calculator size={12} /> Simular uma compra</button>}
+              <button type="button" onClick={() => onDiscussWithAI(`Niko, analise meu saldo projetado de R$ ${effectiveProjectedFree.toFixed(2)} contra a meta de R$ ${targetEndMonthBalance.toFixed(2)} e priorize três ações.`)} className="mac-button" data-variant="prominent" data-shape="capsule" data-size="large"><MessageCircle size={12} /> Aprofundar com Niko</button>
+              {onOpenSimulator && <button type="button" onClick={() => onOpenSimulator()} className="mac-button" data-variant="bordered" data-shape="capsule" data-size="large"><Calculator size={12} /> Simular uma compra</button>}
             </div>
           </div>
 
@@ -149,7 +151,7 @@ export function VisualPatternStorytelling({
               <span className="rounded-full bg-[#1D1D1F] px-2.5 py-1 text-[10px] font-semibold tabular-nums text-white">{simulatedCutPercent}%</span>
             </div>
             <div className="mt-5">
-              <input type="range" min={5} max={50} step={5} value={simulatedCutPercent} onChange={(event) => setSimulatedCutPercent(Number(event.target.value))} className="h-2 w-full cursor-pointer appearance-none rounded-full bg-[#E5E5EA] accent-[#1D1D1F]" aria-label="Percentual de corte nos ralos" />
+              <input type="range" min={5} max={50} step={5} value={simulatedCutPercent} onChange={(event) => setSimulatedCutPercent(Number(event.target.value))} className="mac-slider" style={{ "--mac-slider-fill": `${((simulatedCutPercent - 5) / 45) * 100}%` } as React.CSSProperties} aria-label="Percentual de corte nos ralos" />
               <div className="mt-2 flex justify-between text-[9px] text-[#AEAEB2]"><span>Ajuste leve · 5%</span><span>Recomendado · 20%</span><span>Intenso · 50%</span></div>
             </div>
           </div>
@@ -163,7 +165,7 @@ export function VisualPatternStorytelling({
               <span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-emerald-800">Tendência de folga mensal</span>
               <strong className="mt-1 block text-2xl font-semibold tracking-tight tabular-nums text-emerald-700">+R$ {formatCurrency(potentialSavings)}</strong>
               <p className="mt-1 text-[10px] text-emerald-900/75">Fechamento estimado em <span className="font-semibold tabular-nums">R$ {formatCurrency(newProjectedBalance)}</span>.</p>
-              <button type="button" onClick={() => onDiscussWithAI(`Niko, transforme um corte de ${simulatedCutPercent}% nos ralos, equivalente a R$ ${potentialSavings.toFixed(2)}, em um plano executável.`)} className="mt-4 inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-800 hover:text-emerald-950">Aplicar estratégia no chat <ArrowUpRight size={11} /></button>
+              <button type="button" onClick={() => onDiscussWithAI(`Niko, transforme um corte de ${simulatedCutPercent}% nos ralos, equivalente a R$ ${potentialSavings.toFixed(2)}, em um plano executável.`)} className="mac-button mt-4" data-variant="tinted" data-shape="capsule" data-size="small">Aplicar estratégia no chat <ArrowUpRight size={11} /></button>
             </div>
           </div>
         </div>
@@ -172,9 +174,15 @@ export function VisualPatternStorytelling({
       <section className="rounded-[30px] border border-black/[0.05] bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.03)] sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div><div className="flex items-center gap-2"><Flame size={17} className="text-rose-500" /><h3 className="text-base font-semibold tracking-tight text-slate-900">Hábitos invisíveis & ralos</h3></div><p className="mt-1 text-[11px] text-[#86868B]">Os três maiores impactos ficam em foco. O restante aparece sob demanda.</p></div>
-          <div className="flex flex-wrap items-center gap-1 rounded-[14px] bg-[#F2F2F7] p-1">
-            {([['all', 'Todos'], ['drains', 'Críticos'], ['recurring', 'Recorrentes'], ['habits', 'Rotina']] as Array<[Cluster, string]>).map(([value, label]) => <button key={value} type="button" onClick={() => setSelectedCluster(value)} className={`rounded-[10px] px-2.5 py-1.5 text-[10px] font-semibold transition-all ${selectedCluster === value ? "bg-white text-[#1D1D1F] shadow-sm" : "text-[#86868B] hover:text-[#1D1D1F]"}`}>{label}</button>)}
-            {onRefreshPatterns && <button type="button" onClick={onRefreshPatterns} disabled={isSearchingPatterns} title="Buscar novos padrões" className="rounded-[10px] p-1.5 text-[#86868B] hover:bg-white hover:text-[#1D1D1F] disabled:opacity-40"><RefreshCw size={12} className={isSearchingPatterns ? "animate-spin" : ""} /></button>}
+          <div className="flex flex-wrap items-center gap-2">
+            <MacSegmentedControl
+              ariaLabel="Filtrar padrões"
+              size="small"
+              value={selectedCluster}
+              onChange={setSelectedCluster}
+              options={([['all', 'Todos'], ['drains', 'Críticos'], ['recurring', 'Recorrentes'], ['habits', 'Rotina']] as Array<[Cluster, string]>).map(([value, label]) => ({ value, label }))}
+            />
+            {onRefreshPatterns && <MacButton variant="bordered" shape="capsule" iconOnly onClick={onRefreshPatterns} disabled={isSearchingPatterns} title="Buscar novos padrões" aria-label="Buscar novos padrões" icon={isSearchingPatterns ? <MacSpinner size={12} /> : <RefreshCw size={12} />} />}
           </div>
         </div>
 
@@ -185,12 +193,12 @@ export function VisualPatternStorytelling({
               const impact = Math.min(100, Math.round((alert.totalAmount / impactBase) * 100));
               return (
                 <article key={alert.item} className="group relative overflow-hidden rounded-[22px] border border-black/[0.05] bg-[#FAFAFA] p-4 transition-all hover:-translate-y-0.5 hover:bg-white hover:shadow-[0_10px_30px_rgba(0,0,0,0.06)]">
-                  <div className="flex items-center justify-between"><span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-[#86868B]">Impacto #{index + 1}</span>{onDismissPattern && <button type="button" onClick={() => onDismissPattern(alert.item)} title="Descartar alerta" className="rounded-full p-1 text-[#C7C7CC] opacity-0 transition-all hover:bg-rose-50 hover:text-rose-600 group-hover:opacity-100"><X size={12} /></button>}</div>
+                  <div className="flex items-center justify-between"><span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-[#86868B]">Impacto #{index + 1}</span>{onDismissPattern && <button type="button" onClick={() => onDismissPattern(alert.item)} title="Descartar alerta" aria-label="Descartar alerta" className="mac-button !text-mac-label-3 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:!text-mac-red [@media(pointer:coarse)]:opacity-100" data-variant="borderless" data-shape="capsule" data-size="small" data-icon-only=""><X size={12} /></button>}</div>
                   <h4 className="mt-3 line-clamp-2 min-h-10 text-sm font-semibold leading-snug tracking-tight text-slate-900">{alert.item}</h4>
                   <strong className="mt-2 block text-xl font-semibold tracking-tight tabular-nums text-rose-600">R$ {formatCurrency(alert.totalAmount)}</strong>
                   <div className="mt-3 flex flex-wrap gap-1.5">{getTransactionTags(alert).map((tag) => <span key={tag} className="max-w-full truncate rounded-full border border-black/[0.05] bg-white px-2 py-1 text-[9px] font-medium text-[#6E6E73]">{tag}</span>)}</div>
                   <div className="mt-4"><div className="mb-1.5 flex justify-between text-[9px] text-[#86868B]"><span>Impacto na margem</span><span className="font-semibold tabular-nums text-slate-900">{impact}%</span></div><div className="h-1.5 overflow-hidden rounded-full bg-black/[0.05]"><div className="h-full rounded-full bg-rose-500" style={{ width: `${impact}%` }} /></div></div>
-                  <button type="button" onClick={() => discussPattern(alert)} className="mt-4 inline-flex items-center gap-1 text-[10px] font-semibold text-blue-600 transition-colors hover:text-blue-800"><MessageCircle size={11} /> Discutir com consultor <ArrowUpRight size={10} /></button>
+                  <button type="button" onClick={() => discussPattern(alert)} className="mac-button mt-4" data-variant="tinted" data-shape="capsule" data-size="small"><MessageCircle size={11} /> Discutir com consultor</button>
                 </article>
               );
             })}
@@ -205,7 +213,7 @@ export function VisualPatternStorytelling({
                 const expanded = expandedItem === alert.item;
                 return (
                   <div key={alert.item}>
-                    <button type="button" onClick={() => setExpandedItem(expanded ? null : alert.item)} className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-[#FAFAFA]">
+                    <button type="button" onClick={() => setExpandedItem(expanded ? null : alert.item)} data-interactive="true" className="mac-row flex w-full items-center gap-3 px-4 py-3 text-left outline-none">
                       <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" /><span className="min-w-0 flex-1"><strong className="block truncate text-[11px] font-medium text-slate-900">{alert.item}</strong><span className="text-[9px] text-[#86868B]">{alert.habitCategory || "Despesa"} · {alert.count || 1} ocorrências</span></span><strong className="text-[11px] font-semibold tabular-nums text-slate-900">R$ {formatCurrency(alert.totalAmount)}</strong><ChevronDown size={13} className={`text-[#86868B] transition-transform ${expanded ? "rotate-180" : ""}`} />
                     </button>
                     {expanded && <div className="animate-in slide-in-from-top-1 border-t border-black/[0.04] bg-[#FAFAFA] px-4 py-3"><div className="flex flex-wrap gap-1.5">{getTransactionTags(alert).map((tag) => <span key={tag} className="rounded-full bg-white px-2 py-1 text-[9px] text-[#6E6E73] shadow-sm">{tag}</span>)}</div><p className="mt-2 text-[10px] leading-relaxed text-[#6E6E73]">{alert.message}</p><div className="mt-3 flex items-center justify-between"><button type="button" onClick={() => discussPattern(alert)} className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-600"><MessageCircle size={11} /> Discutir com consultor</button>{onDismissPattern && <button type="button" onClick={() => onDismissPattern(alert.item)} className="text-[9px] font-medium text-[#86868B] hover:text-rose-600">Descartar sinal</button>}</div></div>}

@@ -8,6 +8,7 @@ import { EXPENSE_CATEGORIES, normalizeCategory } from "@/lib/utils/categories";
 import { getCategoryBudgetProgress } from "@/lib/utils/categoryBudgets";
 import { validateCurrency } from "@/lib/utils/security";
 import type { CategoryBudget } from "@/types";
+import { PopUpButton } from "@/components/ui/macos/PopUpButton";
 
 const money = (value: number) => value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -68,9 +69,7 @@ export function CategoryBudgets() {
         }}>
           <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_7rem]">
             <label className="min-w-0 space-y-1 text-xs font-medium text-[#6E6E73]">Categoria
-              <select aria-label="Categoria do orçamento" value={category} onChange={(event) => setCategory(event.target.value)} disabled={isSaving} className="block w-full min-w-0 rounded-xl border border-black/10 bg-white px-3 py-2.5 text-sm text-[#1D1D1F]">
-                {categories.map((name) => <option key={name} value={name} disabled={budgets.some((budget) => normalizeCategory(budget.category) === name && budget.id !== editingId)}>{name}</option>)}
-              </select>
+              <PopUpButton ariaLabel="Categoria do orçamento" value={category} onChange={setCategory} disabled={isSaving} fullWidth options={categories.map((name) => ({ value: name, label: name, disabled: budgets.some((budget) => normalizeCategory(budget.category) === name && budget.id !== editingId) }))} />
             </label>
             <label className="min-w-0 space-y-1 text-xs font-medium text-[#6E6E73]">Limite mensal (R$)
               <input aria-label="Limite mensal em reais" inputMode="decimal" value={amount} required disabled={isSaving} onChange={(event) => setAmount(event.target.value)} placeholder="Ex: 500,00" className="block w-full min-w-0 rounded-xl border border-black/10 bg-white px-3 py-2.5 text-sm text-[#1D1D1F]" />

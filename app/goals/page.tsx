@@ -24,6 +24,7 @@ import {
 import { GoalItem } from "@/types";
 import { AppleConfirmModal } from "@/components/ui/AppleConfirmModal";
 import { sanitizeTextInput, validateCurrency } from "@/lib/utils/security";
+import { MacSegmentedControl } from "@/components/ui/macos/SegmentedControl";
 
 export default function GoalsPage() {
   const {
@@ -947,42 +948,19 @@ export default function GoalsPage() {
             </div>
 
             {/* Alternador de Abas: Guardar Dinheiro (Aporte) vs Resgatar (Retirada) */}
-            <div className="grid grid-cols-2 gap-1 bg-[#F2F2F7] p-1 rounded-xl">
-              <button
-                type="button"
-                onClick={() => {
-                  setMovementTab("contribute");
-                  setMovementAmount("");
-                }}
-                className={`py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                  movementTab === "contribute"
-                    ? "bg-white text-[#1D1D1F] shadow-2xs"
-                    : "text-[#86868B] hover:text-[#1D1D1F]"
-                }`}
-              >
-                <Plus size={14} strokeWidth={2.5} />
-                <span>Guardar Dinheiro</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setMovementTab("withdraw");
-                  setMovementAmount("");
-                }}
-                disabled={activeMovementGoal.current <= 0}
-                className={`py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                  movementTab === "withdraw"
-                    ? "bg-white text-[#1D1D1F] shadow-2xs"
-                    : activeMovementGoal.current <= 0
-                    ? "opacity-40 cursor-not-allowed text-[#86868B]"
-                    : "text-[#86868B] hover:text-[#1D1D1F]"
-                }`}
-              >
-                <ArrowDownLeft size={14} strokeWidth={2.5} />
-                <span>Resgatar Valor</span>
-              </button>
-            </div>
+            <MacSegmentedControl
+              ariaLabel="Tipo de movimentação"
+              fullWidth
+              value={movementTab}
+              onChange={(value) => {
+                setMovementTab(value);
+                setMovementAmount("");
+              }}
+              options={[
+                { value: "contribute", label: "Guardar Dinheiro", icon: <Plus size={14} strokeWidth={2.5} /> },
+                { value: "withdraw", label: "Resgatar Valor", icon: <ArrowDownLeft size={14} strokeWidth={2.5} />, disabled: activeMovementGoal.current <= 0 },
+              ]}
+            />
 
             {/* ABA 1: GUARDAR DINHEIRO (APORTE) */}
             {movementTab === "contribute" && (

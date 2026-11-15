@@ -2,7 +2,6 @@
 
 import React, { useMemo } from "react";
 import {
-  ArrowUpRight,
   Cake,
   Car,
   ChevronRight,
@@ -20,6 +19,7 @@ import {
 } from "lucide-react";
 import type { TransactionItem } from "@/context/WalletContext";
 import type { SpecificExpenseAlert } from "@/lib/services/financialDiagnosisService";
+import { MacButton } from "@/components/ui/macos/Button";
 
 export interface CategoryDistribution {
   category: string;
@@ -129,7 +129,7 @@ export function CategorySpectrumBar({
         <div className="flex items-center gap-2">
           <span className="rounded-full bg-[#F2F2F7] px-3 py-1 text-[10px] font-semibold tabular-nums text-[#6E6E73]">Total {formatCurrency(total)}</span>
           {selectedCategory && (
-            <button type="button" onClick={() => onSelectCategory(null)} className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold text-[#6E6E73] transition-colors hover:bg-[#F2F2F7] hover:text-[#1D1D1F]"><X size={11} /> Limpar</button>
+            <MacButton variant="bordered" size="small" shape="capsule" onClick={() => onSelectCategory(null)} icon={<X size={11} />}>Limpar</MacButton>
           )}
         </div>
       </header>
@@ -151,7 +151,7 @@ export function CategorySpectrumBar({
               const share = (category.total / total) * 100;
               const selected = activeCategoryName === category.category;
               return (
-                <button key={category.category} type="button" onClick={() => onSelectCategory(category.category)} className={`group w-full rounded-[16px] px-3 py-2.5 text-left transition-all ${selected ? "bg-[#F2F2F7]" : "hover:bg-[#FAFAFA]"}`}>
+                <button key={category.category} type="button" onClick={() => onSelectCategory(category.category)} data-interactive="true" data-selected={selected} className="mac-row group w-full px-3 py-2.5 text-left outline-none">
                   <span className="flex items-center gap-2.5">
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[11px] text-white shadow-sm" style={{ backgroundColor: category.color }}><CategoryIcon name={category.category} /></span>
                     <span className="min-w-0 flex-1">
@@ -212,7 +212,7 @@ export function CategorySpectrumBar({
           <div className="mt-4 flex items-center justify-between border-t border-black/[0.05] pt-3">
             <span className="text-[10px] text-[#86868B]">Análise contextual, sem trocar de tela.</span>
             {onDiscussWithAI && (
-              <button type="button" onClick={() => onDiscussWithAI(`Niko, aprofunde os gastos de ${activeCategory.category}, que somam ${formatCurrency(activeCategory.total)} (${activeShare.toFixed(1)}% do total), e indique as melhores ações.`)} className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-blue-600 transition-colors hover:text-blue-800"><MessageCircle size={12} /> Discutir com Niko <ArrowUpRight size={11} /></button>
+              <MacButton variant="tinted" size="small" shape="capsule" onClick={() => onDiscussWithAI(`Niko, aprofunde os gastos de ${activeCategory.category}, que somam ${formatCurrency(activeCategory.total)} (${activeShare.toFixed(1)}% do total), e indique as melhores ações.`)} icon={<MessageCircle size={12} />}>Discutir com Niko</MacButton>
             )}
           </div>
         </div>

@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { useAuth } from "@/context/AuthContext";
+import { useNotify } from "@/components/ui/macos/Notifications";
 import {
   saveUserProfile,
   checkIsUserOnboarded,
@@ -29,6 +30,7 @@ import {
 } from "lucide-react";
 
 export default function OnboardingPage() {
+  const notify = useNotify();
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
 
@@ -376,7 +378,7 @@ export default function OnboardingPage() {
               type="button"
               onClick={() => {
                 if (!name.trim()) {
-                  alert("Por favor, digite seu nome.");
+                  notify.warning("Por favor, digite seu nome.");
                   return;
                 }
                 setStep(2);

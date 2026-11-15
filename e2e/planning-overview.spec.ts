@@ -20,7 +20,8 @@ test("planejamento mantém resumo visível enquanto os filtros mudam", async ({ 
 
   await movementOverview
     .getByRole("combobox", { name: "Filtrar entradas e saídas" })
-    .selectOption("despesa");
+    .click();
+  await page.getByRole("option", { name: "Só saídas", exact: true }).click();
   await movementOverview.getByPlaceholder("Buscar lançamento...").fill("spotify");
 
   await expect(

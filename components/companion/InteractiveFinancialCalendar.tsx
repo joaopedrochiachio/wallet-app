@@ -24,6 +24,7 @@ import {
   ShieldCheck,
   Filter,
 } from "lucide-react";
+import { MacToolbarButton, MacToolbarGroup } from "@/components/ui/macos/Button";
 
 export function InteractiveFinancialCalendar() {
   const {
@@ -251,31 +252,11 @@ export function InteractiveFinancialCalendar() {
 
         {/* Controles de Navegação */}
         <div className="flex items-center gap-2 self-start sm:self-auto">
-          <button
-            type="button"
-            onClick={handleCurrentMonth}
-            className="px-3 py-1.5 rounded-full bg-[#F2F2F7] hover:bg-[#E5E5EA] text-[#1D1D1F] text-xs font-semibold transition-colors cursor-pointer"
-          >
-            Mês Atual
-          </button>
-          <div className="flex items-center gap-1 bg-[#F2F2F7] p-1 rounded-full border border-black/5">
-            <button
-              type="button"
-              onClick={handlePrevMonth}
-              className="w-7 h-7 rounded-full bg-white hover:bg-[#E5E5EA] text-[#1D1D1F] flex items-center justify-center transition-colors cursor-pointer shadow-2xs"
-              title="Mês anterior"
-            >
-              <ChevronLeft size={15} />
-            </button>
-            <button
-              type="button"
-              onClick={handleNextMonth}
-              className="w-7 h-7 rounded-full bg-white hover:bg-[#E5E5EA] text-[#1D1D1F] flex items-center justify-center transition-colors cursor-pointer shadow-2xs"
-              title="Próximo mês"
-            >
-              <ChevronRight size={15} />
-            </button>
-          </div>
+          <MacToolbarGroup>
+            <MacToolbarButton onClick={handlePrevMonth} title="Mês anterior" aria-label="Mês anterior" icon={<ChevronLeft size={15} />} />
+            <MacToolbarButton onClick={handleCurrentMonth} label="Mês Atual" />
+            <MacToolbarButton onClick={handleNextMonth} title="Próximo mês" aria-label="Próximo mês" icon={<ChevronRight size={15} />} />
+          </MacToolbarGroup>
         </div>
       </div>
 
@@ -355,9 +336,9 @@ export function InteractiveFinancialCalendar() {
                 onClick={() => setSelectedDay(day)}
                 className={`h-13 sm:h-20 p-1 sm:p-2 rounded-xl sm:rounded-2xl flex flex-col justify-between transition-all select-none cursor-pointer border text-left ${
                   isSelected
-                    ? "bg-[#1D1D1F] text-white shadow-md border-black scale-[1.02] z-10"
+                    ? "bg-mac-blue text-white shadow-md border-transparent z-10"
                     : isToday
-                    ? "bg-amber-500/10 border-amber-400/40 text-[#1D1D1F] hover:bg-amber-500/20"
+                    ? "bg-mac-blue/10 border-mac-blue/40 text-mac-blue hover:bg-mac-blue/15"
                     : "bg-[#FAFAFC] hover:bg-[#F2F2F7] border-black/[0.04] text-[#1D1D1F]"
                 }`}
               >
@@ -506,11 +487,9 @@ export function InteractiveFinancialCalendar() {
                       type="button"
                       disabled={actionLoadingId === event.recurringItemId}
                       onClick={() => handleToggleRealize(event.recurringItemId!, event.isRealized)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer min-h-[36px] ${
-                        event.isRealized
-                          ? "bg-[#F2F2F7] hover:bg-[#E5E5EA] text-[#86868B] hover:text-[#1D1D1F]"
-                          : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs active:scale-95"
-                      }`}
+                      className="mac-button"
+                      data-variant={event.isRealized ? "bordered" : "prominent"}
+                      data-size="large"
                     >
                       {actionLoadingId === event.recurringItemId ? (
                         <span>Processando...</span>

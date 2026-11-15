@@ -3,6 +3,125 @@
 @theme {
   --font-sans: var(--font-sf-pro), -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif;
   --font-mono: var(--font-sf-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+  /* macOS 27 — cores expostas como utilitários Tailwind (bg-mac-blue, text-mac-label-2…) */
+  --color-mac-label: var(--mac-label-primary);
+  --color-mac-label-2: var(--mac-label-secondary);
+  --color-mac-label-3: var(--mac-label-tertiary);
+  --color-mac-label-4: var(--mac-label-quaternary);
+  --color-mac-fill: var(--mac-fill-primary);
+  --color-mac-fill-2: var(--mac-fill-secondary);
+  --color-mac-fill-3: var(--mac-fill-tertiary);
+  --color-mac-separator: var(--mac-separator);
+  --color-mac-window: var(--mac-window-bg);
+  --color-mac-selection: var(--mac-selection);
+  --color-mac-red: var(--mac-red);
+  --color-mac-orange: var(--mac-orange);
+  --color-mac-yellow: var(--mac-yellow);
+  --color-mac-green: var(--mac-green);
+  --color-mac-mint: var(--mac-mint);
+  --color-mac-teal: var(--mac-teal);
+  --color-mac-cyan: var(--mac-cyan);
+  --color-mac-blue: var(--mac-blue);
+  --color-mac-indigo: var(--mac-indigo);
+  --color-mac-purple: var(--mac-purple);
+  --color-mac-pink: var(--mac-pink);
+  --color-mac-brown: var(--mac-brown);
+  --color-mac-gray: var(--mac-gray);
+}
+
+/*
+ * macOS 27 Design Tokens — extraídos do kit "macOS 27 (Community)" no Figma
+ * (páginas Colors, Menus, Alerts, Notifications, Lists and Tables, Pop-up Buttons).
+ * Modo claro é o padrão; o escuro fica pronto em .theme-dark para quando o app ganhar dark mode.
+ */
+:root {
+  /* Labels (texto) */
+  --mac-label-primary: rgba(0, 0, 0, 0.85);
+  --mac-label-secondary: rgba(0, 0, 0, 0.5);
+  --mac-label-tertiary: rgba(0, 0, 0, 0.25);
+  --mac-label-quaternary: rgba(0, 0, 0, 0.1);
+  /* Labels "vibrant" (sobre materiais de vidro) */
+  --mac-vibrant-label-primary: #1a1a1a;
+  --mac-vibrant-label-secondary: #727272;
+  --mac-vibrant-label-tertiary: #bfbfbf;
+  /* Fills */
+  --mac-fill-primary: rgba(0, 0, 0, 0.1);
+  --mac-fill-secondary: rgba(0, 0, 0, 0.08);
+  --mac-fill-tertiary: rgba(0, 0, 0, 0.05);
+  --mac-vibrant-fill-secondary: #e6e6e6;
+  --mac-separator: rgba(0, 0, 0, 0.1);
+  /* Tabelas e listas */
+  --mac-window-bg: #ffffff;
+  --mac-row-alternating: rgba(0, 0, 0, 0.05);
+  --mac-selection: #0165e2;
+  --mac-selection-inactive: rgba(0, 0, 0, 0.1);
+  /* Accents (Opaque Tint Colors) */
+  --mac-red: #ff383c;
+  --mac-red-vibrant: #f52f32;
+  --mac-orange: #ff8d28;
+  --mac-yellow: #ffcc00;
+  --mac-green: #34c759;
+  --mac-mint: #00c8b3;
+  --mac-teal: #00c3d0;
+  --mac-cyan: #00c0e8;
+  --mac-blue: #0088ff;
+  --mac-indigo: #6155f5;
+  --mac-purple: #cb30e0;
+  --mac-pink: #ff2d55;
+  --mac-brown: #ac7f5e;
+  --mac-gray: #8e8e93;
+  /* Controles */
+  --mac-control-bg: rgba(0, 0, 0, 0.08);
+  --mac-control-bg-pressed: rgba(0, 0, 0, 0.16);
+  /* Sombras de materiais (Fill + Shadow do kit) */
+  --mac-rim: 1.25px 0 0 -0.75px #dbdbdb, -1.25px 0 0 -0.75px #dbdbdb, 0 0 0 0.5px #dbdbdb;
+  --mac-shadow-menu: var(--mac-rim), 0 8px 48px rgba(0, 0, 0, 0.25);
+  --mac-shadow-alert: var(--mac-rim), 0 18px 48px rgba(0, 0, 0, 0.25);
+  /* Materiais */
+  --mac-material-menu: rgba(238, 238, 238, 0.92);
+  --mac-material-alert: rgba(250, 250, 250, 0.86);
+  --mac-material-notification: rgba(246, 246, 246, 0.9);
+  --mac-overlay: rgba(171, 171, 171, 0.6);
+}
+
+.theme-dark {
+  --mac-label-primary: rgba(255, 255, 255, 0.85);
+  --mac-label-secondary: rgba(255, 255, 255, 0.55);
+  --mac-label-tertiary: rgba(255, 255, 255, 0.25);
+  --mac-label-quaternary: rgba(255, 255, 255, 0.1);
+  --mac-vibrant-label-primary: #f5f5f5;
+  --mac-vibrant-label-secondary: #8a8a8a;
+  --mac-vibrant-label-tertiary: #404040;
+  --mac-fill-primary: rgba(255, 255, 255, 0.1);
+  --mac-fill-secondary: rgba(255, 255, 255, 0.08);
+  --mac-fill-tertiary: rgba(255, 255, 255, 0.05);
+  --mac-vibrant-fill-secondary: #242424;
+  --mac-separator: rgba(255, 255, 255, 0.1);
+  --mac-window-bg: #1e1e1e;
+  --mac-row-alternating: rgba(255, 255, 255, 0.05);
+  --mac-selection-inactive: rgba(255, 255, 255, 0.1);
+  --mac-red: #ff4245;
+  --mac-red-vibrant: #ff4747;
+  --mac-orange: #ff9230;
+  --mac-yellow: #ffd600;
+  --mac-green: #30d158;
+  --mac-mint: #00dac3;
+  --mac-teal: #00d2e0;
+  --mac-cyan: #3cd3fe;
+  --mac-blue: #0091ff;
+  --mac-indigo: #6d7cff;
+  --mac-purple: #db34f2;
+  --mac-pink: #ff375f;
+  --mac-brown: #b78a66;
+  --mac-gray: #98989f;
+  --mac-control-bg: rgba(255, 255, 255, 0.1);
+  --mac-control-bg-pressed: rgba(255, 255, 255, 0.18);
+  --mac-rim: 0 0 0 0.5px rgba(255, 255, 255, 0.18);
+  --mac-material-menu: rgba(40, 40, 40, 0.92);
+  --mac-material-alert: rgba(36, 36, 36, 0.86);
+  --mac-material-notification: rgba(40, 40, 40, 0.9);
+  --mac-overlay: rgba(0, 0, 0, 0.4);
 }
 
 @layer base {
@@ -152,4 +271,779 @@
 }
 .backface-hidden {
   backface-visibility: hidden;
+}
+/* ==========================================================================
+   macOS 27 — Materiais (Liquid Glass) e componentes base
+   Fonte: kit Figma "macOS 27 (Community)". Os valores de sombra/raio vêm direto
+   dos nós "Fill + Shadow" e "Glass Effect"; o vidro é reproduzido na web com
+   backdrop-filter, já que mix-blend sobre o desktop não existe no navegador.
+   ========================================================================== */
+
+.mac-material-menu {
+  background: var(--mac-material-menu);
+  -webkit-backdrop-filter: blur(40px) saturate(1.8);
+  backdrop-filter: blur(40px) saturate(1.8);
+  box-shadow: var(--mac-shadow-menu), inset 0 0 0 0.5px rgba(255, 255, 255, 0.55);
+  border-radius: 12px;
+}
+
+.mac-material-alert {
+  background: var(--mac-material-alert);
+  -webkit-backdrop-filter: blur(40px) saturate(1.8);
+  backdrop-filter: blur(40px) saturate(1.8);
+  box-shadow: var(--mac-shadow-alert), inset 0 0 0 0.5px rgba(255, 255, 255, 0.6);
+  border-radius: 34px;
+}
+
+.mac-material-notification {
+  background: var(--mac-material-notification);
+  -webkit-backdrop-filter: blur(36px) saturate(1.8);
+  backdrop-filter: blur(36px) saturate(1.8);
+  box-shadow: var(--mac-shadow-menu), inset 0 0 0 0.5px rgba(255, 255, 255, 0.55);
+  border-radius: 20px;
+}
+
+/* Menu: container 12px × 5px, itens 24px, destaque com raio 8px que avança 7px nas laterais */
+.mac-menu {
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--mac-vibrant-label-primary);
+}
+.mac-menu-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  width: 100%;
+  text-align: left;
+  outline: none;
+  cursor: default;
+  user-select: none;
+}
+.mac-menu-item::before {
+  content: "";
+  position: absolute;
+  inset: 0 -7px;
+  border-radius: 8px;
+  background: transparent;
+  z-index: -1;
+}
+.mac-menu-item[data-highlighted="true"]::before {
+  background: var(--mac-vibrant-fill-secondary);
+}
+.mac-menu-item[aria-disabled="true"] {
+  color: var(--mac-vibrant-label-tertiary);
+}
+.mac-menu-shortcut {
+  color: var(--mac-vibrant-label-tertiary);
+  flex-shrink: 0;
+}
+.mac-menu-header {
+  padding: 3px 0 2px;
+  font-weight: 700;
+  color: var(--mac-vibrant-label-secondary);
+}
+.mac-menu-separator {
+  height: 11px;
+  position: relative;
+}
+.mac-menu-separator::after {
+  content: "";
+  position: absolute;
+  left: -1.33px;
+  right: -1.33px;
+  top: 50%;
+  height: 1px;
+  background: var(--mac-vibrant-fill-secondary);
+}
+
+/* Pop-up / Pull-down Button: cápsula, fundo 8% preto (16% pressionado), 13px medium */
+.mac-popup-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding-left: 14px;
+  border-radius: 1000px;
+  background: var(--mac-control-bg);
+  color: var(--mac-label-primary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: default;
+  outline: none;
+  max-width: 100%;
+  transition: background-color 120ms ease;
+}
+.mac-popup-button[aria-expanded="true"],
+.mac-popup-button:active {
+  background: var(--mac-control-bg-pressed);
+}
+.mac-popup-button:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mac-blue) 45%, transparent);
+}
+.mac-popup-button:disabled {
+  color: var(--mac-label-tertiary);
+}
+.mac-popup-button[data-variant="plain"] {
+  background: transparent;
+  padding-left: 0;
+}
+.mac-popup-button[data-variant="plain"][aria-expanded="true"] {
+  background: transparent;
+}
+.mac-popup-button[data-full-width] {
+  display: flex;
+  width: 100%;
+}
+.mac-popup-chevron {
+  width: 28px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Listas e tabelas: linhas com fundo arredondado inset 10px, raio 8px */
+.mac-row {
+  position: relative;
+  isolation: isolate;
+}
+.mac-row::before {
+  content: "";
+  position: absolute;
+  inset: 0 6px;
+  border-radius: 8px;
+  background: transparent;
+  z-index: -1;
+  transition: background-color 120ms ease;
+}
+.mac-row[data-alternate="true"]::before {
+  background: var(--mac-row-alternating);
+}
+.mac-row[data-interactive="true"]:hover::before {
+  background: var(--mac-fill-tertiary);
+}
+.mac-row[data-interactive="true"]:active::before {
+  background: var(--mac-fill-secondary);
+}
+.mac-row:focus-visible::before {
+  background: var(--mac-fill-secondary);
+}
+.mac-row[data-selected="true"]::before {
+  background: var(--mac-selection);
+}
+.mac-row[data-selected="true"] {
+  color: #fff;
+}
+.mac-group-title {
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 600;
+  color: var(--mac-label-secondary);
+}
+
+/* Telas touch: mesma linguagem visual, áreas de toque de 44px (HIG) */
+@media (pointer: coarse) {
+  .mac-menu {
+    font-size: 15px;
+  }
+  .mac-menu-item {
+    min-height: 40px;
+  }
+  .mac-popup-button {
+    height: 36px;
+    font-size: 14px;
+  }
+}
+
+@keyframes macMenuIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes macNotificationIn {
+  0% {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes macNotificationInTop {
+  0% {
+    opacity: 0;
+    transform: translateY(-16px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-mac-menu {
+  animation: macMenuIn 120ms ease-out;
+  transform-origin: top center;
+}
+.animate-mac-notification {
+  animation: macNotificationInTop 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@media (min-width: 768px) {
+  .animate-mac-notification {
+    animation-name: macNotificationIn;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-mac-menu,
+  .animate-mac-notification {
+    animation: none;
+  }
+}
+
+/* ==========================================================================
+   macOS 27 — Pointers
+   No Mac, botões e controles usam a seta; a mãozinha fica só para links.
+   O navegador já desenha os cursores nativos do sistema, então aqui só
+   aplicamos a semântica certa. Fora de @layer de propósito: regras sem
+   camada vencem utilitários como cursor-pointer.
+   ========================================================================== */
+button:not(:disabled),
+[role="button"],
+[role="menuitem"],
+[role="menuitemradio"],
+[role="option"],
+[role="tab"],
+[role="switch"],
+summary,
+select,
+input[type="checkbox"],
+input[type="radio"],
+input[type="range"],
+label {
+  cursor: default;
+}
+a[href] {
+  cursor: pointer;
+}
+input:not([type]),
+input[type="text"],
+input[type="search"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="tel"],
+input[type="url"],
+textarea,
+[contenteditable="true"] {
+  cursor: text;
+}
+button:disabled,
+[aria-disabled="true"] {
+  cursor: default;
+}
+[data-cursor="grab"] {
+  cursor: grab;
+}
+[data-cursor="grab"]:active,
+[data-cursor="grabbing"] {
+  cursor: grabbing;
+}
+[data-cursor="zoom-in"] {
+  cursor: zoom-in;
+}
+[data-cursor="busy"] {
+  cursor: progress;
+}
+
+/* Alert — botões empilhados em cápsula de 28px (Figma: Alerts › _Buttons) */
+.mac-alert-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 100px;
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 500;
+  outline: none;
+  transition: filter 120ms ease, opacity 120ms ease;
+}
+.mac-alert-button:active:not(:disabled) {
+  filter: brightness(0.92);
+}
+.mac-alert-button:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mac-blue) 45%, transparent);
+}
+.mac-alert-button:disabled {
+  opacity: 0.5;
+}
+.mac-alert-button[data-kind="primary"] {
+  background: var(--mac-blue);
+  color: #fff;
+}
+.mac-alert-button[data-kind="destructive"] {
+  background: color-mix(in srgb, var(--mac-red-vibrant) 23%, transparent);
+  color: var(--mac-red-vibrant);
+}
+.mac-alert-button[data-kind="secondary"] {
+  background: var(--mac-vibrant-fill-secondary);
+  color: var(--mac-label-primary);
+}
+@media (pointer: coarse) {
+  .mac-alert-button {
+    height: 40px;
+    font-size: 15px;
+  }
+}
+
+/* ==========================================================================
+   macOS 27 — Fase 2: Buttons, Segmented Controls, Toggles, Text/Search Fields,
+   Toolbars (Liquid Glass), Sidebars, Windows e Sheets (kit Figma)
+   ========================================================================== */
+:root {
+  /* Vidro dos controles de toolbar (Fill + Shadow + Glass Effect do kit) */
+  --mac-glass-control-bg: rgba(255, 255, 255, 0.74);
+  --mac-glass-control-shadow: 1.25px 0 0 -0.75px #d0d0d0, -1.25px 0 0 -0.75px #d0d0d0,
+    0 0 0 0.5px #e8e8e8, 0 8px 15px rgba(0, 0, 0, 0.02), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --mac-sidebar-bg: rgba(232, 232, 236, 0.86);
+  --mac-sidebar-selection: rgba(0, 0, 0, 0.07);
+  --mac-sidebar-icon: #0078f0;
+  --mac-window-shadow: 0 0 1px rgba(0, 0, 0, 0.8), 0 18px 54px rgba(0, 0, 0, 0.3);
+  --mac-sheet-shadow: 0 0 0.5px rgba(0, 0, 0, 0.8), 0 18px 27px rgba(0, 0, 0, 0.3);
+  --mac-focus-ring: 0 0 0 3.5px color-mix(in srgb, var(--mac-blue) 50%, transparent);
+}
+.theme-dark {
+  --mac-glass-control-bg: rgba(60, 60, 60, 0.6);
+  --mac-glass-control-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.14), 0 8px 15px rgba(0, 0, 0, 0.2);
+  --mac-sidebar-bg: rgba(40, 40, 44, 0.86);
+  --mac-sidebar-selection: rgba(255, 255, 255, 0.1);
+}
+
+/* Buttons — raio 6px na área de conteúdo, cápsula sobre vidro; 13px medium */
+.mac-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 500;
+  white-space: nowrap;
+  outline: none;
+  user-select: none;
+  transition: background-color 120ms ease, color 120ms ease, filter 120ms ease, opacity 120ms ease;
+}
+.mac-button[data-size="small"] { height: 20px; padding: 0 10px; font-size: 11px; line-height: 14px; gap: 4px; }
+.mac-button[data-size="large"] { height: 28px; padding: 0 16px; }
+.mac-button[data-size="xl"] { height: 36px; padding: 0 18px; font-size: 14px; }
+.mac-button[data-shape="capsule"] { border-radius: 1000px; }
+.mac-button[data-icon-only] { padding: 0; aspect-ratio: 1; }
+.mac-button[data-full-width] { display: flex; width: 100%; }
+.mac-button:focus-visible { box-shadow: var(--mac-focus-ring); }
+.mac-button:disabled { opacity: 0.45; }
+.mac-button[data-variant="bordered"] { background: rgba(0, 0, 0, 0.08); color: var(--mac-label-primary); }
+.mac-button[data-variant="bordered"]:active:not(:disabled) { background: rgba(0, 0, 0, 0.16); }
+.mac-button[data-variant="tinted"] {
+  background: color-mix(in srgb, var(--mac-blue) 20%, var(--mac-vibrant-fill-secondary));
+  color: var(--mac-blue);
+}
+.mac-button[data-variant="destructive"] {
+  background: color-mix(in srgb, var(--mac-red-vibrant) 22%, var(--mac-vibrant-fill-secondary));
+  color: var(--mac-red-vibrant);
+}
+.mac-button[data-variant="prominent"] { background: var(--mac-blue); color: #fff; }
+.mac-button[data-variant="prominent-destructive"] { background: var(--mac-red-vibrant); color: #fff; }
+.mac-button[data-variant="borderless"] { background: transparent; color: var(--mac-blue); }
+.mac-button[data-variant="borderless"]:hover:not(:disabled) { background: var(--mac-fill-tertiary); }
+.mac-button[data-variant="glass"] {
+  background: var(--mac-glass-control-bg);
+  -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  backdrop-filter: blur(20px) saturate(1.8);
+  box-shadow: var(--mac-glass-control-shadow);
+  color: var(--mac-vibrant-label-primary);
+}
+.mac-button[data-variant="tinted"]:active:not(:disabled),
+.mac-button[data-variant="destructive"]:active:not(:disabled),
+.mac-button[data-variant="prominent"]:active:not(:disabled),
+.mac-button[data-variant="prominent-destructive"]:active:not(:disabled),
+.mac-button[data-variant="glass"]:active:not(:disabled) { filter: brightness(0.9); }
+/* Botão alternável (Buttons - Toggle): ligado = tinted */
+.mac-button[aria-pressed="true"][data-variant="bordered"] {
+  background: color-mix(in srgb, var(--mac-blue) 20%, var(--mac-vibrant-fill-secondary));
+  color: var(--mac-blue);
+}
+
+/* Toolbar — grupo de vidro (cápsula 36px, padding 4px) com botões de 28px */
+.mac-toolbar-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+  padding: 4px;
+  border-radius: 1000px;
+  background: var(--mac-glass-control-bg);
+  -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  backdrop-filter: blur(20px) saturate(1.8);
+  box-shadow: var(--mac-glass-control-shadow);
+  flex-shrink: 0;
+}
+.mac-toolbar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 4px;
+  border-radius: 100px;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--mac-vibrant-label-primary);
+  outline: none;
+  transition: background-color 120ms ease;
+}
+.mac-toolbar-button[data-labeled] { padding: 0 10px; }
+.mac-toolbar-button:hover:not(:disabled) { background: var(--mac-fill-tertiary); }
+.mac-toolbar-button[aria-pressed="true"],
+.mac-toolbar-button[aria-expanded="true"] { background: var(--mac-vibrant-fill-secondary); }
+.mac-toolbar-button:focus-visible { box-shadow: var(--mac-focus-ring); }
+.mac-toolbar-button:disabled { opacity: 0.4; }
+.mac-toolbar-separator { width: 1px; height: 20px; background: #d9d9d9; flex-shrink: 0; }
+
+/* Segmented Control — conteúdo: cápsula 8% preto, segmento ativo azul; toolbar: vidro */
+.mac-segmented {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  height: 28px;
+  border-radius: 1000px;
+  background: rgba(0, 0, 0, 0.08);
+  max-width: 100%;
+}
+.mac-segmented[data-size="small"] { height: 24px; }
+.mac-segmented[data-full-width] { display: flex; width: 100%; }
+.mac-segment {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 12px;
+  border-radius: 1000px;
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--mac-label-primary);
+  white-space: nowrap;
+  outline: none;
+}
+.mac-segment > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 639px) { .mac-segment { padding: 0 8px; } }
+/* Separador de 1px entre segmentos, oculto ao lado do selecionado */
+.mac-segment + .mac-segment::before {
+  content: "";
+  position: absolute;
+  left: -0.5px;
+  top: 50%;
+  height: 18px;
+  width: 1px;
+  transform: translateY(-50%);
+  background: var(--mac-label-tertiary);
+}
+.mac-segment[aria-checked="true"]::before,
+.mac-segment[aria-checked="true"] + .mac-segment::before { display: none; }
+.mac-segment[aria-checked="true"] { background: var(--mac-blue); color: #fff; }
+.mac-segment:active:not([aria-checked="true"]):not(:disabled) { background: rgba(0, 0, 0, 0.06); }
+.mac-segment:focus-visible { box-shadow: var(--mac-focus-ring); }
+.mac-segment:disabled { opacity: 0.4; }
+.mac-segmented[data-variant="toolbar"] {
+  height: 36px;
+  padding: 4px;
+  background: var(--mac-glass-control-bg);
+  -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  backdrop-filter: blur(20px) saturate(1.8);
+  box-shadow: var(--mac-glass-control-shadow);
+}
+.mac-segmented[data-variant="toolbar"] .mac-segment { color: var(--mac-vibrant-label-primary); }
+.mac-segmented[data-variant="toolbar"] .mac-segment[aria-checked="true"] {
+  background: var(--mac-vibrant-fill-secondary);
+  color: var(--mac-vibrant-label-primary);
+}
+.mac-segmented[data-variant="toolbar"] .mac-segment + .mac-segment::before { height: 20px; background: #d9d9d9; }
+
+/* Switch — trilho 54×24 azul, botão 32×20 branco (tamanho Medium do kit) */
+.mac-switch {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 54px;
+  height: 24px;
+  border-radius: 1000px;
+  background: rgba(0, 0, 0, 0.09);
+  outline: none;
+  transition: background-color 180ms ease;
+}
+.mac-switch[aria-checked="true"] { background: var(--mac-blue); }
+.mac-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 32px;
+  height: 20px;
+  border-radius: 100px;
+  background: #fff;
+  box-shadow: 0 3px 36px rgba(0, 0, 0, 0.05), 0 0.5px 2px rgba(0, 0, 0, 0.18);
+  transition: transform 220ms cubic-bezier(0.3, 1.4, 0.5, 1), width 120ms ease;
+}
+.mac-switch[aria-checked="true"]::after { transform: translateX(18px); }
+.mac-switch[data-size="small"] { width: 36px; height: 16px; }
+.mac-switch[data-size="small"]::after { width: 22px; height: 12px; }
+.mac-switch[data-size="small"][aria-checked="true"]::after { transform: translateX(10px); }
+.mac-switch:focus-visible { box-shadow: var(--mac-focus-ring); }
+.mac-switch:disabled { opacity: 0.45; }
+
+/* Text Field — 24px, raio 6px, fundo branco, borda 1px 8%, anel de foco 3.5px azul */
+.mac-text-field {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--mac-label-primary);
+  outline: none;
+  transition: box-shadow 120ms ease;
+}
+.mac-text-field::placeholder { color: var(--mac-label-tertiary); font-weight: 400; }
+.mac-text-field:focus { box-shadow: 0 0 0 1px var(--mac-blue), var(--mac-focus-ring); }
+.mac-text-field:disabled { color: var(--mac-label-tertiary); background: rgba(255, 255, 255, 0.6); }
+.mac-text-field[data-size="large"] { height: 28px; }
+.mac-text-field[data-size="xl"] { height: 36px; padding: 0 10px; }
+
+/* Search Field — cápsula de vidro com lupa e botão de limpar */
+.mac-search-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 1000px;
+  background: var(--mac-glass-control-bg);
+  -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  backdrop-filter: blur(20px) saturate(1.8);
+  box-shadow: var(--mac-glass-control-shadow);
+  color: var(--mac-vibrant-label-secondary);
+  transition: box-shadow 120ms ease;
+}
+.mac-search-field[data-size="medium"] { height: 28px; }
+.mac-search-field:focus-within {
+  box-shadow: var(--mac-glass-control-shadow), 0 0 0 1px rgba(0, 122, 255, 0.15), 0 0 0 3.5px rgba(0, 122, 255, 0.25);
+}
+.mac-search-field input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  outline: none;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--mac-vibrant-label-primary);
+  caret-color: var(--mac-blue);
+}
+.mac-search-field input::placeholder { color: var(--mac-vibrant-label-secondary); }
+
+/* Sidebar — itens 32px, seleção raio 8px, ícones azuis, seções em negrito secundário */
+.mac-sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--mac-sidebar-bg);
+  -webkit-backdrop-filter: blur(40px) saturate(1.6);
+  backdrop-filter: blur(40px) saturate(1.6);
+}
+.mac-sidebar-items { padding: 0 14px; }
+.mac-sidebar-section {
+  padding: 18px 4px 9px;
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 700;
+  color: var(--mac-vibrant-label-secondary);
+}
+.mac-sidebar-items > .mac-sidebar-section:first-child { padding-top: 6px; }
+.mac-sidebar-item {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 2px 0 0;
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--mac-vibrant-label-primary);
+  text-align: left;
+  outline: none;
+  user-select: none;
+}
+.mac-sidebar-item::before {
+  content: "";
+  position: absolute;
+  inset: 0 -4px;
+  border-radius: 8px;
+  z-index: -1;
+  transition: background-color 120ms ease;
+}
+.mac-sidebar-item:hover::before { background: rgba(0, 0, 0, 0.035); }
+.mac-sidebar-item[aria-current="true"]::before,
+.mac-sidebar-item[aria-current="page"]::before { background: var(--mac-sidebar-selection); }
+.mac-sidebar-item:focus-visible::before { box-shadow: var(--mac-focus-ring); }
+.mac-sidebar-icon {
+  width: 24px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--mac-sidebar-icon);
+}
+.mac-sidebar-detail {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--mac-vibrant-label-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Window — raio 16px, sombra de janela ativa; toolbar unificada com borda de rolagem */
+.mac-window {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--mac-window-bg);
+  box-shadow: var(--mac-window-shadow);
+}
+.mac-window-toolbar {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 8px 8px 8px 18px;
+  background: rgba(255, 255, 255, 0.85);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  border-bottom: 0.67px solid rgba(0, 0, 0, 0.05);
+  flex-shrink: 0;
+}
+.mac-window-title { font-size: 13px; line-height: 15px; font-weight: 700; color: var(--mac-label-primary); }
+.mac-window-subtitle { font-size: 11px; line-height: 14px; font-weight: 400; color: var(--mac-label-secondary); }
+
+/* Sheet — painel branco raio 16px */
+.mac-sheet {
+  position: relative;
+  background: var(--mac-window-bg);
+  border-radius: 16px;
+  box-shadow: var(--mac-sheet-shadow);
+}
+@keyframes macSheetIn {
+  0% { opacity: 0; transform: translateY(-8px) scale(0.985); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-mac-sheet { animation: macSheetIn 200ms cubic-bezier(0.16, 1, 0.3, 1); }
+
+/* Group Box — superfície agrupada dentro do conteúdo */
+.mac-group-box {
+  border-radius: 12px;
+  background: var(--mac-fill-tertiary);
+}
+
+/* Spinner (Progress Indicator indeterminado) */
+@keyframes macSpin { to { transform: rotate(360deg); } }
+.mac-spinner { display: inline-block; animation: macSpin 0.9s steps(8) infinite; }
+
+@media (pointer: coarse) {
+  .mac-button { height: 32px; font-size: 14px; }
+  .mac-button[data-size="small"] { height: 28px; font-size: 13px; }
+  .mac-button[data-size="large"],
+  .mac-button[data-size="xl"] { height: 40px; }
+  .mac-segmented, .mac-segmented[data-size="small"] { height: 34px; }
+  .mac-segmented[data-variant="toolbar"] { height: 40px; }
+  .mac-text-field { height: 36px; font-size: 16px; }
+  .mac-search-field input { font-size: 16px; }
+  .mac-sidebar-item { min-height: 40px; font-size: 15px; }
+  .mac-toolbar-button { min-width: 32px; height: 32px; }
+  .mac-toolbar-group { height: 40px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-mac-sheet, .mac-spinner { animation: none; }
+  .mac-switch::after { transition: none; }
+}
+
+.mac-search-field input::-webkit-search-cancel-button,
+.mac-search-field input::-webkit-search-decoration { -webkit-appearance: none; appearance: none; display: none; }
+
+/* Slider — trilho 4px (10% preto), preenchido azul, botão branco 20x16 (Figma: Sliders) */
+.mac-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 24px;
+  background: transparent;
+  outline: none;
+  cursor: default;
+}
+.mac-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 100px;
+  background: linear-gradient(to right, var(--mac-blue) var(--mac-slider-fill, 50%), rgba(0, 0, 0, 0.1) var(--mac-slider-fill, 50%));
+}
+.mac-slider::-moz-range-track { height: 4px; border-radius: 100px; background: rgba(0, 0, 0, 0.1); }
+.mac-slider::-moz-range-progress { height: 4px; border-radius: 100px; background: var(--mac-blue); }
+.mac-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px;
+  height: 16px;
+  margin-top: -6px;
+  border-radius: 100px;
+  background: #fff;
+  box-shadow: 0 0.5px 6px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+  transition: transform 120ms ease;
+}
+.mac-slider::-moz-range-thumb {
+  width: 20px;
+  height: 16px;
+  border: 0;
+  border-radius: 100px;
+  background: #fff;
+  box-shadow: 0 0.5px 6px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+}
+.mac-slider:active::-webkit-slider-thumb { transform: scaleX(1.25); }
+.mac-slider:focus-visible::-webkit-slider-thumb { box-shadow: var(--mac-focus-ring); }
+@media (pointer: coarse) {
+  .mac-slider::-webkit-slider-thumb { width: 28px; height: 24px; margin-top: -10px; }
 }

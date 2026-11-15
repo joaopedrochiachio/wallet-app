@@ -54,7 +54,7 @@ function ChatDialogSurface({ children, showHistory, onClose }: ChatDialogProps) 
 
   return (
     <div ref={viewportRef} data-testid="ai-chat-viewport" className="fixed left-0 top-0 z-[130] flex h-dvh w-full min-w-0 items-end justify-center overscroll-none pt-[env(safe-area-inset-top,0px)] sm:items-center sm:p-5">
-      <button type="button" tabIndex={-1} aria-label="Fechar Chat com a IA" onClick={onClose} className="absolute inset-0 cursor-default bg-black/40 backdrop-blur-md" />
+      <button type="button" tabIndex={-1} aria-label="Fechar Chat com a IA" onClick={onClose} className="absolute inset-0 cursor-default bg-black/25" />
       <section
         ref={dialogRef}
         role="dialog"
@@ -75,7 +75,7 @@ function ChatDialogSurface({ children, showHistory, onClose }: ChatDialogProps) 
             event.preventDefault(); first.focus();
           }
         }}
-        className={`relative z-10 flex h-full max-h-full w-full min-h-0 min-w-0 flex-col overflow-hidden rounded-t-[24px] border border-white/60 bg-[#F5F5F7] shadow-[0_32px_90px_rgba(0,0,0,0.28)] outline-none sm:h-[86%] sm:max-h-[820px] sm:rounded-[32px] ${showHistory ? "sm:max-w-4xl" : "sm:max-w-2xl"}`}
+        className={`relative z-10 flex h-full max-h-full w-full min-h-0 min-w-0 flex-col overflow-hidden mac-window !rounded-b-none !rounded-t-[16px] outline-none sm:h-[86%] sm:max-h-[820px] sm:!rounded-[16px] ${showHistory ? "sm:max-w-4xl" : "sm:max-w-2xl"}`}
       >
         {children}
       </section>

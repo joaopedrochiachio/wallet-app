@@ -15,6 +15,7 @@ import {
   Banknote,
   CheckCircle2,
 } from "lucide-react";
+import { PopUpButton } from "@/components/ui/macos/PopUpButton";
 
 interface PurchaseSimulatorModalProps {
   isOpen: boolean;
@@ -283,18 +284,16 @@ export function PurchaseSimulatorModal({
                         <label className="text-[10px] font-semibold text-[#86868B] block mb-1">
                           Selecionar Cartão:
                         </label>
-                        <select
+                        <PopUpButton
                           value={selectedCardId}
-                          onChange={(e) => setSelectedCardId(e.target.value)}
-                          className="w-full text-xs font-medium px-2.5 py-1.5 rounded-lg bg-white border border-black/10"
-                        >
-                          {cards.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name} (Disp: R${" "}
-                              {((c.limit || 0) - (c.spent || 0)).toFixed(2)})
-                            </option>
-                          ))}
-                        </select>
+                          onChange={setSelectedCardId}
+                          ariaLabel="Selecionar cartão"
+                          fullWidth
+                          options={cards.map((c) => ({
+                            value: c.id,
+                            label: `${c.name} (Disp: R$ ${((c.limit || 0) - (c.spent || 0)).toFixed(2)})`,
+                          }))}
+                        />
                       </div>
                     )}
                   </div>

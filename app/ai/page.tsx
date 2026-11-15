@@ -21,7 +21,6 @@ import {
   Coins,
   ArrowUpRight,
   ShieldCheck,
-  Plus,
   CalendarDays,
   X,
   Building2,
@@ -31,9 +30,9 @@ import {
   ArrowUp,
   Copy,
   Check,
-  Search,
   MessageSquare,
   PanelLeft,
+  SquarePen,
 } from "lucide-react";
 import { FormattedMessage } from "@/components/ai/FormattedMessage";
 import { ChatDialog } from "@/components/ai/ChatDialog";
@@ -90,6 +89,12 @@ import {
   loadDismissedPatterns,
   dismissPattern,
 } from "@/lib/services/aiChatService";
+import { PopUpButton } from "@/components/ui/macos/PopUpButton";
+import { MacButton, MacSpinner, MacToolbarButton, MacToolbarGroup } from "@/components/ui/macos/Button";
+import { MacSegmentedControl } from "@/components/ui/macos/SegmentedControl";
+import { MacFormRow, MacSearchField, MacTextField } from "@/components/ui/macos/TextField";
+import { MacSidebar, MacSidebarItem, MacSidebarItems, MacSidebarSection } from "@/components/ui/macos/Sidebar";
+import { MacSheet, MacWindowToolbar } from "@/components/ui/macos/Window";
 
 function cleanExecutiveSummary(text?: string | null): string {
   if (!text) return "";
@@ -1120,451 +1125,357 @@ export default function AIAnalystPage() {
     return true;
   });
 
+  // Ambientes de trabalho (Segmented Control da toolbar)
+  const dossierEnvironments = [
+    { value: "mindmap" as const, label: "Escritório", icon: <Building2 size={14} />, caption: "Agentes e análises em andamento" },
+    { value: "calendar" as const, label: "Agenda", icon: <CalendarDays size={14} />, caption: "Entradas, contas e vencimentos" },
+    { value: "storytelling" as const, label: "Padrões", icon: <Flame size={14} />, caption: "Hábitos, excessos e oportunidades" },
+    { value: "overview" as const, label: "Visão geral", icon: <Shield size={14} />, caption: `Saúde da conta · ${currentScore} pontos` },
+  ];
+  const activeEnvironment = dossierEnvironments.find((env) => env.value === activeDossierTab) ?? dossierEnvironments[0];
+
+  // Conversas agrupadas por data, como as seções de uma Sidebar do macOS
+  const filteredSessions = sessions.filter((s) => {
+    if (!sessionSearchQuery.trim()) return true;
+    const q = sessionSearchQuery.toLowerCase();
+    const inTitle = (s.title || "").toLowerCase().includes(q);
+    const inMsgs = (s.messages || []).some((m) => m.content.toLowerCase().includes(q));
+    return inTitle || inMsgs;
+  });
+  const sessionGroups = (() => {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const weekAgo = startOfToday.getTime() - 6 * 24 * 60 * 60 * 1000;
+    const groups: { label: string; items: typeof sessions }[] = [
+      { label: "Hoje", items: [] },
+      { label: "Últimos 7 dias", items: [] },
+      { label: "Anteriores", items: [] },
+    ];
+    for (const sess of filteredSessions) {
+      const time = new Date(sess.updatedAt || sess.createdAt || 0).getTime();
+      if (time >= startOfToday.getTime()) groups[0].items.push(sess);
+      else if (time >= weekAgo) groups[1].items.push(sess);
+      else groups[2].items.push(sess);
+    }
+    return groups.filter((group) => group.items.length > 0);
+  })();
+
   return (
-    <div className="relative min-h-full w-full overflow-x-hidden bg-[linear-gradient(180deg,#F5F6F8_0%,#EFF1F4_46%,#F5F5F7_100%)] pb-32 md:pb-24 font-sans text-[#1D1D1F] selection:bg-[#1D1D1F] selection:text-white">
-      <div className="pointer-events-none absolute -left-48 top-28 h-[520px] w-[520px] rounded-full bg-emerald-200/20 blur-[110px]" />
-      <div className="pointer-events-none absolute -right-56 top-[420px] h-[620px] w-[620px] rounded-full bg-blue-200/20 blur-[130px]" />
-      <div className="relative z-10 mx-auto w-full max-w-[1440px] space-y-5 px-3 py-4 sm:px-6 sm:py-6">
-        
-        {/* =========================================================
-            1. HEADER EXECUTIVO WALLET+ COM APPLE WHITE IDENTITY
-           ========================================================= */}
-        <header className="flex flex-col justify-between gap-4 rounded-[28px] border border-white/80 bg-white/78 p-4 shadow-[0_16px_50px_rgba(27,38,33,0.055)] backdrop-blur-2xl md:flex-row md:items-center sm:p-5">
-          <div className="flex items-center gap-3.5 min-w-0">
-            <div className="w-11 h-11 rounded-2xl bg-[#1D1D1F] text-white flex items-center justify-center shadow-xs shrink-0">
-              <Building2 size={20} className="text-white" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className="flex items-baseline">
-                  <span className="text-xl sm:text-2xl font-bold tracking-tight text-[#1D1D1F]">
-                    Wallet
-                  </span>
-                  <span className="text-2xl font-black text-[#1D1D1F] ml-0.5 leading-none">
-                    +
-                  </span>
-                </div>
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#F2F2F7] text-[11px] font-semibold text-[#1D1D1F] border border-black/[0.05]">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span>Central financeira pessoal</span>
-                </div>
-              </div>
-              <p className="text-xs text-[#86868B] truncate mt-0.5">
-                Conta, cartões, agenda, hábitos e metas organizados em uma visão de trabalho.
-              </p>
-            </div>
+    <div className="relative min-h-full w-full overflow-x-hidden bg-[#F5F5F7] pb-32 md:pb-24 font-sans text-mac-label">
+      {/* =========================================================
+          1. TOOLBAR UNIFICADA (macOS 27): título, ambientes e ações
+         ========================================================= */}
+      <header className="mac-window-toolbar sticky top-0 z-30 !min-h-0 flex-wrap gap-y-2.5 !px-3 !py-2.5 sm:!px-5">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-[#1D1D1F] text-white shadow-[0_1px_2px_rgba(0,0,0,0.2)]" aria-hidden>
+            <Sparkles size={15} className="text-emerald-300" />
+          </span>
+          <div className="min-w-0">
+            <h1 className="mac-window-title truncate">Wallet+</h1>
+            <p className="mac-window-subtitle truncate">Central financeira pessoal</p>
           </div>
+        </div>
 
-          {/* Indicadores Vitais & Ações de Topo */}
-          <div className="flex flex-wrap items-center gap-2.5 self-start md:self-auto">
-            {/* Meta Interativa */}
-            <div className="flex items-center gap-1.5 bg-[#F8F8FA] border border-black/[0.06] px-3 py-1.5 rounded-full text-xs">
-              <span className="text-[#86868B] font-medium">Meta Fechamento:</span>
-              {isEditingTarget ? (
-                <div className="flex items-center gap-1">
-                  <input
-                    type="number"
-                    value={tempTargetInput}
-                    onChange={(e) => setTempTargetInput(e.target.value)}
-                    className="w-16 px-1 py-0.5 text-xs font-mono font-bold bg-white border rounded"
-                    autoFocus
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const num = parseFloat(tempTargetInput);
-                      if (!isNaN(num) && num >= 0) handleUpdateTarget(num);
-                      setIsEditingTarget(false);
-                    }}
-                    className="text-[10px] font-bold text-emerald-600 px-1"
-                  >
-                    OK
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTempTargetInput(String(targetEndMonthBalance));
-                    setIsEditingTarget(true);
-                  }}
-                  className="font-bold font-mono text-[#1D1D1F] hover:underline cursor-pointer"
-                  title="Clique para editar sua meta de saldo"
-                >
-                  R$ {formatCurrency(targetEndMonthBalance)}
-                </button>
-              )}
-              <span
-                className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ml-1 ${
-                  targetStatus === "on_track"
-                    ? "bg-emerald-100 text-emerald-800"
-                    : "bg-amber-100 text-amber-800"
-                }`}
+        <div className="order-3 w-full md:order-none md:w-auto md:flex-1 md:flex md:justify-center">
+          <MacSegmentedControl
+            ariaLabel="Ambientes do Wallet+"
+            variant="toolbar"
+            fullWidth
+            className="md:!inline-flex md:!w-auto"
+            value={activeDossierTab}
+            onChange={setActiveDossierTab}
+            options={dossierEnvironments.map((env) => ({ value: env.value, label: env.label, icon: <span className="hidden sm:inline-flex" aria-hidden>{env.icon}</span> }))}
+          />
+        </div>
+
+        <div className="ml-auto flex items-center gap-2">
+          {/* Meta de fechamento: campo de texto do kit dentro de um grupo de vidro */}
+          <MacToolbarGroup className="!pl-3 !pr-1.5 text-[12px] font-medium">
+            <span className="text-mac-label-2 hidden sm:inline">Meta</span>
+            {isEditingTarget ? (
+              <form
+                className="flex items-center gap-1"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const num = parseFloat(tempTargetInput);
+                  if (!isNaN(num) && num >= 0) handleUpdateTarget(num);
+                  setIsEditingTarget(false);
+                }}
               >
-                {targetStatus === "on_track" ? `+R$ ${formatCurrency(safeSpendingMargin)}` : `-R$ ${formatCurrency(missingAmount)}`}
-              </span>
-            </div>
-
-            {/* Botão Abrir Chat Único IA */}
-            <button
-              type="button"
-              onClick={() => openCopilotWithContext()}
-              className="px-3.5 py-1.5 rounded-full bg-[#1D1D1F] hover:bg-black active:scale-95 text-xs font-semibold text-white flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                <MacTextField
+                  type="number"
+                  inputMode="decimal"
+                  aria-label="Meta de saldo no fechamento"
+                  value={tempTargetInput}
+                  onChange={(e) => setTempTargetInput(e.target.value)}
+                  className="!w-24 font-mono"
+                  autoFocus
+                />
+                <MacButton type="submit" variant="prominent" size="small" shape="capsule">
+                  OK
+                </MacButton>
+              </form>
+            ) : (
+              <MacToolbarButton
+                onClick={() => {
+                  setTempTargetInput(String(targetEndMonthBalance));
+                  setIsEditingTarget(true);
+                }}
+                title="Editar sua meta de saldo"
+                className="font-mono !text-[12px] !font-semibold"
+              >
+                R$ {formatCurrency(targetEndMonthBalance)}
+              </MacToolbarButton>
+            )}
+            <span
+              className={`rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums ${
+                targetStatus === "on_track" ? "bg-mac-green/15 text-[#248a3d]" : "bg-mac-orange/15 text-[#c45500]"
+              }`}
             >
-              <Sparkles size={12} className="text-emerald-400" />
-              <span>Chat IA</span>
-            </button>
+              {targetStatus === "on_track" ? `+R$ ${formatCurrency(safeSpendingMargin)}` : `-R$ ${formatCurrency(missingAmount)}`}
+            </span>
+          </MacToolbarGroup>
 
-            {/* Botão Sincronizar Análise */}
-            <button
-              type="button"
+          <MacToolbarGroup>
+            <MacToolbarButton
               onClick={runDiagnosis}
               disabled={isAnalyzing}
-              className="px-3.5 py-1.5 rounded-full bg-white hover:bg-[#F2F2F7] active:scale-95 border border-black/[0.08] text-xs font-semibold text-[#1D1D1F] flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs disabled:opacity-50"
-            >
-              <RefreshCw size={12} className={isAnalyzing ? "animate-spin text-[#1D1D1F]" : "text-[#86868B]"} />
-              <span className="hidden sm:inline">{isAnalyzing ? "Atualizando..." : "Atualizar dados"}</span>
-            </button>
-          </div>
-        </header>
+              aria-label={isAnalyzing ? "Atualizando..." : "Atualizar dados"}
+              title="Atualizar dados"
+              icon={isAnalyzing ? <MacSpinner size={14} /> : <RefreshCw size={14} />}
+            />
+          </MacToolbarGroup>
+
+          <MacButton
+            variant="prominent"
+            shape="capsule"
+            size="large"
+            onClick={() => openCopilotWithContext()}
+            icon={<Sparkles size={13} />}
+          >
+            Chat IA
+          </MacButton>
+        </div>
+      </header>
+
+      <div className="relative z-10 mx-auto w-full max-w-[1440px] space-y-4 px-3 py-4 sm:px-6 sm:py-5">
+        <p className="px-1 text-[11px] font-medium text-mac-label-2">
+          <span className="font-semibold text-mac-label">{activeEnvironment.label}</span> · {activeEnvironment.caption}
+        </p>
 
         {/* =========================================================
-            2. WORKSPACE WALLET+: CHAT ÚNICO CENTRALIZADO COM A IA
+            2. JANELA DO CHAT (Window + Sidebar + Toolbar unificada)
            ========================================================= */}
         <div className="flex flex-col gap-5">
-
-          {/* CHAT ÚNICO CENTRALIZADO COM A IA — PADRÃO APPLE (IMESSAGE / APPLE INTELLIGENCE) */}
           {isCopilotOpen && (
             <ChatDialog showHistory={isHistoryDrawerOpen} onClose={() => setIsCopilotOpen(false)}>
-                {/* Handle sutil estilo iOS Sheet no mobile */}
-                <div className="flex shrink-0 justify-center pt-2 pb-0.5 sm:hidden">
-                  <span className="h-1 w-9 rounded-full bg-black/15" />
-                </div>
+              {/* Alça de arraste no celular */}
+              <div className="flex shrink-0 justify-center pt-2 pb-0.5 sm:hidden">
+                <span className="h-1 w-9 rounded-full bg-black/15" />
+              </div>
 
-                {/* TOP BAR APPLE GLASS */}
-                <div className="flex shrink-0 items-center justify-between gap-2 border-b border-black/[0.06] bg-white/85 px-3 py-3 sm:px-5 backdrop-blur-xl">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    {/* Botão Sidebar / Conversas Antigas */}
-                    <button
-                      type="button"
+              {/* TOOLBAR UNIFICADA DA JANELA */}
+              <MacWindowToolbar
+                className="!pl-3 sm:!pl-4"
+                leading={
+                  <MacToolbarGroup>
+                    <MacToolbarButton
                       onClick={() => setIsHistoryDrawerOpen((prev) => !prev)}
-                      className={`flex h-9 items-center gap-1.5 rounded-full px-3 text-xs font-semibold transition-all cursor-pointer active:scale-95 border ${
-                        isHistoryDrawerOpen
-                          ? "bg-[#1D1D1F] text-white border-[#1D1D1F] shadow-2xs"
-                          : "bg-[#F2F2F7] text-[#1D1D1F] hover:bg-[#E5E5EA] border-black/[0.05]"
-                      }`}
-                      title="Ver conversas anteriores"
                       aria-label="Ver conversas anteriores"
-                      aria-expanded={isHistoryDrawerOpen}
-                    >
-                      <PanelLeft size={14} />
-                      <span className="hidden min-[390px]:inline">Conversas</span>
-                      <span
-                        className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold tabular-nums ${
-                          isHistoryDrawerOpen
-                            ? "bg-white/20 text-white"
-                            : "bg-black/[0.07] text-[#48484A]"
-                        }`}
-                      >
-                        {sessions.length}
-                      </span>
-                    </button>
+                      aria-pressed={isHistoryDrawerOpen}
+                      title="Conversas anteriores"
+                      icon={<PanelLeft size={15} />}
+                    />
+                    <MacToolbarButton
+                      onClick={handleNewChat}
+                      aria-label="Nova conversa"
+                      title="Iniciar uma nova conversa"
+                      icon={<SquarePen size={15} />}
+                    />
+                  </MacToolbarGroup>
+                }
+                title={
+                  currentSession?.title && currentSession.title !== "Nova Consulta"
+                    ? currentSession.title
+                    : "Wallet+ Intelligence"
+                }
+                subtitle={`Livre: R$ ${formatCurrency(effectiveProjectedFree)} · Hoje: R$ ${formatCurrency(safeSpendMetric.safeDailyAllowance)}`}
+                trailing={
+                  <MacToolbarGroup>
+                    <MacToolbarButton
+                      onClick={() => setIsCopilotOpen(false)}
+                      aria-label="Fechar Chat"
+                      title="Fechar"
+                      icon={<X size={15} />}
+                    />
+                  </MacToolbarGroup>
+                }
+              />
 
-                    {/* Botão Nova Conversa Rápida */}
+              {/* CORPO: SIDEBAR DE CONVERSAS + CONVERSA */}
+              <div className="relative flex min-h-0 flex-1 overflow-hidden">
+                {isHistoryDrawerOpen && (
+                  <>
+                    {/* Fundo para fechar a sidebar no celular */}
                     <button
                       type="button"
-                      onClick={handleNewChat}
-                      className="flex h-9 items-center gap-1 rounded-full bg-[#F2F2F7] hover:bg-[#E5E5EA] active:scale-95 px-3 text-xs font-semibold text-[#1D1D1F] border border-black/[0.05] transition-all cursor-pointer"
-                      title="Iniciar uma nova conversa"
+                      aria-label="Fechar lista de conversas"
+                      onClick={() => setIsHistoryDrawerOpen(false)}
+                      className="absolute inset-0 z-20 bg-black/20 sm:hidden"
+                    />
+                    <MacSidebar
+                      aria-label="Conversas"
+                      className="absolute inset-y-0 left-0 z-30 w-[84%] max-w-[300px] border-r border-black/[0.06] animate-in slide-in-from-left duration-200 sm:relative sm:w-64 sm:shrink-0"
                     >
-                      <Plus size={14} />
-                      <span className="hidden xs:inline">Nova</span>
-                    </button>
-                  </div>
-
-                  {/* Título Central Apple Intelligence */}
-                  <div className="flex min-w-0 flex-1 items-center justify-center gap-2">
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-[#1D1D1F] text-white shadow-2xs">
-                      <Sparkles size={13} className="text-emerald-400" />
-                    </span>
-                    <div className="min-w-0 text-left">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs sm:text-sm font-bold tracking-tight text-[#1D1D1F] truncate max-w-[140px] sm:max-w-[240px]">
-                          {currentSession?.title && currentSession.title !== "Nova Consulta"
-                            ? currentSession.title
-                            : "Wallet+ Intelligence"}
-                        </span>
+                      <div className="shrink-0 px-3 pb-2 pt-3">
+                        <MacSearchField
+                          size="medium"
+                          value={sessionSearchQuery}
+                          onChange={setSessionSearchQuery}
+                          placeholder="Buscar nas conversas..."
+                          aria-label="Buscar nas conversas"
+                        />
                       </div>
-                      <span className="block text-[10px] font-medium text-[#86868B] truncate">
-                        Livre: R$ {formatCurrency(effectiveProjectedFree)} · Hoje: R$ {formatCurrency(safeSpendMetric.safeDailyAllowance)}
-                      </span>
+
+                      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3">
+                        <MacSidebarItems>
+                          {sessionGroups.length === 0 && (
+                            <p className="px-1 py-6 text-center text-[12px] text-mac-label-2">Nenhuma conversa encontrada.</p>
+                          )}
+                          {sessionGroups.map((group) => (
+                            <React.Fragment key={group.label}>
+                              <MacSidebarSection>{group.label}</MacSidebarSection>
+                              {group.items.map((sess) => {
+                                const lastMsg = sess.messages?.length ? sess.messages[sess.messages.length - 1] : null;
+                                const previewText = lastMsg ? lastMsg.content.replace(/[#*`]/g, "").slice(0, 120) : "Sem mensagens ainda";
+                                return (
+                                  <MacSidebarItem
+                                    key={sess.id}
+                                    selected={sess.id === activeSessionId}
+                                    onClick={() => handleSelectSession(sess.id)}
+                                    icon={<MessageSquare size={15} />}
+                                    label={sess.title || "Nova Consulta"}
+                                    title={`${formatSessionDate(sess.updatedAt || sess.createdAt)} · ${previewText}`}
+                                    detail={<span className="group-hover/sidebar:opacity-0">{sess.messages?.length || 0}</span>}
+                                    accessory={
+                                      <MacButton
+                                        variant="borderless"
+                                        size="small"
+                                        shape="capsule"
+                                        iconOnly
+                                        aria-label="Excluir conversa"
+                                        title="Excluir conversa"
+                                        className="!text-mac-label-2 hover:!text-mac-red"
+                                        onClick={(e) => handleDeleteSession(sess.id, e)}
+                                        icon={<Trash2 size={13} />}
+                                      />
+                                    }
+                                  />
+                                );
+                              })}
+                            </React.Fragment>
+                          ))}
+                        </MacSidebarItems>
+                      </div>
+                    </MacSidebar>
+                  </>
+                )}
+
+                {/* COLUNA PRINCIPAL DA CONVERSA */}
+                <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-mac-window">
+                  {/* Troca rápida entre conversas recentes */}
+                  {sessions.length > 1 && !isHistoryDrawerOpen && (
+                    <div className="flex min-w-0 shrink-0 items-center gap-1.5 overflow-x-auto border-b border-black/[0.05] px-4 py-2 no-scrollbar">
+                      <span className="mac-group-title mr-1 shrink-0">Recentes</span>
+                      {sessions.slice(0, 6).map((sess) => (
+                        <MacButton
+                          key={sess.id}
+                          size="small"
+                          shape="capsule"
+                          variant={sess.id === activeSessionId ? "tinted" : "bordered"}
+                          onClick={() => handleSelectSession(sess.id)}
+                          className="max-w-[180px] shrink-0"
+                        >
+                          <span className="truncate">{sess.title || "Nova Consulta"}</span>
+                        </MacButton>
+                      ))}
                     </div>
-                  </div>
-
-                  {/* Fechar */}
-                  <button
-                    type="button"
-                    onClick={() => setIsCopilotOpen(false)}
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F2F2F7] text-[#6E6E73] transition-all hover:bg-[#E5E5EA] hover:text-[#1D1D1F] active:scale-95 cursor-pointer"
-                    aria-label="Fechar Chat"
-                  >
-                    <X size={16} />
-                  </button>
-                </div>
-
-                {/* CORPO PRINCIPAL: SIDEBAR DE CONVERSAS + FEED DE MENSAGENS */}
-                <div className="relative flex min-h-0 flex-1 overflow-hidden">
-                  {/* SIDEBAR / SLIDE-OVER DE CONVERSAS ANTIGAS (PADRÃO APPLE NOTES / CHATGPT MACOS) */}
-                  {isHistoryDrawerOpen && (
-                    <>
-                      {/* Backdrop interno apenas no mobile */}
-                      <button
-                        type="button"
-                        aria-label="Fechar lista de conversas"
-                        onClick={() => setIsHistoryDrawerOpen(false)}
-                        className="absolute inset-0 z-20 bg-black/25 backdrop-blur-xs sm:hidden"
-                      />
-                      <aside className="absolute inset-y-0 left-0 z-30 flex w-[84%] max-w-[300px] sm:relative sm:w-72 shrink-0 flex-col border-r border-black/[0.06] bg-[#FAFAFC]/98 backdrop-blur-2xl animate-in slide-in-from-left duration-200">
-                        <div className="p-3.5 border-b border-black/[0.05] space-y-2.5">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#86868B]">
-                              Suas Conversas ({sessions.length})
-                            </span>
-                            <button
-                              type="button"
-                              onClick={handleNewChat}
-                              className="inline-flex items-center gap-1 rounded-full bg-[#1D1D1F] px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-black active:scale-95 transition-all cursor-pointer"
-                            >
-                              <Plus size={12} />
-                              <span>Nova conversa</span>
-                            </button>
-                          </div>
-
-                          {/* Busca rápida de conversas antigas */}
-                          <div className="relative flex items-center">
-                            <Search size={13} className="absolute left-3 text-[#86868B] pointer-events-none" />
-                            <input
-                              type="text"
-                              value={sessionSearchQuery}
-                              onChange={(e) => setSessionSearchQuery(e.target.value)}
-                              placeholder="Buscar nas conversas..."
-                              className="w-full rounded-xl bg-[#EFEFF4] pl-8 pr-7 py-1.5 text-[16px] sm:text-xs text-[#1D1D1F] placeholder:text-[#86868B] focus:bg-white focus:outline-none focus:ring-2 focus:ring-black/10 transition-all"
-                            />
-                            {sessionSearchQuery && (
-                              <button
-                                type="button"
-                                onClick={() => setSessionSearchQuery("")}
-                                className="absolute right-2 text-[#86868B] hover:text-[#1D1D1F]"
-                              >
-                                <X size={12} />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Lista de sessões com preview */}
-                        <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 overscroll-contain">
-                          {sessions
-                            .filter((s) => {
-                              if (!sessionSearchQuery.trim()) return true;
-                              const q = sessionSearchQuery.toLowerCase();
-                              const inTitle = (s.title || "").toLowerCase().includes(q);
-                              const inMsgs = (s.messages || []).some((m) =>
-                                m.content.toLowerCase().includes(q)
-                              );
-                              return inTitle || inMsgs;
-                            })
-                            .map((sess) => {
-                              const isActive = sess.id === activeSessionId;
-                              const lastMsg =
-                                sess.messages && sess.messages.length > 0
-                                  ? sess.messages[sess.messages.length - 1]
-                                  : null;
-                              const previewText = lastMsg
-                                ? lastMsg.content.replace(/[#*`]/g, "").slice(0, 68)
-                                : "Sem mensagens ainda";
-
-                              return (
-                                <div
-                                  key={sess.id}
-                                  onClick={() => handleSelectSession(sess.id)}
-                                  className={`group relative rounded-2xl p-3 transition-all cursor-pointer border ${
-                                    isActive
-                                      ? "bg-[#1D1D1F] text-white border-[#1D1D1F] shadow-sm"
-                                      : "bg-white hover:bg-[#F2F2F7]/80 text-[#1D1D1F] border-black/[0.04]"
-                                  }`}
-                                >
-                                  <div className="flex items-start justify-between gap-2">
-                                    <div className="min-w-0 flex-1">
-                                      <div className="flex items-center gap-1.5">
-                                        <MessageSquare
-                                          size={12}
-                                          className={isActive ? "text-emerald-400 shrink-0" : "text-[#86868B] shrink-0"}
-                                        />
-                                        <strong className="block text-xs font-semibold truncate">
-                                          {sess.title || "Nova Consulta"}
-                                        </strong>
-                                      </div>
-                                      <p
-                                        className={`mt-1 text-[11px] line-clamp-1 leading-snug ${
-                                          isActive ? "text-white/75" : "text-[#6E6E73]"
-                                        }`}
-                                      >
-                                        {previewText}
-                                      </p>
-                                      <div
-                                        className={`mt-1.5 flex items-center gap-2 text-[10px] ${
-                                          isActive ? "text-white/55" : "text-[#86868B]"
-                                        }`}
-                                      >
-                                        <span>{formatSessionDate(sess.updatedAt || sess.createdAt)}</span>
-                                        <span>•</span>
-                                        <span>{sess.messages?.length || 0} msgs</span>
-                                      </div>
-                                    </div>
-
-                                    <button
-                                      type="button"
-                                      onClick={(e) => handleDeleteSession(sess.id, e)}
-                                      title="Excluir conversa"
-                                      className={`rounded-full p-1.5 transition-colors shrink-0 ${
-                                        isActive
-                                          ? "text-white/60 hover:bg-white/15 hover:text-rose-300"
-                                          : "text-[#AEAEB2] hover:bg-rose-50 hover:text-rose-600"
-                                      }`}
-                                    >
-                                      <Trash2 size={13} />
-                                    </button>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                        </div>
-                      </aside>
-                    </>
                   )}
 
-                  {/* COLUNA PRINCIPAL DE CONVERSA */}
-                  <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-white">
-                    {/* Barra rápida de troca entre conversas recentes (quando há mais de 1 conversa salva) */}
-                    {sessions.length > 1 && !isHistoryDrawerOpen && (
-                      <div className="flex min-w-0 shrink-0 items-center gap-1.5 overflow-x-auto border-b border-black/[0.04] bg-[#FAFAFC] px-4 py-2 no-scrollbar">
-                        <span className="text-[10px] font-semibold uppercase tracking-wider text-[#86868B] shrink-0 mr-1">
-                          Recentes:
-                        </span>
-                        {sessions.slice(0, 6).map((sess) => {
-                          const isCurrent = sess.id === activeSessionId;
-                          return (
-                            <button
-                              key={sess.id}
-                              type="button"
-                              onClick={() => handleSelectSession(sess.id)}
-                              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-medium transition-all shrink-0 cursor-pointer max-w-[180px] ${
-                                isCurrent
-                                  ? "bg-[#1D1D1F] text-white shadow-2xs"
-                                  : "bg-white text-[#48484A] hover:bg-[#EFEFF4] border border-black/[0.06]"
-                              }`}
-                            >
-                              <span
-                                className={`h-1.5 w-1.5 rounded-full shrink-0 ${
-                                  isCurrent ? "bg-emerald-400" : "bg-[#AEAEB2]"
-                                }`}
-                              />
-                              <span className="truncate">{sess.title || "Nova Consulta"}</span>
-                            </button>
-                          );
-                        })}
+                  {/* Contexto vindo de um módulo */}
+                  {copilotContext && (
+                    <div className="flex shrink-0 items-center justify-between gap-2 border-b border-mac-blue/15 bg-mac-blue/[0.07] px-4 py-2 text-[12px]">
+                      <div className="min-w-0 truncate">
+                        <span className="mr-2 text-[11px] font-semibold text-mac-blue">{copilotContext.eyebrow}</span>
+                        <span className="font-medium text-mac-label">{copilotContext.title}</span>
                       </div>
-                    )}
+                      <MacButton
+                        variant="borderless"
+                        size="small"
+                        shape="capsule"
+                        iconOnly
+                        aria-label="Remover contexto"
+                        className="!text-mac-label-2"
+                        onClick={() => setCopilotContext(null)}
+                        icon={<X size={13} />}
+                      />
+                    </div>
+                  )}
 
-                    {/* Contexto opcional quando aberto a partir de um módulo */}
-                    {copilotContext && (
-                      <div className="flex items-center justify-between gap-2 bg-emerald-50/70 border-b border-emerald-200/60 px-4 py-2 text-xs">
-                        <div className="min-w-0">
-                          <span className="font-bold uppercase tracking-wider text-[9px] text-emerald-700 mr-2">
-                            {copilotContext.eyebrow}
-                          </span>
-                          <span className="font-semibold text-[#1D1D1F] truncate">
-                            {copilotContext.title}
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setCopilotContext(null)}
-                          className="text-[#86868B] hover:text-[#1D1D1F]"
-                        >
-                          <X size={13} />
-                        </button>
-                      </div>
-                    )}
-
-                    {/* STREAM DE MENSAGENS */}
-                    <div className="relative min-h-0 min-w-0 flex-1">
+                  {/* MENSAGENS */}
+                  <div className="relative min-h-0 min-w-0 flex-1">
                     <div
                       ref={chatFeedRef}
                       onScroll={handleChatScroll}
                       data-testid="ai-chat-feed"
-                      className="h-full min-h-0 min-w-0 overflow-y-auto overflow-x-hidden px-3 py-4 sm:px-6 space-y-5 overscroll-contain touch-scroll"
+                      className="h-full min-h-0 min-w-0 overflow-y-auto overflow-x-hidden px-3 py-4 sm:px-6 space-y-4 overscroll-contain touch-scroll"
                     >
                       {messages.length === 0 ? (
                         <div className="flex min-h-full flex-col items-center justify-center py-6 text-center">
-                          <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-[20px] bg-[#1D1D1F] text-white shadow-md">
-                            <Sparkles size={24} className="text-emerald-400" />
+                          <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-[14px] bg-[#1D1D1F] text-white shadow-[0_4px_14px_rgba(0,0,0,0.18)]">
+                            <Sparkles size={24} className="text-emerald-300" />
                           </div>
-                          <h4 className="text-base sm:text-lg font-bold tracking-tight text-[#1D1D1F]">
+                          <h2 className="text-[17px] font-bold tracking-tight text-mac-label">
                             Como posso ajudar nas suas finanças hoje?
-                          </h4>
-                          <p className="mt-1 max-w-md text-xs sm:text-[13px] text-[#86868B] leading-relaxed">
+                          </h2>
+                          <p className="mt-1 max-w-md text-[13px] leading-[18px] text-mac-label-2">
                             Pergunte livremente sobre compras, parcelamentos, faturas, fluxo de caixa ou metas. A IA responde em tempo real com base nos seus dados.
                           </p>
 
-                          {/* Sugestões de 1 toque estilo Apple Intelligence */}
-                          <div className="mt-5 grid w-full max-w-lg grid-cols-1 gap-2 sm:grid-cols-2 text-left">
+                          {/* Sugestões de um toque (Group Boxes clicáveis) */}
+                          <div className="mt-5 grid w-full max-w-lg grid-cols-1 gap-2 text-left sm:grid-cols-2">
                             {[
-                              {
-                                label: "Simular compra ou parcela",
-                                prompt: "Se eu fizer uma compra parcelada hoje, qual o impacto no meu fluxo e na minha meta do mês?",
-                              },
-                              {
-                                label: "Melhor cartão para usar hoje",
-                                prompt: "Qual dos meus cartões vale mais a pena usar hoje considerando limite e fechamento?",
-                              },
-                              {
-                                label: "Onde posso economizar",
-                                prompt: "Analise meus gastos atuais e me diga de forma direta onde posso economizar neste mês.",
-                              },
-                              {
-                                label: "Garantir minha meta do mês",
-                                prompt: `O que preciso fazer para fechar o mês com pelo menos R$ ${formatCurrency(targetEndMonthBalance)} livres?`,
-                              },
-                            ].map((item, idx) => (
+                              { label: "Simular compra ou parcela", icon: <Calculator size={14} />, prompt: "Se eu fizer uma compra parcelada hoje, qual o impacto no meu fluxo e na minha meta do mês?" },
+                              { label: "Melhor cartão para usar hoje", icon: <CreditCard size={14} />, prompt: "Qual dos meus cartões vale mais a pena usar hoje considerando limite e fechamento?" },
+                              { label: "Onde posso economizar", icon: <TrendingUp size={14} />, prompt: "Analise meus gastos atuais e me diga de forma direta onde posso economizar neste mês." },
+                              { label: "Garantir minha meta do mês", icon: <ShieldCheck size={14} />, prompt: `O que preciso fazer para fechar o mês com pelo menos R$ ${formatCurrency(targetEndMonthBalance)} livres?` },
+                            ].map((item) => (
                               <button
-                                key={idx}
+                                key={item.label}
                                 type="button"
                                 onClick={() => handleSendMessage(item.prompt)}
-                                className="group flex flex-col justify-between rounded-2xl border border-black/[0.06] bg-[#FAFAFC] p-3.5 hover:bg-[#F2F2F7] hover:border-black/15 active:scale-[0.99] transition-all cursor-pointer"
+                                className="mac-group-box group flex flex-col gap-1 p-3 text-left outline-none transition-colors hover:bg-mac-fill-2 active:bg-mac-fill focus-visible:shadow-[var(--mac-focus-ring)]"
                               >
-                                <span className="text-xs font-bold text-[#1D1D1F] group-hover:text-black flex items-center justify-between gap-2">
-                                  <span>{item.label}</span>
-                                  <ArrowUpRight size={13} className="text-[#86868B] group-hover:text-[#1D1D1F] shrink-0" />
+                                <span className="flex items-center gap-2 text-[13px] font-semibold text-mac-label">
+                                  <span className="text-mac-blue" aria-hidden>{item.icon}</span>
+                                  <span className="flex-1">{item.label}</span>
+                                  <ArrowUpRight size={13} className="text-mac-label-3 group-hover:text-mac-label-2" />
                                 </span>
-                                <span className="mt-1 text-[11px] text-[#86868B] line-clamp-2 leading-snug">
-                                  {item.prompt}
-                                </span>
+                                <span className="text-[11px] leading-[14px] text-mac-label-2 line-clamp-2">{item.prompt}</span>
                               </button>
                             ))}
                           </div>
 
-                          {/* Atalho para retomar conversas anteriores se existirem */}
                           {sessions.some((s) => (s.messages?.length || 0) > 0 && s.id !== activeSessionId) && (
-                            <button
-                              type="button"
+                            <MacButton
+                              variant="bordered"
+                              shape="capsule"
+                              className="mt-5"
                               onClick={() => setIsHistoryDrawerOpen(true)}
-                              className="mt-5 inline-flex items-center gap-2 rounded-full bg-[#F2F2F7] hover:bg-[#E5E5EA] px-4 py-2 text-xs font-semibold text-[#1D1D1F] transition-all cursor-pointer"
+                              icon={<History size={13} />}
                             >
-                              <History size={13} />
-                              <span>Ver conversas anteriores ({sessions.filter((s) => (s.messages?.length || 0) > 0).length})</span>
-                            </button>
+                              Ver conversas anteriores ({sessions.filter((s) => (s.messages?.length || 0) > 0).length})
+                            </MacButton>
                           )}
                         </div>
                       ) : (
@@ -1576,103 +1487,74 @@ export default function AIAnalystPage() {
                             <div
                               key={msg.id}
                               ref={isLast ? lastMessageRef : undefined}
-                              className={`flex min-w-0 max-w-full flex-col scroll-mt-4 ${
-                                isUser ? "items-end" : "items-start"
-                              }`}
+                              className={`flex min-w-0 max-w-full flex-col scroll-mt-4 ${isUser ? "items-end" : "items-start"}`}
                             >
                               {isUser ? (
-                                <div className="min-w-0 max-w-[86%] sm:max-w-[78%] rounded-[22px] rounded-br-[6px] bg-[#1D1D1F] px-4 py-3 text-white shadow-xs">
+                                <div className="min-w-0 max-w-[86%] sm:max-w-[78%] rounded-[18px] rounded-br-[5px] bg-mac-blue px-3.5 py-2.5 text-white">
                                   <FormattedMessage content={msg.content} role="user" />
-                                  <div className="mt-1.5 flex items-center justify-end gap-1.5 text-[10px] text-white/55">
-                                    <span>{msg.timestamp}</span>
-                                  </div>
+                                  <div className="mt-1 text-right text-[10px] text-white/70">{msg.timestamp}</div>
                                 </div>
                               ) : (
-                                <div className="min-w-0 w-full max-w-[96%] sm:max-w-[90%] rounded-[24px] rounded-tl-[8px] border border-black/[0.06] bg-[#FAFAFC] p-4 sm:p-5 text-[#1D1D1F] shadow-[0_2px_12px_rgba(0,0,0,0.025)] space-y-3">
-                                  {/* Cabeçalho sutil da mensagem da IA */}
-                                  <div className="flex items-center justify-between gap-2 pb-2 border-b border-black/[0.05]">
+                                <div className="mac-group-box min-w-0 w-full max-w-[96%] sm:max-w-[90%] !rounded-[18px] !rounded-tl-[5px] p-4 text-mac-label space-y-3">
+                                  <div className="flex items-center justify-between gap-2">
                                     <div className="flex items-center gap-2">
-                                      <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-[#1D1D1F] text-white">
-                                        <Sparkles size={11} className="text-emerald-400" />
+                                      <span className="flex h-5 w-5 items-center justify-center rounded-[6px] bg-[#1D1D1F] text-white" aria-hidden>
+                                        <Sparkles size={10} className="text-emerald-300" />
                                       </span>
-                                      <span className="text-xs font-bold text-[#1D1D1F]">
-                                        Wallet+ IA
-                                      </span>
-                                      <span className="text-[10px] text-[#86868B]">
-                                        • {msg.timestamp}
-                                      </span>
+                                      <span className="text-[12px] font-semibold text-mac-label">Wallet+ IA</span>
+                                      <span className="text-[11px] text-mac-label-2">{msg.timestamp}</span>
                                     </div>
 
-                                    <button
-                                      type="button"
+                                    <MacButton
+                                      variant="borderless"
+                                      size="small"
+                                      shape="capsule"
                                       onClick={() => handleCopyMessage(msg.id, msg.content)}
-                                      className="inline-flex items-center gap-1 rounded-full bg-white hover:bg-[#EFEFF4] border border-black/[0.06] px-2.5 py-1 text-[10px] font-semibold text-[#48484A] transition-colors cursor-pointer"
                                       title="Copiar resposta"
+                                      icon={copiedMessageId === msg.id ? <Check size={11} /> : <Copy size={11} />}
+                                      className={copiedMessageId === msg.id ? "!text-[#248a3d]" : ""}
                                     >
-                                      {copiedMessageId === msg.id ? (
-                                        <>
-                                          <Check size={11} className="text-emerald-600" />
-                                          <span className="text-emerald-700">Copiado</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <Copy size={11} />
-                                          <span>Copiar</span>
-                                        </>
-                                      )}
-                                    </button>
+                                      {copiedMessageId === msg.id ? "Copiado" : "Copiar"}
+                                    </MacButton>
                                   </div>
 
-                                  {/* Card de Simulação de Compra se houver */}
                                   {msg.simulationResult && (
                                     <div
-                                      className={`p-3.5 rounded-2xl border text-xs font-medium space-y-1 ${
+                                      className={`rounded-[10px] px-3 py-2.5 text-[12px] ${
                                         msg.simulationResult.verdict === "safe"
-                                          ? "bg-emerald-50/90 text-emerald-900 border-emerald-200"
+                                          ? "bg-mac-green/12 text-[#1d6b31]"
                                           : msg.simulationResult.verdict === "warning"
-                                          ? "bg-amber-50/90 text-amber-900 border-amber-200"
-                                          : "bg-rose-50/90 text-rose-900 border-rose-200"
+                                          ? "bg-mac-orange/14 text-[#8a4a00]"
+                                          : "bg-mac-red/12 text-[#a1191c]"
                                       }`}
                                     >
-                                      <div className="flex items-center gap-1.5 font-bold">
-                                        <CheckCircle2 size={14} />
+                                      <div className="flex items-center gap-1.5 font-semibold">
+                                        {msg.simulationResult.verdict === "safe" ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
                                         <span>
-                                          Veredito da Simulação:{" "}
-                                          {msg.simulationResult.verdict === "safe"
-                                            ? "Compra Viável"
-                                            : "Requer Atenção"}
+                                          Veredito da Simulação: {msg.simulationResult.verdict === "safe" ? "Compra Viável" : "Requer Atenção"}
                                         </span>
                                       </div>
-                                      <p className="text-[11px] leading-relaxed">
-                                        {msg.simulationResult.verdictMessage}
-                                      </p>
+                                      <p className="mt-1 text-[11px] leading-[15px]">{msg.simulationResult.verdictMessage}</p>
                                     </div>
                                   )}
 
                                   <FormattedMessage content={msg.content} role="assistant" />
 
-                                  {/* Ações rápidas de continuação na última resposta da IA */}
                                   {isLast && !isSending && (
-                                    <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-black/[0.05]">
-                                      {[
-                                        "E se for em menos parcelas?",
-                                        "Como reduzir esse impacto?",
-                                        "Simular outro valor",
-                                      ].map((followUp, fIdx) => (
-                                        <button
-                                          key={fIdx}
-                                          type="button"
+                                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                                      {["E se for em menos parcelas?", "Como reduzir esse impacto?", "Simular outro valor"].map((followUp) => (
+                                        <MacButton
+                                          key={followUp}
+                                          variant="bordered"
+                                          size="small"
+                                          shape="capsule"
                                           onClick={() => {
-                                            if (followUp === "Simular outro valor") {
-                                              setIsInlineSimOpen(true);
-                                            } else {
-                                              handleSendMessage(followUp);
-                                            }
+                                            if (followUp === "Simular outro valor") setIsInlineSimOpen(true);
+                                            else handleSendMessage(followUp);
                                           }}
-                                          className="rounded-full bg-white hover:bg-[#EFEFF4] border border-black/[0.07] px-3 py-1 text-[11px] font-semibold text-[#1D1D1F] transition-all active:scale-95 cursor-pointer"
                                         >
                                           {followUp}
-                                        </button>
+                                        </MacButton>
                                       ))}
                                     </div>
                                   )}
@@ -1684,272 +1566,158 @@ export default function AIAnalystPage() {
                       )}
 
                       {isSending && (
-                        <div className="flex items-center gap-3 rounded-2xl border border-black/[0.05] bg-[#FAFAFC] px-4 py-3 text-xs font-medium text-[#48484A] w-fit shadow-2xs animate-pulse">
-                          <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-[#1D1D1F] text-white">
-                            <RefreshCw size={12} className="animate-spin text-emerald-400" />
-                          </span>
+                        <div className="mac-group-box flex w-fit items-center gap-2.5 px-3.5 py-2.5 text-[12px] font-medium text-mac-label-2">
+                          <MacSpinner size={14} />
                           <span>Analisando seu fluxo de caixa e cartões...</span>
                         </div>
                       )}
                       <div ref={chatBottomRef} className="h-1" />
                     </div>
 
-                    {/* Botão flutuante para descer até o final quando o usuário rola para cima */}
                     {showScrollToBottom && messages.length > 0 && (
-                      <button
-                        type="button"
+                      <MacButton
+                        variant="glass"
+                        size="large"
                         onClick={scrollToChatBottom}
-                        className="absolute bottom-3 right-5 z-20 flex items-center gap-1.5 rounded-full border border-black/10 bg-white/95 px-3 py-1.5 text-[11px] font-semibold text-[#1D1D1F] shadow-md backdrop-blur-md hover:bg-[#F2F2F7] active:scale-95 transition-all cursor-pointer"
+                        icon={<ChevronDown size={14} />}
+                        className="!absolute bottom-3 right-5 z-20"
                       >
-                        <ChevronDown size={14} />
-                        <span>Ir para o final</span>
-                      </button>
+                        Ir para o final
+                      </MacButton>
                     )}
+                  </div>
 
-                    </div>
+                  {/* SIMULADOR RÁPIDO (formulário macOS) */}
+                  {isInlineSimOpen && (
+                    <div className="max-h-[45%] shrink-0 overflow-y-auto overscroll-contain border-t border-black/[0.06] bg-[#F5F5F7] px-4 py-3 sm:px-5 space-y-3 animate-in slide-in-from-bottom-2 duration-200">
+                      <div className="flex items-center justify-between">
+                        <span className="flex items-center gap-1.5 text-[13px] font-semibold text-mac-label">
+                          <Calculator size={14} className="text-mac-blue" />
+                          Simulador rápido de compra
+                        </span>
+                        <MacButton
+                          variant="borderless"
+                          size="small"
+                          shape="capsule"
+                          iconOnly
+                          aria-label="Fechar simulador"
+                          className="!text-mac-label-2"
+                          onClick={() => setIsInlineSimOpen(false)}
+                          icon={<X size={14} />}
+                        />
+                      </div>
 
-                    {/* SIMULADOR DE COMPRA INLINE (ESTILO APPLE SHEET COMPACTO) */}
-                    {isInlineSimOpen && (
-                      <div className="max-h-[45%] shrink-0 overflow-y-auto overscroll-contain border-t border-black/[0.07] bg-[#F8F8FA] p-3.5 sm:px-5 space-y-2.5 animate-in slide-in-from-bottom-2 duration-200 text-xs">
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-[#1D1D1F] flex items-center gap-1.5">
-                            <Calculator size={14} className="text-emerald-600" />
-                            <span>Simulador Rápido de Compra</span>
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setIsInlineSimOpen(false)}
-                            className="rounded-full p-1 text-[#86868B] hover:bg-black/5 hover:text-[#1D1D1F]"
-                          >
-                            <X size={14} />
-                          </button>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          <input
-                            type="text"
-                            placeholder="O que deseja comprar? (ex: Tênis)"
+                      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-[1fr_1fr_auto]">
+                        <MacFormRow label="O que deseja comprar?" htmlFor="sim-description">
+                          <MacTextField
+                            id="sim-description"
+                            size="large"
+                            placeholder="Ex: Tênis"
                             value={simDescription}
                             onChange={(e) => setSimDescription(e.target.value)}
-                            className="px-3.5 py-2 rounded-xl bg-white border border-black/10 text-[16px] sm:text-xs text-[#1D1D1F] focus:outline-none focus:ring-2 focus:ring-black/10"
                           />
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              placeholder="Valor R$ (ex: 350)"
-                              value={simAmount}
-                              onChange={(e) => setSimAmount(e.target.value)}
-                              className="min-w-0 flex-1 px-3.5 py-2 rounded-xl bg-white border border-black/10 text-[16px] sm:text-xs font-mono font-bold text-[#1D1D1F] focus:outline-none focus:ring-2 focus:ring-black/10"
+                        </MacFormRow>
+                        <MacFormRow label="Valor (R$)" htmlFor="sim-amount">
+                          <MacTextField
+                            id="sim-amount"
+                            size="large"
+                            inputMode="decimal"
+                            placeholder="Ex: 350"
+                            value={simAmount}
+                            onChange={(e) => setSimAmount(e.target.value)}
+                            className="font-mono"
+                          />
+                        </MacFormRow>
+                        {simMethod === "credit" && (
+                          <MacFormRow label="Parcelas">
+                            <PopUpButton
+                              value={String(simInstallments)}
+                              onChange={(n) => setSimInstallments(Number(n))}
+                              ariaLabel="Número de parcelas"
+                              options={[1, 2, 3, 4, 5, 6, 8, 10, 12].map((n) => ({ value: String(n), label: `${n}x` }))}
                             />
-                            {simMethod === "credit" && (
-                              <select
-                                value={simInstallments}
-                                onChange={(e) => setSimInstallments(Number(e.target.value))}
-                                className="px-2.5 py-2 rounded-xl bg-white border border-black/10 text-[16px] sm:text-xs font-semibold text-[#1D1D1F]"
-                              >
-                                {[1, 2, 3, 4, 5, 6, 8, 10, 12].map((n) => (
-                                  <option key={n} value={n}>
-                                    {n}x
-                                  </option>
-                                ))}
-                              </select>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
-                          <div className="flex items-center gap-1 bg-white p-1 rounded-full border border-black/[0.06] text-[11px]">
-                            <button
-                              type="button"
-                              onClick={() => setSimMethod("credit")}
-                              className={`px-3 py-1 rounded-full font-semibold transition-all cursor-pointer ${
-                                simMethod === "credit"
-                                  ? "bg-[#1D1D1F] text-white"
-                                  : "text-[#86868B] hover:text-[#1D1D1F]"
-                              }`}
-                            >
-                              Crédito
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setSimMethod("cash")}
-                              className={`px-3 py-1 rounded-full font-semibold transition-all cursor-pointer ${
-                                simMethod === "cash"
-                                  ? "bg-[#1D1D1F] text-white"
-                                  : "text-[#86868B] hover:text-[#1D1D1F]"
-                              }`}
-                            >
-                              À vista
-                            </button>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={executeSimulation}
-                            className="px-4 py-2 rounded-full bg-[#1D1D1F] hover:bg-black text-white font-bold text-xs active:scale-95 transition-all cursor-pointer shadow-xs"
-                          >
-                            Simular na IA
-                          </button>
-                        </div>
+                          </MacFormRow>
+                        )}
                       </div>
-                    )}
 
-                    {/* COMPOSER / TECLADO PADRÃO APPLE IMESSAGE */}
-                    <form
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        handleSendMessage();
-                      }}
-                      data-testid="ai-chat-composer"
-                      className="min-w-0 shrink-0 border-t border-black/[0.06] bg-white/95 px-3 py-2.5 sm:px-5 sm:py-3.5 pb-[calc(0.65rem+env(safe-area-inset-bottom,0px))] backdrop-blur-xl"
-                    >
-                      <div className="flex items-end gap-2 rounded-[26px] border border-black/[0.08] bg-[#F2F2F7]/90 px-2.5 py-1.5 transition-all focus-within:border-black/20 focus-within:bg-white focus-within:shadow-[0_4px_20px_rgba(0,0,0,0.06)]">
-                        <button
-                          type="button"
-                          onClick={() => setIsInlineSimOpen(!isInlineSimOpen)}
-                          title="Simular impacto de uma compra"
-                          className={`flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-semibold transition-all cursor-pointer ${
-                            isInlineSimOpen
-                              ? "bg-emerald-600 text-white shadow-2xs"
-                              : "bg-white text-[#48484A] hover:text-[#1D1D1F] border border-black/[0.06]"
-                          }`}
-                        >
-                          <Calculator size={14} />
-                          <span className="hidden sm:inline">Simular</span>
-                        </button>
-
-                        <textarea
-                          ref={chatInputRef}
-                          rows={1}
-                          value={inputMessage}
-                          onChange={(e) => {
-                            setInputMessage(e.target.value);
-                            e.target.style.height = "auto";
-                            e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                              e.preventDefault();
-                              if (inputMessage.trim() && !isSending) {
-                                void handleSendMessage();
-                              }
-                            }
-                          }}
-                          enterKeyHint="send"
-                          placeholder="Mensagem para Wallet+ IA..."
-                          aria-label="Mensagem para Wallet+ IA"
-                          maxLength={1000}
-                          className="max-h-[120px] min-h-[36px] min-w-0 flex-1 resize-none bg-transparent px-1.5 py-1.5 text-[16px] sm:text-[14px] leading-snug font-normal text-[#1D1D1F] placeholder:text-[#86868B] focus:outline-none"
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <MacSegmentedControl
+                          ariaLabel="Forma de pagamento da simulação"
+                          value={simMethod}
+                          onChange={setSimMethod}
+                          options={[
+                            { value: "credit", label: "Crédito" },
+                            { value: "cash", label: "À vista" },
+                          ]}
                         />
-
-                        <button
-                          type="submit"
-                          disabled={!inputMessage.trim() || isSending}
-                          aria-label="Enviar mensagem"
-                          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-all cursor-pointer ${
-                            inputMessage.trim() && !isSending
-                              ? "bg-[#1D1D1F] text-white shadow-xs hover:bg-black active:scale-90"
-                              : "bg-black/[0.07] text-[#86868B] opacity-50 cursor-not-allowed"
-                          }`}
-                        >
-                          <ArrowUp size={17} strokeWidth={2.5} />
-                        </button>
+                        <MacButton variant="prominent" size="large" shape="capsule" onClick={executeSimulation}>
+                          Simular na IA
+                        </MacButton>
                       </div>
-                    </form>
-                  </div>
+                    </div>
+                  )}
+
+                  {/* COMPOSER — campo de vidro do macOS 27 */}
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }}
+                    data-testid="ai-chat-composer"
+                    className="min-w-0 shrink-0 border-t border-black/[0.05] bg-mac-window px-3 py-2.5 sm:px-5 sm:py-3 pb-[calc(0.65rem+env(safe-area-inset-bottom,0px))]"
+                  >
+                    <div className="mac-search-field !h-auto min-h-[40px] items-end !gap-1.5 !rounded-[20px] !px-1.5 !py-1.5">
+                      <MacToolbarButton
+                        onClick={() => setIsInlineSimOpen(!isInlineSimOpen)}
+                        aria-pressed={isInlineSimOpen}
+                        title="Simular impacto de uma compra"
+                        aria-label="Simular"
+                        icon={<Calculator size={15} className={isInlineSimOpen ? "text-mac-blue" : undefined} />}
+                      />
+
+                      <textarea
+                        ref={chatInputRef}
+                        rows={1}
+                        value={inputMessage}
+                        onChange={(e) => {
+                          setInputMessage(e.target.value);
+                          e.target.style.height = "auto";
+                          e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                            e.preventDefault();
+                            if (inputMessage.trim() && !isSending) {
+                              void handleSendMessage();
+                            }
+                          }
+                        }}
+                        enterKeyHint="send"
+                        placeholder="Mensagem para Wallet+ IA..."
+                        aria-label="Mensagem para Wallet+ IA"
+                        maxLength={1000}
+                        className="max-h-[120px] min-h-[28px] min-w-0 flex-1 resize-none bg-transparent px-1 py-[5px] text-[16px] sm:text-[13px] leading-[18px] font-medium text-mac-label placeholder:text-mac-label-2 placeholder:font-normal focus:outline-none"
+                      />
+
+                      <button
+                        type="submit"
+                        disabled={!inputMessage.trim() || isSending}
+                        aria-label="Enviar mensagem"
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-mac-blue text-white outline-none transition-[filter,opacity] active:brightness-90 disabled:bg-mac-fill disabled:text-mac-label-3 focus-visible:shadow-[var(--mac-focus-ring)] [@media(pointer:coarse)]:h-8 [@media(pointer:coarse)]:w-8"
+                      >
+                        <ArrowUp size={15} strokeWidth={2.6} />
+                      </button>
+                    </div>
+                  </form>
                 </div>
+              </div>
             </ChatDialog>
           )}
 
-
           {/* =======================================================
-              COLUNA DIREITA: O DOSSIÊ DO AUDITOR (ANÁLISES E AÇÕES)
+              3. AMBIENTE ATIVO
              ======================================================= */}
           <div className="order-1 flex flex-col space-y-4">
-            {/* QUATRO AMBIENTES DE TRABALHO */}
-            <nav
-              aria-label="Ambientes do Wallet+"
-              className="grid grid-cols-2 gap-2 rounded-[28px] border border-black/[0.06] bg-white p-2 shadow-[0_8px_28px_rgba(0,0,0,0.025)] lg:grid-cols-4"
-            >
-              <button
-                type="button"
-                onClick={() => setActiveDossierTab("mindmap")}
-                className={`group min-h-[86px] rounded-[21px] border p-3 text-left transition-all active:scale-[.98] ${
-                  activeDossierTab === "mindmap"
-                    ? "border-[#1D1D1F] bg-[#1D1D1F] text-white shadow-lg"
-                    : "border-transparent bg-[#F5F6F3] text-[#1D1D1F] hover:border-black/10 hover:bg-[#EFF2ED]"
-                }`}
-              >
-                <span className="flex items-center justify-between">
-                  <span className={`flex h-8 w-8 items-center justify-center rounded-xl ${activeDossierTab === "mindmap" ? "bg-white/10 text-emerald-300" : "bg-white text-emerald-700 shadow-sm"}`}>
-                    <Building2 size={15} />
-                  </span>
-                  <span className={`font-mono text-[9px] ${activeDossierTab === "mindmap" ? "text-white/45" : "text-[#AEAEB2]"}`}>01</span>
-                </span>
-                <strong className="mt-2 block text-[12px]">Escritório</strong>
-                <span className={`mt-0.5 block text-[9px] ${activeDossierTab === "mindmap" ? "text-white/60" : "text-[#86868B]"}`}>Agentes e análises em andamento</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveDossierTab("calendar")}
-                className={`group min-h-[86px] rounded-[21px] border p-3 text-left transition-all active:scale-[.98] ${
-                  activeDossierTab === "calendar"
-                    ? "border-[#1D1D1F] bg-[#1D1D1F] text-white shadow-lg"
-                    : "border-transparent bg-[#F4F7FC] text-[#1D1D1F] hover:border-black/10 hover:bg-[#EDF3FB]"
-                }`}
-              >
-                <span className="flex items-center justify-between">
-                  <span className={`flex h-8 w-8 items-center justify-center rounded-xl ${activeDossierTab === "calendar" ? "bg-white/10 text-blue-300" : "bg-white text-blue-700 shadow-sm"}`}>
-                    <CalendarDays size={15} />
-                  </span>
-                  <span className={`font-mono text-[9px] ${activeDossierTab === "calendar" ? "text-white/45" : "text-[#AEAEB2]"}`}>02</span>
-                </span>
-                <strong className="mt-2 block text-[12px]">Agenda financeira</strong>
-                <span className={`mt-0.5 block text-[9px] ${activeDossierTab === "calendar" ? "text-white/60" : "text-[#86868B]"}`}>Entradas, contas e vencimentos</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveDossierTab("storytelling")}
-                className={`group min-h-[86px] rounded-[21px] border p-3 text-left transition-all active:scale-[.98] ${
-                  activeDossierTab === "storytelling"
-                    ? "border-[#1D1D1F] bg-[#1D1D1F] text-white shadow-lg"
-                    : "border-transparent bg-[#FBF5F3] text-[#1D1D1F] hover:border-black/10 hover:bg-[#F9EFEB]"
-                }`}
-              >
-                <span className="flex items-center justify-between">
-                  <span className={`flex h-8 w-8 items-center justify-center rounded-xl ${activeDossierTab === "storytelling" ? "bg-white/10 text-rose-300" : "bg-white text-rose-700 shadow-sm"}`}>
-                    <Flame size={15} />
-                  </span>
-                  <span className={`font-mono text-[9px] ${activeDossierTab === "storytelling" ? "text-white/45" : "text-[#AEAEB2]"}`}>03</span>
-                </span>
-                <strong className="mt-2 block text-[12px]">Padrões</strong>
-                <span className={`mt-0.5 block text-[9px] ${activeDossierTab === "storytelling" ? "text-white/60" : "text-[#86868B]"}`}>Hábitos, excessos e oportunidades</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveDossierTab("overview")}
-                className={`group min-h-[86px] rounded-[21px] border p-3 text-left transition-all active:scale-[.98] ${
-                  activeDossierTab === "overview"
-                    ? "border-[#1D1D1F] bg-[#1D1D1F] text-white shadow-lg"
-                    : "border-transparent bg-[#F5F4FA] text-[#1D1D1F] hover:border-black/10 hover:bg-[#F0EEF8]"
-                }`}
-              >
-                <span className="flex items-center justify-between">
-                  <span className={`flex h-8 w-8 items-center justify-center rounded-xl ${activeDossierTab === "overview" ? "bg-white/10 text-violet-300" : "bg-white text-violet-700 shadow-sm"}`}>
-                    <Shield size={15} />
-                  </span>
-                  <span className={`font-mono text-[9px] ${activeDossierTab === "overview" ? "text-white/45" : "text-[#AEAEB2]"}`}>04</span>
-                </span>
-                <strong className="mt-2 block text-[12px]">Visão geral</strong>
-                <span className={`mt-0.5 block text-[9px] ${activeDossierTab === "overview" ? "text-white/60" : "text-[#86868B]"}`}>Saúde da conta · {currentScore} pontos</span>
-              </button>
-            </nav>
-
-            {/* ABA 1: ESCRITÓRIO VIVO DOS AGENTES WALLET+ */}
             {activeDossierTab === "mindmap" && (
               <FinancialOffice
                 cards={cards}
@@ -1965,7 +1733,6 @@ export default function AIAnalystPage() {
               />
             )}
 
-            {/* ABA 2: CALENDÁRIO DE GASTOS COM HEATMAP */}
             {activeDossierTab === "calendar" && (
               <SpendingCalendarHeatmap
                 recurringItems={recurringItems}
@@ -1980,7 +1747,6 @@ export default function AIAnalystPage() {
               />
             )}
 
-            {/* ABA 3: STORYTELLING CONTÁBIL & PADRÕES DIDÁTICOS */}
             {activeDossierTab === "storytelling" && (
               <VisualPatternStorytelling
                 diagnosis={diagnosis}
@@ -2004,7 +1770,6 @@ export default function AIAnalystPage() {
               />
             )}
 
-            {/* ABA 4: VISÃO GERAL EM BENTO GRID, COM HIERARQUIA APPLE */}
             {activeDossierTab === "overview" && (
               <div className="grid grid-cols-12 gap-4 animate-in fade-in duration-300">
                 <div className="col-span-12">
@@ -2041,21 +1806,59 @@ export default function AIAnalystPage() {
                   />
                 </div>
 
-                <section className="col-span-12 flex min-h-[360px] flex-col rounded-[30px] border border-black/[0.05] bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.03)] lg:col-span-5">
-                  <div className="flex items-start justify-between gap-3 border-b border-black/[0.05] pb-4">
-                    <div className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-[13px] bg-[#F2F2F7] text-[#1D1D1F]"><CalendarClock size={16} /></span><div><h3 className="text-sm font-semibold tracking-tight text-slate-900">Próximos vencimentos</h3><p className="text-[10px] text-[#86868B]">Lembretes e baixas rápidas.</p></div></div>
-                    <button type="button" onClick={() => setActiveDossierTab("calendar")} className="rounded-full p-2 text-blue-600 transition-colors hover:bg-blue-50" title="Abrir agenda completa"><CalendarDays size={14} /></button>
+                {/* Próximos vencimentos — lista no padrão "Lists and Tables" */}
+                <section className="col-span-12 flex min-h-[360px] flex-col rounded-[20px] border border-black/[0.04] bg-mac-window py-3 shadow-[0_2px_12px_rgba(0,0,0,0.03)] lg:col-span-5">
+                  <div className="flex items-center justify-between gap-3 px-4 pb-2">
+                    <div className="flex items-center gap-2.5">
+                      <CalendarClock size={16} className="text-mac-blue" />
+                      <div>
+                        <h3 className="text-[13px] font-semibold text-mac-label">Próximos vencimentos</h3>
+                        <p className="text-[11px] text-mac-label-2">Lembretes e baixas rápidas</p>
+                      </div>
+                    </div>
+                    <MacButton
+                      variant="borderless"
+                      size="small"
+                      shape="capsule"
+                      onClick={() => setActiveDossierTab("calendar")}
+                      title="Abrir agenda completa"
+                    >
+                      Ver agenda
+                    </MacButton>
                   </div>
 
                   {upcomingEvents.length === 0 ? (
-                    <div className="flex flex-1 flex-col items-center justify-center text-center text-[11px] text-[#86868B]"><CheckCircle2 size={22} className="mb-2 text-emerald-500" /><p>Nenhuma conta pendente nos próximos dias.</p></div>
+                    <div className="flex flex-1 flex-col items-center justify-center text-center text-[12px] text-mac-label-2">
+                      <CheckCircle2 size={22} className="mb-2 text-mac-green" />
+                      <p>Nenhuma conta pendente nos próximos dias.</p>
+                    </div>
                   ) : (
-                    <div className="mt-2 divide-y divide-black/[0.05]">
-                      {upcomingEvents.slice(0, 5).map((event) => (
-                        <div key={event.id} className="group flex items-center gap-3 py-3">
-                          <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-[11px] ${event.isUrgent ? "bg-amber-50 text-amber-700" : "bg-[#F2F2F7] text-indigo-600"}`}>{event.type === "credit_invoice" ? <CreditCard size={14} /> : <Building2 size={14} />}</span>
-                          <div className="min-w-0 flex-1"><strong className="block truncate text-[11px] font-medium text-slate-900">{event.title}</strong><span className="text-[9px] text-[#86868B]">{event.daysRemaining === 0 ? "vence hoje" : `em ${event.daysRemaining}d`} · {event.dueDate}</span></div>
-                          <div className="text-right"><strong className="block text-[11px] font-semibold tabular-nums text-slate-900">R$ {formatCurrency(event.amount)}</strong>{event.id.startsWith("recurring_") && <button type="button" onClick={() => handlePayUpcomingItem(event.id)} disabled={payingBillId === event.id} className="mt-1 text-[9px] font-semibold text-blue-600 opacity-70 transition-opacity hover:opacity-100 disabled:opacity-40">{payingBillId === event.id ? "Baixando…" : "Baixar"}</button>}</div>
+                    <div className="mt-1">
+                      <div className="mac-group-title px-4 pb-1">Esta semana</div>
+                      {upcomingEvents.slice(0, 5).map((event, index) => (
+                        <div key={event.id} data-alternate={index % 2 === 1} className="mac-row flex items-center gap-3 px-4 py-2">
+                          <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${event.isUrgent ? "bg-mac-orange/15 text-[#c45500]" : "bg-mac-fill-3 text-mac-indigo"}`}>
+                            {event.type === "credit_invoice" ? <CreditCard size={13} /> : <Building2 size={13} />}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <strong className="block truncate text-[13px] font-medium text-mac-label">{event.title}</strong>
+                            <span className="text-[11px] text-mac-label-2">
+                              {event.daysRemaining === 0 ? "vence hoje" : `em ${event.daysRemaining}d`} · {event.dueDate}
+                            </span>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <strong className="text-[13px] font-semibold tabular-nums text-mac-label">R$ {formatCurrency(event.amount)}</strong>
+                            {event.id.startsWith("recurring_") && (
+                              <MacButton
+                                variant="tinted"
+                                size="small"
+                                onClick={() => handlePayUpcomingItem(event.id)}
+                                disabled={payingBillId === event.id}
+                              >
+                                {payingBillId === event.id ? "Baixando…" : "Baixar"}
+                              </MacButton>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -2080,6 +1883,7 @@ export default function AIAnalystPage() {
         </div>
       </div>
 
+      {/* BARRA FLUTUANTE DE PERGUNTA RÁPIDA — Liquid Glass */}
       {!isCopilotOpen && (
         <div className="fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom,0px))] md:bottom-5 left-1/2 -translate-x-1/2 z-[90] w-[calc(100%-1.5rem)] max-w-xl">
           <form
@@ -2091,17 +1895,15 @@ export default function AIAnalystPage() {
                 openCopilotWithContext();
               }
             }}
-            className="flex items-center gap-2 rounded-full border border-white/70 bg-[#1D1D1F]/95 p-1.5 pl-2.5 text-white shadow-[0_18px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl transition-all"
+            className="mac-search-field !h-12 !gap-1.5 !pl-1.5 !pr-1.5 shadow-[var(--mac-glass-control-shadow),0_18px_48px_rgba(0,0,0,0.16)]"
           >
-            <button
-              type="button"
+            <MacToolbarButton
               onClick={() => openCopilotWithContext()}
-              className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors cursor-pointer"
               title="Abrir Chat IA"
-            >
-              <Sparkles size={15} className="text-emerald-400" />
-              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full border-2 border-[#1D1D1F] bg-emerald-400" />
-            </button>
+              aria-label="Abrir Chat IA"
+              className="relative !h-9 !w-9"
+              icon={<Sparkles size={16} className="text-mac-blue" />}
+            />
 
             <input
               type="text"
@@ -2111,64 +1913,41 @@ export default function AIAnalystPage() {
                 if (messages.length > 0) setIsCopilotOpen(true);
               }}
               enterKeyHint="send"
+              aria-label="Pergunte qualquer coisa para a IA Wallet+"
               placeholder="Pergunte qualquer coisa para a IA Wallet+..."
               maxLength={1000}
-              className="min-w-0 flex-1 bg-transparent px-2 py-1.5 text-[16px] sm:text-xs font-medium text-white placeholder:text-white/55 focus:outline-none"
             />
 
             {sessions.length > 1 && (
-              <button
-                type="button"
+              <MacToolbarButton
                 onClick={() => {
                   setIsCopilotOpen(true);
                   setIsHistoryDrawerOpen(true);
                 }}
-                className="flex h-8 items-center gap-1 rounded-full bg-white/10 hover:bg-white/20 px-2.5 text-[11px] font-semibold text-white/90 transition-colors cursor-pointer shrink-0"
                 title="Ver conversas salvas"
-              >
-                <History size={12} />
-                <span className="hidden xs:inline">{sessions.length}</span>
-              </button>
+                aria-label={`Ver conversas salvas (${sessions.length})`}
+                icon={<History size={14} />}
+                label={String(sessions.length)}
+                hideLabelOnMobile
+              />
             )}
 
-            <button
-              type="submit"
-              className="flex h-9 items-center gap-1.5 rounded-full bg-white px-3.5 text-xs font-bold text-[#1D1D1F] hover:bg-white/90 active:scale-95 transition-all cursor-pointer shrink-0"
-            >
-              <span>{inputMessage.trim() ? "Enviar" : "Chat"}</span>
-              <ArrowUp size={14} strokeWidth={2.5} />
-            </button>
+            <MacButton type="submit" variant="prominent" shape="capsule" size="large" icon={<ArrowUp size={14} strokeWidth={2.5} />}>
+              {inputMessage.trim() ? "Enviar" : "Chat"}
+            </MacButton>
           </form>
         </div>
       )}
 
-      {/* =========================================================
-          MODAIS GLOBAIS INTEGRADOS (SEM SAIR DA TELA UNIFICADA)
-         ========================================================= */}
-      
-      {/* 1. Modal do Calendário Financeiro Interativo Completo */}
-      {isCalendarModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="w-full max-w-4xl max-h-[92dvh] overflow-y-auto rounded-[32px] bg-[#F2F2F7] border border-black/10 shadow-[0_24px_60px_rgba(0,0,0,0.2)] p-4 sm:p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-black/[0.06] pb-3">
-              <div className="flex items-center gap-2">
-                <CalendarDays size={18} className="text-[#1D1D1F]" />
-                <h3 className="text-base font-bold text-[#1D1D1F]">
-                  Calendário Financeiro Contábil
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsCalendarModalOpen(false)}
-                className="w-8 h-8 rounded-full bg-white hover:bg-[#E5E5EA] text-[#1D1D1F] flex items-center justify-center transition-colors cursor-pointer border border-black/5"
-              >
-                <X size={15} />
-              </button>
-            </div>
-            <InteractiveFinancialCalendar />
-          </div>
-        </div>
-      )}
+      {/* Calendário financeiro completo — Sheet do macOS */}
+      <MacSheet
+        isOpen={isCalendarModalOpen}
+        onClose={() => setIsCalendarModalOpen(false)}
+        title="Calendário Financeiro Contábil"
+        icon={<CalendarDays size={16} />}
+      >
+        <InteractiveFinancialCalendar />
+      </MacSheet>
     </div>
   );
 }

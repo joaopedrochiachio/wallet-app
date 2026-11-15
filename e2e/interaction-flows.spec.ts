@@ -125,7 +125,7 @@ test("data retroativa e parcelamento continuam disponíveis nas opções", async
 test("edição salva com um toque e mantém formulário aberto se falhar", async ({ page }) => {
   await open(page, "/transactions");
   await page.getByRole("button", { name: "Opções para Almoço inicial", exact: true }).click();
-  await page.getByRole("button", { name: "Editar", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Editar", exact: true }).click();
   await page.getByPlaceholder("Ex: Carregador · Casas Bahia").fill("Almoço corrigido");
   await page.evaluate(() => Object.assign(window, { __failNext: true }));
   await page.getByRole("button", { name: "Salvar alterações", exact: true }).click();
@@ -139,9 +139,9 @@ test("edição salva com um toque e mantém formulário aberto se falhar", async
 test("movimentação de meta oferece destino útil em vez de edição ou exclusão bloqueada", async ({ page }) => {
   await open(page, "/transactions");
   await page.getByRole("button", { name: "Opções para Aporte: Reserva", exact: true }).click();
-  await expect(page.getByRole("link", { name: "Abrir Metas", exact: true })).toHaveAttribute("href", "/goals");
-  await expect(page.getByRole("button", { name: "Editar", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Excluir", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("menuitem", { name: "Abrir Metas", exact: true })).toHaveAttribute("href", "/goals");
+  await expect(page.getByRole("menuitem", { name: "Editar", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("menuitem", { name: "Excluir", exact: true })).toHaveCount(0);
 });
 
 test("fatura informa conta e valor ao registrar pagamento e mantém opção de desfazer", async ({ page }) => {
