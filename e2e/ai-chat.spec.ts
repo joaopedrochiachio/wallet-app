@@ -145,3 +145,28 @@ test("chat acompanha o teclado e restaura a página ao fechar", async ({ page })
   await expect(page.getByRole("dialog")).toHaveCount(0);
   expect(await page.locator("main").evaluate((element) => element.style.overflow)).toBe("auto");
 });
+
+test("quando a IA falha, o chat mostra o motivo e reenvia sem duplicar a pergunta", async ({ page }) => {
+  await openChat(page, 1280, 844);
+  await page.evaluate(() => {
+    const original = window.fetch;
+    let failures = 1;
+    window.fetch = async (...args) => {
+      if (failures-- > 0) {
+        return new Response(JSON.stringify({ success: false, code: "INSUFFICIENT_QUOTA", error: "A IA está temporariamente sem créditos. Tente novamente mais tarde." }), { status: 503, headers: { "Content-Type": "application/json" } });
+      }
+      return original(...args);
+    };
+  });
+  const dialog = page.getByRole("dialog");
+  await page.getByRole("textbox", { name: "Mensagem para Wallet+ IA", exact: true }).fill("Pergunta de teste única");
+  await page.getByRole("button", { name: "Enviar mensagem", exact: true }).click();
+  const alert = dialog.getByRole("alert");
+  await expect(alert).toContainText("A IA não respondeu");
+  await expect(alert).toContainText("sem créditos");
+  await expect(dialog.getByText("Diagnóstico de Fôlego")).toHaveCount(0);
+  await alert.getByRole("button", { name: "Tentar novamente" }).click();
+  await expect(dialog.getByText("A fatura está quitada. Restam").last()).toBeVisible();
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await expect(dialog.getByText("Pergunta de teste única", { exact: true })).toHaveCount(1);
+});

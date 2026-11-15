@@ -173,64 +173,13 @@ function cleanEnvKey(raw?: string): string {
   return raw.trim().replace(/^["']+|["']+$/g, "").replace(/[\r\n\s]+/g, "").trim();
 }
 
-const RUNTIME_FALLBACK_KEY_CODES = [
-  115, 107, 45, 112, 114, 111, 106, 45, 75, 108, 68, 72, 114, 99, 106, 108, 50,
-  113, 110, 121, 101, 97, 55, 48, 55, 67, 95, 53, 119, 97, 115, 48, 89, 87, 118,
-  108, 114, 98, 88, 116, 68, 85, 56, 45, 98, 76, 107, 72, 53, 83, 81, 68, 95,
-  68, 55, 122, 80, 57, 110, 77, 77, 81, 68, 48, 48, 65, 109, 115, 114, 76, 78,
-  70, 102, 83, 45, 73, 120, 65, 80, 114, 76, 82, 84, 51, 66, 108, 98, 107, 70,
-  74, 101, 87, 111, 53, 102, 102, 97, 84, 88, 104, 87, 76, 108, 78, 80, 88, 57,
-  120, 69, 79, 50, 107, 76, 119, 121, 122, 102, 116, 66, 83, 53, 95, 74, 55, 78,
-  54, 52, 82, 107, 51, 76, 75, 56, 120, 116, 97, 49, 82, 45, 117, 87, 86, 99,
-  48, 81, 48, 73, 97, 122, 76, 85, 121, 55, 120, 77, 100, 102, 56, 118, 113, 77,
-  118, 81, 65,
-];
-
-function isRunningInNodeTest(): boolean {
-  return (
-    (typeof process !== "undefined" &&
-      Array.isArray(process.execArgv) &&
-      process.execArgv.some((arg) => arg.includes("--test"))) ||
-    Boolean(process.env.NODE_TEST_CONTEXT)
-  );
-}
-
-function resolveOpenAIKeyCandidates(): string[] {
-  const candidates: string[] = [];
-  const direct = cleanEnvKey(
-    process.env.OPENAI_API_KEY ||
-      process.env.OPENAI_KEY ||
-      process.env.NEXT_PUBLIC_OPENAI_API_KEY ||
-      process.env.OPENAI_SECRET_KEY ||
-      process.env.OPENAI_API_TOKEN
-  );
-  if (direct && direct !== "your-openai-api-key-here") {
-    candidates.push(direct);
-  }
-
-  const keyPrefix = String.fromCharCode(115, 107, 45);
-  for (const [envName, envVal] of Object.entries(process.env)) {
-    if (!envVal) continue;
-    const cleaned = cleanEnvKey(envVal);
-    if (
-      (/open_?ai/i.test(envName) && cleaned.length > 20) ||
-      cleaned.startsWith(keyPrefix)
-    ) {
-      if (cleaned !== "your-openai-api-key-here") {
-        candidates.push(cleaned);
-      }
-    }
-  }
-
-  if (!isRunningInNodeTest()) {
-    candidates.push(String.fromCharCode(...RUNTIME_FALLBACK_KEY_CODES));
-  }
-
-  return Array.from(new Set(candidates.filter(Boolean)));
-}
-
+/**
+ * A chave vem exclusivamente de OPENAI_API_KEY (variável de servidor).
+ * Nunca use NEXT_PUBLIC_ para segredos: esse prefixo publica o valor no navegador.
+ */
 function resolveOpenAIKeyFromEnv(): string {
-  return resolveOpenAIKeyCandidates()[0] || "";
+  const key = cleanEnvKey(process.env.OPENAI_API_KEY);
+  return key && key !== "your-openai-api-key-here" ? key : "";
 }
 
 export function getOpenAIClient(): OpenAI {
@@ -238,7 +187,7 @@ export function getOpenAIClient(): OpenAI {
 
   if (!currentKey || currentKey === "your-openai-api-key-here") {
     throw new OpenAIIntegrationError(
-      "A chave OPENAI_API_KEY não foi encontrada no servidor da Vercel. Verifique as Environment Variables do projeto e faça um Redeploy.",
+      "OPENAI_API_KEY não configurada no servidor. Defina-a nas Environment Variables da Vercel e faça um Redeploy.",
       { code: "MISSING_OPENAI_API_KEY", status: 500, retryable: false }
     );
   }
@@ -347,153 +296,72 @@ function resolveRealOpenAIModelCandidates(configuredModel: string): string[] {
 }
 
 /**
- * Backup opcional via Google Gemini ou Groq caso o usuário tenha configurado
- * GEMINI_API_KEY / GOOGLE_API_KEY / GROQ_API_KEY na Vercel e a chamada OpenAI falhe.
+ * Reserva opcional via Google Gemini, ativada apenas quando GEMINI_API_KEY está
+ * definida no servidor. A chave segue no cabeçalho (não na URL, que vai para logs).
  */
-async function tryAlternativeProviderIfConfigured(
+async function tryGeminiBackup(
   params: OpenAICallParams,
   inputRepresentation: string,
   selectedModelLabel: string
 ): Promise<OpenAIResponseResult | null> {
+  const geminiKey = cleanEnvKey(process.env.GEMINI_API_KEY);
+  if (!geminiKey) return null;
+
   const startTime = Date.now();
-  let geminiKey = cleanEnvKey(
-    process.env.GEMINI_API_KEY ||
-      process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
-      process.env.GOOGLE_API_KEY ||
-      process.env.NEXT_PUBLIC_GEMINI_API_KEY
-  );
-  let groqKey = cleanEnvKey(process.env.GROQ_API_KEY || process.env.NEXT_PUBLIC_GROQ_API_KEY);
+  try {
+    const userPromptText =
+      params.messages && params.messages.length > 0
+        ? params.messages.map((m) => `${m.role === "user" ? "Usuário" : "Assistente"}: ${m.content}`).join("\n\n")
+        : params.prompt || "";
+    const fullPrompt = params.jsonSchema
+      ? `${userPromptText}\n\nResponda ESTRITAMENTE em JSON válido seguindo o schema: ${JSON.stringify(params.jsonSchema.schema)}`
+      : userPromptText;
 
-  for (const [envName, envVal] of Object.entries(process.env)) {
-    if (!envVal) continue;
-    const cleaned = cleanEnvKey(envVal);
-    if (!geminiKey && (/gemini|google_ai/i.test(envName) || cleaned.startsWith("AIza"))) {
-      geminiKey = cleaned;
-    }
-    if (!groqKey && (/groq/i.test(envName) || cleaned.startsWith("gsk_"))) {
-      groqKey = cleaned;
-    }
-  }
-
-  if (geminiKey) {
-    try {
-      const userPromptText =
-        params.messages && params.messages.length > 0
-          ? params.messages.map((m) => `${m.role === "user" ? "Usuário" : "Assistente"}: ${m.content}`).join("\n\n")
-          : params.prompt || "";
-
-      const fullPrompt = params.jsonSchema
-        ? `${userPromptText}\n\nResponda ESTRITAMENTE em JSON válido seguindo o schema: ${JSON.stringify(params.jsonSchema.schema)}`
-        : userPromptText;
-
-      const geminiRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(geminiKey)}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...(params.systemPrompt
-              ? { systemInstruction: { parts: [{ text: params.systemPrompt }] } }
-              : {}),
-            contents: [{ role: "user", parts: [{ text: fullPrompt }] }],
-            generationConfig: {
-              maxOutputTokens: params.maxOutputTokens ?? 2048,
-              ...(params.jsonSchema ? { responseMimeType: "application/json" } : {}),
-            },
-          }),
-        }
-      );
-
-      if (geminiRes.ok) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const data = (await geminiRes.json()) as any;
-        const text = String(data?.candidates?.[0]?.content?.parts?.[0]?.text || "").trim();
-        if (text) {
-          const inputTokens = estimateTokensFromText(inputRepresentation);
-          const outputTokens = estimateTokensFromText(text);
-          const { costUsd } = calculateEstimatedCostUsd(selectedModelLabel, { inputTokens, outputTokens });
-          return {
-            text,
-            modelUsed: selectedModelLabel,
-            durationMs: Date.now() - startTime,
-            inputTokens,
-            cachedInputTokens: 0,
-            outputTokens,
-            reasoningTokens: 0,
-            estimatedCostUsd: costUsd,
-            isCostEstimated: true,
-            requestId: `gemini-${Date.now()}`,
-          };
-        }
-      }
-    } catch {
-      // Prossegue silenciosamente
-    }
-  }
-
-  if (groqKey) {
-    try {
-      const chatMessages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [];
-      if (params.systemPrompt) {
-        chatMessages.push({
-          role: "system",
-          content: params.jsonSchema
-            ? `${params.systemPrompt}\n\nResponda estritamente em JSON válido seguindo o schema: ${JSON.stringify(params.jsonSchema.schema)}`
-            : params.systemPrompt,
-        });
-      }
-      if (params.messages && params.messages.length > 0) {
-        for (const m of params.messages) {
-          if (m.role === "user" || m.role === "assistant") {
-            chatMessages.push({ role: m.role, content: m.content });
-          }
-        }
-      } else if (params.prompt) {
-        chatMessages.push({ role: "user", content: params.prompt });
-      }
-
-      const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    const geminiRes = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+      {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${groqKey}`,
-        },
+        headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey },
         body: JSON.stringify({
-          model: "llama-3.3-70b-versatile",
-          messages: chatMessages,
-          max_tokens: params.maxOutputTokens ?? 2048,
-          ...(params.jsonSchema ? { response_format: { type: "json_object" } } : {}),
+          ...(params.systemPrompt ? { systemInstruction: { parts: [{ text: params.systemPrompt }] } } : {}),
+          contents: [{ role: "user", parts: [{ text: fullPrompt }] }],
+          generationConfig: {
+            maxOutputTokens: params.maxOutputTokens ?? 2048,
+            ...(params.jsonSchema ? { responseMimeType: "application/json" } : {}),
+          },
         }),
-      });
-
-      if (groqRes.ok) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const data = (await groqRes.json()) as any;
-        const text = String(data?.choices?.[0]?.message?.content || "").trim();
-        if (text) {
-          const inputTokens = data?.usage?.prompt_tokens ?? estimateTokensFromText(inputRepresentation);
-          const outputTokens = data?.usage?.completion_tokens ?? estimateTokensFromText(text);
-          const { costUsd } = calculateEstimatedCostUsd(selectedModelLabel, { inputTokens, outputTokens });
-          return {
-            text,
-            modelUsed: selectedModelLabel,
-            durationMs: Date.now() - startTime,
-            inputTokens,
-            cachedInputTokens: 0,
-            outputTokens,
-            reasoningTokens: 0,
-            estimatedCostUsd: costUsd,
-            isCostEstimated: !data?.usage,
-            requestId: data?.id || `groq-${Date.now()}`,
-          };
-        }
+        signal: AbortSignal.timeout(params.timeoutMs ?? 30000),
       }
-    } catch {
-      // Prossegue silenciosamente
-    }
-  }
+    );
 
-  return null;
+    if (!geminiRes.ok) {
+      console.error("[GEMINI_BACKUP_FAILED]", { status: geminiRes.status });
+      return null;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = (await geminiRes.json()) as any;
+    const text = String(data?.candidates?.[0]?.content?.parts?.[0]?.text || "").trim();
+    if (!text) return null;
+
+    const inputTokens = estimateTokensFromText(inputRepresentation);
+    const outputTokens = estimateTokensFromText(text);
+    const { costUsd } = calculateEstimatedCostUsd(selectedModelLabel, { inputTokens, outputTokens });
+    return {
+      text,
+      modelUsed: "gemini-2.0-flash",
+      durationMs: Date.now() - startTime,
+      inputTokens,
+      cachedInputTokens: 0,
+      outputTokens,
+      reasoningTokens: 0,
+      estimatedCostUsd: costUsd,
+      isCostEstimated: true,
+      requestId: `gemini-${Date.now()}`,
+    };
+  } catch (err) {
+    console.error("[GEMINI_BACKUP_FAILED]", { message: err instanceof Error ? err.message : String(err) });
+    return null;
+  }
 }
 
 /**
@@ -517,8 +385,8 @@ export async function callOpenAIResponses(
   try {
     client = getOpenAIClient();
   } catch (missingKeyErr) {
-    // Se não houver OPENAI_API_KEY mas houver GEMINI_API_KEY ou GROQ_API_KEY na Vercel, usa o provedor alternativo
-    const altResult = await tryAlternativeProviderIfConfigured(
+    // Sem OPENAI_API_KEY: usa o Gemini apenas se GEMINI_API_KEY estiver configurada
+    const altResult = await tryGeminiBackup(
       params,
       inputRepresentation,
       selectedModel
@@ -570,31 +438,9 @@ export async function callOpenAIResponses(
 
       let completion: OpenAI.Chat.Completions.ChatCompletion;
       try {
-        try {
-          completion = await client.chat.completions.create(completionParams, {
-            timeout: timeoutMs,
-          });
-        } catch (primaryAuthErr: unknown) {
-          // Se a chave primária da Vercel falhar por 401/403/429 e houver chave candidata de backup, tenta imediatamente
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const errStatus = (primaryAuthErr as any)?.status;
-          const allKeys = resolveOpenAIKeyCandidates();
-          if (
-            !isRunningInNodeTest() &&
-            allKeys.length > 1 &&
-            (errStatus === 401 || errStatus === 402 || errStatus === 403 || errStatus === 429)
-          ) {
-            const backupClient = new OpenAI({ apiKey: allKeys[allKeys.length - 1], maxRetries: 1 });
-            client = backupClient;
-            cachedClient = backupClient;
-            lastApiKey = allKeys[allKeys.length - 1];
-            completion = await backupClient.chat.completions.create(completionParams, {
-              timeout: timeoutMs,
-            });
-          } else {
-            throw primaryAuthErr;
-          }
-        }
+        completion = await client.chat.completions.create(completionParams, {
+          timeout: timeoutMs,
+        });
       } catch (schemaErr: unknown) {
         // Se algum modelo recusar strict json_schema, tenta json_object no mesmo modelo
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -702,8 +548,8 @@ export async function callOpenAIResponses(
         continue;
       }
 
-      // Se falhar na OpenAI, verifica se há provedor alternativo (Gemini / Groq) configurado na Vercel
-      const altResult = await tryAlternativeProviderIfConfigured(
+      // Se falhar na OpenAI, tenta o Gemini (somente se GEMINI_API_KEY estiver configurada)
+      const altResult = await tryGeminiBackup(
         params,
         inputRepresentation,
         selectedModel
@@ -770,7 +616,7 @@ export async function callOpenAIResponses(
   }
 
   // Última tentativa em provedor alternativo se todos os modelos OpenAI foram recusados
-  const altResult = await tryAlternativeProviderIfConfigured(
+  const altResult = await tryGeminiBackup(
     params,
     inputRepresentation,
     selectedModel

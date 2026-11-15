@@ -1,9 +1,5 @@
 import { NextRequest, NextResponse } from "next/server.js";
-import {
-  orchestrateAnalystChat,
-  generateDeterministicAuditDossier,
-  generateDeterministicAnalystChatReply,
-} from "../../../../lib/services/agentManagerService.ts";
+import { orchestrateAnalystChat } from "../../../../lib/services/agentManagerService.ts";
 import {
   synthesizeFinancialTelemetry,
   createSafeFinancialContext,
@@ -22,7 +18,7 @@ import {
   redactKnownFinancialText,
   type FinancialTextPrivacyInput,
 } from "../../../../lib/services/privacyService.ts";
-import type { OpenAIChatMessage } from "../../../../lib/services/openaiService.ts";
+import { OpenAIIntegrationError, type OpenAIChatMessage } from "../../../../lib/services/openaiService.ts";
 import { checkRateLimit } from "../../../../lib/utils/rateLimiter.ts";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +27,32 @@ export const maxDuration = 60;
 const MAX_HISTORY_MESSAGES = 10;
 const MAX_MESSAGE_LENGTH = 1000;
 const MAX_PAYLOAD_BYTES = 512 * 1024; // 512 KB
+
+/** Traduz a falha do provedor em resposta HTTP clara (sem detalhes técnicos sensíveis). */
+function describeProviderFailure(err: unknown): { status: number; code: string; error: string } {
+  const code = err instanceof OpenAIIntegrationError ? err.code : "AI_PROVIDER_ERROR";
+  switch (code) {
+    case "MISSING_OPENAI_API_KEY":
+    case "AUTHENTICATION_FAILED":
+      return { status: 503, code, error: "A IA está indisponível por um problema de configuração do servidor. Já registramos a falha." };
+    case "INSUFFICIENT_QUOTA":
+      return { status: 503, code, error: "A IA está temporariamente sem créditos. Tente novamente mais tarde." };
+    case "OPENAI_TIMEOUT_UNCERTAIN":
+      return { status: 504, code, error: "A IA demorou demais para responder. Tente novamente." };
+    case "MODEL_REFUSAL":
+      return { status: 422, code, error: "A IA não pôde responder a essa pergunta. Tente reformular." };
+    default: {
+      const status = err instanceof OpenAIIntegrationError && err.status === 429 ? 429 : 502;
+      return {
+        status,
+        code,
+        error: status === 429
+          ? "Muitas solicitações à IA agora. Aguarde alguns segundos e tente novamente."
+          : "A IA está indisponível no momento. Tente novamente em instantes.",
+      };
+    }
+  }
+}
 
 function sanitizeChatMessage(
   content: unknown,
@@ -293,32 +315,19 @@ Oriente o usuário com base estritamente nesses números simulados calculados pe
         await reconcileAIQuota({ reservation, success: false });
         quotaReconciled = true;
       }
+      const failure = describeProviderFailure(chatErr);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const errDetail = chatErr as any;
-      console.warn("[AI_CHAT_OPENAI_ERROR]", {
+      console.error("[AI_CHAT_PROVIDER_ERROR]", {
+        code: failure.code,
         status: errDetail?.status,
-        code: errDetail?.code,
         message: errDetail?.message,
-        name: errDetail?.name,
       });
-      const auditDossier = generateDeterministicAuditDossier({
-        context: safeContext,
-        userMessage: sanitizedUserMessage,
-      });
-      const fallbackText = generateDeterministicAnalystChatReply({
-        context: safeContext,
-        auditDossier,
-        userMessage: sanitizedUserMessage,
-        simulationResult,
-      });
-
-      return NextResponse.json({
-        success: true,
-        message: fallbackText,
-        modelUsed: "motor-contabil-local",
-        durationMs: 50,
-        simulationResult,
-      });
+      // A cota já foi devolvida acima (reconcile com success: false).
+      return NextResponse.json(
+        { success: false, error: failure.error, code: failure.code },
+        { status: failure.status }
+      );
     } finally {
       if (!quotaReconciled && reservation) {
         await reconcileAIQuota({ reservation, success: false });

@@ -4,7 +4,6 @@ import {
   synthesizeFinancialTelemetry, createSafeFinancialContext, computeFortnightBreakdown,
   buildFinancialAnalystSystemPrompt, getProjectionPendingCommitted,
 } from "../lib/services/financialContextService.ts";
-import { generateDeterministicAuditDossier, generateDeterministicAnalystChatReply } from "../lib/services/agentManagerService.ts";
 
 const checking = { id: "checking", name: "Conta principal", type: "checking", limit: 0, spent: 0 };
 const credit = { id: "credit", name: "Cartão", type: "credit", limit: 5000, spent: 1000, closingDay: 10, dueDay: 18 };
@@ -63,17 +62,11 @@ test("pagamento de fatura e ajuste de saldo não duplicam consumo nem categorias
   assert.equal(internet.creditAmount, 0);
 });
 
-test("zero pendente é preservado e resposta local não chama limite futuro de fatura atual", (t) => {
+test("zero pendente é preservado no contexto enviado à IA", (t) => {
   const input = fixture(t);
   input.monthlyProjections = [{ ...projection, pendingCommitted: 0, recurringDebitTotal: 0 }];
   const context = createSafeFinancialContext(synthesizeFinancialTelemetry(input));
   assert.equal(getProjectionPendingCommitted(context.monthlyProjections[0]), 0);
-  const reply = generateDeterministicAnalystChatReply({ context, auditDossier: generateDeterministicAuditDossier({ context }), userMessage: "Como está minha fatura?" });
-  assert.match(reply, /Fatura pendente.*R\$ 0\.00/);
-  assert.match(reply, /quitada/);
-  assert.doesNotMatch(reply, /Fatura atual de \*\*R\$ 1000/);
-  const projectionReply = generateDeterministicAnalystChatReply({ context, auditDossier: generateDeterministicAuditDossier({ context }), userMessage: "Quero a projeção de caixa de 6 meses" });
-  assert.match(projectionReply, /Ainda a pagar R\$ 0\.00/);
 });
 
 test("fatura vazia não é preenchida com parcelas de outros meses", (t) => {

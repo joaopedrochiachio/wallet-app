@@ -9,16 +9,11 @@ import {
   AlertTriangle,
   CheckCircle2,
   Calculator,
-  Send,
   RefreshCw,
   CreditCard,
-  Clock,
-  ChevronRight,
   ChevronDown,
   Trash2,
-  UtensilsCrossed,
   CalendarClock,
-  Coins,
   ArrowUpRight,
   ShieldCheck,
   CalendarDays,
@@ -43,19 +38,14 @@ import {
   CategoryDistribution,
   resolveAppleCategoryTheme,
 } from "@/components/ai/CategorySpectrumBar";
-import { InstallmentTimelineChart } from "@/components/ai/InstallmentTimelineChart";
-import { InteractivePatternCard } from "@/components/ai/InteractivePatternCard";
 import { FinancialOffice } from "@/components/ai/FinancialOffice";
 import { SpendingCalendarHeatmap } from "@/components/ai/SpendingCalendarHeatmap";
 import { VisualPatternStorytelling } from "@/components/ai/VisualPatternStorytelling";
 import { normalizeCharacterId } from "@/components/companion/WalletCharacters";
 import { InteractiveFinancialCalendar } from "@/components/companion/InteractiveFinancialCalendar";
-import { PurchaseSimulatorModal } from "@/components/companion/PurchaseSimulatorModal";
 import {
   calculateDailySafeSpend,
   getUpcomingFinancialEvents,
-  calculateWeeklySpendingVelocity,
-  getBestCardToSpendToday,
 } from "@/lib/services/dailyCompanionService";
 import {
   FinancialDiagnosis,
@@ -65,24 +55,14 @@ import {
 import {
   synthesizeFinancialTelemetry,
   createSafeFinancialContext,
-  simulatePurchaseImpact,
-  PurchaseSimulationInput,
   PurchaseSimulationResult,
 } from "@/lib/services/financialContextService";
-import {
-  generateDeterministicAuditDossier,
-  generateDeterministicAnalystChatReply,
-} from "@/lib/services/agentManagerService";
 import { auth } from "@/lib/firebase";
 import {
   ChatSession,
   loadChatSessions,
   saveChatSessions,
   createChatSession,
-  deleteChatSession,
-  loadChatHistory,
-  saveChatHistory,
-  clearChatHistory,
   loadPersistentDiagnosis,
   savePersistentDiagnosis,
   loadInitialDiagnosisSync,
@@ -95,6 +75,21 @@ import { MacSegmentedControl } from "@/components/ui/macos/SegmentedControl";
 import { MacFormRow, MacSearchField, MacTextField } from "@/components/ui/macos/TextField";
 import { MacSidebar, MacSidebarItem, MacSidebarItems, MacSidebarSection } from "@/components/ui/macos/Sidebar";
 import { MacSheet, MacWindowToolbar } from "@/components/ui/macos/Window";
+
+/** Falha real do chat: carrega a mensagem do servidor para mostrar ao usuário. */
+class ChatRequestError extends Error {
+  constructor(message: string, readonly code?: string) {
+    super(message);
+    this.name = "ChatRequestError";
+  }
+}
+
+function describeChatFailure(status: number): string {
+  if (status === 401) return "Sua sessão expirou. Entre novamente para continuar a conversa.";
+  if (status === 429) return "Você atingiu o limite de mensagens com a IA por agora. Tente mais tarde.";
+  if (status === 413) return "A conversa ficou grande demais para enviar. Inicie uma nova conversa.";
+  return "A IA está indisponível no momento. Tente novamente em instantes.";
+}
 
 function cleanExecutiveSummary(text?: string | null): string {
   if (!text) return "";
@@ -242,6 +237,12 @@ export default function AIAnalystPage() {
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
   const [copilotContext, setCopilotContext] = useState<CopilotContext | null>(null);
   const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
+  const [chatError, setChatError] = useState<{
+    message: string;
+    text: string;
+    simulationPayload?: unknown;
+    sessionId: string;
+  } | null>(null);
   const [activeDossierTab, setActiveDossierTab] = useState<"mindmap" | "calendar" | "storytelling" | "overview">("mindmap");
 
   // Permite que o Niko abra diretamente a agenda financeira completa.
@@ -670,12 +671,17 @@ export default function AIAnalystPage() {
     }
   };
 
-  const handleSendMessage = async (textToSend?: string, simulationPayload?: unknown) => {
+  const handleSendMessage = async (
+    textToSend?: string,
+    simulationPayload?: unknown,
+    options?: { retry?: boolean }
+  ) => {
     if (sendingMessageRef.current) return;
     const text = (textToSend || inputMessage).trim();
     if (!text && !simulationPayload) return;
     sendingMessageRef.current = true;
     setIsCopilotOpen(true);
+    setChatError(null);
 
     const userMsg: ChatMessage = {
       id: globalThis.crypto.randomUUID(),
@@ -700,8 +706,11 @@ export default function AIAnalystPage() {
       updatedTitle = text.length > 36 ? text.slice(0, 34) + "..." : text;
     }
 
-    const currentMsgs = activeSess.messages || [];
-    const newMessages = [...currentMsgs, userMsg];
+    // No reenvio, a pergunta já está na conversa: não duplica e não a manda duas vezes no histórico.
+    const sessionMsgs = activeSess.messages || [];
+    const isRetry = Boolean(options?.retry) && sessionMsgs[sessionMsgs.length - 1]?.role === "user";
+    const currentMsgs = isRetry ? sessionMsgs.slice(0, -1) : sessionMsgs;
+    const newMessages = isRetry ? sessionMsgs : [...currentMsgs, userMsg];
     setMessages(newMessages);
 
     const updatedSession: ChatSession = {
@@ -720,7 +729,7 @@ export default function AIAnalystPage() {
     setActiveSessionId(currentId);
     void saveChatSessions(updatedSessionsList, user?.uid);
 
-    if (!textToSend) {
+    if (!textToSend && !isRetry) {
       setInputMessage("");
       if (chatInputRef.current) {
         chatInputRef.current.style.height = "auto";
@@ -823,80 +832,22 @@ export default function AIAnalystPage() {
         setSessions(finalSessionsList);
         void saveChatSessions(finalSessionsList, user?.uid);
       } else {
-        throw new Error(data?.error || "Fallback local acionado");
+        throw new ChatRequestError(
+          data?.error || describeChatFailure(res.status),
+          data?.code
+        );
       }
-    } catch {
-      const monthlyProjections = [0, 1, 2, 3, 4, 5].map((idx) => {
-        const p = getMonthlyProjection(idx);
-        return {
-          monthName: p.monthName,
-          year: p.year,
-          openingBalance: p.openingBalance,
-          actualClosingBalance: p.actualClosingBalance,
-          plannedIncomesTotal: p.plannedIncomesTotal,
-          recurringDebitTotal: p.recurringDebitTotal,
-          recurringCreditTotal: p.recurringCreditTotal,
-          cardInstallments: p.cardInstallments,
-          totalCommitted: p.totalCommitted,
-          pendingCommitted: p.pendingCommitted,
-          totalInvoicesPending: p.totalInvoicesPending,
-          projectedFreeBalance: p.projectedFreeBalance,
-          monthNetSurplus: p.monthNetSurplus,
-        };
+    } catch (error) {
+      // Sem resposta inventada: o usuário vê o motivo real e pode tentar de novo.
+      setChatError({
+        message:
+          error instanceof ChatRequestError
+            ? error.message
+            : "Não consegui falar com o servidor. Verifique sua conexão e tente novamente.",
+        text,
+        simulationPayload,
+        sessionId: currentId,
       });
-      const telemetry = synthesizeFinancialTelemetry({
-        userProfile,
-        cards,
-        transactions,
-        recurringItems,
-        goals,
-        mainBalance,
-        monthIncome,
-        monthExpense,
-        monthlyProjections,
-        targetEndMonthBalance,
-      });
-      const safeContext = createSafeFinancialContext(telemetry);
-      const localSim =
-        simulationPayload && typeof (simulationPayload as { amount?: number }).amount === "number"
-          ? simulatePurchaseImpact(simulationPayload as PurchaseSimulationInput, telemetry, cards)
-          : null;
-      const auditDossier = generateDeterministicAuditDossier({
-        context: safeContext,
-        userMessage: text,
-      });
-      const fallbackReply = generateDeterministicAnalystChatReply({
-        context: safeContext,
-        auditDossier,
-        userMessage: text,
-        simulationResult: localSim,
-      });
-
-      const assistantMsg: ChatMessage = {
-        id: globalThis.crypto.randomUUID(),
-        role: "assistant",
-        content: fallbackReply,
-        timestamp: new Date().toLocaleTimeString("pt-BR", {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-        modelUsed: "motor-contabil-local",
-        simulationResult: localSim,
-      };
-      const finalMessages = [...newMessages, assistantMsg];
-      setMessages(finalMessages);
-
-      const finalSession: ChatSession = {
-        ...updatedSession,
-        updatedAt: new Date().toISOString(),
-        messages: finalMessages,
-      };
-      const finalSessionsList = [
-        finalSession,
-        ...sessions.filter((s) => s.id !== currentId),
-      ];
-      setSessions(finalSessionsList);
-      void saveChatSessions(finalSessionsList, user?.uid);
     } finally {
       sendingMessageRef.current = false;
       setIsSending(false);
@@ -1563,6 +1514,26 @@ export default function AIAnalystPage() {
                             </div>
                           );
                         })
+                      )}
+
+                      {chatError && chatError.sessionId === activeSessionId && !isSending && (
+                        <div role="alert" className="flex w-full max-w-[96%] sm:max-w-[90%] items-start gap-2.5 rounded-[14px] bg-mac-orange/12 px-3.5 py-3 text-[12px] text-[#8a4a00]">
+                          <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <p className="font-semibold">A IA não respondeu</p>
+                            <p className="mt-0.5 leading-[16px]">{chatError.message}</p>
+                          </div>
+                          <MacButton
+                            variant="bordered"
+                            size="small"
+                            shape="capsule"
+                            className="shrink-0"
+                            onClick={() => void handleSendMessage(chatError.text, chatError.simulationPayload, { retry: true })}
+                            icon={<RefreshCw size={11} />}
+                          >
+                            Tentar novamente
+                          </MacButton>
+                        </div>
                       )}
 
                       {isSending && (
