@@ -11,6 +11,7 @@
  *    insistir, a rota falha de forma explícita (sem texto pronto no lugar).
  */
 import type { FinancialAnalytics } from "./financialAnalyticsService.ts";
+import { getSpendingGuidance, friendlyFloor, MIN_MEANINGFUL_DAILY } from "./spendingGuidance.ts";
 import { callOpenAIResponses, OPENAI_MODELS, type OpenAICallParams, type OpenAIResponseResult } from "./openaiService.ts";
 
 export const ASSISTANT_NAME = "Cofi";
@@ -59,8 +60,10 @@ export function buildBriefingFacts(a: FinancialAnalytics): BriefingFact[] {
   add("meta_mes", "Meta de saldo para fechar o mês", a.target.value, "brl");
   if (a.target.gap >= 0) {
     add("folga_meta", "Folga acima da meta no fim do mês", a.target.gap, "brl");
-    add("gasto_livre_dia", "Quanto dá para gastar por dia sem furar a meta", a.target.dailyRoom, "brl");
-    add("gasto_livre_semana", "Quanto dá para gastar por semana sem furar a meta", a.target.dailyRoom * 7, "brl");
+    if (a.target.dailyRoom >= MIN_MEANINGFUL_DAILY) {
+      add("gasto_livre_dia", "Quanto dá para gastar por dia sem furar a meta (arredondado)", friendlyFloor(a.target.dailyRoom), "brl");
+      add("gasto_livre_semana", "Quanto dá para gastar por semana sem furar a meta (arredondado)", friendlyFloor(a.target.dailyRoom * 7), "brl");
+    }
   } else {
     add("falta_meta", "Quanto falta para alcançar a meta", -a.target.gap, "brl");
     add("corte_dia", "Corte por dia necessário para alcançar a meta", a.target.dailyCut, "brl");
@@ -81,7 +84,7 @@ export function buildBriefingFacts(a: FinancialAnalytics): BriefingFact[] {
   const until = a.timeline.untilNextIncome;
   if (until) {
     add("livre_ate_entrada", `Dinheiro livre até a próxima entrada (${until.title}, dia ${until.day})`, until.available, "brl", "saldo de hoje menos as contas que vencem antes dessa entrada");
-    add("livre_dia_ate_entrada", `Quanto dá para gastar por dia até o dia ${until.day}`, until.dailyAvailable, "brl");
+    if (until.dailyAvailable >= MIN_MEANINGFUL_DAILY) add("livre_dia_ate_entrada", `Quanto dá para gastar por dia até o dia ${until.day} (arredondado)`, friendlyFloor(until.dailyAvailable), "brl");
     add("dias_ate_entrada", `Dias até a próxima entrada (${until.title})`, until.daysUntil, "days");
   }
   const nextIncome = a.timeline.events.find((e) => e.direction === "in");
@@ -279,14 +282,14 @@ export function buildBriefingSignals(facts: BriefingFact[], a: FinancialAnalytic
       level: "atencao",
       text: `Até a próxima entrada (dia ${until.day}) o dinheiro livre é curto, bem abaixo do limite diário do resto do mês.`,
       factIds: ["livre_ate_entrada", "livre_dia_ate_entrada", "dias_ate_entrada", "dia_proxima_entrada"],
-      actionHint: "gastar no máximo livre_dia_ate_entrada por dia até o dia_proxima_entrada; depois vale o gasto_livre_dia",
+      actionHint: `seguir a ORIENTAÇÃO DE GASTO (${getSpendingGuidance(a).headline}) até o dia_proxima_entrada`,
     });
   }
   if (close >= 0 && a.target.gap < 0) {
     out.push({ level: a.target.value > 0 && -a.target.gap >= a.target.value * 0.5 ? "critico" : "atencao", text: "O mês fecha positivo, mas abaixo da meta escolhida.", factIds: ["falta_meta", "corte_dia", "saldo_fim_mes"], actionHint: "segurar corte_dia por dia até o fim do mês" });
   }
   if ((a.spending.pacePercent ?? 0) >= 120) {
-    out.push({ level: "atencao", text: "Os gastos do dia a dia estão mais rápidos que o normal para esta altura do mês.", factIds: ["gasto_dia_a_dia", "gasto_media_periodo", "ritmo_gastos_pct"], actionHint: a.target.gap >= 0 ? "limitar os gastos a gasto_livre_semana por semana até o fim do mês" : "cortar corte_semana por semana até o fim do mês" });
+    out.push({ level: "atencao", text: "Os gastos do dia a dia estão mais rápidos que o normal para esta altura do mês.", factIds: ["gasto_dia_a_dia", "gasto_media_periodo", "ritmo_gastos_pct"], actionHint: a.target.gap >= 0 ? `seguir a ORIENTAÇÃO DE GASTO: ${getSpendingGuidance(a).headline}` : "cortar corte_semana por semana até o fim do mês" });
   }
   if (a.spending.biggestIncrease) {
     out.push({ level: "atencao", text: `${a.spending.biggestIncrease.category} subiu bem acima da média deste período.`, factIds: ["maior_alta", "maior_alta_media", "maior_alta_pct", "maior_alta_metade_extra"], actionHint: "cortar maior_alta_metade_extra nessa categoria até o fim do mês" });
@@ -307,7 +310,7 @@ export function buildBriefingSignals(facts: BriefingFact[], a: FinancialAnalytic
     out.push({ level: "poucos_dados", text: "Poucos dados neste mês: oriente a registrar renda, contas e gastos; não tire conclusões fortes.", factIds: ["gasto_mes", "saldo_hoje"], actionHint: "registrar a renda e as contas fixas no app até o fim desta semana" });
   }
 
-  if (close >= 0 && a.target.gap >= 0 && a.target.value > 0 && a.incomeKnown) out.push({ level: "positivo", text: "O mês fecha acima da meta, já contando o que vai entrar e sair.", factIds: ["saldo_fim_mes", "folga_meta", "gasto_livre_dia"], actionHint: a.timeline.untilNextIncome && a.timeline.untilNextIncome.dailyAvailable < a.target.dailyRoom ? "até o dia_proxima_entrada gastar no máximo livre_dia_ate_entrada por dia; depois dele, manter em até gasto_livre_dia por dia" : "manter os gastos em até gasto_livre_dia por dia, ou guardar a folga_meta" });
+  if (close >= 0 && a.target.gap >= 0 && a.target.value > 0 && a.incomeKnown) out.push({ level: "positivo", text: "O mês fecha acima da meta, já contando o que vai entrar e sair.", factIds: ["saldo_fim_mes", "folga_meta", "gasto_livre_dia"], actionHint: `seguir a ORIENTAÇÃO DE GASTO (${getSpendingGuidance(a).headline}) ou guardar a folga_meta` });
   if (a.cash.toReceive > 0 && a.cash.toReceive >= a.cash.toPay) out.push({ level: "positivo", text: "As entradas que ainda vão cair cobrem as contas que faltam pagar.", factIds: ["a_receber", "a_pagar"], actionHint: "pagar cada conta no dia em que a entrada cair (ver a linha do tempo)" });
   if (a.spending.pacePercent !== null && a.spending.pacePercent <= 90) out.push({ level: "positivo", text: "Os gastos do dia a dia estão abaixo da média para esta altura do mês.", factIds: ["gasto_dia_a_dia", "gasto_media_periodo", "ritmo_gastos_pct"], actionHint: "manter o ritmo até o fim do mês e guardar a diferença" });
   return out.map((sig) => ({ ...sig, factIds: sig.factIds.filter(has) }));
@@ -351,7 +354,7 @@ const PERIOD_RULES = `REGRAS DE PERÍODO (não misture):
 - Se a conta fica negativa por alguns dias e depois recupera, explique que é um problema de data (conta vence antes do salário), cite os dias e sugira antecipar a entrada, adiar a conta ou segurar gastos até o dia da entrada.
 - Gastos por categoria e hábitos são do mês atual até hoje; compare com a média do mesmo período dos meses anteriores (quando houver). Não use totais de outros meses como se fossem deste mês.
 - Compras no cartão deste mês pesam na fatura do mês seguinte.
-- Limite diário tem dois momentos: até a próxima entrada vale livre_dia_ate_entrada (o dinheiro que existe de fato); depois dela vale gasto_livre_dia. Nunca recomende gastar gasto_livre_dia antes da entrada se livre_dia_ate_entrada for menor.`;
+- Quanto gastar: use a ORIENTAÇÃO DE GASTO calculada pelo app, com as mesmas palavras e valores. Ela já escolhe a forma certa: valor por dia quando ele é útil, o total até a data quando por dia ficaria pequeno, ou "só o essencial" quando quase não sobra. Nunca recomende um valor por dia abaixo de R$ 20 nem com centavos quebrados (ex.: "R$ 1,41 por dia" não existe na vida real).`;
 
 /** Bloco que o chat recebe: mesma ficha, sinais e linha do tempo do informativo. */
 export function buildChatFactBlock(a: FinancialAnalytics | null | undefined): string {
@@ -377,6 +380,8 @@ ${formatTimeline(a)}
 
 SINAIS
 ${formatSignals(buildBriefingSignals(facts, a))}
+
+ORIENTAÇÃO DE GASTO (use como está quando perguntarem quanto podem gastar): ${getSpendingGuidance(a).headline}. ${getSpendingGuidance(a).detail}
 `;
 }
 
@@ -436,6 +441,8 @@ SINAIS CALCULADOS PELO APP
 ${formatSignals(signals)}
 
 HUMOR INDICADO PELOS SINAIS: ${moodFromSignals(signals)}
+
+ORIENTAÇÃO DE GASTO (use como está): ${getSpendingGuidance(analytics).headline}. ${getSpendingGuidance(analytics).detail}
 
 Escreva o informativo em JSON seguindo o schema.`;
 

@@ -1390,3 +1390,42 @@ button:disabled,
 @keyframes cofi-z { 0% { transform: translate(0, 4px); opacity: 0; } 50% { opacity: 1; } 100% { transform: translate(6px, -6px); opacity: 0; } }
 @keyframes cofi-talk { from { transform: scaleX(0.6); } to { transform: scaleX(1.1); } }
 @keyframes ai-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+/* =====================================================================
+ * PAINEL DO COFI (ilha expandida) — linguagem "Side Bar for iOS" (Figma)
+ * fundo #F3F5F6, azul #1D8DF4, linhas de 44pt, separadores de 0,5px.
+ * ===================================================================== */
+:root {
+  --sb-bg: #F3F5F6;
+  --sb-card: #FFFFFF;
+  --sb-text: #1D1D1F;
+  --sb-text-2: #6E6E73;
+  --sb-icon: #969699;
+  --sb-brand: #1D8DF4;
+  --sb-brand-bg: rgba(29, 141, 244, 0.12);
+  --sb-sep: rgba(60, 60, 67, 0.2);
+  --sb-hover: rgba(0, 0, 0, 0.04);
+  --sb-good: #1A8A45;
+  --sb-good-bg: rgba(52, 199, 89, 0.13);
+  --sb-warn: #B35C00;
+  --sb-warn-bg: rgba(255, 149, 0, 0.14);
+  --sb-bad: #D12C22;
+  --sb-bad-bg: rgba(255, 59, 48, 0.1);
+}
+.theme-dark {
+  --sb-bg: #1C1C1E;
+  --sb-card: #2C2C2E;
+  --sb-text: #F5F5F7;
+  --sb-text-2: #A1A1A6;
+  --sb-icon: #8E8E93;
+  --sb-brand: #0A84FF;
+  --sb-brand-bg: rgba(10, 132, 255, 0.2);
+  --sb-sep: rgba(84, 84, 88, 0.6);
+  --sb-hover: rgba(255, 255, 255, 0.06);
+  --sb-good: #4CD97B;
+  --sb-good-bg: rgba(48, 209, 88, 0.16);
+  --sb-warn: #FFB547;
+  --sb-warn-bg: rgba(255, 159, 10, 0.16);
+  --sb-bad: #FF7A70;
+  --sb-bad-bg: rgba(255, 69, 58, 0.16);
+}

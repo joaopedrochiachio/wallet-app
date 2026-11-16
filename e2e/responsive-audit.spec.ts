@@ -186,6 +186,14 @@ const FLOWS: Array<{ name: string; route: string; steps: (page: Page) => Promise
     } },
   { name: "calendário de gastos da IA", route: "/ai", steps: (p) => p.getByRole("button", { name: /Calendário de gastos/ }).click() },
   { name: "chat com simulador", route: "/ai", steps: (p) => p.getByRole("button", { name: "Simular", exact: true }).click() },
+  { name: "painel do Cofi (hoje)", route: "/dashboard", steps: (p) => p.getByRole("button", { name: /Abrir painel do Cofi/ }).click() },
+  {
+    name: "painel do Cofi (agenda)", route: "/dashboard",
+    steps: async (p) => {
+      await p.getByRole("button", { name: /Abrir painel do Cofi/ }).click();
+      await p.getByRole("button", { name: /^Agenda/ }).click();
+    },
+  },
   { name: "editar meta na IA", route: "/ai", steps: (p) => p.getByRole("button", { name: /Editar meta/ }).click() },
   {
     name: "tema escuro pelo perfil", route: "/profile",
@@ -332,5 +340,28 @@ test("barra lateral do desktop some no celular e aparece no desktop", async ({ b
     if (visible) await expect(sidebar).toBeVisible();
     else await expect(sidebar).toBeHidden();
     await context.close();
+  }
+});
+
+test("painel do Cofi no desktop vira barra lateral (claro e escuro)", async ({ browser }) => {
+  for (const theme of ["light", "dark"] as const) {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const page = await context.newPage();
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    await open(page, "/dashboard", 1280, theme);
+    await page.getByRole("button", { name: /Abrir painel do Cofi/ }).click();
+    await page.waitForTimeout(450); // fim da animação de abertura
+    const nav = page.getByRole("navigation", { name: "Seções do painel" });
+    const today = nav.getByRole("button", { name: "Hoje" });
+    const radar = nav.getByRole("button", { name: /Radar/ });
+    const [a, b] = [await today.boundingBox(), await radar.boundingBox()];
+    expect(b!.y, "itens da barra lateral empilhados").toBeGreaterThan(a!.y + 20);
+    expect(Math.abs(b!.x - a!.x), "mesma coluna").toBeLessThan(2);
+    const section = await page.getByRole("region", { name: "Hoje" }).boundingBox();
+    expect(section!.x, "conteúdo à direita da barra").toBeGreaterThan(a!.x + a!.width);
+    if (REPORT) await page.screenshot({ path: path.join(fixture.directory, `painel-desktop-${theme}.png`) });
+    await context.close();
+    expect(errors).toEqual([]);
   }
 });

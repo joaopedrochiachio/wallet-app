@@ -378,7 +378,10 @@ export function resolveReferenceDate(clientDate: unknown, serverNow: Date = new 
 /** Monta a análise a partir do corpo enviado pelo app (mesmo formato para informativo e chat). */
 export function buildAnalyticsFromRequest(body: Record<string, unknown> | null | undefined, serverNow: Date = new Date()): FinancialAnalytics {
   const b = body ?? {};
-  const arr = <T>(v: unknown, max: number): T[] => (Array.isArray(v) ? (v.slice(0, max) as T[]) : []);
+  // função comum (não arrow genérica): o empacotador dos testes de tela lê .ts como TSX
+  function arr<T>(v: unknown, max: number): T[] {
+    return Array.isArray(v) ? (v.slice(0, max) as T[]) : [];
+  }
   const profile = (b.userProfile ?? {}) as { monthlyIncomeBase?: number; targetMonthEndBalance?: number };
   const target = typeof b.targetEndMonthBalance === "number" ? b.targetEndMonthBalance : num(profile.targetMonthEndBalance);
   return buildFinancialAnalytics({

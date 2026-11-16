@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildFinancialAnalytics, resolveReferenceDate, buildAnalyticsFromRequest } from "../lib/services/financialAnalyticsService.ts";
+import { getSpendingGuidance, friendlyFloor } from "../lib/services/spendingGuidance.ts";
 import { buildBriefingFacts, buildBriefingSignals, moodFromSignals, buildChatFactBlock } from "../lib/services/aiBriefingService.ts";
 import { SCENARIOS } from "../evals/ai/scenarios.ts";
 
@@ -116,5 +117,32 @@ test("limite diário separa 'até a próxima entrada' do 'resto do mês'", () =>
   const same = buildFinancialAnalytics(SCENARIOS.find((s) => s.id === "paga-no-dia-do-salario").analyticsInput);
   assert.equal(same.timeline.untilNextIncome.available, 40);
   assert.equal(same.timeline.untilNextIncome.dailyAvailable, 8);
-  assert.match(buildChatFactBlock(same), /Nunca recomende gastar gasto_livre_dia antes da entrada/);
+  assert.match(buildChatFactBlock(same), /ORIENTAÇÃO DE GASTO/);
+});
+
+test("orientação de gasto nunca sugere valor por dia irreal (R$ 1,41/dia não existe)", () => {
+  // Caso real: o carnê do dia 17 consome o saldo antes do salário do dia 20 → pausa até lá
+  const real = getSpendingGuidance(a);
+  assert.equal(real.mode, "pausa");
+  assert.equal(real.headline, "Só o essencial até Salario (Adiantamento) (dia 20)");
+  assert.ok(!(real.headline + real.detail).includes("por dia"));
+
+  // R$ 40 para 5 dias = R$ 8/dia → fala do total, não do diário
+  const same = getSpendingGuidance(buildFinancialAnalytics(SCENARIOS.find((s) => s.id === "paga-no-dia-do-salario").analyticsInput));
+  assert.equal(same.mode, "contido");
+  assert.ok(same.headline.replace(/\s/g, " ").includes("40 até Salário (dia 20)"), same.headline);
+  assert.ok(!same.headline.includes("por dia"));
+
+  // Mês folgado → valor por dia útil e redondo
+  const rich = getSpendingGuidance(buildFinancialAnalytics(SCENARIOS.find((s) => s.id === "poupador-exemplar").analyticsInput));
+  assert.equal(rich.mode, "livre");
+  assert.ok(rich.headline.startsWith("Cerca de R$") && rich.headline.endsWith("por dia"), rich.headline);
+  assert.ok(!/,\d\d/.test(rich.headline), "sem centavos quebrados");
+});
+
+test("valores amigáveis: arredonda para baixo como uma pessoa separaria", () => {
+  assert.equal(friendlyFloor(42.17), 42);
+  assert.equal(friendlyFloor(137.9), 135);
+  assert.equal(friendlyFloor(383.75), 380);
+  assert.equal(friendlyFloor(-5), 0);
 });

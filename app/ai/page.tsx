@@ -67,6 +67,8 @@ export default function AIPage() {
     setTarget(value);
     try {
       window.localStorage.setItem(TARGET_KEY, String(value));
+      // Avisa o painel do Cofi (mesma aba não recebe o evento "storage" sozinha)
+      window.dispatchEvent(new StorageEvent("storage", { key: TARGET_KEY }));
     } catch {
       /* sem armazenamento: vale só nesta sessão */
     }
