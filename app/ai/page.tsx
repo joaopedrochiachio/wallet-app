@@ -10,7 +10,7 @@ import { CofiChat, type CofiChatHandle } from "@/components/ai/chat/CofiChat";
 import { SpendingCalendarHeatmap } from "@/components/ai/SpendingCalendarHeatmap";
 import { MacButton } from "@/components/ui/macos/Button";
 import { MacTextField } from "@/components/ui/macos/TextField";
-import { postAI, AIRequestError, summarizeProjections } from "@/lib/ai/clientRequests";
+import { postAI, AIRequestError, summarizeProjections, localDateKey, recentTransactionsForAI } from "@/lib/ai/clientRequests";
 import type { AIBriefing, BriefingFact } from "@/lib/services/aiBriefingModel";
 import { loadCachedBriefing, saveCachedBriefing, type CachedBriefing } from "@/lib/services/aiChatService";
 import { calculateDailySafeSpend } from "@/lib/services/dailyCompanionService";
@@ -84,7 +84,7 @@ export default function AIPage() {
     () => ({
       userProfile,
       cards,
-      transactions,
+      transactions: recentTransactionsForAI(transactions),
       recurringItems,
       goals,
       mainBalance,
@@ -92,6 +92,7 @@ export default function AIPage() {
       monthExpense,
       monthlyProjections: summarizeProjections(getMonthlyProjection),
       targetEndMonthBalance: target,
+      clientDate: localDateKey(),
     }),
     [userProfile, cards, transactions, recurringItems, goals, mainBalance, monthIncome, monthExpense, getMonthlyProjection, target]
   );

@@ -20,6 +20,7 @@ import {
 } from "../../../../lib/services/privacyService.ts";
 import { type OpenAIChatMessage } from "../../../../lib/services/openaiService.ts";
 import { describeProviderFailure } from "../../../../lib/services/aiFailure.ts";
+import { buildAnalyticsFromRequest } from "../../../../lib/services/financialAnalyticsService.ts";
 import { checkRateLimit } from "../../../../lib/utils/rateLimiter.ts";
 
 export const dynamic = "force-dynamic";
@@ -248,7 +249,14 @@ Oriente o usuário com base estritamente nesses números simulados calculados pe
         conversationMessages,
         userMessage: sanitizedUserMessage,
         simulationResult,
-        incomeKnown: Number(userProfile?.monthlyIncomeBase) > 0 || Number(monthIncome) > 0,
+        analytics: (() => {
+          try {
+            return buildAnalyticsFromRequest(body);
+          } catch (analyticsErr) {
+            console.warn("[AI_CHAT_ANALYTICS_SKIPPED]", analyticsErr);
+            return null;
+          }
+        })(),
       });
 
       // 4. Reconciliação atômica da cota com base no custo e tokens reais

@@ -969,7 +969,7 @@ test("synthesizeFinancialTelemetry calcula crédito vs débito em topSpendItems 
   assert.ok(safeContext.lifestyleHabits && safeContext.lifestyleHabits.length >= 2);
   const prompt = buildFinancialAnalystSystemPrompt(safeContext);
 
-  assert.ok(prompt.includes("GRUPOS MACRO DE ESTILO DE VIDA & HÁBITOS DE CONSUMO (CRÉDITO vs DÉBITO)"));
+  assert.ok(prompt.includes("GRUPOS MACRO DE ESTILO DE VIDA & HÁBITOS DE CONSUMO (HISTÓRICO SOMADO, NÃO só este mês)"), "histórico rotulado como tal, não como gasto do mês");
   assert.ok(prompt.includes("Sobremesas & Doces"));
   assert.ok(prompt.includes("Lanches & Fast Food"));
   assert.ok(prompt.includes("Crédito: R$ 70.00 | Débito: R$ 30.00"));

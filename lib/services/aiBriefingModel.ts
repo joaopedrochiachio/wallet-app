@@ -2,7 +2,7 @@
  * Tipos e formatação do informativo do Cofi, sem dependências de servidor
  * (pode ser importado por componentes do navegador).
  */
-export type FactKind = "brl" | "percent" | "count" | "days" | "months";
+export type FactKind = "brl" | "percent" | "count" | "days" | "months" | "day";
 
 export interface BriefingFact {
   id: string;
@@ -41,6 +41,7 @@ export function formatFactValue(fact: Pick<BriefingFact, "value" | "kind">): str
   if (fact.kind === "brl") return `R$ ${n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   if (fact.kind === "percent") return `${n.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
   if (fact.kind === "months") return `${n.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} ${n === 1 ? "mês" : "meses"}`;
+  if (fact.kind === "day") return `dia ${n}`;
   if (fact.kind === "days") return `${n} ${n === 1 ? "dia" : "dias"}`;
   return String(n);
 }

@@ -37,18 +37,22 @@ const { SCENARIOS } = await import("./scenarios.ts");
 const { gradeBriefing, gradeChatAnswer, summarize, LEVEL_NAMES } = await import("./graders.ts");
 const { generateAIBriefing, buildBriefingFacts, formatFactValue, BriefingGenerationError } = await import("../../lib/services/aiBriefingService.ts");
 const { synthesizeFinancialTelemetry, createSafeFinancialContext, buildFinancialAnalystSystemPrompt } = await import("../../lib/services/financialContextService.ts");
+const { buildFinancialAnalytics } = await import("../../lib/services/financialAnalyticsService.ts");
+const { formatTimeline, formatSignals, buildBriefingSignals } = await import("../../lib/services/aiBriefingService.ts");
 const { orchestrateAnalystChat } = await import("../../lib/services/agentManagerService.ts");
 
-const incomeKnown = (input) => (input.userProfile?.monthlyIncomeBase || 0) > 0 || input.monthIncome > 0;
 const scenarios = SCENARIOS.filter((s) => !args.only || String(args.only).split(",").includes(s.id));
 const runs = Number(args.runs || 1);
 const withChat = !args["no-chat"];
 
 if (args.dry) {
   for (const s of scenarios) {
-    const ctx = createSafeFinancialContext(synthesizeFinancialTelemetry(s.input));
     console.log(`\n■ ${s.id} — ${s.title}`);
-    for (const f of buildBriefingFacts(ctx, new Date(), { incomeKnown: incomeKnown(s.input) })) console.log(`   ${f.id.padEnd(22)} ${formatFactValue(f)}`);
+    const analytics = buildFinancialAnalytics(s.analyticsInput);
+    const facts = buildBriefingFacts(analytics);
+    for (const f of facts) console.log(`   ${f.id.padEnd(24)} ${formatFactValue(f).padEnd(14)} ${f.label}`);
+    console.log("   linha do tempo:\n" + formatTimeline(analytics).replace(/^/gm, "     "));
+    console.log("   sinais:\n" + formatSignals(buildBriefingSignals(facts, analytics)).replace(/^/gm, "     "));
   }
   process.exit(0);
 }
@@ -66,12 +70,13 @@ let model = "";
 for (let run = 1; run <= runs; run++) {
   for (const s of scenarios) {
     const ctx = createSafeFinancialContext(synthesizeFinancialTelemetry(s.input));
-    const facts = buildBriefingFacts(ctx, new Date(), { incomeKnown: incomeKnown(s.input) });
+    const analytics = buildFinancialAnalytics(s.analyticsInput);
+    const facts = buildBriefingFacts(analytics);
     let result = null;
     let error;
     const started = Date.now();
     try {
-      result = await generateAIBriefing({ context: ctx, firstName: "Pessoa", incomeKnown: incomeKnown(s.input) });
+      result = await generateAIBriefing({ analytics, profile: { aiTone: s.input.userProfile?.aiTone, primaryFocus: s.input.userProfile?.primaryFocus }, firstName: "Pessoa" });
       model = result.modelUsed;
       costUsd += result.openAIResponses.reduce((acc, r) => acc + (r.estimatedCostUsd || 0), 0);
     } catch (err) {
@@ -90,7 +95,7 @@ for (let run = 1; run <= runs; run++) {
             systemPrompt: buildFinancialAnalystSystemPrompt(ctx),
             conversationMessages: [{ role: "user", content: probe.question }],
             userMessage: probe.question,
-            incomeKnown: incomeKnown(s.input),
+            analytics,
           });
           answer = res.text;
           costUsd += res.openAIResponse?.estimatedCostUsd || 0;

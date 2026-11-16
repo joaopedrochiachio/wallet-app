@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server.js";
-import {
-  synthesizeFinancialTelemetry,
-  createSafeFinancialContext,
-} from "../../../../lib/services/financialContextService.ts";
+import { buildAnalyticsFromRequest } from "../../../../lib/services/financialAnalyticsService.ts";
+import { redactPersonalData } from "../../../../lib/services/privacyService.ts";
 import { generateAIBriefing, BriefingGenerationError } from "../../../../lib/services/aiBriefingService.ts";
 import { describeProviderFailure } from "../../../../lib/services/aiFailure.ts";
 import { verifyServerAuth } from "../../../../lib/auth/serverAuth.ts";
@@ -39,34 +37,10 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const {
-      userProfile,
-      cards = [],
-      transactions = [],
-      recurringItems = [],
-      goals = [],
-      mainBalance = 0,
-      monthIncome = 0,
-      monthExpense = 0,
-      monthlyProjections = [],
-      targetEndMonthBalance,
-    } = body ?? {};
-
-    const telemetry = synthesizeFinancialTelemetry({
-      userProfile,
-      cards: Array.isArray(cards) ? cards.slice(0, 30) : [],
-      transactions: Array.isArray(transactions) ? transactions.slice(0, 300) : [],
-      recurringItems: Array.isArray(recurringItems) ? recurringItems.slice(0, 50) : [],
-      goals: Array.isArray(goals) ? goals.slice(0, 30) : [],
-      mainBalance,
-      monthIncome,
-      monthExpense,
-      monthlyProjections: Array.isArray(monthlyProjections) ? monthlyProjections.slice(0, 6) : [],
-      targetEndMonthBalance: typeof targetEndMonthBalance === "number" ? targetEndMonthBalance : undefined,
-    });
-    const context = createSafeFinancialContext(telemetry);
-    const incomeKnown = Number(userProfile?.monthlyIncomeBase) > 0 || Number(monthIncome) > 0;
-    const firstName = typeof userProfile?.name === "string" ? userProfile.name.trim().split(/\s+/)[0]?.slice(0, 30) : undefined;
+    const analytics = buildAnalyticsFromRequest(body);
+    const userProfile = (body?.userProfile ?? {}) as { name?: string; aiTone?: string; primaryFocus?: string };
+    const firstName = typeof userProfile.name === "string" ? userProfile.name.trim().split(/\s+/)[0]?.slice(0, 30) : undefined;
+    const profile = { aiTone: userProfile.aiTone, primaryFocus: userProfile.primaryFocus ? redactPersonalData(userProfile.primaryFocus).slice(0, 120) : undefined };
 
     const quota = await reserveAIQuota({ uid: userId, route: "analyze" });
     if (!quota.allowed || !quota.reservation) {
@@ -79,7 +53,7 @@ export async function POST(req: NextRequest) {
 
     const startedAt = Date.now();
     try {
-      const result = await generateAIBriefing({ context, firstName, incomeKnown });
+      const result = await generateAIBriefing({ analytics, profile, firstName });
       const costUsd = result.openAIResponses.reduce((acc, r) => acc + (r.estimatedCostUsd || 0), 0);
       await reconcileAIQuota({ reservation: quota.reservation, success: true, actualCostUsd: costUsd });
       const last = result.openAIResponses[result.openAIResponses.length - 1];

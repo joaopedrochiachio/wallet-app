@@ -7,7 +7,7 @@ import {
   findUngroundedNumbers,
   BriefingGenerationError,
 } from "../lib/services/aiBriefingService.ts";
-import { synthesizeFinancialTelemetry, createSafeFinancialContext } from "../lib/services/financialContextService.ts";
+import { buildFinancialAnalytics, resolveReferenceDate } from "../lib/services/financialAnalyticsService.ts";
 import { SCENARIOS } from "../evals/ai/scenarios.ts";
 import { gradeBriefing, gradeChatAnswer, summarize, startsWithImperative } from "../evals/ai/graders.ts";
 
@@ -16,45 +16,36 @@ import { gradeBriefing, gradeChatAnswer, summarize, startsWithImperative } from 
  * avaliação de inteligência precisa separar uma boa resposta de uma ruim.
  */
 
-const NOW = new Date(2026, 10, 15, 12);
 const scenario = SCENARIOS.find((s) => s.id === "mes-no-vermelho");
-const context = createSafeFinancialContext(synthesizeFinancialTelemetry(scenario.input));
-const facts = buildBriefingFacts(context, NOW);
+const analytics = buildFinancialAnalytics(scenario.analyticsInput);
+const facts = buildBriefingFacts(analytics);
 const fact = (id) => facts.find((f) => f.id === id);
 const brl = (id) => `R$ ${fact(id).value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
 
 function goodBriefing() {
   return {
     headline: "Seu mês fecha no vermelho se nada mudar",
-    summary: `O saldo previsto para o fim do mês é ${brl("saldo_projetado")}. Isso acontece porque ainda faltam ${brl("contas_pendentes")} em contas e faturas.`,
+    summary: `O saldo previsto para o fim do mês é ${brl("saldo_fim_mes")}. Isso acontece porque ainda faltam ${brl("a_pagar")} em contas e faturas.`,
     mood: "critico",
-    highlightFactIds: ["saldo_projetado", "contas_pendentes", "falta_meta"],
+    highlightFactIds: ["saldo_fim_mes", "a_pagar", "falta_meta"],
     positives: [
-      { title: "Você recebeu sua renda", explanation: `Entraram ${brl("entradas_mes")} no mês, então você tem como reorganizar os pagamentos.`, evidenceFactIds: ["entradas_mes"], action: "Separe hoje o valor das contas que vencem primeiro." },
+      { title: "Você recebeu sua renda", explanation: `Entraram ${brl("recebido_mes")} no mês, então você tem como reorganizar os pagamentos.`, evidenceFactIds: ["recebido_mes"], action: "Separe hoje o valor das contas que vencem primeiro." },
     ],
     negatives: [
-      { title: "O mês fecha negativo", explanation: `Faltam ${brl("falta_meta")} para sua meta. Na prática, você vai entrar no próximo mês devendo.`, evidenceFactIds: ["falta_meta", "saldo_projetado"], action: `Corte ${brl("corte_diario")} por dia até o fim do mês.`, severity: "alta" },
+      { title: "O mês fecha negativo", explanation: `Faltam ${brl("falta_meta")} para sua meta. Na prática, você vai entrar no próximo mês devendo.`, evidenceFactIds: ["falta_meta", "saldo_fim_mes", "a_pagar"], action: `Corte ${brl("corte_dia")} por dia até o fim do mês.`, severity: "alta" },
       { title: "Cartão quase sem limite", explanation: `Você usa ${fact("limite_uso_pct").value}% do limite, então sobra pouca folga para imprevistos.`, evidenceFactIds: ["limite_uso_pct"], action: "Evite novas compras no cartão nesta semana.", severity: "media" },
     ],
-    nextStep: { title: "Priorize as contas fixas", detail: `Pague primeiro os ${brl("fixos_mes")} de contas fixas.` },
+    nextStep: { title: "Priorize as contas fixas", detail: `Pague primeiro os ${brl("a_pagar")} de contas fixas.` },
     lesson: { term: "Saldo projetado", explanation: "É quanto sobra no fim do mês depois de pagar tudo o que já está marcado. Ele mostra hoje se o mês vai fechar no azul ou no vermelho." },
     suggestedQuestions: ["Quais contas eu pago primeiro?", "Onde eu posso cortar gastos?", "Quanto preciso economizar por dia?"],
   };
 }
 
-test("ficha de fatos traz os números-chave do mês e omite margem quando a meta está em risco", () => {
-  assert.equal(fact("saldo_projetado").value, -778);
-  assert.equal(fact("falta_meta").value, 1278);
-  assert.equal(fact("margem_segura"), undefined);
-  assert.ok(fact("dias_restantes").value >= 1);
-});
-
-test("renda não informada não vira fato (o contexto usa um valor padrão)", () => {
-  const s = SCENARIOS.find((x) => x.id === "comecando-agora");
-  const ctx = createSafeFinancialContext(synthesizeFinancialTelemetry(s.input));
-  const list = buildBriefingFacts(ctx, NOW, { incomeKnown: false });
-  assert.equal(list.find((f) => f.id === "renda_base"), undefined);
-  assert.equal(list.find((f) => f.id === "folego_meses"), undefined);
+test("ficha de fatos traz os números-chave do mês e omite folga quando a meta está em risco", () => {
+  assert.equal(fact("saldo_fim_mes").value, -940); // 320 de saldo + 0 a receber − 1.260 a pagar
+  assert.equal(fact("falta_meta").value, 1440); // meta de 500
+  assert.equal(fact("folga_meta"), undefined);
+  assert.equal(fact("dias_restantes").value, analytics.daysLeft);
 });
 
 test("número fora da ficha é detectado; valores da ficha, dias e anos passam", () => {
@@ -87,11 +78,11 @@ test("geração tenta de novo com o erro apontado e falha de forma explícita se
     return { text, modelUsed: "fake", durationMs: 1, inputTokens: 1, cachedInputTokens: 0, outputTokens: 1, reasoningTokens: 0, estimatedCostUsd: 0, isCostEstimated: true, requestId: "r" };
   };
   const bad = { ...goodBriefing(), summary: "Seu saldo é R$ 7.777,00." };
-  await assert.rejects(generateAIBriefing({ context, now: NOW, callModel: fakeModel(JSON.stringify(bad)) }), BriefingGenerationError);
+  await assert.rejects(generateAIBriefing({ analytics, callModel: fakeModel(JSON.stringify(bad)) }), BriefingGenerationError);
   assert.equal(prompts.length, 2);
   assert.match(prompts[1], /recusada pela conferência[\s\S]*7777/);
 
-  const ok = await generateAIBriefing({ context, now: NOW, callModel: fakeModel(JSON.stringify(goodBriefing())) });
+  const ok = await generateAIBriefing({ analytics, callModel: fakeModel(JSON.stringify(goodBriefing())) });
   assert.equal(ok.attempts, 1);
   assert.equal(ok.briefing.mood, "critico");
 });
@@ -115,7 +106,7 @@ test("régua de inteligência: resposta boa chega ao nível 5, resposta ruim fic
 
 test("régua do chat cobra número certo, veredito e didática", () => {
   const probe = scenario.chat[0];
-  const goodAnswer = `Não recomendo agora. Seu saldo previsto é ${brl("saldo_projetado")}, ou seja, o mês já fecha negativo.\n\n**O que fazer:** Espere a próxima renda antes de comprar.`;
+  const goodAnswer = `Não recomendo agora. Seu saldo previsto é ${brl("saldo_fim_mes")}, ou seja, o mês já fecha negativo.\n\n**O que fazer:** Espere a próxima renda antes de comprar.`;
   const goodChecks = gradeChatAnswer({ probe, answer: goodAnswer, facts });
   assert.ok(goodChecks.every((c) => c.pass), goodChecks.filter((c) => !c.pass).map((c) => c.name).join(", "));
   const badChecks = gradeChatAnswer({ probe, answer: "Claro! Pode comprar sim, você tem R$ 5.432,00 livres.", facts });

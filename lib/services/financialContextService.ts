@@ -1770,7 +1770,7 @@ ${
     : ""
 }
 
-4. PRINCIPAIS CATEGORIAS DE GASTO:
+4. PRINCIPAIS CATEGORIAS DE GASTO (HISTÓRICO SOMADO DE TODOS OS MESES ENVIADOS; NÃO é o gasto deste mês, use a ANÁLISE DO MÊS para o mês atual):
 ${categories
   .slice(0, 6)
   .map((cat) => `   - ${cat.category}: R$ ${cat.total.toFixed(2)} (${cat.percentage}% do total gasto)`)
@@ -1870,7 +1870,7 @@ ${
        (Sendo R$ ${liquidityAnalysis.nextMonth.cardInstallments.toFixed(2)} em parcelas de faturas de cartão e R$ ${liquidityAnalysis.nextMonth.recurringDebit.toFixed(2)} em despesas fixas em débito)
      - Saldo Livre Projetado para Gastar Mês que Vem: R$ ${liquidityAnalysis.nextMonth.projectedFreeBalance.toFixed(2)}
 
-8. GASTOS ESPECÍFICOS & ESTABELECIMENTOS MAIS FREQUENTES (COM CRÉDITO / DÉBITO):
+8. GASTOS ESPECÍFICOS & ESTABELECIMENTOS MAIS FREQUENTES (HISTÓRICO SOMADO, NÃO só este mês):
 ${
   topSpendItems && topSpendItems.length > 0
     ? topSpendItems
@@ -1892,7 +1892,7 @@ ${
 }
 
 
-9. GRUPOS MACRO DE ESTILO DE VIDA & HÁBITOS DE CONSUMO (CRÉDITO vs DÉBITO):
+9. GRUPOS MACRO DE ESTILO DE VIDA & HÁBITOS DE CONSUMO (HISTÓRICO SOMADO, NÃO só este mês):
 ${
   context.lifestyleHabits && context.lifestyleHabits.length > 0
     ? context.lifestyleHabits

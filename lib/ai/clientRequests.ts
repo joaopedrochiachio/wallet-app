@@ -73,6 +73,10 @@ interface ProjectionLike {
   totalInvoicesPending?: number;
   projectedFreeBalance: number;
   monthNetSurplus?: number;
+  actualIncomeTotal?: number;
+  actualOutflowTotal?: number;
+  projectedIncome?: number;
+  cardInvoices?: Array<{ cardId: string; cardName?: string; dueDay?: number; pendingInvoice?: number; isPaid?: boolean }>;
 }
 
 /** Resumo das projeções dos próximos 6 meses no formato que as rotas de IA esperam. */
@@ -93,6 +97,33 @@ export function summarizeProjections(getMonthlyProjection: (index: number) => Pr
       totalInvoicesPending: p.totalInvoicesPending,
       projectedFreeBalance: p.projectedFreeBalance,
       monthNetSurplus: p.monthNetSurplus,
+      actualIncomeTotal: p.actualIncomeTotal,
+      actualOutflowTotal: p.actualOutflowTotal,
+      projectedIncome: p.projectedIncome,
+      // Só o necessário da fatura (sem a lista de compras)
+      cardInvoices: (p.cardInvoices ?? []).map((inv) => ({
+        cardId: inv.cardId,
+        cardName: inv.cardName,
+        dueDay: inv.dueDay,
+        pendingInvoice: inv.pendingInvoice,
+        isPaid: inv.isPaid,
+      })),
     };
+  });
+}
+
+/** Data local da pessoa (AAAA-MM-DD), para o servidor usar o mesmo "hoje". */
+export function localDateKey(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** Lançamentos do mês atual e dos 3 anteriores: o suficiente para comparar com a média. */
+export function recentTransactionsForAI<T extends { date?: string; occurredAt?: unknown; createdAt?: unknown }>(transactions: T[], now: Date = new Date()): T[] {
+  const from = new Date(now.getFullYear(), now.getMonth() - 3, 1).getTime();
+  return transactions.filter((tx) => {
+    const raw = (tx.occurredAt as string | number | undefined) ?? tx.date ?? (tx.createdAt as string | number | undefined);
+    if (raw === undefined || raw === null) return true;
+    const t = typeof raw === "string" && /^\d{4}-\d{2}-\d{2}/.test(raw) ? new Date(`${raw.slice(0, 10)}T12:00:00`).getTime() : new Date(raw as string | number).getTime();
+    return Number.isNaN(t) || t >= from;
   });
 }

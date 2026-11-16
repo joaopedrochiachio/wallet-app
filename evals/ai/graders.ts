@@ -106,6 +106,11 @@ export function gradeBriefing(params: {
     checks.push({ level: 2, name: `sem leitura errada (${f.reason})`, pass: !hit, detail: hit?.[0] });
   }
 
+  for (const fn of exp.forbiddenNumbers ?? []) {
+    const hit = extractAmounts(text).some((n) => Math.abs(n - fn.value) < 1);
+    checks.push({ level: 2, name: `sem número de outro período (${fn.reason})`, pass: !hit });
+  }
+
   // ---------- N3 Prioridade ----------
   const top = b.negatives[0];
   if (exp.topRiskAny) {
@@ -173,6 +178,9 @@ export function gradeChatAnswer(params: { probe: ChatProbe; answer: string | nul
     checks.push({ level: 3, name: `${label} ${probe.verdictLabel ?? "veredito"}`, pass: probe.verdict.test(answer), detail: answer.slice(0, 120) });
   }
   if (probe.forbidden) checks.push({ level: 2, name: `${label} sem afirmação proibida`, pass: !probe.forbidden.test(answer) });
+  for (const value of probe.forbiddenNumbers ?? []) {
+    checks.push({ level: 2, name: `${label} não usa total de outro período`, pass: !extractAmounts(answer).some((n) => Math.abs(n - value) < 1), detail: String(value) });
+  }
   const sents = sentences(answer.replace(/[*#>`_-]/g, " "));
   const avg = sents.length ? sents.reduce((s, x) => s + words(x).length, 0) / sents.length : 0;
   checks.push({ level: 4, name: `${label} frases curtas`, pass: avg <= 24, detail: `média ${avg.toFixed(1)}` });
