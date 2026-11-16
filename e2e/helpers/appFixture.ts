@@ -64,6 +64,8 @@ export async function buildAppFixture() {
         export const loadInitialDiagnosisSync = () => null;
         export const loadDismissedPatterns = () => [];
         export const dismissPattern = () => [];
+        export const loadCachedBriefing = () => null;
+        export const saveCachedBriefing = () => {};
       `,
       "@/context/WalletContext": `
         import React from "react";

@@ -41,7 +41,7 @@ import { QuickCaptureModal } from "./QuickCaptureModal";
 type ActiveTab = "hoje" | "agenda" | "radar";
 type CheckInMood = "in_control" | "unexpected_spend" | "tight_savings";
 
-const FOCUS_STORAGE_KEY = "wallet_niko_daily_focus_v1";
+const FOCUS_STORAGE_KEY = "wallet_cofi_daily_focus_v1";
 
 function localDateKey(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -273,7 +273,7 @@ export function DynamicIsland() {
                   <TabButton label="Agenda" count={upcomingEvents.length} active={activeTab === "agenda"} onClick={() => setActiveTab("agenda")} />
                   <TabButton label="Radar" live active={activeTab === "radar"} onClick={() => setActiveTab("radar")} />
                 </div>
-                <button type="button" onClick={() => setIsExpanded(false)} className="w-7 h-7 rounded-full bg-[#F2F2F7] hover:bg-[#E5E5EA] text-[#636366] flex items-center justify-center cursor-pointer" aria-label="Recolher Niko">
+                <button type="button" onClick={() => setIsExpanded(false)} className="w-7 h-7 rounded-full bg-[#F2F2F7] hover:bg-[#E5E5EA] text-[#636366] flex items-center justify-center cursor-pointer" aria-label="Recolher Cofi">
                   <ChevronUp size={14} />
                 </button>
               </div>
@@ -283,7 +283,7 @@ export function DynamicIsland() {
                   <div className="rounded-2xl bg-gradient-to-br from-[#FAFAFC] to-white border border-black/[0.06] p-4 flex items-start gap-3.5">
                     <AgentAvatar persona={userProfile.persona || "guardian"} state={advice.avatarState} size="lg" />
                     <div className="min-w-0 flex-1">
-                      <span className="text-[10px] uppercase tracking-[0.14em] text-blue-600 font-bold">{greetingForNow()}, {firstName} · Niko está atento</span>
+                      <span className="text-[10px] uppercase tracking-[0.14em] text-blue-600 font-bold">{greetingForNow()}, {firstName} · Cofi está atento</span>
                       <h3 className="text-sm sm:text-base font-bold text-[#1D1D1F] mt-1">{advice.headline}</h3>
                       <p className="text-xs text-[#86868B] leading-relaxed mt-1">{advice.advice}</p>
                     </div>
@@ -421,7 +421,7 @@ export function DynamicIsland() {
                       <div className="p-5 text-center text-xs text-[#86868B]">Sem manchetes novas neste momento.</div>
                     )}
                   </div>
-                  <p className="text-[9px] text-[#86868B] leading-relaxed">Cotações informativas, sujeitas a atraso. O Niko organiza contexto; não substitui recomendação de investimento.</p>
+                  <p className="text-[9px] text-[#86868B] leading-relaxed">Cotações informativas, sujeitas a atraso. O Cofi organiza contexto; não substitui recomendação de investimento.</p>
                 </div>
               )}
             </div>
@@ -440,7 +440,7 @@ function CompactIsland({ adviceState, persona, safeAllowance, urgentCount, curre
     <div className="w-full flex items-center justify-between gap-2 sm:gap-3">
       <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
         <AgentAvatar persona={persona} state={adviceState} size="sm" showBadge={false} />
-        <span className="text-xs font-semibold hidden sm:inline">Niko</span>
+        <span className="text-xs font-semibold hidden sm:inline">Cofi</span>
       </div>
       <div className="flex items-center gap-1.5 min-w-0">
         <span className="text-[10px] text-white/45">Livre hoje</span>

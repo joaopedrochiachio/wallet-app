@@ -157,7 +157,7 @@ export function SpendingCalendarHeatmap({
   };
 
   return (
-    <section className="w-full rounded-[28px] sm:rounded-[36px] bg-white border border-black/[0.06] shadow-[0_4px_24px_rgba(0,0,0,0.02)] p-4 sm:p-7 space-y-5">
+    <section className="w-full bg-white p-3 space-y-5 sm:rounded-[36px] sm:border sm:border-black/[0.06] sm:shadow-[0_4px_24px_rgba(0,0,0,0.02)] sm:p-7">
       <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-black/[0.05] pb-4">
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-10 h-10 rounded-2xl bg-[#1D1D1F] text-white flex items-center justify-center shrink-0">
@@ -195,11 +195,11 @@ export function SpendingCalendarHeatmap({
       </div>
 
       <div className="rounded-3xl border border-black/[0.05] bg-[#FAFAFC] p-3 sm:p-4 space-y-2">
-        <div className="grid grid-cols-7 gap-1 sm:gap-2 text-center font-semibold text-[9px] sm:text-[10px] text-[#86868B] uppercase tracking-wider">
+        <div className="grid grid-cols-7 gap-0.5 sm:gap-2 text-center font-semibold text-[9px] sm:text-[10px] text-[#86868B] uppercase tracking-wider">
           {WEEK_LABELS.map((label) => <div key={label}>{label}</div>)}
         </div>
 
-        <div className="grid grid-cols-7 gap-1 sm:gap-2">
+        <div className="grid grid-cols-7 gap-0.5 sm:gap-2">
           {Array.from({ length: firstDayOfWeek }).map((_, index) => (
             <div key={`empty-${index}`} className="min-h-[64px] sm:min-h-[88px]" />
           ))}

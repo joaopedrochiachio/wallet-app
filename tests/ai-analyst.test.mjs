@@ -751,8 +751,9 @@ test("buildFinancialAnalystSystemPrompt estabelece postura de CFO sem textinho e
   const safeContext = createSafeFinancialContext(telemetry);
   const prompt = buildFinancialAnalystSystemPrompt(safeContext);
 
-  assert.ok(prompt.includes("ANALISTA FINANCEIRO PESSOAL (Personal CFO)"));
-  assert.ok(prompt.includes("SEM TEXTINHO E SEM BLÁ BLÁ BLÁ"));
+  assert.ok(prompt.includes("Você é o Cofi, assistente financeiro pessoal"));
+  assert.ok(prompt.includes("**O que fazer:**"), "toda resposta termina com uma ação concreta");
+  assert.ok(prompt.includes("LINGUAGEM SIMPLES"));
   assert.ok(prompt.includes("CAIXA ATUAL vs CARTÃO NO MÊS SEGUINTE"));
   assert.ok(prompt.includes("Compras no cartão NÃO tiram dinheiro da conta corrente no mês em que são feitas"));
   assert.ok(prompt.includes("McDonald's"));

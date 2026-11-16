@@ -34,6 +34,7 @@ import {
   BookOpen,
 } from "lucide-react";
 import { MacSegmentedControl } from "@/components/ui/macos/SegmentedControl";
+import { AppearanceCard } from "@/components/profile/AppearanceCard";
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -443,6 +444,7 @@ export default function ProfilePage() {
       {/* ABA 2: CONTA & PARÂMETROS PESSOAIS (Padrão iOS Settings Grouped) */}
       {activeTab === "account" && (
         <form onSubmit={handleSaveProfileData} className="space-y-5 animate-in fade-in duration-300">
+          <AppearanceCard />
           <div className="bg-white rounded-[26px] overflow-hidden border border-black/[0.04] shadow-[0_2px_12px_rgba(0,0,0,0.04)] font-sans">
             <div className="p-5 sm:p-6 pb-3 border-b border-black/[0.05] flex items-center justify-between">
               <div>

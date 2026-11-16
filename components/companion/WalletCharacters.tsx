@@ -93,7 +93,7 @@ export function normalizeCharacterId(id?: string): WalletCharacterId {
 }
 
 /**
- * Componente de Personagem Original do Ecossistema Wallet+ (Inspirado no Niko / Apple)
+ * Personagens originais do Wallet+ (Rubi, Sol, Nanquim e Atlos)
  */
 export function WalletCharacter({
   id,
@@ -113,7 +113,7 @@ export function WalletCharacter({
     xl: 72,
   }[size];
 
-  // Renderizador vetorial dos 4 personagens com estados emocionais Apple/Niko
+  // Renderizador vetorial dos 4 personagens com estados emocionais
   const renderVectorCharacter = () => {
     switch (charId) {
       case "wallet-rubi":

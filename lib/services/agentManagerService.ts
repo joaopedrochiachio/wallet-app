@@ -28,6 +28,7 @@ import type {
   FinancialDiagnosis,
 } from "./financialDiagnosisService.ts";
 import { safeParseFinancialDiagnosis } from "./financialDiagnosisService.ts";
+import { buildChatFactBlock } from "./aiBriefingService.ts";
 
 export interface AuditDossier {
   relevantCategories: string[];
@@ -404,6 +405,8 @@ export async function orchestrateAnalystChat(params: {
   conversationMessages: OpenAIChatMessage[];
   userMessage?: string;
   simulationResult?: PurchaseSimulationResult | null;
+  /** false quando a renda não foi informada (o contexto usa um valor padrão). */
+  incomeKnown?: boolean;
 }): Promise<{
   text: string;
   modelUsed: string;
@@ -421,7 +424,9 @@ export async function orchestrateAnalystChat(params: {
   });
 
   // 2. Enriquece o system prompt com o dossiê factual
-  const enrichedSystemPrompt = params.systemPrompt + formatAuditDossierForPrompt(auditDossier);
+  // 2. Enriquece o system prompt com o dossiê factual e a mesma ficha de fatos do informativo
+  const enrichedSystemPrompt =
+    params.systemPrompt + formatAuditDossierForPrompt(auditDossier) + buildChatFactBlock(params.context, { incomeKnown: params.incomeKnown });
 
   // 3. Chamada ao modelo. Se o provedor falhar, o erro sobe para a rota, que
   // informa o usuário — nunca devolvemos um texto pronto fingindo ser a IA.

@@ -21,7 +21,32 @@ test.beforeAll(async () => {
 });
 
 
-async function open(page: Page, route: string, width: number) {
+/** Informativo de estresse: textos longos e 3 pontos de cada lado. */
+const LONG = "Isso significa que sua folga do mês diminui bastante se nada mudar nas próximas semanas, então vale agir agora.";
+const BRIEFING = {
+  success: true,
+  generatedAt: new Date().toISOString(),
+  modelUsed: "fixture",
+  facts: [
+    { id: "saldo_projetado", label: "Saldo previsto no fim do mês", value: -123456.78, kind: "brl" },
+    { id: "falta_meta", label: "Quanto falta para alcançar a meta", value: 128456.78, kind: "brl" },
+    { id: "limite_uso_pct", label: "Uso do limite dos cartões", value: 93.4, kind: "percent" },
+    { id: "folego_meses", label: "Meses que o saldo atual cobre sem nova renda", value: 1.5, kind: "months" },
+  ],
+  briefing: {
+    headline: "Seu mês fecha no vermelho se as faturas vencerem como previsto",
+    summary: `${LONG} ${LONG}`,
+    mood: "critico",
+    highlightFactIds: ["saldo_projetado", "falta_meta", "limite_uso_pct", "folego_meses"],
+    negatives: [0, 1, 2].map((i) => ({ title: `Ponto de atenção número ${i + 1} com título comprido`, explanation: LONG, evidenceFactIds: ["saldo_projetado", "limite_uso_pct"], action: "Separe R$ 1.234,56 até o dia 10 para a fatura.", severity: (["alta", "media", "baixa"] as const)[i] })),
+    positives: [0, 1, 2].map((i) => ({ title: `Ponto a favor número ${i + 1}`, explanation: LONG, evidenceFactIds: ["folego_meses"], action: "Mantenha o ritmo de registros nesta semana." })),
+    nextStep: { title: "Priorize a fatura do cartão principal", detail: LONG },
+    lesson: { term: "Saldo projetado", explanation: LONG },
+    suggestedQuestions: ["Qual conta eu pago primeiro neste mês?", "Quanto preciso cortar por dia?", "Posso parcelar a fatura?"],
+  },
+};
+
+async function open(page: Page, route: string, width: number, theme: "light" | "dark" = "light") {
   await page.setViewportSize({ width, height: 844 });
   await page.route("https://wallet.test/**", (r) =>
     r.fulfill({
@@ -29,7 +54,15 @@ async function open(page: Page, route: string, width: number) {
       body: '<!doctype html><html lang="pt-BR"><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body><div id="root"></div></body></html>',
     })
   );
-  await page.route("**/api/**", (r) => r.fulfill({ contentType: "application/json", body: '{"success":false}' }));
+  await page.route("**/api/**", (r) =>
+    r.fulfill({ contentType: "application/json", body: r.request().url().includes("/api/ai/briefing") ? JSON.stringify(BRIEFING) : '{"success":false}' })
+  );
+  if (theme === "dark") {
+    await page.addInitScript(() => {
+      localStorage.setItem("wallet_theme", "dark");
+      document.addEventListener("DOMContentLoaded", () => document.documentElement.classList.add("theme-dark"));
+    });
+  }
   await page.goto(`https://wallet.test${route}`);
   await page.addStyleTag({ content: fixture.css });
   await page.addScriptTag({ content: fixture.bundle });
@@ -151,12 +184,16 @@ const FLOWS: Array<{ name: string; route: string; steps: (page: Page) => Promise
       await p.getByRole("button", { name: "Atalho Rápido do Companheiro" }).click();
       await p.getByRole("button", { name: /Captura Rápida/ }).first().click();
     } },
-  { name: "chat de IA", route: "/ai", steps: (p) => p.getByRole("button", { name: "Chat IA", exact: true }).click() },
+  { name: "calendário de gastos da IA", route: "/ai", steps: (p) => p.getByRole("button", { name: /Calendário de gastos/ }).click() },
+  { name: "chat com simulador", route: "/ai", steps: (p) => p.getByRole("button", { name: "Simular", exact: true }).click() },
+  { name: "editar meta na IA", route: "/ai", steps: (p) => p.getByRole("button", { name: /Editar meta/ }).click() },
   {
-    name: "chat com conversas e simulador", route: "/ai",
+    name: "tema escuro pelo perfil", route: "/profile",
     steps: async (p) => {
-      await p.getByRole("button", { name: "Chat IA", exact: true }).click();
-      await p.getByRole("button", { name: "Simular", exact: true }).click();
+      await p.getByRole("button", { name: /Conta & Parâmetros/ }).click();
+      await p.getByRole("radio", { name: "Escuro" }).click();
+      await expect(p.locator("html")).toHaveClass(/theme-dark/);
+      expect(await p.evaluate(() => localStorage.getItem("wallet_theme"))).toBe("dark");
     },
   },
 ];
@@ -185,6 +222,105 @@ for (const flow of FLOWS) {
       expect(result.truncatedLabels, "rótulos cortados em controles").toEqual([]);
     });
   }
+}
+
+/**
+ * Texto com contraste baixo contra o fundo real (compondo fundos translúcidos).
+ * Limite 3:1 (mínimo WCAG para texto grande / componentes). Ignora áreas com
+ * imagem/gradiente de fundo, onde o fundo efetivo não é calculável.
+ */
+async function lowContrastText(page: Page) {
+  return page.evaluate(() => {
+    type RGBA = [number, number, number, number];
+    // O navegador converte qualquer cor (oklch, oklab, color-mix...) em RGBA ao pintar num canvas.
+    const ctx = document.createElement("canvas").getContext("2d", { willReadFrequently: true })!;
+    const cache = new Map<string, RGBA>();
+    const parse = (c: string): RGBA => {
+      if (cache.has(c)) return cache.get(c)!;
+      const m = c.match(/^rgba?\(([^)]+)\)$/);
+      let out: RGBA;
+      if (m) {
+        const p = m[1].split(/[ ,/]+/).filter(Boolean).map(Number);
+        out = [p[0], p[1], p[2], p[3] ?? 1];
+      } else {
+        ctx.clearRect(0, 0, 1, 1);
+        ctx.fillStyle = "rgba(0,0,0,0)";
+        ctx.fillStyle = c;
+        ctx.fillRect(0, 0, 1, 1);
+        const d = ctx.getImageData(0, 0, 1, 1).data;
+        out = [d[0], d[1], d[2], d[3] / 255];
+      }
+      cache.set(c, out);
+      return out;
+    };
+    const over = (top: RGBA, bottom: RGBA): RGBA => {
+      const a = top[3] + bottom[3] * (1 - top[3]);
+      if (a === 0) return [0, 0, 0, 0];
+      return [0, 1, 2].map((i) => (top[i] * top[3] + bottom[i] * bottom[3] * (1 - top[3])) / a).concat(a) as RGBA;
+    };
+    const lum = ([r, g, b]: RGBA) => {
+      const f = (v: number) => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+      return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+    };
+    let bgSource = "";
+    const background = (el: Element): RGBA | null => {
+      const layers: RGBA[] = [];
+      bgSource = "";
+      for (let n: Element | null = el; n; n = n.parentElement) {
+        const s = getComputedStyle(n);
+        if (s.backgroundImage !== "none") return null;
+        const c = parse(s.backgroundColor);
+        if (c[3] > 0) {
+          layers.push(c);
+          if (!bgSource) bgSource = (typeof (n as HTMLElement).className === "string" ? (n as HTMLElement).className : "").split(/\s+/).filter((k) => /bg-|mac-/.test(k)).slice(0, 3).join(" ");
+        }
+        if (c[3] >= 1) break;
+      }
+      let acc: RGBA = parse(getComputedStyle(document.body).backgroundColor);
+      if (acc[3] < 1) acc = [255, 255, 255, 1];
+      for (let i = layers.length - 1; i >= 0; i--) acc = over(layers[i], acc);
+      return acc;
+    };
+    const out: string[] = [];
+    for (const el of Array.from(document.body.querySelectorAll("*"))) {
+      const hasText = Array.from(el.childNodes).some((n) => n.nodeType === 3 && n.textContent!.trim().length > 1);
+      if (!hasText || el.closest("svg,[aria-hidden=true],[disabled],[aria-disabled=true],[data-touch-exempt]")) continue;
+      const rect = el.getBoundingClientRect();
+      const s = getComputedStyle(el);
+      if (!rect.width || !rect.height || s.visibility === "hidden" || Number(s.opacity) < 0.5) continue;
+      const bg = background(el);
+      if (!bg) continue;
+      const fg = over(parse(s.color), bg);
+      const [hi, lo] = [lum(fg), lum(bg)].sort((a, b) => b - a);
+      const ratio = (hi + 0.05) / (lo + 0.05);
+      if (ratio < 3) {
+        const cls = (typeof (el as HTMLElement).className === "string" ? (el as HTMLElement).className : "").split(/\s+/).filter((c) => /^(text|bg)-|mac-/.test(c)).slice(0, 4).join(" ");
+        out.push(`${el.tagName.toLowerCase()}[${cls}] "${(el as HTMLElement).innerText.trim().slice(0, 30)}" ${ratio.toFixed(2)}:1 (rgb(${fg.slice(0, 3).map(Math.round).join(",")}) sobre rgb(${bg.slice(0, 3).map(Math.round).join(",")}) de [${bgSource}])`);
+      }
+    }
+    return out;
+  });
+}
+
+for (const route of ROUTES) {
+  test(`${route} no tema escuro: sem quebra e com texto legível`, async ({ browser }) => {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+    const page = await context.newPage();
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    await open(page, route, 390, "dark");
+    expect(await page.evaluate(() => document.documentElement.classList.contains("theme-dark"))).toBe(true);
+    const result = await measure(page);
+    const contrast = await lowContrastText(page);
+    if (REPORT) {
+      fs.appendFileSync(path.join(fixture.directory, "responsive-report.jsonl"), JSON.stringify({ key: `${route} @dark`, contrast, ...result, errors }) + "\n");
+      await page.screenshot({ path: path.join(fixture.directory, `dark${route.replace(/\//g, "_") || "_root"}.png`), fullPage: true });
+    }
+    await context.close();
+    expect(errors, "erros de execução").toEqual([]);
+    expect(result.horizontalOverflow, "rolagem horizontal").toBeLessThanOrEqual(0);
+    expect(contrast, "texto com contraste baixo no tema escuro").toEqual([]);
+  });
 }
 
 test("barra lateral do desktop some no celular e aparece no desktop", async ({ browser }) => {

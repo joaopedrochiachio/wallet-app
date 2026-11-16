@@ -489,12 +489,57 @@ export function clearUserLocalCaches(userId?: string | null): void {
         getSessionsStorageKey(userId),
         getDismissedPatternsKey(userId),
         `wallet_ai_needs_reanalysis_${userId}`,
-        `wallet_ai_pending_persona_${userId}`
+        `wallet_ai_pending_persona_${userId}`,
+        getBriefingStorageKey(userId)
       );
     }
 
     keysToRemove.forEach((k) => window.localStorage.removeItem(k));
   } catch (err) {
     console.warn("Erro ao limpar caches locais do usuário:", err);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Informativo do Cofi: último informativo gerado, por usuário         */
+/* ------------------------------------------------------------------ */
+
+export interface CachedBriefing<TBriefing = unknown, TFact = unknown> {
+  briefing: TBriefing;
+  facts: TFact[];
+  generatedAt: string;
+  modelUsed?: string;
+  /** Assinatura dos dados usados; se mudar, o informativo está desatualizado. */
+  signature: string;
+}
+
+const BRIEFING_PREFIX = "wallet_ai_briefing_v1_";
+const memoryBriefings = new Map<string, CachedBriefing>();
+
+function getBriefingStorageKey(userId?: string | null): string {
+  return `${BRIEFING_PREFIX}${userId || "anon"}`;
+}
+
+export function loadCachedBriefing<TBriefing, TFact>(userId?: string | null): CachedBriefing<TBriefing, TFact> | null {
+  const key = getBriefingStorageKey(userId);
+  if (typeof window === "undefined") return (memoryBriefings.get(key) as CachedBriefing<TBriefing, TFact>) ?? null;
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && parsed.briefing && Array.isArray(parsed.facts) ? parsed : null;
+  } catch {
+    return (memoryBriefings.get(key) as CachedBriefing<TBriefing, TFact>) ?? null;
+  }
+}
+
+export function saveCachedBriefing(userId: string | null | undefined, data: CachedBriefing): void {
+  const key = getBriefingStorageKey(userId);
+  memoryBriefings.set(key, data);
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(data));
+  } catch {
+    /* armazenamento cheio ou bloqueado: fica só em memória */
   }
 }

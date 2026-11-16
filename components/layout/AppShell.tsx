@@ -57,11 +57,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <AuthRouteGuard>
         <WalletProvider>
           {isStandalonePage ? (
-            <div className="min-h-screen w-full flex flex-col bg-[#F2F2F7]">
+            <div className="min-h-screen w-full flex flex-col bg-[var(--app-bg)]">
               {children}
             </div>
           ) : (
-            <div className="flex h-[100dvh] min-h-[100dvh] w-full overflow-hidden bg-[#F2F2F7]">
+            <div className="flex h-[100dvh] min-h-[100dvh] w-full overflow-hidden bg-[var(--app-bg)]">
               {/* SIDEBAR (Desktop) */}
               <MacSidebar aria-label="Navegação principal" className="hidden md:flex w-60 h-full shrink-0 border-r border-black/[0.06] z-50 pt-5 pb-4">
                 <Link
@@ -95,7 +95,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </MacSidebar>
 
               {/* ÁREA PRINCIPAL */}
-              <main className="flex-1 h-full overflow-y-auto overflow-x-hidden w-full max-w-full min-w-0 pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-0 relative bg-[#F2F2F7] touch-scroll">
+              <main className="flex-1 h-full overflow-y-auto overflow-x-hidden w-full max-w-full min-w-0 pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-0 relative bg-[var(--app-bg)] touch-scroll">
                 {/* ILHA INTERATIVA WALLET (Top Dynamic Island) */}
                 <DynamicIsland />
 

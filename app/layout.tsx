@@ -3,6 +3,7 @@ import localFont from "next/font/local";
 import "./globals.css";
 import { AppShell } from "@/components/layout/AppShell";
 import { PwaRegister } from "@/components/pwa/PwaRegister";
+import { THEME_BOOT_SCRIPT } from "@/lib/themeBoot";
 
 const sfPro = localFont({
   src: [
@@ -77,8 +78,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="pt-BR" className={`${sfPro.variable} ${sfMono.variable}`}>
-      <body className="min-h-screen w-full bg-[#F2F2F7] text-[#1D1D1F] font-sans antialiased selection:bg-[#1D1D1F] selection:text-white">
+    <html lang="pt-BR" className={`${sfPro.variable} ${sfMono.variable}`} suppressHydrationWarning>
+      <head>
+        {/* Aplica o tema escolhido (claro/escuro) antes da primeira pintura */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
+      </head>
+      <body className="min-h-screen w-full bg-[var(--app-bg)] text-[var(--app-text)] font-sans antialiased selection:bg-[#1D1D1F] selection:text-white">
         <PwaRegister />
         <AppShell>{children}</AppShell>
       </body>
