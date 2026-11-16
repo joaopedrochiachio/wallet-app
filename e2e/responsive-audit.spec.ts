@@ -186,12 +186,14 @@ const FLOWS: Array<{ name: string; route: string; steps: (page: Page) => Promise
     } },
   { name: "calendário de gastos da IA", route: "/ai", steps: (p) => p.getByRole("button", { name: /Calendário de gastos/ }).click() },
   { name: "chat com simulador", route: "/ai", steps: (p) => p.getByRole("button", { name: "Simular", exact: true }).click() },
-  { name: "painel do Cofi (hoje)", route: "/dashboard", steps: (p) => p.getByRole("button", { name: /Abrir painel do Cofi/ }).click() },
+  { name: "painel do Cofi", route: "/dashboard", steps: (p) => p.getByRole("button", { name: /Abrir painel do Cofi/ }).click() },
   {
-    name: "painel do Cofi (agenda)", route: "/dashboard",
+    name: "histórico do chat da IA", route: "/ai",
     steps: async (p) => {
-      await p.getByRole("button", { name: /Abrir painel do Cofi/ }).click();
-      await p.getByRole("button", { name: /^Agenda/ }).click();
+      // No celular a conversa fica na barra de baixo: abre em tela cheia primeiro
+      const open = p.getByRole("button", { name: "Abrir conversa em tela cheia" });
+      if (await open.isVisible()) await open.click();
+      await p.getByRole("button", { name: "Histórico de conversas" }).click();
     },
   },
   { name: "editar meta na IA", route: "/ai", steps: (p) => p.getByRole("button", { name: /Editar meta/ }).click() },
@@ -343,7 +345,7 @@ test("barra lateral do desktop some no celular e aparece no desktop", async ({ b
   }
 });
 
-test("painel do Cofi no desktop vira barra lateral (claro e escuro)", async ({ browser }) => {
+test("painel do Cofi: blocos lado a lado e atalhos da Central de Controle (claro e escuro)", async ({ browser }) => {
   for (const theme of ["light", "dark"] as const) {
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const page = await context.newPage();
@@ -352,14 +354,13 @@ test("painel do Cofi no desktop vira barra lateral (claro e escuro)", async ({ b
     await open(page, "/dashboard", 1280, theme);
     await page.getByRole("button", { name: /Abrir painel do Cofi/ }).click();
     await page.waitForTimeout(450); // fim da animação de abertura
-    const nav = page.getByRole("navigation", { name: "Seções do painel" });
-    const today = nav.getByRole("button", { name: "Hoje" });
-    const radar = nav.getByRole("button", { name: /Radar/ });
-    const [a, b] = [await today.boundingBox(), await radar.boundingBox()];
-    expect(b!.y, "itens da barra lateral empilhados").toBeGreaterThan(a!.y + 20);
-    expect(Math.abs(b!.x - a!.x), "mesma coluna").toBeLessThan(2);
-    const section = await page.getByRole("region", { name: "Hoje" }).boundingBox();
-    expect(section!.x, "conteúdo à direita da barra").toBeGreaterThan(a!.x + a!.width);
+    const shortcuts = page.getByRole("navigation", { name: "Atalhos do Cofi" });
+    const capture = shortcuts.getByRole("button", { name: "Capturar gasto" });
+    const calendar = shortcuts.getByRole("link", { name: "Calendário" });
+    const [a, b] = [await capture.boundingBox(), await calendar.boundingBox()];
+    expect(Math.abs(b!.y - a!.y), "atalhos na mesma linha").toBeLessThan(2);
+    expect(b!.x, "atalhos lado a lado").toBeGreaterThan(a!.x + a!.width);
+    await expect(page.getByRole("region", { name: "Próximos 7 dias" })).toBeVisible();
     if (REPORT) await page.screenshot({ path: path.join(fixture.directory, `painel-desktop-${theme}.png`) });
     await context.close();
     expect(errors).toEqual([]);

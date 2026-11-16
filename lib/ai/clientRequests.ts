@@ -59,6 +59,93 @@ export async function postAI<T>(url: string, body: unknown, user?: Pick<User, "g
   return data;
 }
 
+/** Evento de uma rota de IA que responde em fluxo (uma linha JSON por evento). */
+export interface AIStreamEvent {
+  type: "step" | "result" | "error";
+  [key: string]: unknown;
+}
+
+/**
+ * Igual ao postAI, mas acompanha a resposta em fluxo (NDJSON): cada etapa chega
+ * em onEvent enquanto o servidor trabalha. Se a rota responder JSON comum
+ * (erros antes do fluxo, ou versões antigas), funciona como postAI.
+ */
+export async function postAIStream<T>(
+  url: string,
+  body: unknown,
+  user: Pick<User, "getIdToken"> | null | undefined,
+  onEvent: (event: AIStreamEvent) => void
+): Promise<T> {
+  const activeUser = auth?.currentUser || user || null;
+  const payload = JSON.stringify(body);
+  const send = async (forceRefresh: boolean) => {
+    const token = activeUser ? await activeUser.getIdToken(forceRefresh) : "";
+    return fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/x-ndjson, application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: payload,
+    });
+  };
+
+  let res: Response;
+  try {
+    res = await send(false);
+    if (res.status === 401 && activeUser) res = await send(true);
+  } catch {
+    throw new AIRequestError("Não consegui falar com o servidor. Verifique sua conexão e tente novamente.", 0);
+  }
+
+  const isStream = (res.headers.get("content-type") || "").includes("ndjson");
+  if (!isStream || !res.body) {
+    const text = await res.text();
+    let data: (T & { success?: boolean; error?: string; code?: string }) | null = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = null;
+    }
+    if (!res.ok || !data || data.success === false) throw new AIRequestError(data?.error || describeAIFailure(res.status), res.status, data?.code);
+    return data;
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result: T | null = null;
+  const handleLine = (line: string) => {
+    if (!line.trim()) return;
+    let event: AIStreamEvent;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      return;
+    }
+    if (event.type === "error") {
+      throw new AIRequestError(typeof event.error === "string" ? event.error : describeAIFailure(502), typeof event.status === "number" ? event.status : 502, typeof event.code === "string" ? event.code : undefined);
+    }
+    if (event.type === "result") result = event as unknown as T;
+    else onEvent(event);
+  };
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx: number;
+      while ((idx = buffer.indexOf("\n")) >= 0) {
+        handleLine(buffer.slice(0, idx));
+        buffer = buffer.slice(idx + 1);
+      }
+    }
+    handleLine(buffer + decoder.decode());
+  } catch (err) {
+    if (err instanceof AIRequestError) throw err;
+    throw new AIRequestError("A conexão caiu enquanto o Cofi respondia. Tente novamente.", 0);
+  }
+  if (!result) throw new AIRequestError("A resposta do Cofi chegou incompleta. Tente novamente.", 502);
+  return result;
+}
+
 interface ProjectionLike {
   monthName: string;
   year: number;

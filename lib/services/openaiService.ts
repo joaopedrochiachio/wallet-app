@@ -308,6 +308,40 @@ function supportsReasoningEffort(model: string): boolean {
 }
 
 /**
+ * Esforço de raciocínio enviado de fato ao modelo.
+ *
+ * Importante: NÃO enviar o parâmetro não significa "sem raciocínio". Em vários
+ * modelos de raciocínio o padrão é "medium", e os tokens de raciocínio saem do
+ * mesmo teto de max_completion_tokens: a resposta podia voltar vazia (ou
+ * estourar o tempo) e o chat mostrava "IA indisponível". Por isso "none" é
+ * traduzido para o menor nível que cada família aceita.
+ */
+export function resolveReasoningEffort(
+  model: string,
+  requested: OpenAICallParams["reasoningEffort"]
+): "none" | "minimal" | "low" | "medium" | "high" | undefined {
+  if (!supportsReasoningEffort(model)) return undefined;
+  const effort = requested ?? "none";
+  if (effort !== "none") return effort;
+  // gpt-5 original (gpt-5, gpt-5-mini, gpt-5-nano e versões datadas): menor nível é "minimal"
+  if (/^gpt-5(-(mini|nano))?(-\d{4}-\d{2}-\d{2})?$/.test(model)) return "minimal";
+  // Série o (o3, o4-mini...): menor nível é "low"
+  if (/^o\d/.test(model)) return "low";
+  // gpt-5.1 em diante e gpt-6: aceitam "none"
+  return "none";
+}
+
+/**
+ * Teto de tokens de saída. Em modelos de raciocínio somamos uma folga para o
+ * raciocínio não consumir o espaço da resposta (só se paga o que for usado).
+ */
+export function resolveMaxCompletionTokens(model: string, maxOutputTokens: number, effort: ReturnType<typeof resolveReasoningEffort>): number {
+  if (!effort) return maxOutputTokens;
+  const headroom = effort === "none" ? 500 : effort === "minimal" ? 1500 : effort === "low" ? 3000 : 6000;
+  return maxOutputTokens + headroom;
+}
+
+/**
  * Reserva opcional via Google Gemini, ativada apenas quando GEMINI_API_KEY está
  * definida no servidor. A chave segue no cabeçalho (não na URL, que vai para logs).
  */
@@ -431,13 +465,14 @@ export async function callOpenAIResponses(
   for (const realModel of candidateModels) {
     const startTime = Date.now();
     try {
+      const effort = resolveReasoningEffort(realModel, params.reasoningEffort);
       const completionParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
         model: realModel,
         messages: chatMessages,
-        max_completion_tokens: params.maxOutputTokens ?? 2048,
+        max_completion_tokens: resolveMaxCompletionTokens(realModel, params.maxOutputTokens ?? 2048, effort),
       };
-      if (params.reasoningEffort && params.reasoningEffort !== "none" && supportsReasoningEffort(realModel)) {
-        (completionParams as unknown as Record<string, unknown>).reasoning_effort = params.reasoningEffort;
+      if (effort) {
+        (completionParams as unknown as Record<string, unknown>).reasoning_effort = effort;
       }
 
       if (params.jsonSchema) {
@@ -460,7 +495,15 @@ export async function callOpenAIResponses(
         // Se algum modelo recusar strict json_schema, tenta json_object no mesmo modelo
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const status = (schemaErr as any)?.status;
-        if (params.jsonSchema && status === 400) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const errText = `${(schemaErr as any)?.param ?? ""} ${(schemaErr as any)?.message ?? ""}`;
+        if (status === 400 && effort && effort !== "low" && /reasoning/i.test(errText)) {
+          // Modelo não aceita esse nível de raciocínio: "low" é aceito por todos os que raciocinam.
+          completion = await client.chat.completions.create(
+            { ...completionParams, reasoning_effort: "low", max_completion_tokens: resolveMaxCompletionTokens(realModel, params.maxOutputTokens ?? 2048, "low") } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
+            { timeout: timeoutMs }
+          );
+        } else if (params.jsonSchema && status === 400) {
           const fallbackParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
             ...completionParams,
             messages: [
@@ -498,10 +541,12 @@ export async function callOpenAIResponses(
       }
 
       if (!text) {
+        // Resposta vazia (ex.: o raciocínio consumiu o teto). Tenta o próximo modelo da fila.
         throw new OpenAIIntegrationError("A OpenAI retornou uma resposta textual em branco.", {
           code: "EMPTY_RESPONSE",
           status: 502,
-          retryable: false,
+          retryable: true,
+          technicalDetails: { finishReason: choice?.finish_reason, model: realModel },
         });
       }
 
@@ -561,6 +606,12 @@ export async function callOpenAIResponses(
         rawCode.includes("model_not_found") ||
         rawCode.includes("does_not_exist")
       ) {
+        continue;
+      }
+
+      // Resposta em branco não é falha do provedor: o próximo modelo costuma responder.
+      if (err instanceof OpenAIIntegrationError && err.code === "EMPTY_RESPONSE") {
+        console.warn("[OPENAI_EMPTY_RESPONSE]", err.technicalDetails);
         continue;
       }
 

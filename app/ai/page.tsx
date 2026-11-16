@@ -1,87 +1,82 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CalendarDays, ChevronDown, Moon, Pencil, RefreshCw, Sun, AlertTriangle } from "lucide-react";
+import { CalendarDays, ChevronDown, Moon, RefreshCw, Sun } from "lucide-react";
 import { useWallet } from "@/context/WalletContext";
 import { useAuth } from "@/context/AuthContext";
 import { Cofi, type CofiState } from "@/components/assistant/Cofi";
-import { AttentionPoints, BriefingHero, BriefingSkeleton, NextStepAndLesson } from "@/components/ai/briefing/BriefingView";
-import { CofiChat, type CofiChatHandle } from "@/components/ai/chat/CofiChat";
+import { AuditReport } from "@/components/ai/audit/AuditReport";
+import { CofiChat, type CofiChatHandle, type PatternReaction } from "@/components/ai/chat/CofiChat";
+import { usePatternMemory } from "@/components/ai/chat/usePatternMemory";
+import { MoneyOverview } from "@/components/ai/money/MoneyOverview";
+import { SpendingBreakdown } from "@/components/ai/money/SpendingBreakdown";
 import { SpendingCalendarHeatmap } from "@/components/ai/SpendingCalendarHeatmap";
-import { MacButton } from "@/components/ui/macos/Button";
-import { MacTextField } from "@/components/ui/macos/TextField";
 import { postAI, AIRequestError, summarizeProjections, localDateKey, recentTransactionsForAI } from "@/lib/ai/clientRequests";
 import type { AIBriefing, BriefingFact } from "@/lib/services/aiBriefingModel";
-import { loadCachedBriefing, saveCachedBriefing, type CachedBriefing } from "@/lib/services/aiChatService";
+import { loadCachedBriefing, loadRemoteBriefing, saveBriefing, type CachedBriefing } from "@/lib/services/aiChatService";
+import { buildBriefingFacts } from "@/lib/services/briefingFacts";
+import { buildPatternCatalog } from "@/lib/services/cofiPatterns";
 import { calculateDailySafeSpend } from "@/lib/services/dailyCompanionService";
+import { buildAnalyticsFromRequest } from "@/lib/services/financialAnalyticsService";
+import { buildAuditFindings } from "@/lib/services/moneyViews";
+import { getSpendingGuidance } from "@/lib/services/spendingGuidance";
+import { MONTHLY_TARGET_KEY, useMonthlyTarget } from "@/lib/hooks/useMonthAnalytics";
 import { useAppTheme } from "@/lib/theme";
 
 type Briefing = CachedBriefing<AIBriefing, BriefingFact>;
 
-const TARGET_KEY = "wallet_monthly_target";
-/** Informativo antigo com dados alterados é regenerado sozinho depois desse tempo. */
-const AUTO_REFRESH_AFTER_MS = 30 * 60 * 1000;
-
-function formatBRL(value: number) {
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
-
-function generatedLabel(iso?: string) {
+/** "hoje, 16/11/2026 às 09:13" — data e hora completas da última análise. */
+function analysisDateLabel(iso?: string) {
   if (!iso) return undefined;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return undefined;
-  const sameDay = d.toDateString() === new Date().toDateString();
+  const date = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
   const time = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-  return sameDay ? `Atualizado hoje às ${time}` : `Atualizado em ${d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} às ${time}`;
+  const today = new Date();
+  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+  const prefix = d.toDateString() === today.toDateString() ? "hoje, " : d.toDateString() === yesterday.toDateString() ? "ontem, " : "";
+  return `${prefix}${date} às ${time}`;
+}
+
+/** "há 5 min", "há 3 h", "há 2 dias". */
+function analysisAgeLabel(iso?: string, now = Date.now()) {
+  if (!iso) return undefined;
+  const ms = now - new Date(iso).getTime();
+  if (!Number.isFinite(ms)) return undefined;
+  // Negativo = análise feita depois do último "tique" do relógio da tela
+  const min = Math.floor(Math.max(0, ms) / 60000);
+  if (min < 1) return "agora mesmo";
+  if (min < 60) return `há ${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `há ${h} h`;
+  const days = Math.floor(h / 24);
+  return `há ${days} ${days === 1 ? "dia" : "dias"}`;
+}
+
+function greeting() {
+  const h = new Date().getHours();
+  return h < 12 ? "Bom dia" : h < 18 ? "Boa tarde" : "Boa noite";
 }
 
 export default function AIPage() {
   const { user } = useAuth();
-  const {
-    userProfile,
-    cards,
-    transactions,
-    recurringItems,
-    goals,
-    mainBalance,
-    monthIncome,
-    monthExpense,
-    getMonthlyProjection,
-    realizeRecurringItemNow,
-    isDataLoaded,
-  } = useWallet();
+  const { userProfile, cards, transactions, recurringItems, goals, mainBalance, monthIncome, monthExpense, getMonthlyProjection, realizeRecurringItemNow, isDataLoaded } = useWallet();
   const [theme, setTheme] = useAppTheme();
   const chatRef = useRef<CofiChatHandle>(null);
 
-  // ---------- Meta de saldo do mês ----------
-  const [target, setTarget] = useState<number>(() => {
-    if (typeof window !== "undefined") {
-      const saved = parseFloat(window.localStorage.getItem(TARGET_KEY) || "");
-      if (!Number.isNaN(saved)) return saved;
-    }
-    return userProfile?.targetMonthEndBalance ?? 700;
-  });
-  const [editingTarget, setEditingTarget] = useState(false);
-  const [targetDraft, setTargetDraft] = useState("");
+  // ---------- Meta do mês (a mesma do painel do Cofi) ----------
+  const target = useMonthlyTarget();
   const saveTarget = (value: number) => {
-    setTarget(value);
     try {
-      window.localStorage.setItem(TARGET_KEY, String(value));
-      // Avisa o painel do Cofi (mesma aba não recebe o evento "storage" sozinha)
-      window.dispatchEvent(new StorageEvent("storage", { key: TARGET_KEY }));
+      window.localStorage.setItem(MONTHLY_TARGET_KEY, String(value));
+      // Mesma aba não recebe o evento "storage" sozinha
+      window.dispatchEvent(new StorageEvent("storage", { key: MONTHLY_TARGET_KEY }));
     } catch {
-      /* sem armazenamento: vale só nesta sessão */
+      /* sem armazenamento: a meta volta ao padrão do perfil */
     }
   };
 
-  const currentMonth = getMonthlyProjection(0);
-  const projectedFree = currentMonth?.projectedFreeBalance ?? mainBalance - monthExpense;
-  const safeSpend = useMemo(
-    () => calculateDailySafeSpend({ projectedFreeBalance: projectedFree, targetEndMonthBalance: target }),
-    [projectedFree, target]
-  );
-
-  // ---------- Dados enviados à IA ----------
+  // ---------- Dados enviados à IA (e a mesma análise para as telas) ----------
   const buildContextPayload = useCallback(
     () => ({
       userProfile,
@@ -98,12 +93,24 @@ export default function AIPage() {
     }),
     [userProfile, cards, transactions, recurringItems, goals, mainBalance, monthIncome, monthExpense, getMonthlyProjection, target]
   );
+  const analytics = useMemo(() => {
+    try {
+      return buildAnalyticsFromRequest(buildContextPayload());
+    } catch {
+      return null;
+    }
+  }, [buildContextPayload]);
+  const guidance = useMemo(() => (analytics ? getSpendingGuidance(analytics) : null), [analytics]);
+  const liveFacts = useMemo(() => (analytics ? buildBriefingFacts(analytics) : []), [analytics]);
+  const patternCatalog = useMemo(() => (isDataLoaded ? buildPatternCatalog(analytics) : []), [analytics, isDataLoaded]);
+  const [patternMemory, updatePatternMemory] = usePatternMemory(user?.uid);
+
   const signature = useMemo(
     () => [transactions.length, recurringItems.length, cards.length, goals.length, mainBalance.toFixed(2), monthIncome.toFixed(2), monthExpense.toFixed(2), target].join("|"),
     [transactions.length, recurringItems.length, cards.length, goals.length, mainBalance, monthIncome, monthExpense, target]
   );
 
-  // ---------- Informativo ----------
+  // ---------- Parecer da IA (só quando a pessoa pede) ----------
   const [briefing, setBriefing] = useState<Briefing | null>(null);
   const [cacheChecked, setCacheChecked] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -115,12 +122,25 @@ export default function AIPage() {
     Promise.resolve().then(() => {
       if (!alive) return;
       setBriefing(loadCachedBriefing<AIBriefing, BriefingFact>(user?.uid));
-      setCacheChecked(true);
     });
+    loadRemoteBriefing<AIBriefing, BriefingFact>(user?.uid)
+      .then((saved) => {
+        if (alive && saved) setBriefing((current) => (current && new Date(current.generatedAt) > new Date(saved.generatedAt) ? current : saved));
+      })
+      .finally(() => {
+        if (alive) setCacheChecked(true);
+      });
     return () => {
       alive = false;
     };
   }, [user?.uid]);
+
+  // Atualiza o "há X min" sem chamar a IA.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const generate = useCallback(async () => {
     if (generatingRef.current) return;
@@ -131,26 +151,23 @@ export default function AIPage() {
       const data = await postAI<{ briefing: AIBriefing; facts: BriefingFact[]; generatedAt: string; modelUsed?: string }>("/api/ai/briefing", buildContextPayload(), user);
       const next: Briefing = { briefing: data.briefing, facts: data.facts, generatedAt: data.generatedAt, modelUsed: data.modelUsed, signature };
       setBriefing(next);
-      saveCachedBriefing(user?.uid, next);
+      void saveBriefing(user?.uid, next);
     } catch (err) {
-      setBriefingError(err instanceof AIRequestError ? err.message : "Não foi possível gerar o informativo agora.");
+      setBriefingError(err instanceof AIRequestError ? err.message : "Não foi possível gerar a análise agora.");
     } finally {
       generatingRef.current = false;
       setIsGenerating(false);
     }
   }, [buildContextPayload, signature, user]);
 
-  const isStale = Boolean(briefing && briefing.signature !== signature);
-  const autoTriedRef = useRef(false);
-  useEffect(() => {
-    if (!cacheChecked || !isDataLoaded || autoTriedRef.current) return;
-    const old = briefing ? Date.now() - new Date(briefing.generatedAt).getTime() : Infinity;
-    if (!briefing || (isStale && old > AUTO_REFRESH_AFTER_MS)) {
-      autoTriedRef.current = true;
-      const timer = window.setTimeout(() => void generate(), 0);
-      return () => window.clearTimeout(timer);
-    }
-  }, [cacheChecked, isDataLoaded, briefing, isStale, generate]);
+  const isStale = Boolean(briefing && isDataLoaded && briefing.signature !== signature);
+
+  // Achados: parecer da IA + padrões do app, sem repetir assunto
+  const findings = useMemo(() => {
+    const briefingIds = new Set((briefing?.facts ?? []).map((f) => f.id));
+    const facts = briefing ? [...briefing.facts, ...liveFacts.filter((f) => !briefingIds.has(f.id))] : liveFacts;
+    return buildAuditFindings({ briefing: briefing?.briefing ?? null, facts, catalog: patternCatalog, memory: patternMemory });
+  }, [briefing, liveFacts, patternCatalog, patternMemory]);
 
   // ---------- Calendário (recolhido; ?view=calendar abre direto) ----------
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -166,195 +183,131 @@ export default function AIPage() {
   }, []);
 
   const ask = useCallback((prompt: string) => chatRef.current?.ask(prompt), []);
+  const onPatternReaction = useCallback((key: string, reaction: PatternReaction) => {
+    // Na auditoria, "acompanhar" só marca (sem chamar a IA)
+    chatRef.current?.reactToPattern(key, reaction === "reduzir" ? "acompanhar" : reaction);
+  }, []);
+
+  const currentMonth = getMonthlyProjection(0);
+  const safeSpend = useMemo(
+    () => calculateDailySafeSpend({ projectedFreeBalance: currentMonth?.projectedFreeBalance ?? mainBalance - monthExpense, targetEndMonthBalance: target }),
+    [currentMonth?.projectedFreeBalance, mainBalance, monthExpense, target]
+  );
 
   const firstName = (userProfile?.name || user?.displayName || "").trim().split(/\s+/)[0];
   const today = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
   const mood = briefing?.briefing.mood;
   const cofiState: CofiState = isGenerating ? "pensando" : briefingError && !briefing ? "erro" : mood === "critico" ? "alerta" : mood === "positivo" ? "sucesso" : "ocioso";
-  const onTrack = projectedFree >= target;
 
   return (
-    <div className="min-h-full w-full bg-[var(--ai-bg)] pb-28 text-[var(--ai-text)] md:pb-12">
-      <div className="mx-auto w-full max-w-[1120px] space-y-4 px-4 pt-4 sm:px-6 sm:pt-6">
+    <div className="min-h-full w-full bg-[var(--ai-bg)] text-[var(--ai-text)]">
+      <div className="mx-auto w-full max-w-[1280px] px-4 pb-[calc(10rem+env(safe-area-inset-bottom,0px))] pt-4 sm:px-6 sm:pt-6 md:pb-12">
         {/* Cabeçalho */}
-        <header className="flex flex-wrap items-center gap-3">
-          <Cofi state={cofiState} size={52} label={`Cofi, seu assistente financeiro${isGenerating ? ", analisando" : ""}`} />
+        <header className="flex items-center gap-3">
+          <Cofi state={cofiState} size={44} label={`Cofi, seu auditor financeiro${isGenerating ? ", analisando" : ""}`} />
           <div className="min-w-0 flex-1">
-            <p className="text-[13px] text-[var(--ai-text-2)] first-letter:uppercase">
-              {firstName ? `Olá, ${firstName} · ` : ""}
+            <h1 className="text-[24px] font-bold leading-tight tracking-[-0.025em] text-[var(--ai-text)] sm:text-[30px]">Wallet+ IA</h1>
+            <p className="truncate text-[13px] text-[var(--ai-text-2)] first-letter:uppercase">
+              {firstName ? `${greeting()}, ${firstName} · ` : ""}
               {today}
             </p>
-            <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-[var(--ai-text)] sm:text-[28px]">Informativo do Cofi</h1>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              aria-label={theme === "dark" ? "Usar tema claro" : "Usar tema escuro"}
-              title={theme === "dark" ? "Tema claro" : "Tema escuro"}
-              className="touch-target flex h-9 w-9 items-center justify-center rounded-full bg-[var(--ai-card)] text-[var(--ai-text)] shadow-[var(--ai-shadow)] outline-none focus-visible:shadow-[var(--mac-focus-ring)]"
-            >
-              {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
-            </button>
-            <MacButton
-              variant="prominent"
-              shape="capsule"
-              size="large"
-              onClick={() => void generate()}
-              disabled={isGenerating}
-              aria-label="Atualizar"
-              title="Atualizar informativo"
-              icon={<RefreshCw size={13} className={isGenerating ? "animate-spin" : undefined} />}
-            >
-              <span className="hidden sm:inline">{isGenerating ? "Gerando…" : "Atualizar"}</span>
-            </MacButton>
-          </div>
+          <button
+            type="button"
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            aria-label={theme === "dark" ? "Usar tema claro" : "Usar tema escuro"}
+            title={theme === "dark" ? "Tema claro" : "Tema escuro"}
+            className="touch-target flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--ai-card)] text-[var(--ai-text)] shadow-[var(--ai-shadow)] outline-none focus-visible:shadow-[var(--mac-focus-ring)]"
+          >
+            {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+          </button>
+          <button
+            type="button"
+            onClick={() => void generate()}
+            disabled={isGenerating}
+            aria-label="Gerar nova análise"
+            title="Gerar uma nova análise com os números de agora"
+            className="touch-min inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-[var(--ai-text)] px-3.5 text-[13px] font-semibold text-[var(--ai-card)] outline-none transition-opacity disabled:opacity-60 focus-visible:shadow-[var(--mac-focus-ring)]"
+          >
+            <RefreshCw size={13} className={isGenerating ? "animate-spin" : undefined} aria-hidden />
+            <span className="hidden sm:inline">{isGenerating ? "Analisando…" : "Nova análise"}</span>
+          </button>
         </header>
 
-        {/* Meta do mês */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[16px] bg-[var(--ai-card)] px-4 py-3 shadow-[var(--ai-shadow)]">
-          <span className="text-[13px] text-[var(--ai-text-2)]">Meta para fechar o mês</span>
-          {editingTarget ? (
-            <form
-              className="flex items-center gap-1.5"
-              onSubmit={(e) => {
-                e.preventDefault();
-                const n = parseFloat(targetDraft.replace(/\./g, "").replace(",", "."));
-                if (!Number.isNaN(n) && n >= 0) saveTarget(n);
-                setEditingTarget(false);
-              }}
-            >
-              <MacTextField
-                inputMode="decimal"
-                aria-label="Meta de saldo no fim do mês"
-                value={targetDraft}
-                onChange={(e) => setTargetDraft(e.target.value)}
-                className="!w-28 font-mono"
-                autoFocus
-              />
-              <MacButton type="submit" variant="prominent" size="small" shape="capsule">
-                Salvar
-              </MacButton>
-            </form>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                setTargetDraft(String(target).replace(".", ","));
-                setEditingTarget(true);
-              }}
-              className="touch-target inline-flex items-center gap-1.5 font-mono text-[15px] font-semibold tabular-nums text-[var(--ai-text)] outline-none hover:text-[var(--ai-accent)] focus-visible:text-[var(--ai-accent)]"
-              aria-label={`Editar meta: ${formatBRL(target)}`}
-            >
-              {formatBRL(target)} <Pencil size={13} className="text-[var(--ai-text-3)]" aria-hidden />
-            </button>
-          )}
-          <span
-            className={`ml-auto rounded-full px-2.5 py-1 text-[12px] font-semibold tabular-nums ${onTrack ? "bg-[var(--ai-good-bg)] text-[var(--ai-good)]" : "bg-[var(--ai-bad-bg)] text-[var(--ai-bad)]"}`}
-          >
-            {onTrack ? `Folga de ${formatBRL(projectedFree - target)}` : `Faltam ${formatBRL(target - projectedFree)}`}
-          </span>
-        </div>
+        <div className="mt-5 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(360px,420px)] lg:items-start lg:gap-5">
+          <div className="min-w-0 space-y-4">
+            {analytics && guidance && <MoneyOverview analytics={analytics} guidance={guidance} target={target} onSaveTarget={saveTarget} onAsk={ask} />}
 
-        {/* Avisos do informativo */}
-        {briefingError && (
-          <div role="alert" className="flex flex-wrap items-start gap-3 rounded-[16px] bg-[var(--ai-warn-bg)] px-4 py-3 text-[14px] text-[var(--ai-warn)]">
-            <AlertTriangle size={18} className="mt-0.5 shrink-0" />
-            <div className="min-w-0 flex-1">
-              <p className="font-semibold">O Cofi não conseguiu gerar o informativo</p>
-              <p className="mt-0.5 leading-[1.45]">
-                {briefingError}
-                {briefing ? " Abaixo está o último informativo gerado." : ""}
-              </p>
-            </div>
-            <MacButton variant="bordered" size="small" shape="capsule" onClick={() => void generate()} icon={<RefreshCw size={11} />}>
-              Tentar novamente
-            </MacButton>
-          </div>
-        )}
-        {isStale && !isGenerating && !briefingError && (
-          <div className="flex flex-wrap items-center gap-3 rounded-[16px] bg-[var(--ai-accent-bg)] px-4 py-2.5 text-[14px] text-[var(--ai-text)]">
-            <span className="min-w-0 flex-1">Seus números mudaram desde o último informativo.</span>
-            <button type="button" onClick={() => void generate()} className="touch-target font-semibold text-[var(--ai-accent)] outline-none hover:underline focus-visible:underline">
-              Atualizar agora
-            </button>
-          </div>
-        )}
+            <AuditReport
+              briefing={briefing?.briefing ?? null}
+              facts={briefing?.facts ?? liveFacts}
+              attention={findings.attention}
+              favorable={findings.favorable}
+              cacheChecked={cacheChecked}
+              isGenerating={isGenerating}
+              isStale={isStale}
+              error={briefingError}
+              lastAnalysisDate={analysisDateLabel(briefing?.generatedAt)}
+              lastAnalysisAge={analysisAgeLabel(briefing?.generatedAt, now)}
+              onGenerate={() => void generate()}
+              onAsk={ask}
+              onPatternReaction={onPatternReaction}
+            />
 
-        {/* Informativo */}
-        {isGenerating && !briefing ? (
-          <div role="status" aria-label="Gerando informativo">
-            <BriefingSkeleton />
-          </div>
-        ) : briefing ? (
-          <div className={`space-y-4 transition-opacity ${isGenerating ? "opacity-60" : ""}`} aria-busy={isGenerating}>
-            <BriefingHero briefing={briefing.briefing} facts={briefing.facts} generatedLabel={generatedLabel(briefing.generatedAt)} />
-            <AttentionPoints briefing={briefing.briefing} facts={briefing.facts} onAsk={ask} />
-            <NextStepAndLesson briefing={briefing.briefing} />
-          </div>
-        ) : (
-          !briefingError && (
-            <section className="flex flex-col items-center rounded-[20px] bg-[var(--ai-card)] px-5 py-10 text-center shadow-[var(--ai-shadow)]">
-              <Cofi state="dormindo" size={64} />
-              <h2 className="mt-3 text-[18px] font-semibold text-[var(--ai-text)]">Seu informativo ainda não foi gerado</h2>
-              <p className="mt-1 max-w-sm text-[14px] leading-[1.5] text-[var(--ai-text-2)]">
-                O Cofi lê seus números e mostra, em poucos minutos de leitura, o que vai bem e o que pede atenção.
-              </p>
-              <MacButton className="mt-4" variant="prominent" shape="capsule" size="large" onClick={() => void generate()}>
-                Gerar meu informativo
-              </MacButton>
+            {analytics && <SpendingBreakdown analytics={analytics} onAsk={ask} />}
+
+            {/* Calendário de gastos — recolhido por padrão */}
+            <section ref={calendarRef} className="scroll-mt-4 overflow-hidden rounded-[24px] bg-[var(--ai-card)] shadow-[var(--ai-shadow)]">
+              <h2>
+                <button
+                  type="button"
+                  onClick={() => setCalendarOpen((v) => !v)}
+                  aria-expanded={calendarOpen}
+                  aria-controls="ai-calendar"
+                  className="flex w-full items-center gap-3 px-4 py-3.5 text-left outline-none focus-visible:bg-[var(--ai-card-2)] sm:px-6"
+                >
+                  <CalendarDays size={18} className="text-[var(--ai-accent)]" aria-hidden />
+                  <span className="min-w-0 flex-1 text-[15px] font-semibold text-[var(--ai-text)]">Calendário de gastos</span>
+                  <ChevronDown size={18} className={`text-[var(--ai-text-2)] transition-transform ${calendarOpen ? "rotate-180" : ""}`} aria-hidden />
+                </button>
+              </h2>
+              {calendarOpen && (
+                <div id="ai-calendar" className="border-t border-[var(--ai-line)] sm:p-4">
+                  <SpendingCalendarHeatmap
+                    recurringItems={recurringItems}
+                    cards={cards}
+                    transactions={transactions}
+                    mainBalance={mainBalance}
+                    safeDailyAllowance={safeSpend.safeDailyAllowance}
+                    targetEndMonthBalance={target}
+                    monthlyProjection={currentMonth}
+                    onRealizeItem={realizeRecurringItemNow}
+                    onDiscussWithAI={ask}
+                  />
+                </div>
+              )}
             </section>
-          )
-        )}
 
-        {/* Chat */}
-        <CofiChat
-          ref={chatRef}
-          userId={user?.uid}
-          user={user}
-          cards={cards}
-          suggestedQuestions={briefing?.briefing.suggestedQuestions ?? []}
-          buildContextPayload={buildContextPayload}
-        />
+            <p className="px-1 text-center text-[11px] leading-[1.5] text-[var(--ai-text-3)]">
+              Números calculados pelo app a partir dos seus lançamentos. O Cofi confere cada valor que cita; ele organiza informações e não substitui recomendação de investimento.
+            </p>
+          </div>
 
-        {/* Calendário de gastos — recolhido por padrão */}
-        <section ref={calendarRef} className="scroll-mt-4 overflow-hidden rounded-[20px] bg-[var(--ai-card)] shadow-[var(--ai-shadow)]">
-          <h2>
-            <button
-              type="button"
-              onClick={() => setCalendarOpen((v) => !v)}
-              aria-expanded={calendarOpen}
-              aria-controls="ai-calendar"
-              className="flex w-full items-center gap-3 px-4 py-3.5 text-left outline-none focus-visible:bg-[var(--ai-card-2)] sm:px-5"
-            >
-              <CalendarDays size={18} className="text-[var(--ai-accent)]" aria-hidden />
-              <span className="min-w-0 flex-1">
-                <span className="block text-[15px] font-semibold text-[var(--ai-text)]">Calendário de gastos</span>
-                <span className="block text-[12px] text-[var(--ai-text-2)]">Entradas, contas e vencimentos dia a dia</span>
-              </span>
-              <ChevronDown size={18} className={`text-[var(--ai-text-2)] transition-transform ${calendarOpen ? "rotate-180" : ""}`} aria-hidden />
-            </button>
-          </h2>
-          {calendarOpen && (
-            <div id="ai-calendar" className="border-t border-[var(--ai-line)] sm:p-4">
-              <SpendingCalendarHeatmap
-                recurringItems={recurringItems}
-                cards={cards}
-                transactions={transactions}
-                mainBalance={mainBalance}
-                safeDailyAllowance={safeSpend.safeDailyAllowance}
-                targetEndMonthBalance={target}
-                monthlyProjection={currentMonth}
-                onRealizeItem={realizeRecurringItemNow}
-                onDiscussWithAI={ask}
-              />
-            </div>
-          )}
-        </section>
-
-        <p className="px-1 pb-2 text-center text-[11px] leading-[1.5] text-[var(--ai-text-3)]">
-          O Cofi usa só os números registrados no app e confere cada valor antes de mostrar. Ele organiza informações; não substitui uma recomendação de investimento.
-        </p>
+          {/* Chat: coluna fixa no computador, barra + tela cheia no celular */}
+          <aside className="mt-4 lg:sticky lg:top-[4.25rem] lg:mt-0 lg:h-[calc(100dvh-5.5rem)]" aria-label="Conversa com o Cofi">
+            <CofiChat
+              ref={chatRef}
+              userId={user?.uid}
+              user={user}
+              cards={cards}
+              suggestedQuestions={briefing?.briefing.suggestedQuestions ?? []}
+              buildContextPayload={buildContextPayload}
+              patternCatalog={patternCatalog}
+              patternMemory={patternMemory}
+              onPatternMemoryChange={updatePatternMemory}
+            />
+          </aside>
+        </div>
       </div>
     </div>
   );

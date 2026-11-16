@@ -1375,10 +1375,25 @@ button:disabled,
   .cofi-z { animation: cofi-z 2.4s ease-in-out infinite; }
   .cofi-talk { animation: cofi-talk 0.32s ease-in-out infinite alternate; transform-box: view-box; transform-origin: 54px 63px; }
   .ai-skeleton { background: linear-gradient(90deg, var(--ai-card-2) 0%, var(--ai-line) 50%, var(--ai-card-2) 100%); background-size: 200% 100%; animation: ai-shimmer 1.4s linear infinite; border-radius: 8px; }
+  /* Chat do Cofi: gaveta do histórico, texto "pensando" e conteúdo novo */
+  .cofi-drawer-in { animation: cofi-drawer-in 0.26s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .cofi-rise { animation: cofi-rise 0.32s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .cofi-shimmer-text {
+    background: linear-gradient(90deg, var(--ai-text-2) 0%, var(--ai-text-2) 40%, var(--ai-text) 50%, var(--ai-text-2) 60%, var(--ai-text-2) 100%);
+    background-size: 220% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: cofi-shimmer-text 1.8s linear infinite;
+  }
   @media (prefers-reduced-motion: reduce) {
-    .cofi *, .ai-skeleton { animation: none !important; }
+    .cofi *, .ai-skeleton, .cofi-drawer-in, .cofi-rise, .cofi-shimmer-text { animation: none !important; }
+    .cofi-shimmer-text { color: var(--ai-text-2); }
   }
 }
+@keyframes cofi-drawer-in { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+@keyframes cofi-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes cofi-shimmer-text { from { background-position: 110% 0; } to { background-position: -110% 0; } }
 @keyframes cofi-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2.5px); } }
 @keyframes cofi-tilt { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
 @keyframes cofi-shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }

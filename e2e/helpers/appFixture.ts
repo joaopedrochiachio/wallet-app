@@ -66,6 +66,10 @@ export async function buildAppFixture() {
         export const dismissPattern = () => [];
         export const loadCachedBriefing = () => null;
         export const saveCachedBriefing = () => {};
+        export const loadRemoteBriefing = async () => null;
+        export const saveBriefing = async () => {};
+        export const loadPatternMemory = async () => ({});
+        export const savePatternMemory = async () => {};
       `,
       "@/context/WalletContext": `
         import React from "react";

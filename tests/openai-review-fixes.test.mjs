@@ -404,3 +404,22 @@ test("9. Zero alucinação: valores e contagens inventados no texto do modelo s�
   assert.ok(!chiquinhoAlert.message.includes("450"), "Mensagem não pode conter valor alucinado");
   assert.ok(chiquinhoAlert.message.includes("53.50"), "Mensagem deve conter o valor factual");
 });
+
+import { resolveReasoningEffort, resolveMaxCompletionTokens } from "../lib/services/openaiService.ts";
+
+test("chat sem raciocínio envia o menor nível aceito por cada família (nunca deixa o padrão 'medium')", () => {
+  assert.equal(resolveReasoningEffort("gpt-5.4-mini", "none"), "none");
+  assert.equal(resolveReasoningEffort("gpt-6-luna", undefined), "none");
+  assert.equal(resolveReasoningEffort("gpt-5-mini", "none"), "minimal");
+  assert.equal(resolveReasoningEffort("gpt-5", "none"), "minimal");
+  assert.equal(resolveReasoningEffort("gpt-5-mini-2025-08-07", "none"), "minimal");
+  assert.equal(resolveReasoningEffort("o4-mini", "none"), "low");
+  assert.equal(resolveReasoningEffort("gpt-4o-mini", "none"), undefined);
+  assert.equal(resolveReasoningEffort("gpt-5.5", "low"), "low");
+});
+
+test("modelos de raciocínio ganham folga no teto para a resposta não voltar vazia", () => {
+  assert.equal(resolveMaxCompletionTokens("gpt-4o-mini", 1500, undefined), 1500);
+  assert.ok(resolveMaxCompletionTokens("gpt-5-mini", 1500, "minimal") > 1500);
+  assert.ok(resolveMaxCompletionTokens("gpt-5.5", 3500, "low") >= 3500 + 3000);
+});

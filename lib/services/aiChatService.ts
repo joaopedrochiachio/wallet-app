@@ -1,6 +1,7 @@
 import { db } from "../firebase.ts";
 import { doc, getDoc, setDoc, deleteDoc } from "firebase/firestore";
 import type { PurchaseSimulationResult } from "./financialContextService.ts";
+import type { PatternMemory } from "./cofiPatterns.ts";
 
 export interface StoredChatMessage {
   id: string;
@@ -224,6 +225,24 @@ export async function loadChatSessions(userId?: string | null): Promise<ChatSess
 }
 
 /**
+ * Deixa as sessões cabendo no documento do Firestore (limite de 1 MB):
+ * o raciocínio detalhado fica só nas 5 conversas mais recentes e nas últimas
+ * 12 respostas de cada uma. O JSON também remove campos undefined, que o
+ * Firestore recusa.
+ */
+export function compactSessionsForStorage(sessions: ChatSession[]): ChatSession[] {
+  const compact = sessions.map((s, sessionIndex) => {
+    const assistantIdx = s.messages.map((m, i) => (m.role === "assistant" ? i : -1)).filter((i) => i >= 0);
+    const keepFrom = sessionIndex < 5 ? assistantIdx[Math.max(0, assistantIdx.length - 12)] ?? 0 : Infinity;
+    return {
+      ...s,
+      messages: s.messages.map((m, i) => (i < keepFrom && "reasoning" in m ? { ...m, reasoning: undefined } : m)),
+    };
+  });
+  return JSON.parse(JSON.stringify(compact));
+}
+
+/**
  * Salva a lista de sessões de chat
  */
 export async function saveChatSessions(
@@ -251,7 +270,7 @@ export async function saveChatSessions(
       await setDoc(
         docRef,
         {
-          sessions: trimmed,
+          sessions: compactSessionsForStorage(trimmed),
           updatedAt: new Date().toISOString(),
         },
         { merge: true }
@@ -534,6 +553,37 @@ export function loadCachedBriefing<TBriefing, TFact>(userId?: string | null): Ca
 }
 
 export function saveCachedBriefing(userId: string | null | undefined, data: CachedBriefing): void {
+  saveLocalBriefing(userId, data);
+}
+
+function newestBriefing<T extends CachedBriefing>(a: T | null, b: T | null): T | null {
+  if (!a) return b;
+  if (!b) return a;
+  return new Date(b.generatedAt).getTime() > new Date(a.generatedAt).getTime() ? b : a;
+}
+
+/**
+ * Último informativo salvo na conta (Firestore), para que celular e computador
+ * mostrem a mesma análise sem gerar outra. Devolve o mais recente entre o
+ * guardado no aparelho e o da conta.
+ */
+export async function loadRemoteBriefing<TBriefing, TFact>(userId?: string | null): Promise<CachedBriefing<TBriefing, TFact> | null> {
+  const local = loadCachedBriefing<TBriefing, TFact>(userId);
+  if (!userId) return local;
+  try {
+    const snap = await getDoc(doc(db, "users", userId, "ai_chat", "briefing"));
+    const data = snap.exists() ? (snap.data() as CachedBriefing<TBriefing, TFact>) : null;
+    const remote = data && data.briefing && Array.isArray(data.facts) && data.generatedAt ? data : null;
+    const newest = newestBriefing(local, remote);
+    if (newest && newest === remote) saveLocalBriefing(userId, remote);
+    return newest;
+  } catch (err) {
+    console.warn("Aviso ao carregar o informativo salvo na conta:", err);
+    return local;
+  }
+}
+
+function saveLocalBriefing(userId: string | null | undefined, data: CachedBriefing): void {
   const key = getBriefingStorageKey(userId);
   memoryBriefings.set(key, data);
   if (typeof window === "undefined") return;
@@ -541,5 +591,55 @@ export function saveCachedBriefing(userId: string | null | undefined, data: Cach
     window.localStorage.setItem(key, JSON.stringify(data));
   } catch {
     /* armazenamento cheio ou bloqueado: fica só em memória */
+  }
+}
+
+/** Salva o informativo no aparelho e na conta. */
+export async function saveBriefing(userId: string | null | undefined, data: CachedBriefing): Promise<void> {
+  saveLocalBriefing(userId, data);
+  if (!userId) return;
+  try {
+    // JSON remove campos undefined, que o Firestore recusa.
+    await setDoc(doc(db, "users", userId, "ai_chat", "briefing"), JSON.parse(JSON.stringify(data)));
+  } catch (err) {
+    console.warn("Aviso ao salvar o informativo na conta:", err);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Memória dos padrões: o que a pessoa respondeu sobre cada padrão      */
+/* ------------------------------------------------------------------ */
+
+const memoryPatterns = new Map<string, PatternMemory>();
+
+export async function loadPatternMemory(userId?: string | null): Promise<PatternMemory> {
+  const key = getMemoryKey(userId);
+  if (userId) {
+    try {
+      const snap = await getDoc(doc(db, "users", userId, "ai_chat", "patterns"));
+      const items = snap.exists() ? (snap.data()?.items as PatternMemory | undefined) : undefined;
+      if (items && typeof items === "object") {
+        memoryPatterns.set(key, items);
+        return items;
+      }
+    } catch (err) {
+      console.warn("Aviso ao carregar a memória de padrões:", err);
+    }
+  }
+  return memoryPatterns.get(key) ?? {};
+}
+
+export async function savePatternMemory(memory: PatternMemory, userId?: string | null): Promise<void> {
+  // Guarda no máximo 60 padrões (os mais recentes)
+  const entries = Object.values(memory)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .slice(0, 60);
+  const items = Object.fromEntries(entries.map((e) => [e.key, e])) as PatternMemory;
+  memoryPatterns.set(getMemoryKey(userId), items);
+  if (!userId) return;
+  try {
+    await setDoc(doc(db, "users", userId, "ai_chat", "patterns"), JSON.parse(JSON.stringify({ items, updatedAt: new Date().toISOString() })));
+  } catch (err) {
+    console.warn("Aviso ao salvar a memória de padrões:", err);
   }
 }

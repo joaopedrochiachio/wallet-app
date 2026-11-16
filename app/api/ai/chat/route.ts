@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server.js";
-import { orchestrateAnalystChat } from "../../../../lib/services/agentManagerService.ts";
+import { generateDeterministicAuditDossier, formatAuditDossierForPrompt } from "../../../../lib/services/agentManagerService.ts";
+import { buildBriefingFacts, buildChatFactBlock } from "../../../../lib/services/aiBriefingService.ts";
+import { formatFactValue, type BriefingFact } from "../../../../lib/services/aiBriefingModel.ts";
+import { buildPatternCatalog, formatPatternsForPrompt, sanitizeMemoryInput } from "../../../../lib/services/cofiPatterns.ts";
+import { runReasonedChat, ReasoningFailedError, type PipelineStep } from "../../../../lib/services/cofiReasoningService.ts";
+import type { FinancialAnalytics } from "../../../../lib/services/financialAnalyticsService.ts";
 import {
   synthesizeFinancialTelemetry,
   createSafeFinancialContext,
@@ -26,16 +31,21 @@ import { checkRateLimit } from "../../../../lib/utils/rateLimiter.ts";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const MAX_HISTORY_MESSAGES = 10;
+// Histórico suficiente para a conversa ter continuidade (8 trocas).
+const MAX_HISTORY_MESSAGES = 16;
 const MAX_MESSAGE_LENGTH = 1000;
+// As respostas do Cofi passam de 1000 caracteres; cortar no meio fazia o
+// modelo perder o que ele mesmo tinha dito (valores, datas, cartão).
+const MAX_ASSISTANT_HISTORY_LENGTH = 2500;
 const MAX_PAYLOAD_BYTES = 512 * 1024; // 512 KB
 
 function sanitizeChatMessage(
   content: unknown,
-  privacyInput: FinancialTextPrivacyInput
+  privacyInput: FinancialTextPrivacyInput,
+  maxLength: number = MAX_MESSAGE_LENGTH
 ): string {
   if (typeof content !== "string") return "";
-  const trimmed = content.trim().slice(0, MAX_MESSAGE_LENGTH);
+  const trimmed = content.trim().slice(0, maxLength);
   const unescaped = trimmed.replace(/\\"/g, '"').replace(/\\n/g, "\n");
   const withoutHtml = unescaped.replace(/<[^>]*>?/gm, "").trim();
   const knownRedacted = redactKnownFinancialText(withoutHtml, privacyInput);
@@ -191,7 +201,11 @@ Oriente o usuário com base estritamente nesses números simulados calculados pe
           continue;
         }
 
-        const content = sanitizeChatMessage(candidate.content, privacyInput);
+        const content = sanitizeChatMessage(
+          candidate.content,
+          privacyInput,
+          candidate.role === "assistant" ? MAX_ASSISTANT_HISTORY_LENGTH : MAX_MESSAGE_LENGTH
+        );
         if (!content) continue;
         conversationMessages.push({
           role: candidate.role as "user" | "assistant",
@@ -239,84 +253,137 @@ Oriente o usuário com base estritamente nesses números simulados calculados pe
     }
 
     const { reservation } = quotaReservation;
-    let quotaReconciled = false;
 
+    // Análise do mês (mesma ficha de fatos do informativo) e padrões calculados pelo app
+    let analytics: FinancialAnalytics | null = null;
     try {
-      // Executa o analista OpenAI Luna com dossiê determinístico
-      const response = await orchestrateAnalystChat({
-        context: safeContext,
-        systemPrompt,
-        conversationMessages,
-        userMessage: sanitizedUserMessage,
-        simulationResult,
-        analytics: (() => {
-          try {
-            return buildAnalyticsFromRequest(body);
-          } catch (analyticsErr) {
-            console.warn("[AI_CHAT_ANALYTICS_SKIPPED]", analyticsErr);
-            return null;
-          }
-        })(),
-      });
-
-      // 4. Reconciliação atômica da cota com base no custo e tokens reais
-      const actualCostUsd = response.openAIResponse?.estimatedCostUsd ?? 0.0005;
-      await reconcileAIQuota({
-        reservation,
-        success: true,
-        actualCostUsd,
-      });
-      quotaReconciled = true;
-
-      // 5. Registro de observabilidade técnica (sem conteúdo financeiro)
-      if (response.openAIResponse) {
-        void recordAICallLog({
-          requestId: response.openAIResponse.requestId,
-          uid: userId,
-          route: "chat",
-          model: response.modelUsed,
-          timestamp: new Date().toISOString(),
-          durationMs: response.durationMs,
-          success: true,
-          inputTokens: response.openAIResponse.inputTokens,
-          outputTokens: response.openAIResponse.outputTokens,
-          reasoningTokens: response.openAIResponse.reasoningTokens,
-          estimatedCostUsd: response.openAIResponse.estimatedCostUsd,
-          isCostEstimated: response.openAIResponse.isCostEstimated,
-        });
-      }
-
-      return NextResponse.json({
-        success: true,
-        message: response.text,
-        modelUsed: response.modelUsed,
-        durationMs: response.durationMs,
-        attemptedModels: response.attemptedModels,
-        simulationResult,
-      });
-    } catch (chatErr: unknown) {
-      if (!quotaReconciled && reservation) {
-        await reconcileAIQuota({ reservation, success: false });
-        quotaReconciled = true;
-      }
-      const failure = describeProviderFailure(chatErr);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const errDetail = chatErr as any;
-      console.error("[AI_CHAT_PROVIDER_ERROR]", {
-        code: failure.code,
-        status: errDetail?.status,
-        message: errDetail?.message,
-      });
-      // A cota já foi devolvida acima (reconcile com success: false).
-      return NextResponse.json(
-        { success: false, error: failure.error, code: failure.code },
-        { status: failure.status }
-      );
-    } finally {
-      if (!quotaReconciled && reservation) {
-        await reconcileAIQuota({ reservation, success: false });
-      }
+      analytics = buildAnalyticsFromRequest(body);
+    } catch (analyticsErr) {
+      console.warn("[AI_CHAT_ANALYTICS_SKIPPED]", analyticsErr);
     }
+    const facts = analytics ? safeFacts(analytics) : [];
+    const catalog = buildPatternCatalog(analytics);
+    const patternMemory = sanitizeMemoryInput(body?.patternMemory, catalog, (t) =>
+      redactPersonalData(redactKnownFinancialText(t, privacyInput))
+    );
+
+    const dossier = generateDeterministicAuditDossier({
+      context: safeContext,
+      // Em continuações ("e no outro?") o assunto está nas perguntas anteriores:
+      // o dossiê procura estabelecimentos e categorias nelas também.
+      userMessage: conversationMessages
+        .filter((m) => m.role === "user")
+        .slice(-3)
+        .map((m) => m.content)
+        .join("\n"),
+    });
+    const fullSystemPrompt =
+      systemPrompt +
+      formatAuditDossierForPrompt(dossier) +
+      buildChatFactBlock(analytics) +
+      formatPatternsForPrompt(catalog, patternMemory, analytics?.referenceDate ?? "");
+
+    // Resposta em fluxo (NDJSON): cada etapa real aparece para a pessoa enquanto acontece.
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        const emit = (event: Record<string, unknown>) => controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+        const pipeline = new Map<string, PipelineStep>();
+        const step = (s: PipelineStep) => {
+          pipeline.set(s.id, s);
+          emit({ type: "step", step: s });
+        };
+        let quotaReconciled = false;
+        try {
+          // Etapas determinísticas (feitas aqui, em TypeScript)
+          step({ id: "contexto", title: "Lendo seus números", status: "done", detail: describeContext(analytics, safeTransactions.length) });
+          step({ id: "linha_do_tempo", title: "Projetando o caixa até o fim do mês", status: "done", detail: describeTimeline(analytics) });
+          step({
+            id: "padroes",
+            title: "Procurando padrões",
+            status: "done",
+            detail: catalog.length
+              ? `${catalog.length} ${catalog.length === 1 ? "padrão encontrado" : "padrões encontrados"}: ${catalog.slice(0, 3).map((p) => p.title).join("; ")}`
+              : "Nenhum padrão fora do normal neste mês",
+          });
+
+          const result = await runReasonedChat({
+            systemPrompt: fullSystemPrompt,
+            messages: conversationMessages,
+            facts,
+            catalog,
+            memory: patternMemory,
+            allowedSources: [
+              ...conversationMessages.map((m) => m.content),
+              simulationResult ? JSON.stringify(simulationResult) : "",
+            ],
+            onStep: step,
+          });
+
+          const costUsd = result.responses.reduce((acc, r) => acc + (r.estimatedCostUsd || 0), 0);
+          await reconcileAIQuota({ reservation, success: true, actualCostUsd: costUsd || 0.0005 });
+          quotaReconciled = true;
+
+          const last = result.responses[result.responses.length - 1];
+          void recordAICallLog({
+            requestId: last.requestId,
+            uid: userId,
+            route: "chat",
+            model: result.modelUsed,
+            timestamp: new Date().toISOString(),
+            durationMs: result.responses.reduce((a, r) => a + r.durationMs, 0),
+            success: true,
+            inputTokens: result.responses.reduce((a, r) => a + r.inputTokens, 0),
+            outputTokens: result.responses.reduce((a, r) => a + r.outputTokens, 0),
+            reasoningTokens: result.responses.reduce((a, r) => a + r.reasoningTokens, 0),
+            estimatedCostUsd: costUsd,
+            isCostEstimated: result.responses.some((r) => r.isCostEstimated),
+          });
+
+          emit({
+            type: "result",
+            success: true,
+            message: result.output.answer,
+            modelUsed: result.modelUsed,
+            simulationResult,
+            reasoning: {
+              understanding: result.output.understanding,
+              steps: result.output.steps,
+              pipeline: [...pipeline.values()],
+              verification: result.verification,
+              attempts: result.attempts,
+            },
+            patterns: result.output.patterns,
+            followUp: result.output.followUp,
+          });
+        } catch (chatErr: unknown) {
+          if (!quotaReconciled) {
+            await reconcileAIQuota({ reservation, success: false });
+            quotaReconciled = true;
+          }
+          const failure =
+            chatErr instanceof ReasoningFailedError
+              ? { status: chatErr.status, code: chatErr.code, error: chatErr.message }
+              : describeProviderFailure(chatErr);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const errDetail = chatErr as any;
+          console.error("[AI_CHAT_PROVIDER_ERROR]", { code: failure.code, status: errDetail?.status, message: errDetail?.message });
+          // Sem resposta pronta no lugar da IA: a pessoa vê o motivo real.
+          emit({ type: "error", status: failure.status, ...{ success: false, error: failure.error, code: failure.code } });
+        } finally {
+          if (!quotaReconciled) await reconcileAIQuota({ reservation, success: false });
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "application/x-ndjson; charset=utf-8",
+        "Cache-Control": "no-store, no-transform",
+        "X-Accel-Buffering": "no",
+      },
+    });
   } catch (err: unknown) {
     console.error("[AI_CHAT_CRITICAL_ERROR]", err);
     return NextResponse.json(
@@ -327,4 +394,25 @@ Oriente o usuário com base estritamente nesses números simulados calculados pe
       { status: 500 }
     );
   }
+}
+
+function safeFacts(analytics: FinancialAnalytics): BriefingFact[] {
+  try {
+    return buildBriefingFacts(analytics);
+  } catch {
+    return [];
+  }
+}
+
+const brl = (value: number) => formatFactValue({ value: Math.round(value * 100) / 100, kind: "brl" });
+
+function describeContext(a: FinancialAnalytics | null, transactionsCount: number): string {
+  if (!a) return `${transactionsCount} lançamentos recentes, cartões e contas fixas`;
+  return `Saldo hoje ${brl(a.cash.balanceToday)} · ${a.spending.transactionsThisMonth} lançamentos em ${a.monthName} · ${brl(a.cash.toPay)} ainda a pagar`;
+}
+
+function describeTimeline(a: FinancialAnalytics | null): string {
+  if (!a) return "Usando as projeções dos próximos meses";
+  const base = `${a.monthName} fecha com ${brl(a.cash.projectedClose)} (dia ${a.day} de ${a.daysInMonth})`;
+  return a.timeline.negativeFromDay !== null ? `${base}; a conta fica negativa a partir do dia ${a.timeline.negativeFromDay}` : base;
 }
