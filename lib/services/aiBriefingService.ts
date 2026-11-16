@@ -11,7 +11,7 @@
  *    insistir, a rota falha de forma explícita (sem texto pronto no lugar).
  */
 import type { FinancialAnalytics } from "./financialAnalyticsService.ts";
-import { callOpenAIResponses, type OpenAICallParams, type OpenAIResponseResult } from "./openaiService.ts";
+import { callOpenAIResponses, OPENAI_MODELS, type OpenAICallParams, type OpenAIResponseResult } from "./openaiService.ts";
 
 export const ASSISTANT_NAME = "Cofi";
 
@@ -77,6 +77,12 @@ export function buildBriefingFacts(a: FinancialAnalytics): BriefingFact[] {
       add("entrada_que_cobre", `Entrada que cobre o buraco: ${a.timeline.recoveryIncome.title}`, a.timeline.recoveryIncome.amount, "brl");
       add("dia_entrada_que_cobre", `Dia da entrada "${a.timeline.recoveryIncome.title}"`, a.timeline.recoveryIncome.day, "day");
     }
+  }
+  const until = a.timeline.untilNextIncome;
+  if (until) {
+    add("livre_ate_entrada", `Dinheiro livre até a próxima entrada (${until.title}, dia ${until.day})`, until.available, "brl", "saldo de hoje menos as contas que vencem antes dessa entrada");
+    add("livre_dia_ate_entrada", `Quanto dá para gastar por dia até o dia ${until.day}`, until.dailyAvailable, "brl");
+    add("dias_ate_entrada", `Dias até a próxima entrada (${until.title})`, until.daysUntil, "days");
   }
   const nextIncome = a.timeline.events.find((e) => e.direction === "in");
   if (nextIncome) {
@@ -267,6 +273,15 @@ export function buildBriefingSignals(facts: BriefingFact[], a: FinancialAnalytic
       actionHint: "adiar a conta do dia_fica_negativo para depois do dia_entrada_que_cobre, ou separar o valor de menor_saldo até lá",
     });
   }
+  const until = a.timeline.untilNextIncome;
+  if (until && a.timeline.negativeFromDay === null && until.daysUntil >= 2 && until.dailyAvailable < Math.max(1, a.target.dailyRoom) * 0.5) {
+    out.push({
+      level: "atencao",
+      text: `Até a próxima entrada (dia ${until.day}) o dinheiro livre é curto, bem abaixo do limite diário do resto do mês.`,
+      factIds: ["livre_ate_entrada", "livre_dia_ate_entrada", "dias_ate_entrada", "dia_proxima_entrada"],
+      actionHint: "gastar no máximo livre_dia_ate_entrada por dia até o dia_proxima_entrada; depois vale o gasto_livre_dia",
+    });
+  }
   if (close >= 0 && a.target.gap < 0) {
     out.push({ level: a.target.value > 0 && -a.target.gap >= a.target.value * 0.5 ? "critico" : "atencao", text: "O mês fecha positivo, mas abaixo da meta escolhida.", factIds: ["falta_meta", "corte_dia", "saldo_fim_mes"], actionHint: "segurar corte_dia por dia até o fim do mês" });
   }
@@ -292,7 +307,7 @@ export function buildBriefingSignals(facts: BriefingFact[], a: FinancialAnalytic
     out.push({ level: "poucos_dados", text: "Poucos dados neste mês: oriente a registrar renda, contas e gastos; não tire conclusões fortes.", factIds: ["gasto_mes", "saldo_hoje"], actionHint: "registrar a renda e as contas fixas no app até o fim desta semana" });
   }
 
-  if (close >= 0 && a.target.gap >= 0 && a.target.value > 0 && a.incomeKnown) out.push({ level: "positivo", text: "O mês fecha acima da meta, já contando o que vai entrar e sair.", factIds: ["saldo_fim_mes", "folga_meta", "gasto_livre_dia"], actionHint: "manter os gastos em até gasto_livre_dia por dia, ou guardar a folga_meta" });
+  if (close >= 0 && a.target.gap >= 0 && a.target.value > 0 && a.incomeKnown) out.push({ level: "positivo", text: "O mês fecha acima da meta, já contando o que vai entrar e sair.", factIds: ["saldo_fim_mes", "folga_meta", "gasto_livre_dia"], actionHint: a.timeline.untilNextIncome && a.timeline.untilNextIncome.dailyAvailable < a.target.dailyRoom ? "até o dia_proxima_entrada gastar no máximo livre_dia_ate_entrada por dia; depois dele, manter em até gasto_livre_dia por dia" : "manter os gastos em até gasto_livre_dia por dia, ou guardar a folga_meta" });
   if (a.cash.toReceive > 0 && a.cash.toReceive >= a.cash.toPay) out.push({ level: "positivo", text: "As entradas que ainda vão cair cobrem as contas que faltam pagar.", factIds: ["a_receber", "a_pagar"], actionHint: "pagar cada conta no dia em que a entrada cair (ver a linha do tempo)" });
   if (a.spending.pacePercent !== null && a.spending.pacePercent <= 90) out.push({ level: "positivo", text: "Os gastos do dia a dia estão abaixo da média para esta altura do mês.", factIds: ["gasto_dia_a_dia", "gasto_media_periodo", "ritmo_gastos_pct"], actionHint: "manter o ritmo até o fim do mês e guardar a diferença" });
   return out.map((sig) => ({ ...sig, factIds: sig.factIds.filter(has) }));
@@ -335,7 +350,8 @@ const PERIOD_RULES = `REGRAS DE PERÍODO (não misture):
 - Nunca compare o que falta pagar só com o saldo de hoje: some o que ainda vai entrar (a_receber). Use saldo_fim_mes para dizer se o mês fecha bem.
 - Se a conta fica negativa por alguns dias e depois recupera, explique que é um problema de data (conta vence antes do salário), cite os dias e sugira antecipar a entrada, adiar a conta ou segurar gastos até o dia da entrada.
 - Gastos por categoria e hábitos são do mês atual até hoje; compare com a média do mesmo período dos meses anteriores (quando houver). Não use totais de outros meses como se fossem deste mês.
-- Compras no cartão deste mês pesam na fatura do mês seguinte.`;
+- Compras no cartão deste mês pesam na fatura do mês seguinte.
+- Limite diário tem dois momentos: até a próxima entrada vale livre_dia_ate_entrada (o dinheiro que existe de fato); depois dela vale gasto_livre_dia. Nunca recomende gastar gasto_livre_dia antes da entrada se livre_dia_ate_entrada for menor.`;
 
 /** Bloco que o chat recebe: mesma ficha, sinais e linha do tempo do informativo. */
 export function buildChatFactBlock(a: FinancialAnalytics | null | undefined): string {
@@ -561,10 +577,12 @@ export async function generateAIBriefing(params: {
     const res = await call({
       systemPrompt,
       prompt: feedback ? `${prompt}\n\nA versão anterior foi recusada pela conferência:\n${feedback}\nCorrija usando apenas valores da ficha.` : prompt,
+      // Trilho de análise: modelo forte (o chat usa o modelo rápido)
+      model: OPENAI_MODELS.OPTIONAL,
       reasoningEffort: "low",
-      maxOutputTokens: 2200,
+      maxOutputTokens: 4000,
       jsonSchema: AI_BRIEFING_JSON_SCHEMA as unknown as OpenAICallParams["jsonSchema"],
-      timeoutMs: 30000,
+      timeoutMs: 40000,
     });
     responses.push(res);
     try {

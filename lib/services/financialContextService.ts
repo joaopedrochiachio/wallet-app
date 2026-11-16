@@ -729,7 +729,8 @@ export function synthesizeFinancialTelemetry(data: FinancialTelemetryInput): Fin
     account: tx.account || cards.find((card) => card.id === tx.cardId)?.name || "",
   }));
 
-  const monthlyIncomeBase = userProfile?.monthlyIncomeBase || (monthIncome > 0 ? monthIncome : 5000);
+  // Sem renda informada nem recebida, fica 0 (nada de valor inventado para a IA).
+  const monthlyIncomeBase = userProfile?.monthlyIncomeBase || (monthIncome > 0 ? monthIncome : 0);
   const persona: FinancialPersonaId = userProfile?.persona || "optimizer";
   const riskTolerance: RiskToleranceId = userProfile?.riskTolerance || "moderate";
   const aiTone: AIToneId = userProfile?.aiTone || "analytical";
@@ -1695,7 +1696,7 @@ Você atua como um parceiro e consultor financeiro de alto nível que trabalha l
    - Oriente com responsabilidade de CFO: aponte o saldo livre nominal projetado, mas faça a ressalva preventiva ponderando que, descontando o gasto variável diário habitual (~R$ ${context.historicalVariableBaseline.toFixed(2)}), a folga real de caixa será menor. Isso evita falsas sensações de dinheiro sobrando para assumir novos parcelamentos.
 
 4. PERFIL INTEGRAL DO CLIENTE (ALINHAMENTO ESTRATÉGICO):
-   - Renda Fixa Base Mensal: R$ ${profile.monthlyIncomeBase.toFixed(2)}
+   - Renda Fixa Base Mensal: ${profile.monthlyIncomeBase > 0 ? `R$ ${profile.monthlyIncomeBase.toFixed(2)}` : "não informada (não suponha um valor)"}
    - Arquétipo / Persona: ${profile.persona.toUpperCase()}
    - Tolerância a Risco: ${profile.riskTolerance.toUpperCase()}
    - Foco Primário / Meta Declarada: "${profile.primaryFocus}"
@@ -1722,7 +1723,7 @@ Você atua como um parceiro e consultor financeiro de alto nível que trabalha l
 1. PERFIL DO CLIENTE, META DO MÊS & FLUXO DE CAIXA REALIZADO:
    - Meta Estipulada para Fechar o Mês: Saldo Líquido de +R$ ${context.target.targetEndMonthBalance.toFixed(2)}
    - Saldo Projetado para o Fechamento do Mês: R$ ${context.target.projectedEndMonthBalance.toFixed(2)} (${context.target.targetStatus === "on_track" ? `✅ Meta atingida/no caminho certo (+R$ ${context.target.safeSpendingMargin.toFixed(2)} de margem segura)` : `⚠️ Meta em risco (faltam R$ ${context.target.missingAmount.toFixed(2)})`})
-   - Renda Base Mensal: R$ ${profile.monthlyIncomeBase.toFixed(2)}
+   - Renda Base Mensal: ${profile.monthlyIncomeBase > 0 ? `R$ ${profile.monthlyIncomeBase.toFixed(2)}` : "não informada (não suponha um valor)"}
    - Foco Primário Declarado: "${profile.primaryFocus}"
    - Arquétipo Financeiro: ${profile.persona.toUpperCase()} | Risco: ${profile.riskTolerance.toUpperCase()}
    - Baseline Estimado de Gastos Variáveis Habituais: R$ ${context.historicalVariableBaseline.toFixed(2)}/mês

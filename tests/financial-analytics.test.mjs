@@ -88,3 +88,33 @@ test("pedido sem dados vira análise vazia, sem quebrar", () => {
   assert.equal(empty.spending.monthToDate, 0);
   assert.equal(empty.incomeKnown, false);
 });
+
+test("quem recebe e paga no mesmo dia não aparece com a conta negativa (vale para qualquer dia)", () => {
+  const same = buildFinancialAnalytics(SCENARIOS.find((s) => s.id === "paga-no-dia-do-salario").analyticsInput);
+  assert.equal(same.timeline.negativeFromDay, null);
+  assert.ok(same.timeline.lowestBalance >= 0);
+  const sameSignals = buildBriefingSignals(buildBriefingFacts(same), same);
+  assert.ok(!sameSignals.some((s) => s.factIds.includes("dia_fica_negativo")));
+});
+
+test("categorias e hábitos genéricos (Outros, Geral) e altas pequenas não viram alerta", () => {
+  const same = buildFinancialAnalytics(SCENARIOS.find((s) => s.id === "paga-no-dia-do-salario").analyticsInput);
+  assert.equal(same.spending.biggestIncrease, null, "Outros subiu, mas não é acionável");
+  assert.equal(same.spending.habits.length, 0, "lanchonete R$ 65 acima da média não é alerta");
+});
+
+test("hábito da mesma categoria da maior alta não repete o alerta", () => {
+  const fast = buildFinancialAnalytics(SCENARIOS.find((s) => s.id === "gasto-acelerado").analyticsInput);
+  assert.equal(fast.spending.biggestIncrease?.category, "Alimentação & Delivery");
+  assert.ok(!fast.spending.habits.some((h) => /delivery|restaurante/i.test(h.name)));
+});
+
+test("limite diário separa 'até a próxima entrada' do 'resto do mês'", () => {
+  assert.equal(a.timeline.untilNextIncome.day, 20);
+  assert.equal(a.timeline.untilNextIncome.available, 0, "o carnê do dia 17 consome o saldo antes do salário");
+  assert.ok(a.target.dailyRoom > 40, "no resto do mês a folga diária é maior");
+  const same = buildFinancialAnalytics(SCENARIOS.find((s) => s.id === "paga-no-dia-do-salario").analyticsInput);
+  assert.equal(same.timeline.untilNextIncome.available, 40);
+  assert.equal(same.timeline.untilNextIncome.dailyAvailable, 8);
+  assert.match(buildChatFactBlock(same), /Nunca recomende gastar gasto_livre_dia antes da entrada/);
+});

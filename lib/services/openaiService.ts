@@ -279,20 +279,32 @@ export function buildResponsesPayload(
  * "gpt-6-luna" e "gpt-6-sol" são codinomes internos mapeados automaticamente
  * para os modelos reais da API da OpenAI (gpt-4o-mini / gpt-4.1-mini / gpt-4o).
  */
-function resolveRealOpenAIModelCandidates(configuredModel: string): string[] {
-  const envReal = cleanEnvKey(process.env.OPENAI_REAL_MODEL || process.env.OPENAI_MODEL);
+/**
+ * Dois trilhos de modelo reais:
+ * - Análise (informativo, rótulo gpt-6-sol): modelo forte, para raciocinar sobre o mês.
+ * - Conversa (chat, rótulo gpt-6-luna): modelo rápido e barato.
+ * Cada trilho tem cascata: se um modelo não existir na conta, tenta o próximo.
+ * OPENAI_ANALYSIS_MODEL / OPENAI_CHAT_MODEL sobrescrevem o primeiro da fila.
+ */
+export const ANALYSIS_MODEL_CANDIDATES = ["gpt-6.1-sol", "gpt-6-sol", "gpt-5.5", "gpt-4.1"];
+export const CHAT_MODEL_CANDIDATES = ["gpt-6-luna", "gpt-5.4-mini", "gpt-4o-mini"];
+
+export function resolveRealOpenAIModelCandidates(configuredModel: string): string[] {
+  const isAnalysis = configuredModel === OPENAI_MODELS.OPTIONAL;
+  const envReal = isAnalysis
+    ? cleanEnvKey(process.env.OPENAI_ANALYSIS_MODEL)
+    : cleanEnvKey(process.env.OPENAI_CHAT_MODEL || process.env.OPENAI_REAL_MODEL || process.env.OPENAI_MODEL);
   const envOverride = cleanEnvKey(process.env.OPENAI_MODEL_OVERRIDE);
   const customReal =
     envReal ||
-    (envOverride && envOverride !== "gpt-6-luna" && envOverride !== "gpt-6-sol" ? envOverride : "");
+    (envOverride && envOverride !== OPENAI_MODELS.MAIN && envOverride !== OPENAI_MODELS.OPTIONAL ? envOverride : "");
+  const base = isAnalysis ? ANALYSIS_MODEL_CANDIDATES : CHAT_MODEL_CANDIDATES;
+  return Array.from(new Set(customReal ? [customReal, ...base] : base));
+}
 
-  const baseCandidates =
-    configuredModel === OPENAI_MODELS.OPTIONAL
-      ? ["gpt-4o", "gpt-4.1-mini", "gpt-4o-mini"]
-      : ["gpt-4o-mini", "gpt-4.1-mini", "gpt-4o"];
-
-  const all = customReal ? [customReal, ...baseCandidates] : baseCandidates;
-  return Array.from(new Set(all));
+/** Modelos com raciocínio aceitam reasoning_effort. */
+function supportsReasoningEffort(model: string): boolean {
+  return /^(gpt-5|gpt-6|o\d)/.test(model);
 }
 
 /**
@@ -424,6 +436,9 @@ export async function callOpenAIResponses(
         messages: chatMessages,
         max_completion_tokens: params.maxOutputTokens ?? 2048,
       };
+      if (params.reasoningEffort && params.reasoningEffort !== "none" && supportsReasoningEffort(realModel)) {
+        (completionParams as unknown as Record<string, unknown>).reasoning_effort = params.reasoningEffort;
+      }
 
       if (params.jsonSchema) {
         completionParams.response_format = {
@@ -521,7 +536,8 @@ export async function callOpenAIResponses(
 
       return {
         text,
-        modelUsed: selectedModel,
+        // Modelo que de fato respondeu (o rótulo do trilho fica no cálculo de custo)
+        modelUsed: realModel,
         durationMs,
         inputTokens,
         cachedInputTokens,

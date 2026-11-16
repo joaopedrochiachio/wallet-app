@@ -95,6 +95,8 @@ export interface FinancialAnalytics {
     negativeFromDay: number | null;
     /** Entrada que tira o saldo do negativo, se houver. */
     recoveryIncome: TimelineEvent | null;
+    /** Próxima entrada prevista e quanto dá para gastar até ela sem a conta ficar negativa. */
+    untilNextIncome: { day: number; title: string; amount: number; daysUntil: number; available: number; dailyAvailable: number } | null;
   };
   spending: {
     monthToDate: number;
@@ -121,6 +123,8 @@ export interface FinancialAnalytics {
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+/** Categorias/hábitos genéricos ("Outros", "Geral") não geram alerta: não dizem o que mudar. */
+const isGenericName = (name: string) => /(^|\s)(outr[oa]s?|geral|diversos|sem categoria)(\s|$)/i.test(name || "");
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 
 function isSpending(tx: TransactionContextItem): boolean {
@@ -192,21 +196,43 @@ export function buildFinancialAnalytics(input: AnalyticsInput): FinancialAnalyti
   const missingOut = round2(toPay - sum("out"));
   if (missingIn > 1) events.push({ day: daysInMonth, title: "Outras entradas previstas", amount: missingIn, direction: "in" });
   if (missingOut > 1) events.push({ day: daysInMonth, title: "Outras contas previstas", amount: missingOut, direction: "out" });
-  events.sort((a, b) => a.day - b.day || (a.direction === "out" ? -1 : 1)); // no mesmo dia, considera a saída antes (pior caso)
+  // No mesmo dia, entradas antes das saídas: quem recebe e paga no dia 20 não fica negativo no dia 20.
+  events.sort((a, b) => a.day - b.day || (a.direction === "in" ? -1 : 1));
 
+  // Avalia o saldo no FIM de cada dia (tudo que entra e sai no dia já compensado).
+  const days = [...new Set(events.map((e) => e.day))];
   let running = balanceToday;
   let lowestBalance = balanceToday;
   let lowestDay = day;
   let negativeFromDay: number | null = balanceToday < 0 ? day : null;
   let recoveryIncome: TimelineEvent | null = null;
-  for (const e of events) {
-    running = round2(running + (e.direction === "in" ? e.amount : -e.amount));
+  for (const d of days) {
+    const ofDay = events.filter((e) => e.day === d);
+    running = round2(ofDay.reduce((acc, e) => acc + (e.direction === "in" ? e.amount : -e.amount), running));
     if (running < lowestBalance) {
       lowestBalance = running;
-      lowestDay = e.day;
+      lowestDay = d;
     }
-    if (running < 0 && negativeFromDay === null) negativeFromDay = e.day;
-    if (running >= 0 && negativeFromDay !== null && !recoveryIncome && e.direction === "in") recoveryIncome = e;
+    if (running < 0 && negativeFromDay === null) negativeFromDay = d;
+    if (running >= 0 && negativeFromDay !== null && !recoveryIncome) {
+      recoveryIncome = ofDay.filter((e) => e.direction === "in").sort((x, y) => y.amount - x.amount)[0] ?? null;
+    }
+  }
+
+  // Dinheiro livre até a próxima entrada: o menor saldo antes dela (contas que vencem antes já descontadas).
+  const firstIncome = events.find((e) => e.direction === "in" && e.day > day) ?? null;
+  let untilNextIncome: FinancialAnalytics["timeline"]["untilNextIncome"] = null;
+  if (firstIncome) {
+    let bal = balanceToday;
+    let minBefore = balanceToday;
+    for (const e of events) {
+      if (e.day >= firstIncome.day) break;
+      bal = round2(bal + (e.direction === "in" ? e.amount : -e.amount));
+      minBefore = Math.min(minBefore, bal);
+    }
+    const daysUntil = Math.max(1, firstIncome.day - day);
+    const available = round2(Math.max(0, minBefore));
+    untilNextIncome = { day: firstIncome.day, title: firstIncome.title, amount: firstIncome.amount, daysUntil, available, dailyAvailable: round2(available / daysUntil) };
   }
 
   // ---------- Gastos: mês atual x mesmo período dos meses anteriores ----------
@@ -255,26 +281,35 @@ export function buildFinancialAnalytics(input: AnalyticsInput): FinancialAnalyti
     .sort((a, b) => b.monthToDate - a.monthToDate);
   const biggestIncrease =
     categories
-      .filter((c) => c.samePeriodAverage !== null && c.monthToDate - (c.samePeriodAverage ?? 0) >= 100 && (c.changePercent ?? 0) >= 30)
+      .filter((c) => !isGenericName(c.category) && c.samePeriodAverage !== null && c.monthToDate - (c.samePeriodAverage ?? 0) >= 100 && (c.changePercent ?? 0) >= 30)
       .sort((a, b) => b.monthToDate - (b.samePeriodAverage ?? 0) - (a.monthToDate - (a.samePeriodAverage ?? 0)))[0] ?? null;
 
-  const habitMap = new Map<string, { total: number; count: number }>();
+  const habitMap = new Map<string, { total: number; count: number; categories: Map<string, number> }>();
   for (const { tx } of variableThisMonth) {
     if (isExcludedFromHabitAnalysis(tx.title, tx.category)) continue;
     const name = inferHabitCategory(tx.title, tx.category);
-    const h = habitMap.get(name) || { total: 0, count: 0 };
+    if (isGenericName(name)) continue; // "Outros hábitos" / "Alimentação Geral" não são hábitos
+    const h = habitMap.get(name) || { total: 0, count: 0, categories: new Map<string, number>() };
     h.total += tx.amount;
     h.count += 1;
+    h.categories.set(tx.category || "Outros", (h.categories.get(tx.category || "Outros") || 0) + tx.amount);
     habitMap.set(name, h);
   }
+  // Só vira hábito relevante o que está claramente acima da média da própria pessoa
+  // (≥ 30% e ≥ R$ 100 a mais) ou, sem histórico, o que se repete muito (5+ vezes).
+  // Hábitos da mesma categoria da "maior alta" ficam de fora para não repetir o alerta.
   const habits = [...habitMap.entries()]
     .filter(([, h]) => h.count >= 3)
     .map(([name, h]) => {
       const prev = avg(previousIdx.map((idx) => total(samePeriodOf(idx).filter((x) => isVariable(x) && !isExcludedFromHabitAnalysis(x.tx.title, x.tx.category) && inferHabitCategory(x.tx.title, x.tx.category) === name))));
-      return { name, total: round2(h.total), count: h.count, previousAverage: prev === null ? null : round2(prev) };
+      const mainCategory = [...h.categories.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
+      return { name, total: round2(h.total), count: h.count, previousAverage: prev === null ? null : round2(prev), mainCategory };
     })
+    .filter((h) => (h.previousAverage === null ? h.count >= 5 : h.total >= h.previousAverage * 1.3 && h.total - h.previousAverage >= 100))
+    .filter((h) => !biggestIncrease || h.mainCategory !== biggestIncrease.category)
     .sort((a, b) => b.total - a.total)
-    .slice(0, 2);
+    .slice(0, 2)
+    .map((h) => ({ name: h.name, total: h.total, count: h.count, previousAverage: h.previousAverage }));
 
   const largestPurchases = [...thisMonth]
     .filter((x) => !x.tx.recurringItemId)
@@ -304,7 +339,7 @@ export function buildFinancialAnalytics(input: AnalyticsInput): FinancialAnalyti
     daysLeft,
     cash,
     target,
-    timeline: { events, lowestBalance: round2(lowestBalance), lowestDay, negativeFromDay, recoveryIncome },
+    timeline: { events, lowestBalance: round2(lowestBalance), lowestDay, negativeFromDay, recoveryIncome, untilNextIncome },
     spending: {
       monthToDate,
       monthToDateCredit: round2(total(thisMonth.filter((x) => isCreditTx(x.tx)))),

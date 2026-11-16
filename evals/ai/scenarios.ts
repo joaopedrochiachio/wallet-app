@@ -197,6 +197,37 @@ export const SCENARIOS: EvalScenario[] = [
     ],
   },
   {
+    id: "paga-no-dia-do-salario",
+    title: "Recebe e paga no mesmo dia (dia 20): não pode virar alerta de conta negativa",
+    now: NOW,
+    ...life({
+      income: 3000, target: 300, balanceToday: 40, received: 0, paid: 760, toReceive: 3000, toPay: 2200,
+      transactions: [
+        ...history([-1, -2, -3], [[4, "Mercado", 420, "Alimentação & Delivery"], [9, "Lanchonete", 45, "Alimentação & Delivery"], [12, "Lanchonete", 40, "Alimentação & Delivery"], [7, "Presente", 80, "Outros"]]),
+        tx(0, 4, "Mercado", 430, "Alimentação & Delivery"),
+        tx(0, 7, "Lanchonete", 52, "Alimentação & Delivery"), tx(0, 10, "Lanchonete", 48, "Alimentação & Delivery"), tx(0, 13, "Lanchonete", 50, "Alimentação & Delivery"),
+        tx(0, 8, "Presente", 95, "Outros"), tx(0, 11, "Papelaria", 85, "Outros"),
+      ],
+      recurring: [
+        bill("aluguel", "Aluguel", 1500, 20), bill("carne", "Carnê", 600, 20, "Compras & Outros"), bill("net", "Internet", 100, 22),
+        plannedIncome("salario", "Salário", 3000, 20),
+      ],
+      next: { income: 3000, committed: 2200, installments: 0, free: 840 },
+    }),
+    expect: {
+      moods: ["positivo", "atencao"],
+      noHighSeverity: true,
+      mustCiteGroups: [["saldo_fim_mes", "a_receber", "folga_meta"]],
+      forbidden: [
+        { pattern: /(conta|saldo)[^.]{0,30}(fica|ficar[áa]?|vai ficar) negativ/i, reason: "acusou conta negativa num dia em que o salário cai antes das contas" },
+        { pattern: /dia (\d+)[^.]{0,60}(depois|após) do dia \1(?!\d)/i, reason: "recomendou adiar algo do dia X para depois do mesmo dia X" },
+      ],
+    },
+    chat: [
+      { question: "Vou ficar sem dinheiro antes do salário?", verdict: /(^|\n)\W*n[ãa]o(?!\p{L})|não vai faltar|vai dar|cobre|consegue/iu, verdictLabel: "dizer que não falta (recebe e paga no mesmo dia)", mustMentionAnyFact: ["saldo_hoje", "proxima_entrada", "saldo_fim_mes", "a_receber"] },
+    ],
+  },
+  {
     id: "mes-no-vermelho",
     title: "Mesmo com o salário a receber, o mês fecha negativo",
     now: NOW,

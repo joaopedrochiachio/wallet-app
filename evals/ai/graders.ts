@@ -146,6 +146,8 @@ export function gradeBriefing(params: {
   const actions = [...b.negatives, ...b.positives].map((p) => p.action);
   const notImperative = actions.filter((a) => !startsWithImperative(a));
   checks.push({ level: 5, name: "ações começam com verbo", pass: actions.length > 0 && notImperative.length === 0, detail: notImperative[0] });
+  const incoherent = actions.filter((a) => /dia (\d+)[^.]{0,60}(depois|após) do dia \1(?!\d)/i.test(a));
+  checks.push({ level: 5, name: "ações coerentes (sem adiar do dia X para depois do dia X)", pass: incoherent.length === 0, detail: incoherent[0] });
   const vague = b.negatives.map((p) => p.action).filter((a) => !CONCRETE.test(a));
   checks.push({ level: 5, name: "alertas com ação concreta (valor ou prazo)", pass: vague.length === 0, detail: vague[0] });
   checks.push({ level: 5, name: "próximo passo concreto", pass: Boolean(b.nextStep.title) && CONCRETE.test(`${b.nextStep.title} ${b.nextStep.detail}`), detail: b.nextStep.title });
@@ -161,15 +163,19 @@ function mentionsFact(text: string, fact: BriefingFact): boolean {
   return extractAmounts(text).some((n) => Math.abs(n - v) <= Math.max(1, v * 0.01));
 }
 
-export function gradeChatAnswer(params: { probe: ChatProbe; answer: string | null; facts: BriefingFact[]; error?: string }): Check[] {
+export function gradeChatAnswer(params: { probe: ChatProbe; answer: string | null; facts: BriefingFact[]; error?: string; extraNumbers?: number[] }): Check[] {
   const { probe, answer, facts } = params;
   const label = `chat "${probe.question.slice(0, 40)}…"`;
   if (!answer) return [{ level: 1, name: `${label} respondeu`, pass: false, detail: params.error }];
   const checks: Check[] = [];
-  const questionNumbers = extractAmounts(probe.question);
-  const invented = findUngroundedNumbers(answer, facts).filter((n) => !questionNumbers.some((q) => Math.abs(q - n) < 1));
-  // No chat a IA pode fazer contas simples; tolera até 2 números derivados.
-  checks.push({ level: 1, name: `${label} sem números soltos`, pass: invented.length <= 2, detail: invented.length ? `não estão nos fatos: ${invented.slice(0, 6).join(", ")}` : undefined });
+  // Números aceitos: fatos, números da pergunta, saldos da linha do tempo (o chat recebe) e
+  // somas/diferenças de dois deles (a resposta mostra a conta, como o prompt pede).
+  const base = [...facts.map((f) => Math.abs(f.value)), ...extractAmounts(probe.question), ...(params.extraNumbers ?? []).map(Math.abs)];
+  const close = (a: number, b: number) => Math.abs(a - b) <= Math.max(1, b * 0.005);
+  const derivable = (n: number) =>
+    base.some((v) => close(n, v)) || base.some((a, i) => base.some((b, j) => i !== j && (close(n, a + b) || close(n, Math.abs(a - b)))));
+  const invented = findUngroundedNumbers(answer, facts).filter((n) => !derivable(n));
+  checks.push({ level: 1, name: `${label} sem números soltos`, pass: invented.length === 0, detail: invented.length ? `sem origem nos dados: ${invented.slice(0, 6).join(", ")}` : undefined });
   if (probe.mustMentionAnyFact) {
     const factsToCheck = facts.filter((f) => probe.mustMentionAnyFact!.includes(f.id));
     checks.push({ level: 2, name: `${label} usa o número certo`, pass: factsToCheck.some((f) => mentionsFact(answer, f)), detail: factsToCheck.map((f) => `${f.id}=${f.value}`).join(", ") });

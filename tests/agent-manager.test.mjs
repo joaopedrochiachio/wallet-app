@@ -91,3 +91,19 @@ test("runAuditorAgent e generateDeterministicAuditDossier geram dossiê factual 
   assert.ok(promptText.includes("Chiquinho Sorvetes"));
   assert.ok(promptText.includes("Total R$ 90.00"));
 });
+
+test("dois trilhos de modelo: análise usa modelo forte e chat usa o rápido", async () => {
+  const { resolveRealOpenAIModelCandidates, OPENAI_MODELS } = await import("../lib/services/openaiService.ts");
+  const saved = { a: process.env.OPENAI_ANALYSIS_MODEL, c: process.env.OPENAI_CHAT_MODEL, r: process.env.OPENAI_REAL_MODEL, m: process.env.OPENAI_MODEL };
+  delete process.env.OPENAI_ANALYSIS_MODEL; delete process.env.OPENAI_CHAT_MODEL; delete process.env.OPENAI_REAL_MODEL; delete process.env.OPENAI_MODEL;
+  try {
+    assert.equal(resolveRealOpenAIModelCandidates(OPENAI_MODELS.OPTIONAL)[0], "gpt-6.1-sol");
+    assert.equal(resolveRealOpenAIModelCandidates(OPENAI_MODELS.MAIN)[0], "gpt-6-luna");
+    process.env.OPENAI_ANALYSIS_MODEL = "gpt-5.5";
+    assert.equal(resolveRealOpenAIModelCandidates(OPENAI_MODELS.OPTIONAL)[0], "gpt-5.5");
+  } finally {
+    for (const [k, v] of [["OPENAI_ANALYSIS_MODEL", saved.a], ["OPENAI_CHAT_MODEL", saved.c], ["OPENAI_REAL_MODEL", saved.r], ["OPENAI_MODEL", saved.m]]) {
+      if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
+  }
+});

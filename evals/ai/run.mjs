@@ -102,7 +102,10 @@ for (let run = 1; run <= runs; run++) {
         } catch (err) {
           chatError = String(err?.message || err);
         }
-        const chatChecks = gradeChatAnswer({ probe, answer, facts, error: chatError });
+        // saldos da linha do tempo, que o chat também recebe
+        let running = analytics.cash.balanceToday;
+        const timelineNumbers = analytics.timeline.events.flatMap((e) => { running += e.direction === "in" ? e.amount : -e.amount; return [e.amount, Math.round(running * 100) / 100]; });
+        const chatChecks = gradeChatAnswer({ probe, answer, facts, error: chatError, extraNumbers: timelineNumbers });
         checks.push(...chatChecks);
         chats.push({ question: probe.question, answer });
       }
