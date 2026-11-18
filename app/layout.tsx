@@ -1,43 +1,8 @@
 import type { Metadata, Viewport } from "next";
-import localFont from "next/font/local";
 import "./globals.css";
 import { AppShell } from "@/components/layout/AppShell";
 import { PwaRegister } from "@/components/pwa/PwaRegister";
 import { THEME_BOOT_SCRIPT } from "@/lib/themeBoot";
-
-const sfPro = localFont({
-  src: [
-    {
-      path: "../public/fonts/SF-Pro-Display-Regular.otf",
-      weight: "400",
-      style: "normal",
-    },
-    {
-      path: "../public/fonts/SF-Pro-Display-Semibold.otf",
-      weight: "600",
-      style: "normal",
-    },
-  ],
-  variable: "--font-sf-pro",
-  display: "swap",
-});
-
-const sfMono = localFont({
-  src: [
-    {
-      path: "../public/fonts/SF-Mono-Regular.otf",
-      weight: "400",
-      style: "normal",
-    },
-    {
-      path: "../public/fonts/SF-Mono-Semibold.otf",
-      weight: "600",
-      style: "normal",
-    },
-  ],
-  variable: "--font-sf-mono",
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   title: "Wallet Intelligence",
@@ -78,7 +43,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="pt-BR" className={`${sfPro.variable} ${sfMono.variable}`} suppressHydrationWarning>
+    <html lang="pt-BR" suppressHydrationWarning>
       <head>
         {/* Aplica o tema escolhido (claro/escuro) antes da primeira pintura */}
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
