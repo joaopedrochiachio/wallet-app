@@ -1,5 +1,15 @@
 @import "tailwindcss";
 
+/*
+ * Fontes do sistema: em Apple aparece a SF Pro nativa; no Windows/Android,
+ * Segoe UI/Roboto. As fontes SF não são embarcadas porque a licença da Apple
+ * não permite redistribuí-las.
+ */
+:root {
+  --font-sf-pro: -apple-system, BlinkMacSystemFont;
+  --font-sf-mono: ui-monospace, SFMono-Regular;
+}
+
 @theme {
   --font-sans: var(--font-sf-pro), -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif;
   --font-mono: var(--font-sf-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
