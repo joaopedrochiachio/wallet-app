@@ -170,8 +170,8 @@ const FLOWS: Array<{ name: string; route: string; steps: (page: Page) => Promise
   { name: "nova transação", route: "/transactions", steps: (p) => p.getByRole("button", { name: /Nova Transação/ }).first().click() },
   { name: "importar extrato", route: "/transactions", steps: (p) => p.getByRole("button", { name: /Importar Extrato/ }).first().click() },
   { name: "detalhes da transação", route: "/transactions", steps: (p) => p.getByText("Supermercado Pão de Açúcar").first().click() },
-  { name: "novo cartão", route: "/cards", steps: (p) => p.getByRole("button", { name: "Novo Cartão", exact: true }).click() },
-  { name: "nova compra", route: "/cards", steps: (p) => p.getByRole("button", { name: "Nova Compra", exact: true }).click() },
+  { name: "novo cartão", route: "/cards", steps: (p) => p.getByRole("button", { name: "Novo cartão", exact: true }).click() },
+  { name: "nova compra", route: "/cards", steps: (p) => p.getByRole("button", { name: "Nova compra", exact: true }).click() },
   { name: "nova meta", route: "/goals", steps: (p) => p.getByRole("button", { name: /Nova Meta/ }).first().click() },
   {
     name: "adicionar planejamento", route: "/planning",

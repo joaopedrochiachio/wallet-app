@@ -23,8 +23,11 @@ import {
   updateTransactionInFirestore,
   realizePlannedOccurrence,
   unrealizePlannedOccurrence,
+  endRecurringSeriesFrom,
+  deleteRecurringSeriesWithHistory,
   TransactionUpdateInput,
 } from "@/lib/services/transactionsService";
+import { buildCardStatement, type CardCharge, type CardStatement } from "@/lib/utils/creditCardEngine";
 import {
   subscribeToGoals,
   deleteGoalFromFirestore,
@@ -57,8 +60,6 @@ import {
 import {
   calculateCheckingBalance,
   calculateCheckingBalanceBefore,
-  calculateCreditInvoice,
-  calculateCreditCardUsedLimit,
   splitInstallmentPurchase,
   calculateInvoiceSchedule,
   calculateInvoiceScheduleWithCredits,
@@ -67,7 +68,6 @@ import {
   getInvoiceDueDate,
   getLedgerEntryDate,
   matchesLedgerCard,
-  getCardOpenInvoiceDetails,
   getCardInvoiceDetailsForMonth,
   getCardInvoiceRecurringDetails,
   isInvoicePaymentOrSettlement,
@@ -223,6 +223,14 @@ interface WalletContextType {
     targetMonth: number
   ) => Promise<void>;
   getMonthlyProjection: (monthIndex: number, customMonths?: PlanningMonth[]) => MonthProjection;
+  /** Extrato completo de cada cartão de crédito (faturas, limite, parcelas, assinaturas). */
+  cardStatements: Record<string, CardStatement>;
+  /** Encerra uma série a partir da competência informada, sem tocar no passado. */
+  endRecurringItemFrom: (id: string, periodKey: string) => Promise<void>;
+  /** Move uma compra/assinatura para outro cartão (só nesta fatura ou desta em diante). */
+  moveCardCharge: (charge: CardCharge, destinationCardId: string, scope: "single" | "forward") => Promise<void>;
+  /** Remove uma cobrança do cartão (só esta, desta em diante ou a compra inteira). */
+  removeCardCharge: (charge: CardCharge, scope: "single" | "forward" | "everything") => Promise<void>;
   addGoal: (
     goal: Omit<GoalItem, "id">,
     source?: {
@@ -539,13 +547,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     });
   }, [user]);
 
-  // Faturas e saldos são projeções do livro-caixa salvo no Firestore.
-  const cardInvoices = useMemo(() => {
-    const invoiceMap: Record<string, number> = {};
+  // Faturas, limite e saldos são projeções do livro-caixa salvo no Firestore.
+  // O extrato de cada cartão sai do motor único (lib/utils/creditCardEngine).
+  const cardStatements = useMemo(() => {
+    const today = new Date();
+    const result: Record<string, CardStatement> = {};
     for (const card of cards.filter((item) => item.type === "credit")) {
-      invoiceMap[card.id] = calculateCreditInvoice(card, transactions, recurringItems);
+      result[card.id] = buildCardStatement({ ...card, spent: 0 }, transactions, recurringItems, { today });
     }
-    return invoiceMap;
+    return result;
   }, [transactions, cards, recurringItems]);
 
   const checkingBalances = useMemo(() => {
@@ -562,20 +572,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         if (card.type === "checking") {
           return { ...card, balance: checkingBalances[card.id] ?? 0, spent: 0 };
         }
-        const invoiceAmount = cardInvoices[card.id] || 0;
-        const usedLimit = calculateCreditCardUsedLimit(
-          { ...card, spent: 0 },
-          transactions,
-          recurringItems
-        );
+        const statement = cardStatements[card.id];
         return {
           ...card,
           balance: 0,
-          invoiceAmount,
-          spent: Math.max(invoiceAmount, usedLimit),
+          invoiceAmount: statement?.amountDue ?? 0,
+          spent: statement?.usedLimit ?? 0,
         };
       }),
-    [cards, cardInvoices, checkingBalances, transactions, recurringItems]
+    [cards, cardStatements, checkingBalances]
   );
 
   const activeCard = useMemo(
@@ -880,8 +885,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     const checkingCard = enrichedCards.find((c) => c.type === "checking");
     if (!checkingCard) throw new Error("Cadastre uma conta corrente antes de pagar a fatura.");
 
+    const statement = cardStatements[targetCard.id];
+    const firstUnpaid = statement?.invoices.find(
+      (invoice) => invoice.outstanding > 0.005 && invoice.key <= statement.currentCycleKey
+    );
     const effectivePeriodKey =
-      periodKey || getCardOpenInvoiceDetails(targetCard, transactions, recurringItems).periodKey;
+      periodKey || firstUnpaid?.key || statement?.currentCycleKey ||
+      getPeriodKey(new Date().getFullYear(), new Date().getMonth());
 
     const now = new Date();
     await payCreditCardInvoice(user.uid, {
@@ -894,7 +904,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       date: `${now.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}, ${now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`,
       occurredAt: now,
     });
-  }, [enrichedCards, transactions, recurringItems, user]);
+  }, [enrichedCards, cardStatements, user]);
 
   const unpayInvoice = useCallback(async (cardId: string, periodKey: string) => {
     if (!user) throw new Error("Entre na sua conta para desfazer o pagamento da fatura.");
@@ -1087,6 +1097,114 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     if (!user) throw new Error("Entre na sua conta para excluir o planejamento.");
     await deleteRecurringFromFirestore(user.uid, id);
   }, [user]);
+
+  const endRecurringItemFrom = useCallback(async (id: string, periodKey: string) => {
+    if (!user) throw new Error("Entre na sua conta para alterar o planejamento.");
+    await endRecurringSeriesFrom(user.uid, id, periodKey);
+  }, [user]);
+
+  /** Reescreve só o cartão de um lançamento, preservando valor, data e categoria. */
+  const retargetTransaction = useCallback(async (tx: TransactionItem, destination: CardItem) => {
+    if (!user) return;
+    await updateTransactionInFirestore(user.uid, tx.id, {
+      title: tx.title,
+      amount: tx.amount,
+      type: tx.type,
+      category: tx.category,
+      account: destination.name,
+      cardId: destination.id,
+      date: tx.date,
+      occurredAt: getLedgerEntryDate(tx) || new Date(),
+    });
+  }, [user]);
+
+  const moveCardCharge = useCallback(async (
+    charge: CardCharge,
+    destinationCardId: string,
+    scope: "single" | "forward"
+  ) => {
+    if (!user) throw new Error("Entre na sua conta para mover a compra.");
+    const destination = cards.find((card) => card.id === destinationCardId && card.type === "credit");
+    if (!destination) throw new Error("Escolha um cartão de crédito de destino.");
+    if (destination.id === charge.cardId) return;
+
+    const item = charge.recurringItemId
+      ? recurringItems.find((candidate) => candidate.id === charge.recurringItemId)
+      : undefined;
+
+    if (!item) {
+      const tx = transactions.find((candidate) => candidate.id === charge.transactionId);
+      if (!tx) throw new Error("Compra não encontrada.");
+      await retargetTransaction(tx, destination);
+      return;
+    }
+
+    const period = charge.chargePeriodKey;
+    const cardFields = { cardId: destination.id, account: destination.name };
+    if (scope === "single") {
+      const nextOverrides = {
+        ...(item.overrides || {}),
+        [period]: { ...(item.overrides?.[period] || {}), ...cardFields },
+      };
+      await updateRecurringInFirestore(user.uid, item.id, { overrides: nextOverrides });
+    } else {
+      await updateRecurringInFirestore(user.uid, item.id, buildForwardRecurringUpdate(item, period, cardFields));
+    }
+
+    // Lançamentos já feitos nas competências afetadas acompanham a mudança.
+    const affected = transactions.filter((tx) => {
+      if (tx.recurringItemId !== item.id) return false;
+      const txPeriod = tx.periodKey || (getLedgerEntryDate(tx) ? getPeriodKey(getLedgerEntryDate(tx)!.getFullYear(), getLedgerEntryDate(tx)!.getMonth()) : "");
+      return scope === "single" ? txPeriod === period : txPeriod >= period;
+    });
+    for (const tx of affected) {
+      await retargetTransaction(tx, destination);
+    }
+  }, [cards, recurringItems, transactions, retargetTransaction, user]);
+
+  const removeCardCharge = useCallback(async (
+    charge: CardCharge,
+    scope: "single" | "forward" | "everything"
+  ) => {
+    if (!user) throw new Error("Entre na sua conta para excluir a compra.");
+    const item = charge.recurringItemId
+      ? recurringItems.find((candidate) => candidate.id === charge.recurringItemId)
+      : undefined;
+
+    if (!item) {
+      if (!charge.transactionId) return;
+      setTransactions((prev) => prev.filter((tx) => tx.id !== charge.transactionId));
+      await deleteTransactionFromFirestore(user.uid, { id: charge.transactionId, groupId: null, recurringItemId: null, periodKey: null });
+      return;
+    }
+
+    if (scope === "everything") {
+      await deleteRecurringSeriesWithHistory(user.uid, item.id);
+      return;
+    }
+    if (scope === "forward") {
+      await endRecurringSeriesFrom(user.uid, item.id, charge.chargePeriodKey);
+      return;
+    }
+
+    const postedTx = transactions.find((tx) =>
+      tx.recurringItemId === item.id &&
+      (tx.id === charge.transactionId || tx.periodKey === charge.chargePeriodKey)
+    );
+    if (postedTx) {
+      setTransactions((prev) => prev.filter((tx) => tx.id !== postedTx.id));
+      await deleteTransactionFromFirestore(user.uid, {
+        id: postedTx.id,
+        groupId: postedTx.groupId,
+        recurringItemId: item.id,
+        periodKey: charge.chargePeriodKey,
+      });
+    } else {
+      await updateRecurringInFirestore(user.uid, item.id, {
+        excludedPeriods: Array.from(new Set([...(item.excludedPeriods || []), charge.chargePeriodKey])),
+      });
+    }
+  }, [recurringItems, transactions, user]);
 
   const realizeRecurringItemNow = useCallback(async (
     item: RecurringItem,
@@ -1427,6 +1545,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       realizeRecurringItemNow,
       unrealizeRecurringItem,
       getMonthlyProjection,
+      cardStatements,
+      endRecurringItemFrom,
+      moveCardCharge,
+      removeCardCharge,
       addGoal,
       contributeToGoal,
       withdrawFromGoal,
@@ -1469,6 +1591,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       realizeRecurringItemNow,
       unrealizeRecurringItem,
       getMonthlyProjection,
+      cardStatements,
+      endRecurringItemFrom,
+      moveCardCharge,
+      removeCardCharge,
       addGoal,
       contributeToGoal,
       withdrawFromGoal,

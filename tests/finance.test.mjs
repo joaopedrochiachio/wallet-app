@@ -1854,7 +1854,8 @@ test("exclusão pontual via excludedPeriods em fatura de cartão remove apenas o
     dueDay: 10,
   };
 
-  // Item com exclusão pontual para a competência de Dezembro/2026
+  // Exclusão pontual da cobrança de Novembro/2026 (dia 10, após o fechamento
+  // dia 1), que cairia na fatura de Dezembro/2026.
   const itemWithExclusion = {
     id: "rec-spotify",
     title: "Spotify",
@@ -1867,7 +1868,7 @@ test("exclusão pontual via excludedPeriods em fatura de cartão remove apenas o
     startYear: 2026,
     startMonth: 9,
     recurrenceType: "fixed_day",
-    excludedPeriods: ["2026-12"],
+    excludedPeriods: ["2026-11"],
   };
 
   const refDate = new Date(2026, 9, 10);

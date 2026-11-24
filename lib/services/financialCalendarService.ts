@@ -1,7 +1,6 @@
 import type { CardItem, RecurringItem } from "../../types/index.ts";
 import {
-  calculateInvoiceScheduleWithCredits,
-  getCardInvoiceRecurringDetails,
+  getCardInvoiceDetailsForMonth,
   getLedgerEntryDate,
   type LedgerEntry,
 } from "../utils/ledger.ts";
@@ -85,6 +84,7 @@ function isRecurringScheduledForPeriod(
 ): boolean {
   if (!item.active) return false;
   if (isInstallmentPaidInMonth(item, year, month)) return false;
+  if (item.endPeriodKey && periodKey >= item.endPeriodKey) return false;
   if (item.excludedPeriods?.includes(periodKey)) return false;
   if (item.overrides?.[periodKey]?.isDeleted) return false;
 
@@ -360,9 +360,10 @@ export function buildFinancialCalendar({
     const projected = isCurrentMonth
       ? currentMonthInvoices?.find((invoice) => invoice.cardId === card.id)
       : undefined;
-    const schedule = calculateInvoiceScheduleWithCredits(card, transactions, now).schedule;
-    const recurringDetails = getCardInvoiceRecurringDetails(card, recurringItems, year, month, transactions);
-    const derivedPending = Math.max(0, (schedule[periodKey] || 0) + recurringDetails.pendingAmount);
+    const derivedPending = Math.max(
+      0,
+      getCardInvoiceDetailsForMonth(card, transactions, recurringItems, year, month, now).pendingInvoice
+    );
     const amount = projected ? Math.max(0, projected.pendingInvoice ?? projected.totalInvoice) : derivedPending;
     const isPaid = projected ? projected.isPaid : amount === 0;
 

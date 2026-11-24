@@ -1,1446 +1,444 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { useWallet, TransactionItem } from "@/context/WalletContext";
-import {
-  CreditCard,
-  CheckCircle2,
-  AlertCircle,
-  SlidersHorizontal,
-  ShieldCheck,
-  Check,
-  X,
-  Plus,
-  Trash2,
-  Pencil,
-  CalendarClock,
-  Repeat,
-  ChevronLeft,
-  ChevronRight,
-  ArrowRight,
-  RotateCcw,
-  Zap,
-} from "lucide-react";
+import { useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight, Loader2, Plus, Trash2 } from "lucide-react";
+import { useWallet } from "@/context/WalletContext";
+import type { CardItem } from "@/types";
 import { AddCardSheet } from "@/components/ui/AddCardSheet";
 import { AddTransactionSheet } from "@/components/ui/AddTransactionSheet";
-import { EditRecurringSheet } from "@/components/ui/EditRecurringSheet";
-import { TransactionDetailsSheet } from "@/components/ui/TransactionDetailsSheet";
 import { AppleConfirmModal } from "@/components/ui/AppleConfirmModal";
-import { AppleScopeModal } from "@/components/ui/AppleScopeModal";
-import { MiniCard } from "@/components/wallet";
-import { getPlanningMonths, getPeriodKey, MONTH_NAMES_PT } from "@/lib/utils/dateUtils";
-import {
-  getInvoiceDueDate,
-  getLedgerEntryDate,
-  getCardOpenInvoiceDetails,
-  getCardInvoiceDetailsForMonth,
-} from "@/lib/utils/ledger";
-import type { RecurringItem } from "@/types";
+import { useNotify } from "@/components/ui/macos/Notifications";
+import { CardsDashboard } from "@/components/cards/CardsDashboard";
+import { CardInvoicesBoard } from "@/components/cards/CardInvoicesBoard";
+import { CommitmentsList } from "@/components/cards/CommitmentsList";
+import { CardDot, Money, Sheet, formatBRL, parseCurrencyInput } from "@/components/cards/cardUi";
+import { monthName, monthNameLower, shiftPeriodKey, type InvoiceStatus } from "@/lib/utils/creditCardEngine";
+
+type Tab = "overview" | "invoices" | "plans";
+
+const TABS: { id: Tab; label: string }[] = [
+  { id: "overview", label: "Visão geral" },
+  { id: "invoices", label: "Faturas" },
+  { id: "plans", label: "Parcelas e assinaturas" },
+];
 
 export default function CardsPage() {
-  const {
-    cards,
-    transactions,
-    recurringItems,
-    deleteTransaction,
-    updateTransaction,
-    updateRecurringItem,
-    updateRecurringItemOccurrence,
-    deleteRecurringItem,
-    deleteRecurringItemOccurrence,
-    updateCardLimit,
-    updateCardBillingCycle,
-    payInvoice,
-    unpayInvoice,
-    mainBalance,
-    addCard,
-    deleteCard,
-    getMonthlyProjection,
-    accountOptions,
-  } = useWallet();
+  const { cards, cardStatements, accountOptions, addCard, mainBalance } = useWallet();
+  const creditCards = useMemo(() => cards.filter((card) => card.type === "credit"), [cards]);
 
-  const [editingCardId, setEditingCardId] = useState<string | null>(null);
-  const [newLimitInput, setNewLimitInput] = useState("");
-  const [editingBillingCycle, setEditingBillingCycle] = useState<{
-    cardId: string; closingDay: string; dueDay: string;
-  } | null>(null);
-  const [isSavingBillingCycle, setIsSavingBillingCycle] = useState(false);
-  const [billingCycleError, setBillingCycleError] = useState<string | null>(null);
-  const [paymentSuccessMessage, setPaymentSuccessMessage] = useState<string | null>(null);
-  const [paymentErrorMessage, setPaymentErrorMessage] = useState<string | null>(null);
-  const [isPayingInvoice, setIsPayingInvoice] = useState(false);
+  const [tab, setTab] = useState<Tab>("overview");
+  const [focusIds, setFocusIds] = useState<string[]>([]);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [isAddCardOpen, setIsAddCardOpen] = useState(false);
-  const [isAddTransactionOpen, setIsAddTransactionOpen] = useState(false);
-  const [selectedCardForTx, setSelectedCardForTx] = useState<string>("NuBank");
-  
-  // Modais de Edição e Exclusão
-  const [txToDelete, setTxToDelete] = useState<TransactionItem | null>(null);
-  const [editingTransaction, setEditingTransaction] = useState<TransactionItem | null>(null);
-  const [editingRecurringItem, setEditingRecurringItem] = useState<RecurringItem | null>(null);
-  const [isEditRecurringOpen, setIsEditRecurringOpen] = useState(false);
-  const [recurringToDelete, setRecurringToDelete] = useState<RecurringItem | null>(null);
-  const [deleteRecurringScopeModal, setDeleteRecurringScopeModal] = useState<boolean>(false);
+  const [purchaseAccount, setPurchaseAccount] = useState<string | null>(null);
+  const [managingCard, setManagingCard] = useState<CardItem | null>(null);
 
-  const [confirmPayModal, setConfirmPayModal] = useState<{
-    isOpen: boolean;
-    cardId: string;
-    cardName: string;
-    amount: number;
-    monthName: string;
-    periodKey?: string;
-  } | null>(null);
-  const [confirmDeleteCardModal, setConfirmDeleteCardModal] = useState<{
-    isOpen: boolean;
-    cardId: string;
-    cardName: string;
-  } | null>(null);
-
-  const formatCurrency = (val: number) =>
-    val.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-  const creditCards = cards.filter((c) => c.type === "credit");
-  const invoicePaymentAccount = cards.find((card) => card.type === "checking");
-
-  // Competência padrão da fatura aberta (ou fechada aguardando pagamento no mês atual)
-  const defaultReferenceDueDate = useMemo(() => {
-    const now = new Date();
-    if (creditCards.length > 0) {
-      const currentMonthDetails = getCardInvoiceDetailsForMonth(
-        creditCards[0],
-        transactions,
-        recurringItems,
-        now.getFullYear(),
-        now.getMonth(),
-        now
-      );
-      if (!currentMonthDetails.isPaid && currentMonthDetails.totalInvoice > 0) {
-        return currentMonthDetails.dueDate;
-      }
-      return getCardOpenInvoiceDetails(creditCards[0], transactions, recurringItems, now).dueDate;
-    }
-    return new Date(now.getFullYear(), now.getMonth(), 10);
-  }, [creditCards, transactions, recurringItems]);
-
-  const defaultPeriodKey = useMemo(() => {
-    return getPeriodKey(
-      defaultReferenceDueDate.getFullYear(),
-      defaultReferenceDueDate.getMonth()
-    );
-  }, [defaultReferenceDueDate]);
-
-  // Janela de meses: 1 mês anterior + mês atual da fatura aberta + 6 meses futuros (Total 8 meses)
-  const invoiceMonths = useMemo(() => {
-    const list = [];
-    const baseYear = defaultReferenceDueDate.getFullYear();
-    const baseMonth = defaultReferenceDueDate.getMonth();
-
-    for (let offset = -1; offset <= 6; offset++) {
-      const d = new Date(baseYear, baseMonth + offset, 1);
-      const y = d.getFullYear();
-      const m = d.getMonth();
-      const key = getPeriodKey(y, m);
-      list.push({
-        year: y,
-        monthIndex: m,
-        periodKey: key,
-        short: MONTH_NAMES_PT[m],
-        name: `${MONTH_NAMES_PT[m]} de ${y}`,
-        isOpenInvoice: key === defaultPeriodKey,
-        isPast: offset < 0,
-        isFuture: offset > 0,
-      });
-    }
-    return list;
-  }, [defaultReferenceDueDate, defaultPeriodKey]);
-
-  const [selectedPeriodKey, setSelectedPeriodKey] = useState<string>(defaultPeriodKey);
-
-  // Mês atualmente selecionado
-  const selectedMonth = useMemo(() => {
-    return (
-      invoiceMonths.find((m) => m.periodKey === selectedPeriodKey) ||
-      invoiceMonths.find((m) => m.periodKey === defaultPeriodKey) ||
-      invoiceMonths[1] ||
-      invoiceMonths[0]
-    );
-  }, [invoiceMonths, selectedPeriodKey, defaultPeriodKey]);
-
-  const selectedMonthIndexInList = invoiceMonths.findIndex(
-    (m) => m.periodKey === selectedMonth.periodKey
+  const statements = useMemo(
+    () => creditCards.map((card) => cardStatements[card.id]).filter(Boolean),
+    [creditCards, cardStatements]
   );
 
-  // Pré-cálculo dos totais e status de pagamento por mês para exibição na régua de navegação
-  const { monthTotals, monthPaidStatus } = useMemo(() => {
-    const totals: Record<string, number> = {};
-    const paidStatus: Record<string, boolean> = {};
-    for (const m of invoiceMonths) {
-      let sum = 0;
-      let hasAnyBilledOrPaid = false;
-      let allBilledArePaid = true;
-      for (const card of creditCards) {
-        const details = getCardInvoiceDetailsForMonth(
-          card,
-          transactions,
-          recurringItems,
-          m.year,
-          m.monthIndex
-        );
-        sum += details.totalInvoice;
-        if (details.totalInvoice > 0 || details.paidAmount > 0) {
-          if (details.paidAmount > 0) {
-            hasAnyBilledOrPaid = true;
-          }
-          if (!details.isPaid) {
-            allBilledArePaid = false;
-          }
-        }
-      }
-      totals[m.periodKey] = sum;
-      paidStatus[m.periodKey] = hasAnyBilledOrPaid && allBilledArePaid;
-    }
-    return { monthTotals: totals, monthPaidStatus: paidStatus };
-  }, [invoiceMonths, creditCards, transactions, recurringItems]);
+  // Fatura padrão: a primeira que ainda precisa ser paga; senão, a que está aberta.
+  const defaultKey = useMemo(() => {
+    const unpaid = statements
+      .flatMap((s) => s.invoices.filter((invoice) => invoice.outstanding > 0.005 && invoice.key <= s.currentCycleKey))
+      .map((invoice) => invoice.key)
+      .sort()[0];
+    if (unpaid) return unpaid;
+    return statements.map((s) => s.currentCycleKey).sort()[0] || null;
+  }, [statements]);
+  const activeKey = selectedKey || defaultKey;
 
-  // Detalhes calculados dos cartões para o mês selecionado
-  const cardDetailsList = useMemo(() => {
-    return creditCards.map((card) => {
-      return getCardInvoiceDetailsForMonth(
-        card,
-        transactions,
-        recurringItems,
-        selectedMonth.year,
-        selectedMonth.monthIndex
-      );
-    });
-  }, [creditCards, transactions, recurringItems, selectedMonth]);
+  const toggleFocus = (cardId: string) =>
+    setFocusIds((prev) => (prev.includes(cardId) ? prev.filter((id) => id !== cardId) : [...prev, cardId]));
 
-  const totalSelectedMonthInvoices = cardDetailsList.reduce(
-    (acc, d) => acc + d.totalInvoice,
-    0
-  );
-
-  const handlePrevMonth = () => {
-    if (selectedMonthIndexInList > 0) {
-      setSelectedPeriodKey(invoiceMonths[selectedMonthIndexInList - 1].periodKey);
-    }
+  const openInvoice = (periodKey: string, cardId?: string) => {
+    setSelectedKey(periodKey);
+    if (cardId) setFocusIds([cardId]);
+    setTab("invoices");
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const handleNextMonth = () => {
-    if (selectedMonthIndexInList < invoiceMonths.length - 1) {
-      setSelectedPeriodKey(invoiceMonths[selectedMonthIndexInList + 1].periodKey);
-    }
-  };
-
-  const handleStartEditLimit = (cardId: string, currentLimit: number) => {
-    setEditingCardId(cardId);
-    setNewLimitInput(
-      currentLimit.toLocaleString("pt-BR", {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      })
-    );
-  };
-
-  const parseCurrencyInput = (raw: string): number => {
-    const cleaned = raw.replace(/[R$\s]/g, "").trim();
-    if (!cleaned) return NaN;
-    if (cleaned.includes(",") && cleaned.includes(".")) {
-      return parseFloat(cleaned.replace(/\./g, "").replace(",", "."));
-    }
-    if (cleaned.includes(",")) {
-      return parseFloat(cleaned.replace(",", "."));
-    }
-    return parseFloat(cleaned);
-  };
-
-  const handleSaveLimit = (cardId: string) => {
-    const num = parseCurrencyInput(newLimitInput);
-    if (!isNaN(num) && num > 0) {
-      updateCardLimit(cardId, num);
-      setPaymentSuccessMessage("Limite do cartão atualizado com sucesso!");
-      setTimeout(() => setPaymentSuccessMessage(null), 3500);
-    }
-    setEditingCardId(null);
-  };
-
-  const handleExecutePayInvoice = async () => {
-    if (!confirmPayModal) return;
-    const { cardId, cardName, amount, periodKey, monthName } = confirmPayModal;
-    setIsPayingInvoice(true);
-    try {
-      await payInvoice(cardId, amount, periodKey || selectedMonth.periodKey);
-      setConfirmPayModal(null);
-      setPaymentSuccessMessage(
-        `Fatura do ${cardName} (${monthName}) marcada como paga. Saída registrada em ${invoicePaymentAccount?.name}.`
-      );
-      setTimeout(() => setPaymentSuccessMessage(null), 4000);
-    } catch (error) {
-      setPaymentErrorMessage(
-        error instanceof Error ? error.message : "Não foi possível registrar o pagamento da fatura."
-      );
-      setTimeout(() => setPaymentErrorMessage(null), 5000);
-    } finally {
-      setIsPayingInvoice(false);
-    }
-  };
-
-  const handleUndoPayInvoice = async (cardId: string, cardName: string, periodKey: string) => {
-    setIsPayingInvoice(true);
-    try {
-      await unpayInvoice(cardId, periodKey);
-      setPaymentSuccessMessage(`Pagamento da fatura do ${cardName} desfeito.`);
-      setTimeout(() => setPaymentSuccessMessage(null), 4000);
-    } catch (error) {
-      setPaymentErrorMessage(
-        error instanceof Error ? error.message : "Não foi possível desfazer o pagamento da fatura."
-      );
-      setTimeout(() => setPaymentErrorMessage(null), 5000);
-    } finally {
-      setIsPayingInvoice(false);
-    }
-  };
-
-  const handleStartEditRecurring = (item: RecurringItem) => {
-    setEditingRecurringItem(item);
-    setIsEditRecurringOpen(true);
-  };
-
-  const handleSaveRecurring = async (
-    id: string,
-    updates: Partial<RecurringItem>,
-    scope: "all" | "single",
-    periodKey?: string
-  ) => {
-    const targetPeriod = periodKey || selectedMonth.periodKey;
-    if (scope === "single" && periodKey) {
-      await updateRecurringItemOccurrence(id, periodKey, updates);
-    } else {
-      await updateRecurringItem(id, updates, targetPeriod);
-    }
-    const realizedTx = transactions.find((t) => {
-      if (t.recurringItemId !== id) return false;
-      if (t.periodKey === targetPeriod || !t.periodKey) return true;
-      const tDate = getLedgerEntryDate(t);
-      if (tDate) {
-        const card = cards.find((c) => c.id === t.cardId || c.name === t.account);
-        if (card && card.type === "credit") {
-          const due = getInvoiceDueDate(card, tDate);
-          if (getPeriodKey(due.getFullYear(), due.getMonth()) === targetPeriod) {
-            return true;
-          }
-        }
-      }
-      return false;
-    });
-
-    if (realizedTx) {
-      await updateTransaction(realizedTx.id, {
-        title: updates.title || realizedTx.title,
-        amount: updates.amount ?? realizedTx.amount,
-        type: realizedTx.type,
-        category: updates.category || realizedTx.category,
-        account: updates.account || realizedTx.account,
-        cardId: updates.cardId !== undefined ? updates.cardId : realizedTx.cardId,
-        date: realizedTx.date,
-        occurredAt: getLedgerEntryDate(realizedTx) || new Date(),
-      });
-    }
-
-    setPaymentSuccessMessage("Compra programada atualizada com sucesso!");
-    setTimeout(() => setPaymentSuccessMessage(null), 4000);
-  };
-
-  const handleStartDeleteRecurring = (item: RecurringItem) => {
-    setRecurringToDelete(item);
-    setDeleteRecurringScopeModal(true);
-  };
-
-  const handleConfirmDeleteRecurringScope = async (
-    scope: "single" | "all",
-    targetItemOrId?: RecurringItem | string | null,
-    customPeriodKey?: string
-  ) => {
-    const itemToDelete =
-      (typeof targetItemOrId === "object" && targetItemOrId !== null ? targetItemOrId : null) ||
-      recurringToDelete ||
-      editingRecurringItem ||
-      (typeof targetItemOrId === "string" ? recurringItems.find((r) => r.id === targetItemOrId) : null);
-
-    if (!itemToDelete) return;
-    const id = itemToDelete.id;
-    const periodKey = customPeriodKey || selectedMonth.periodKey;
-
-    if (scope === "all") {
-      // Exclui a série inteira no planejamento recorrente
-      await deleteRecurringItem(id);
-
-      // Exclui todas as transações realizadas geradas por esta série recorrente
-      const linkedTxs = transactions.filter((t) => t.recurringItemId === id);
-      for (const tx of linkedTxs) {
-        await deleteTransaction(tx.id);
-      }
-    } else {
-      // Exclui apenas esta competência
-      await deleteRecurringItemOccurrence(id, periodKey);
-
-      // Encontra e exclui qualquer transação física realizada nesta fatura vinculada
-      const matchingTxs = transactions.filter((t) => {
-        if (t.recurringItemId !== id) return false;
-        if (t.periodKey === periodKey) return true;
-        const tDate = getLedgerEntryDate(t);
-        if (tDate) {
-          const tKey = getPeriodKey(tDate.getFullYear(), tDate.getMonth());
-          if (tKey === periodKey) return true;
-          const card = cards.find((c) => c.id === t.cardId || c.name === t.account);
-          if (card && card.type === "credit") {
-            const due = getInvoiceDueDate(card, tDate);
-            if (getPeriodKey(due.getFullYear(), due.getMonth()) === periodKey) {
-              return true;
-            }
-          }
-        }
-        return false;
-      });
-
-      for (const tx of matchingTxs) {
-        await deleteTransaction(tx.id);
-        if (tx.periodKey && tx.periodKey !== periodKey) {
-          await deleteRecurringItemOccurrence(id, tx.periodKey);
-        }
-      }
-    }
-
-    setDeleteRecurringScopeModal(false);
-    setRecurringToDelete(null);
-    setEditingRecurringItem(null);
-    setIsEditRecurringOpen(false);
-    setPaymentSuccessMessage("Programação excluída com sucesso!");
-    setTimeout(() => setPaymentSuccessMessage(null), 4000);
-  };
+  const focusedCards = focusIds.length > 0 ? creditCards.filter((card) => focusIds.includes(card.id)) : creditCards;
 
   return (
-    <div className="min-h-full bg-[#F2F2F7] p-4 sm:p-6 md:p-10 text-[#1D1D1F] font-sans space-y-6 animate-in fade-in duration-500">
-      {/* Header Superior */}
-      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 max-w-4xl mx-auto pt-2 md:pt-0">
+    <div className="min-h-full space-y-5 bg-[#F2F2F7] p-4 font-sans text-[#1D1D1F] animate-in fade-in duration-500 sm:p-6 md:p-10">
+      <header className="mx-auto flex max-w-4xl flex-col justify-between gap-4 pt-2 sm:flex-row sm:items-end md:pt-0">
         <div>
-          <span className="text-xs font-semibold tracking-wider uppercase text-[#86868B]">
-            Motor de Cartões de Crédito
-          </span>
-          <h1 className="text-3xl font-semibold tracking-tight text-[#1D1D1F] mt-0.5">
-            Cartões & Faturas
-          </h1>
+          <span className="text-xs font-semibold uppercase tracking-wider text-[#86868B]">Crédito</span>
+          <h1 className="mt-0.5 text-3xl font-semibold tracking-tight text-[#1D1D1F]">Cartões</h1>
         </div>
-
-        <div className="flex max-w-full flex-wrap items-center gap-2 sm:gap-3 self-start sm:self-auto">
-          <div className="flex items-center gap-2 whitespace-nowrap bg-white px-3.5 py-2 rounded-full border border-black/[0.04] shadow-xs">
-            <span className="text-xs text-[#86868B]">Saldo Disponível:</span>
-            <span className="text-xs font-semibold text-[#1D1D1F] font-mono tabular-nums">
-              R$ {formatCurrency(mainBalance)}
-            </span>
-          </div>
-
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full border border-black/[0.04] bg-white px-3.5 py-2 text-xs text-[#86868B]">
+            Conta <Money value={mainBalance} className="font-semibold text-[#1D1D1F]" />
+          </span>
+          {creditCards.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setPurchaseAccount(focusedCards[0]?.name || creditCards[0].name)}
+              className="flex cursor-pointer items-center gap-1.5 rounded-full border border-black/[0.08] bg-white px-3.5 py-2 text-xs font-semibold text-[#1D1D1F] transition-all hover:bg-black/5 active:scale-[0.98]"
+            >
+              <Plus size={15} /> Nova compra
+            </button>
+          )}
           <button
-            onClick={() => {
-              setSelectedCardForTx(creditCards[0]?.name || "NuBank");
-              setIsAddTransactionOpen(true);
-            }}
-            className="bg-white hover:bg-black/5 active:scale-[0.98] text-[#1D1D1F] border border-black/[0.08] text-xs font-semibold px-3.5 py-2 rounded-full transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
-          >
-            <Plus strokeWidth={2} size={15} />
-            <span className="whitespace-nowrap">Nova Compra</span>
-          </button>
-
-          <button
+            type="button"
             onClick={() => setIsAddCardOpen(true)}
-            className="bg-[#1D1D1F] hover:bg-black active:scale-[0.98] text-white text-xs font-semibold px-4 py-2 rounded-full transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+            className="flex cursor-pointer items-center gap-1.5 rounded-full bg-[#1D1D1F] px-4 py-2 text-xs font-semibold text-white transition-all active:scale-[0.98]"
           >
-            <Plus strokeWidth={2} size={15} />
-            <span className="whitespace-nowrap">Novo Cartão</span>
+            <Plus size={15} /> Novo cartão
           </button>
         </div>
       </header>
 
-      <div className="max-w-4xl mx-auto space-y-6">
-        {paymentSuccessMessage && (
-          <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-2xl flex items-center gap-2.5 text-xs font-medium animate-in fade-in">
-            <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
-            <span>{paymentSuccessMessage}</span>
-          </div>
-        )}
-
-        {paymentErrorMessage && (
-          <div className="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-3 rounded-2xl flex items-center gap-2.5 text-xs font-medium animate-in fade-in">
-            <AlertCircle size={16} className="text-rose-600 shrink-0" />
-            <span>{paymentErrorMessage}</span>
-          </div>
-        )}
-
-        {/* Informação sobre a Regra de Negócio (agent.md Seção 5.3) */}
-        <div className="bg-white rounded-[20px] p-5 border border-black/[0.04] shadow-[0_2px_8px_rgba(0,0,0,0.04)] flex items-start gap-3.5">
-          <div className="w-9 h-9 rounded-xl bg-[#F2F2F7] text-[#1D1D1F] flex items-center justify-center shrink-0">
-            <ShieldCheck strokeWidth={1.5} size={18} />
-          </div>
-          <div className="text-xs space-y-1">
-            <h3 className="font-semibold text-[#1D1D1F]">Controle Inteligente de Crédito</h3>
-            <p className="text-[#86868B] leading-relaxed">
-              Monitore suas faturas presentes e futuras mês a mês. Compras parceladas e cobranças programadas entram na competência correta pelo fechamento do cartão. O seu Saldo Principal só é debitado quando você efetua o pagamento da fatura.
+      <div className="mx-auto max-w-4xl space-y-5">
+        {creditCards.length === 0 ? (
+          <div className="space-y-3 rounded-[24px] border border-black/[0.04] bg-white p-8 text-center">
+            <h2 className="text-base font-semibold text-[#1D1D1F]">Nenhum cartão de crédito ainda</h2>
+            <p className="mx-auto max-w-sm text-xs text-[#86868B]">
+              Adicione um cartão com o dia de fechamento e de vencimento para acompanhar faturas, limite e parcelas.
             </p>
+            <button
+              type="button"
+              onClick={() => setIsAddCardOpen(true)}
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-[#1D1D1F] px-5 py-2.5 text-xs font-semibold text-white"
+            >
+              <Plus size={15} /> Adicionar cartão
+            </button>
           </div>
-        </div>
+        ) : (
+          <>
+            <nav className="no-scrollbar flex gap-1 overflow-x-auto rounded-full bg-white p-1 shadow-[0_1px_3px_rgba(0,0,0,0.04)]" aria-label="Seções de cartões">
+              {TABS.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setTab(item.id)}
+                  aria-current={tab === item.id ? "page" : undefined}
+                  className={`flex-1 shrink-0 cursor-pointer whitespace-nowrap rounded-full px-4 py-2 text-xs font-semibold transition-all ${
+                    tab === item.id ? "bg-[#1D1D1F] text-white shadow-xs" : "text-[#86868B] hover:text-[#1D1D1F]"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </nav>
 
-        {/* Régua de Navegação Temporal das Faturas (Apple HIG Segmented Control) */}
-        <div className="bg-white rounded-[24px] p-4 sm:p-5 border border-black/[0.05] shadow-[0_2px_8px_rgba(0,0,0,0.03)] space-y-3">
-          <div className="flex items-center justify-between gap-2 px-1">
-            <div className="flex items-center gap-2">
-              <CalendarClock size={16} className="text-[#86868B]" />
-              <span className="text-xs font-semibold uppercase tracking-wider text-[#86868B]">
-                Competência da Fatura
-              </span>
-            </div>
-
-            {selectedMonth.periodKey !== defaultPeriodKey && (
-              <button
-                type="button"
-                onClick={() => setSelectedPeriodKey(defaultPeriodKey)}
-                className="text-[11px] font-semibold text-[#0071E3] hover:underline flex items-center gap-1 cursor-pointer transition-colors"
-              >
-                <span>Voltar para Fatura Atual ({invoiceMonths.find((m) => m.periodKey === defaultPeriodKey)?.short})</span>
-              </button>
+            {creditCards.length > 1 && tab !== "overview" && (
+              <div className="no-scrollbar flex gap-2 overflow-x-auto">
+                <FocusChip active={focusIds.length === 0} onClick={() => setFocusIds([])} label="Todos" />
+                {creditCards.map((card) => (
+                  <FocusChip key={card.id} active={focusIds.includes(card.id)} onClick={() => toggleFocus(card.id)} label={card.name} card={card} />
+                ))}
+              </div>
             )}
-          </div>
 
-          <div className="flex items-center gap-2">
-            {/* Botão Mês Anterior */}
-            <button
-              type="button"
-              onClick={handlePrevMonth}
-              disabled={selectedMonthIndexInList <= 0}
-              className="w-8 h-8 rounded-full bg-[#F2F2F7] hover:bg-[#E5E5EA] disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-[#1D1D1F] transition-all cursor-pointer shrink-0"
-              title="Ver mês anterior"
-            >
-              <ChevronLeft size={16} />
-            </button>
+            {tab === "overview" && (
+              <CardsDashboard
+                creditCards={creditCards}
+                statements={cardStatements}
+                focusIds={focusIds}
+                onToggleFocus={toggleFocus}
+                onOpenInvoice={(key) => openInvoice(key)}
+                onOpenPlans={() => setTab("plans")}
+                onManageCard={setManagingCard}
+              />
+            )}
 
-            {/* Scroll Horizontal de Meses */}
-            <div className="flex-1 overflow-x-auto no-scrollbar flex items-center gap-2 py-1 px-0.5">
-              {invoiceMonths.map((m) => {
-                const isSelected = m.periodKey === selectedPeriodKey;
-                const total = monthTotals[m.periodKey] || 0;
-                const isMonthPaid = monthPaidStatus[m.periodKey] || false;
-
-                return (
-                  <button
-                    key={m.periodKey}
-                    type="button"
-                    onClick={() => setSelectedPeriodKey(m.periodKey)}
-                    className={`min-w-[108px] sm:min-w-[124px] px-3.5 py-2.5 rounded-2xl flex flex-col items-center justify-center gap-0.5 transition-all text-center cursor-pointer shrink-0 ${
-                      isSelected
-                        ? "bg-[#1D1D1F] text-white shadow-xs scale-[1.02]"
-                        : "bg-[#F8F8FA] hover:bg-[#EFEFF4] text-[#1D1D1F] border border-black/[0.04]"
-                    }`}
-                  >
-                    <div className="flex items-center gap-1">
-                      <span className="text-xs font-semibold tracking-tight">
-                        {m.short}
-                      </span>
-                      <span className={`text-[10px] ${isSelected ? "text-white/70" : "text-[#86868B]"}`}>
-                        {m.year}
-                      </span>
-                      {isMonthPaid ? (
-                        <span
-                          className={`text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded-full ${
-                            isSelected
-                              ? "bg-emerald-500/25 text-emerald-200 border border-emerald-400/30"
-                              : "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                          }`}
-                        >
-                          Paga
-                        </span>
-                      ) : m.isOpenInvoice ? (
-                        <span
-                          className={`text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded-full ${
-                            isSelected
-                              ? "bg-white/20 text-white"
-                              : "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                          }`}
-                        >
-                          Aberta
-                        </span>
-                      ) : null}
-                    </div>
-                    <span
-                      className={`text-[11px] font-mono tabular-nums font-semibold ${
-                        isSelected
-                          ? isMonthPaid
-                            ? "text-emerald-300"
-                            : "text-white"
-                          : isMonthPaid
-                            ? "text-emerald-700"
-                            : "text-[#1D1D1F]"
-                      }`}
-                    >
-                      R$ {formatCurrency(total)}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Botão Próximo Mês */}
-            <button
-              type="button"
-              onClick={handleNextMonth}
-              disabled={selectedMonthIndexInList >= invoiceMonths.length - 1}
-              className="w-8 h-8 rounded-full bg-[#F2F2F7] hover:bg-[#E5E5EA] disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-[#1D1D1F] transition-all cursor-pointer shrink-0"
-              title="Ver próximo mês"
-            >
-              <ChevronRight size={16} />
-            </button>
-          </div>
-        </div>
-
-        {/* Lista Detalhada de Cartões de Crédito para o Mês Selecionado */}
-        <section className="bg-[#F8F8FA] rounded-[24px] p-5 sm:p-6 border border-black/[0.04] space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-black/[0.04]">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-[#1D1D1F] text-white flex items-center justify-center shrink-0 shadow-xs">
-                <CreditCard size={16} strokeWidth={2} />
+            {tab === "invoices" && activeKey && (
+              <div className="space-y-4">
+                <InvoiceMonthStrip
+                  activeKey={activeKey}
+                  defaultKey={defaultKey}
+                  cards={focusedCards}
+                  statements={cardStatements}
+                  onSelect={setSelectedKey}
+                />
+                <CardInvoicesBoard
+                  periodKey={activeKey}
+                  cardIds={focusIds}
+                  onAddPurchase={(name) => setPurchaseAccount(name)}
+                />
               </div>
-              <div>
-                <span className="text-xs font-semibold uppercase tracking-wider text-[#86868B]">
-                  Faturas dos Cartões
-                </span>
-                <h2 className="text-sm font-semibold text-[#1D1D1F] tracking-tight mt-0.5">
-                  {creditCards.length}{" "}
-                  {creditCards.length === 1
-                    ? "cartão com fatura a pagar em"
-                    : "cartões com faturas a pagar em"}{" "}
-                  {selectedMonth.short} {selectedMonth.year}
-                </h2>
-              </div>
-            </div>
+            )}
 
-            <div className="flex sm:flex-col sm:items-end justify-between items-center shrink-0">
-              <div className="text-right">
-                <span className="text-[11px] text-[#86868B] mr-1.5 font-medium">
-                  Valor Somado:
-                </span>
-                <span className="text-lg sm:text-xl font-semibold text-[#1D1D1F] tracking-tight font-mono tabular-nums">
-                  R$ {formatCurrency(totalSelectedMonthInvoices)}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {creditCards.length === 0 ? (
-            <div className="bg-white rounded-[20px] p-8 border border-black/[0.04] text-center space-y-4">
-              <div className="w-12 h-12 rounded-2xl bg-[#F2F2F7] text-[#1D1D1F] flex items-center justify-center mx-auto">
-                <CreditCard size={24} strokeWidth={1.5} />
-              </div>
-              <div className="space-y-1 max-w-md mx-auto">
-                <h3 className="text-base font-semibold text-[#1D1D1F]">
-                  Nenhum cartão de crédito cadastrado
-                </h3>
-                <p className="text-xs text-[#86868B]">
-                  Adicione um cartão para controlar faturas, limites e datas de fechamento/vencimento.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsAddCardOpen(true)}
-                className="bg-[#1D1D1F] hover:bg-black text-white text-xs font-semibold px-5 py-3 rounded-xl transition-all cursor-pointer shadow-xs inline-flex items-center gap-1.5"
-              >
-                <Plus size={15} />
-                <span>Adicionar Primeiro Cartão</span>
-              </button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-4">
-              {cardDetailsList.map((details) => {
-                const card = details.card;
-                const invoice = details.totalInvoice;
-                const isEditing = editingCardId === card.id;
-
-                // Separação de itens programados e compras avulsas, evitando qualquer duplicação
-                const pendingRecurringList = details.recurringItemDetails.filter((recDetail) => {
-                  return !details.cardTransactions.some(
-                    (tx) => tx.recurringItemId === recDetail.item.id
-                  );
-                });
-
-                const regularTransactionsList = details.cardTransactions.filter(
-                  (tx) => !tx.recurringItemId
-                );
-                const realizedRecurringTransactionsList = details.cardTransactions.filter(
-                  (tx) => Boolean(tx.recurringItemId)
-                );
-
-                return (
-                  <div
-                    key={card.id}
-                    className="bg-white rounded-[20px] p-5 sm:p-6 border border-black/[0.05] shadow-2xs hover:shadow-xs transition-shadow space-y-4"
-                  >
-                    {/* Topo do Cartão: MiniCard, Identificação e Fatura */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <MiniCard
-                          cardName={card.name}
-                          brand={card.brand}
-                          colorScheme={card.colorScheme}
-                        />
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-sm font-semibold text-[#1D1D1F]">
-                              {card.name}
-                            </h3>
-                            {details.isPaid ? (
-                              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                ✓ Paga na conta
-                              </span>
-                            ) : details.isOpenInvoice ? (
-                              <span className="text-[10px] font-semibold text-[#86868B] px-2 py-0.5 rounded-full bg-[#F2F2F7]">
-                                A pagar dia {details.dueDay} ({details.dueMonthName})
-                              </span>
-                            ) : details.isFutureInvoice ? (
-                              <span className="text-[10px] font-semibold text-indigo-700 px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-200">
-                                Fatura Prevista ({details.dueMonthName})
-                              </span>
-                            ) : (
-                              <span className="text-[10px] font-semibold text-[#86868B] px-2 py-0.5 rounded-full bg-[#F2F2F7]">
-                                Fatura Encerrada ({details.dueMonthName})
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-[#86868B] mt-0.5">
-                            Vencimento dia {details.dueDay} de {details.dueMonthName} · Fechamento dia {details.closingDay}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-gray-100">
-                        <div className="text-left sm:text-right">
-                          <span className="text-[10px] uppercase font-semibold tracking-wider text-[#86868B] block">
-                            {details.isPaid && details.paidAmount > 0
-                              ? `Fatura ${card.name} (Paga)`
-                              : `Fatura ${card.name}`}
-                          </span>
-                          <span
-                            className={`text-base sm:text-lg font-semibold tracking-tight font-mono tabular-nums ${
-                              details.isPaid && details.paidAmount > 0
-                                ? "text-emerald-600"
-                                : "text-[#1D1D1F]"
-                            }`}
-                          >
-                            R$ {formatCurrency(details.isPaid && details.paidAmount > 0 ? details.paidAmount : invoice)}
-                          </span>
-                          {card.limit > 0 && (
-                            <span className="text-[10px] text-[#86868B] block mt-0.5">
-                              Limite: <span className="font-mono tabular-nums">R$ {formatCurrency(card.limit)}</span> · Disp:{" "}
-                              <strong className="text-emerald-700 font-semibold font-mono tabular-nums">
-                                R$ {formatCurrency(details.availableLimit)}
-                              </strong>
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-2 flex-wrap justify-end">
-                          {!details.isPaid && invoice > 0 ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setConfirmPayModal({
-                                  isOpen: true,
-                                  cardId: card.id,
-                                  cardName: card.name,
-                                  amount: details.pendingInvoice > 0 ? details.pendingInvoice : invoice,
-                                  monthName: details.dueMonthName,
-                                  periodKey: details.periodKey,
-                                })
-                              }
-                              className="touch-target inline-flex items-center gap-1.5 text-xs font-semibold bg-[#1D1D1F] hover:bg-black text-white px-3.5 py-1.5 rounded-full transition-all cursor-pointer shadow-2xs active:scale-95 shrink-0"
-                              title={`Marcar fatura de ${details.dueMonthName} do ${card.name} como paga e debitar da Conta Principal`}
-                            >
-                              <Zap size={12} className="text-amber-400 fill-amber-400 shrink-0" />
-                              <span>Marcar como paga</span>
-                            </button>
-                          ) : details.paidAmount > 0 ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                void handleUndoPayInvoice(card.id, card.name, details.periodKey)
-                              }
-                              disabled={isPayingInvoice}
-                              className="touch-target inline-flex items-center gap-1.5 text-xs font-semibold bg-emerald-50 hover:bg-rose-50 hover:text-rose-600 text-emerald-700 border border-emerald-200/70 hover:border-rose-200 px-3 py-1.5 rounded-full transition-all cursor-pointer active:scale-95 shrink-0 group"
-                              title="Desfazer pagamento da fatura"
-                            >
-                              <RotateCcw size={12} className="group-hover:rotate-[-45deg] transition-transform" />
-                              <span>Desfazer pagamento</span>
-                            </button>
-                          ) : null}
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingBillingCycle({
-                                cardId: card.id,
-                                closingDay: String(card.closingDay || 1),
-                                dueDay: String(card.dueDay || 10),
-                              });
-                              setBillingCycleError(null);
-                            }}
-                            disabled={isSavingBillingCycle}
-                            className="touch-target inline-flex items-center gap-1 text-xs font-semibold text-[#1D1D1F] bg-[#F2F2F7] hover:bg-[#E5E5EA] px-3 py-1.5 rounded-full transition-colors cursor-pointer shrink-0 disabled:opacity-50"
-                            title={`Alterar fechamento e vencimento do ${card.name}`}
-                          >
-                            <CalendarClock size={12} />
-                            <span>Alterar datas</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleStartEditLimit(card.id, card.limit)}
-                            className="touch-target inline-flex items-center gap-1 text-xs font-semibold text-[#1D1D1F] bg-[#F2F2F7] hover:bg-[#E5E5EA] px-3 py-1.5 rounded-full transition-colors cursor-pointer shrink-0"
-                            title={`Alterar limite do ${card.name}`}
-                          >
-                            <SlidersHorizontal size={12} />
-                            <span>Alterar Limite</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedCardForTx(card.name);
-                              setIsAddTransactionOpen(true);
-                            }}
-                            className="touch-target text-xs font-semibold text-[#0071E3] hover:text-[#0077ED] px-2.5 py-1.5 rounded-full hover:bg-blue-50/50 transition-colors cursor-pointer shrink-0"
-                            title={`Adicionar compra no ${card.name}`}
-                          >
-                            + Compra
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setConfirmDeleteCardModal({
-                                isOpen: true,
-                                cardId: card.id,
-                                cardName: card.name,
-                              })
-                            }
-                            className="touch-min w-7 h-7 rounded-full text-[#86868B] hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors cursor-pointer"
-                            title="Excluir Cartão"
-                          >
-                            <Trash2 size={13} strokeWidth={1.5} />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    {editingBillingCycle?.cardId === card.id && (
-                      <form
-                        className="space-y-3 rounded-2xl border border-black/[0.08] bg-[#F2F2F7]/90 p-3"
-                        onSubmit={async (event) => {
-                          event.preventDefault();
-                          setIsSavingBillingCycle(true);
-                          setBillingCycleError(null);
-                          try {
-                            await updateCardBillingCycle(card.id, Number(editingBillingCycle.closingDay), Number(editingBillingCycle.dueDay));
-                            setEditingBillingCycle(null);
-                            setPaymentSuccessMessage("Fechamento e vencimento atualizados com sucesso!");
-                            setTimeout(() => setPaymentSuccessMessage(null), 3500);
-                          } catch (error) {
-                            setBillingCycleError(error instanceof Error ? error.message : "Não foi possível salvar as datas. Tente novamente.");
-                          } finally {
-                            setIsSavingBillingCycle(false);
-                          }
-                        }}
-                      >
-                        <div className="flex flex-wrap items-end gap-3">
-                          <label className="flex flex-col gap-1 text-xs font-medium text-[#86868B]">
-                            Dia do fechamento
-                            <input
-                              type="number" min={1} max={31} step={1} required
-                              value={editingBillingCycle.closingDay}
-                              onChange={(event) => setEditingBillingCycle({ ...editingBillingCycle, closingDay: event.target.value })}
-                              disabled={isSavingBillingCycle}
-                              className="w-24 rounded-lg border border-black/10 bg-white px-3 py-2 text-sm text-[#1D1D1F] outline-none focus:border-[#0071E3]"
-                            />
-                          </label>
-                          <label className="flex flex-col gap-1 text-xs font-medium text-[#86868B]">
-                            Dia do vencimento
-                            <input
-                              type="number" min={1} max={31} step={1} required
-                              value={editingBillingCycle.dueDay}
-                              onChange={(event) => setEditingBillingCycle({ ...editingBillingCycle, dueDay: event.target.value })}
-                              disabled={isSavingBillingCycle}
-                              className="w-24 rounded-lg border border-black/10 bg-white px-3 py-2 text-sm text-[#1D1D1F] outline-none focus:border-[#0071E3]"
-                            />
-                          </label>
-                          <button type="submit" disabled={isSavingBillingCycle} className="rounded-full bg-[#0071E3] px-4 py-2 text-xs font-semibold text-white cursor-pointer disabled:opacity-50">
-                            {isSavingBillingCycle ? "Salvando..." : "Salvar datas"}
-                          </button>
-                          <button type="button" disabled={isSavingBillingCycle} onClick={() => setEditingBillingCycle(null)} className="px-2 py-2 text-xs text-[#86868B] cursor-pointer disabled:opacity-50">
-                            Cancelar
-                          </button>
-                        </div>
-                        <p className="text-[11px] text-[#86868B]">As compras e parcelas serão redistribuídas nas faturas conforme essas datas. Em meses mais curtos, usamos o último dia do mês.</p>
-                        {billingCycleError && <p role="alert" className="text-xs text-rose-600">{billingCycleError}</p>}
-                      </form>
-                    )}
-
-                    {/* Barra de Progresso de Limite e Ajuste */}
-                    <div className="space-y-2 pt-1">
-                      <div className="flex flex-wrap justify-between items-center gap-2 text-xs">
-                        <span className="text-[#86868B]">
-                          Limite Utilizado:{" "}
-                          <strong className="text-[#1D1D1F] font-mono tabular-nums">
-                            R$ {formatCurrency(card.spent)}
-                          </strong>{" "}
-                          <span className="text-[11px] text-[#86868B]">
-                            (Disponível: R$ {formatCurrency(details.availableLimit)} de R$ {formatCurrency(card.limit)})
-                          </span>
-                        </span>
-                        <div className="flex items-center gap-2">
-                          {!isEditing && (
-                            <button
-                              type="button"
-                              onClick={() => handleStartEditLimit(card.id, card.limit)}
-                              className="touch-target text-[#0071E3] hover:text-[#0077ED] font-semibold flex items-center gap-1 cursor-pointer text-xs"
-                            >
-                              <Pencil size={11} />
-                              <span>Editar limite</span>
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      {isEditing && (
-                        <div className="flex flex-wrap items-center justify-between gap-3 bg-[#F2F2F7]/90 border border-black/[0.08] p-3 rounded-2xl animate-in fade-in duration-200">
-                          <div className="flex items-center gap-2 flex-1 min-w-[180px]">
-                            <span className="text-xs font-semibold text-[#86868B] shrink-0">
-                              Novo Limite: R$
-                            </span>
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              placeholder="Ex: 5.000,00"
-                              value={newLimitInput}
-                              onChange={(e) => setNewLimitInput(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") handleSaveLimit(card.id);
-                                if (e.key === "Escape") setEditingCardId(null);
-                              }}
-                              className="w-full max-w-[160px] bg-white border border-black/10 focus:border-[#0071E3] rounded-xl px-3 py-1.5 text-[#1D1D1F] font-semibold outline-none text-sm font-mono tabular-nums"
-                              autoFocus
-                            />
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleSaveLimit(card.id)}
-                              className="inline-flex items-center gap-1 bg-[#1D1D1F] hover:bg-black text-white text-xs font-semibold px-3.5 py-1.5 rounded-xl transition-colors cursor-pointer"
-                            >
-                              <Check size={13} />
-                              <span>Salvar limite</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setEditingCardId(null)}
-                              className="inline-flex items-center gap-1 bg-white hover:bg-gray-100 text-[#86868B] hover:text-[#1D1D1F] border border-black/10 text-xs font-medium px-3 py-1.5 rounded-xl transition-colors cursor-pointer"
-                            >
-                              <X size={13} />
-                              <span>Cancelar</span>
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="w-full h-1.5 bg-[#F2F2F7] rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all duration-500 ${
-                            details.percentUsed > 85 ? "bg-rose-500" : "bg-[#1D1D1F]"
-                          }`}
-                          style={{ width: `${details.percentUsed}%` }}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Composição da Fatura */}
-                    <div className="bg-[#FBFBFD] rounded-2xl p-4 border border-black/[0.03] space-y-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#86868B] border-b border-black/[0.04] pb-2">
-                        <span className="font-medium text-[#1D1D1F]">
-                          Composição da Fatura ({details.dueMonthName})
-                        </span>
-                        <div className="flex items-center gap-3">
-                          {details.hasInstallments && (
-                            <span>
-                              Compras:{" "}
-                              <strong className="text-[#1D1D1F] font-mono tabular-nums">
-                                R$ {formatCurrency(details.installmentsAmount)}
-                              </strong>
-                            </span>
-                          )}
-                          {details.hasRecurring && (
-                            <span>
-                              Contas Programadas:{" "}
-                              <strong className="text-violet-900 font-mono tabular-nums">
-                                R$ {formatCurrency(details.recurringAmount)}
-                              </strong>
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Grupo 1: Compras Programadas & Assinaturas com Visual Destacado */}
-                      {(pendingRecurringList.length > 0 || realizedRecurringTransactionsList.length > 0) && (
-                        <div className="space-y-2 pt-1">
-                          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-violet-900 px-0.5">
-                            <Repeat size={12} className="text-violet-600" />
-                            <span>
-                              Compras Programadas & Assinaturas (
-                              {pendingRecurringList.length + realizedRecurringTransactionsList.length}
-                              )
-                            </span>
-                          </div>
-
-                          <div className="space-y-2">
-                            {/* Ocorrências pendentes calculadas para este mês */}
-                            {pendingRecurringList.map((recDetail) => {
-                              const item = recDetail.item;
-                              return (
-                                <div
-                                  key={`pending-${item.id}-${selectedMonth.periodKey}`}
-                                  className="group flex items-center justify-between gap-3 bg-[#FAF8FF] hover:bg-[#F5F0FF] p-3 rounded-xl border border-violet-200/90 shadow-2xs transition-all"
-                                >
-                                  <div className="flex items-center gap-2.5 min-w-0">
-                                    <div className="w-8 h-8 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center shrink-0 shadow-2xs">
-                                      {recDetail.isContinuous ? (
-                                        <Repeat size={14} strokeWidth={2.2} />
-                                      ) : (
-                                        <CalendarClock size={14} strokeWidth={2.2} />
-                                      )}
-                                    </div>
-                                    <div className="min-w-0">
-                                      <div className="flex items-center gap-1.5 flex-wrap">
-                                        <p className="font-semibold text-[#1D1D1F] text-xs truncate">
-                                          {item.title}
-                                        </p>
-                                        {recDetail.isContinuous ? (
-                                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-violet-100 text-violet-800 border border-violet-200/80 inline-flex items-center gap-1 shrink-0">
-                                            <Repeat size={10} strokeWidth={2.5} /> Recorrente mensal
-                                          </span>
-                                        ) : (
-                                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 border border-purple-200/80 inline-flex items-center gap-1 shrink-0">
-                                            <CalendarClock size={10} strokeWidth={2.5} /> Parcela{" "}
-                                            {recDetail.installmentIndex} de {recDetail.totalInstallments}
-                                          </span>
-                                        )}
-                                      </div>
-                                      <p className="text-[11px] text-[#86868B] truncate mt-0.5">
-                                        {item.category || "Conta Programada"} · Todo dia {item.dueDay || 10}
-                                      </p>
-                                    </div>
-                                  </div>
-
-                                  <div className="flex items-center gap-2 shrink-0">
-                                    <span className="font-semibold text-violet-950 font-mono tabular-nums text-xs">
-                                      R$ {formatCurrency(item.amount)}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleStartEditRecurring(item)}
-                                      className="touch-pad p-1.5 rounded-lg text-violet-700 hover:text-violet-900 hover:bg-violet-100 transition-colors cursor-pointer"
-                                      title="Editar compra programada"
-                                    >
-                                      <Pencil size={13} strokeWidth={1.75} />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleStartDeleteRecurring(item)}
-                                      className="touch-pad p-1.5 rounded-lg text-[#86868B] hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                                      title="Excluir compra programada"
-                                    >
-                                      <Trash2 size={13} strokeWidth={1.75} />
-                                    </button>
-                                  </div>
-                                </div>
-                              );
-                            })}
-
-                            {/* Ocorrências já lançadas fisicamente como transação */}
-                            {realizedRecurringTransactionsList.map((tx) => {
-                              const linkedItem = recurringItems.find(
-                                (r) => r.id === tx.recurringItemId
-                              );
-                              const matchedRecDetail = details.recurringItemDetails.find(
-                                (d) => d.item.id === tx.recurringItemId
-                              );
-                              const isInstallmentPlan = Boolean(
-                                linkedItem?.installmentsCount && linkedItem.installmentsCount > 1
-                              );
-                              const installmentIdx = matchedRecDetail?.installmentIndex || 1;
-                              const totalInst =
-                                linkedItem?.installmentsCount ||
-                                matchedRecDetail?.totalInstallments;
-                              return (
-                                <div
-                                  key={tx.id}
-                                  className="group flex items-center justify-between gap-3 bg-[#FAF8FF] hover:bg-[#F5F0FF] p-3 rounded-xl border border-violet-200/90 shadow-2xs transition-all"
-                                >
-                                  <div className="flex items-center gap-2.5 min-w-0">
-                                    <div className="w-8 h-8 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center shrink-0 shadow-2xs">
-                                      {isInstallmentPlan ? (
-                                        <CalendarClock size={14} strokeWidth={2.2} />
-                                      ) : (
-                                        <Repeat size={14} strokeWidth={2.2} />
-                                      )}
-                                    </div>
-                                    <div className="min-w-0">
-                                      <div className="flex items-center gap-1.5 flex-wrap">
-                                        <p className="font-semibold text-[#1D1D1F] text-xs truncate">
-                                          {tx.title}
-                                        </p>
-                                        {isInstallmentPlan ? (
-                                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 border border-purple-200/80 inline-flex items-center gap-1 shrink-0">
-                                            <CalendarClock size={10} strokeWidth={2.5} /> Parcela{" "}
-                                            {installmentIdx} de {totalInst}
-                                          </span>
-                                        ) : (
-                                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-violet-100 text-violet-800 border border-violet-200/80 inline-flex items-center gap-1 shrink-0">
-                                            <Repeat size={10} strokeWidth={2.5} /> Recorrente mensal
-                                          </span>
-                                        )}
-                                      </div>
-                                      <p className="text-[11px] text-[#86868B] truncate mt-0.5">
-                                        {tx.category || (isInstallmentPlan ? "Compra Parcelada" : "Assinatura")} · Lançamento faturado
-                                      </p>
-                                    </div>
-                                  </div>
-
-                                  <div className="flex items-center gap-2 shrink-0">
-                                    <span className="font-semibold text-violet-950 font-mono tabular-nums text-xs">
-                                      R$ {formatCurrency(tx.amount)}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        if (linkedItem) {
-                                          handleStartEditRecurring(linkedItem);
-                                        } else {
-                                          setEditingTransaction(tx as TransactionItem);
-                                        }
-                                      }}
-                                      className="touch-pad p-1.5 rounded-lg text-violet-700 hover:text-violet-900 hover:bg-violet-100 transition-colors cursor-pointer"
-                                      title="Editar compra programada"
-                                    >
-                                      <Pencil size={13} strokeWidth={1.75} />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        if (linkedItem) {
-                                          handleStartDeleteRecurring(linkedItem);
-                                        } else {
-                                          setTxToDelete(tx as TransactionItem);
-                                        }
-                                      }}
-                                      className="touch-pad p-1.5 rounded-lg text-[#86868B] hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                                      title="Excluir compra programada"
-                                    >
-                                      <Trash2 size={13} strokeWidth={1.75} />
-                                    </button>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Grupo 2: Compras Faturadas e Parcelas Avulsas */}
-                      {regularTransactionsList.length > 0 && (
-                        <div className="space-y-2 pt-1">
-                          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[#1D1D1F] px-0.5">
-                            <CreditCard size={12} className="text-[#86868B]" />
-                            <span>Compras Faturadas ({regularTransactionsList.length})</span>
-                          </div>
-
-                          <div className="space-y-1.5">
-                            {regularTransactionsList.map((tx) => (
-                              <div
-                                key={tx.id}
-                                className="group flex items-center justify-between gap-3 bg-white hover:bg-gray-50/80 p-2.5 rounded-xl border border-black/[0.04] text-xs transition-colors"
-                              >
-                                <div className="flex items-center gap-2.5 min-w-0">
-                                  <div className="w-6 h-6 rounded-lg bg-[#F2F2F7] flex items-center justify-center text-[#1D1D1F] shrink-0">
-                                    <CreditCard size={12} strokeWidth={1.75} />
-                                  </div>
-                                  <div className="min-w-0">
-                                    <p className="font-medium text-[#1D1D1F] truncate">{tx.title}</p>
-                                    <p className="text-[10px] text-[#86868B] truncate">
-                                      {tx.category || "Despesa"}{" "}
-                                      {tx.installmentsCount && tx.installmentsCount > 1
-                                        ? `· ${tx.installmentsCount}x`
-                                        : ""}
-                                    </p>
-                                  </div>
-                                </div>
-
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                  <span className="font-semibold text-[#1D1D1F] font-mono tabular-nums">
-                                    R$ {formatCurrency(tx.amount)}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => setEditingTransaction(tx as TransactionItem)}
-                                    className="touch-pad text-[#86868B] hover:text-[#1D1D1F] transition-colors p-1 rounded-md hover:bg-black/5 cursor-pointer"
-                                    title="Editar lançamento"
-                                  >
-                                    <Pencil size={12} strokeWidth={1.5} />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setTxToDelete(tx as TransactionItem)}
-                                    className="touch-pad text-[#86868B] hover:text-rose-600 transition-colors opacity-70 group-hover:opacity-100 p-1 rounded-md hover:bg-rose-50 cursor-pointer"
-                                    title="Excluir lançamento"
-                                  >
-                                    <Trash2 size={12} strokeWidth={1.5} />
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Estado Vazio de Composição da Fatura */}
-                      {pendingRecurringList.length === 0 &&
-                        realizedRecurringTransactionsList.length === 0 &&
-                        regularTransactionsList.length === 0 && (
-                          <p className="text-xs text-[#86868B] py-2 text-center">
-                            Fatura zerada para {details.dueMonthName}. Nenhuma compra faturada ou assinatura vinculada a este cartão neste mês.
-                          </p>
-                        )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
-
-        {/* Projeção Real de Faturas Futuras nos Próximos Meses */}
-        {(() => {
-          const futureProjections = getPlanningMonths(5).slice(1).map((month, index) => {
-            const projection = getMonthlyProjection(index + 1);
-            return {
-              ...month,
-              openInvoice: projection.cardInstallments,
-              plannedCharges: projection.recurringCreditTotal,
-              total: projection.cardInstallments + projection.recurringCreditTotal,
-              periodKey: getPeriodKey(month.year, month.monthIndex),
-            };
-          });
-          const hasFutureCharges = futureProjections.some((month) => month.total > 0);
-
-          return (
-            <section className="bg-white rounded-[20px] p-6 border border-black/[0.04] shadow-[0_2px_8px_rgba(0,0,0,0.04)] space-y-4">
-              <div className="flex justify-between items-center">
-                <div>
-                  <h2 className="text-sm font-semibold text-[#1D1D1F]">Projeção de Faturas Futuras</h2>
-                  <p className="text-xs text-[#86868B]">Assinaturas e parcelas programadas nos cartões</p>
-                </div>
-                <span className="text-xs font-medium text-[#86868B] bg-[#F2F2F7] px-2.5 py-1 rounded-full">
-                  Próximos Meses
-                </span>
-              </div>
-
-              {hasFutureCharges ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 pt-2">
-                  {futureProjections.map((month) => {
-                    const isCurrentSelected = selectedMonth.periodKey === month.periodKey;
-                    return (
-                      <button
-                        key={`${month.year}-${month.monthIndex}`}
-                        type="button"
-                        onClick={() => setSelectedPeriodKey(month.periodKey)}
-                        className={`p-4 rounded-xl text-left transition-all cursor-pointer space-y-1.5 ${
-                          isCurrentSelected
-                            ? "bg-[#1D1D1F] text-white shadow-xs"
-                            : "bg-[#F2F2F7]/60 hover:bg-[#F2F2F7] text-[#1D1D1F]"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span
-                            className={`text-[11px] uppercase font-semibold tracking-wider ${
-                              isCurrentSelected ? "text-white/70" : "text-[#86868B]"
-                            }`}
-                          >
-                            {month.short} {month.year}
-                          </span>
-                          <ArrowRight
-                            size={12}
-                            className={isCurrentSelected ? "text-white" : "text-[#86868B]"}
-                          />
-                        </div>
-                        <div
-                          className={`text-lg font-semibold font-mono tabular-nums ${
-                            isCurrentSelected ? "text-white" : "text-[#1D1D1F]"
-                          }`}
-                        >
-                          R$ {formatCurrency(month.total)}
-                        </div>
-                        <p
-                          className={`text-[11px] font-mono tabular-nums truncate ${
-                            isCurrentSelected ? "text-white/80" : "text-[#86868B]"
-                          }`}
-                        >
-                          R$ {formatCurrency(month.openInvoice)} compras + R${" "}
-                          {formatCurrency(month.plannedCharges)} programados
-                        </p>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="p-5 rounded-xl bg-[#F2F2F7]/40 text-center space-y-1.5 border border-dashed border-gray-200">
-                  <p className="text-xs font-medium text-[#1D1D1F]">
-                    Nenhuma parcela ou assinatura futura programada no crédito.
-                  </p>
-                  <p className="text-xs text-[#86868B] max-w-sm mx-auto">
-                    Ao cadastrar compras parceladas ou assinaturas contínuas, a previsão de faturas futuras será exibida aqui e na régua temporal automaticamente.
-                  </p>
-                </div>
-              )}
-            </section>
-          );
-        })()}
+            {tab === "plans" && (
+              <CommitmentsList cards={focusedCards} statements={cardStatements} onOpenInvoice={openInvoice} />
+            )}
+          </>
+        )}
       </div>
 
-      {/* Modal Bottom Sheet de Criação de Novo Cartão */}
-      <AddCardSheet
-        isOpen={isAddCardOpen}
-        onClose={() => setIsAddCardOpen(false)}
-        onAddCard={addCard}
-      />
-
-      {/* Modal de Edição de Compra Programada / Assinatura */}
-      <EditRecurringSheet
-        isOpen={isEditRecurringOpen}
-        onClose={() => {
-          setIsEditRecurringOpen(false);
-          setEditingRecurringItem(null);
-        }}
-        item={editingRecurringItem}
-        currentPeriodKey={selectedMonth.periodKey}
-        currentMonthName={selectedMonth.name}
+      <AddCardSheet isOpen={isAddCardOpen} onClose={() => setIsAddCardOpen(false)} onAddCard={addCard} />
+      <AddTransactionSheet
+        isOpen={Boolean(purchaseAccount)}
+        onClose={() => setPurchaseAccount(null)}
         accounts={accountOptions}
-        cards={cards}
-        onSave={handleSaveRecurring}
-        onDelete={async (id, scope, periodKey) => {
-          await handleConfirmDeleteRecurringScope(scope, id, periodKey);
-        }}
+        initialAccount={purchaseAccount || undefined}
+        initialType="despesa"
       />
+      <ManageCardSheet card={managingCard} onClose={() => setManagingCard(null)} />
+    </div>
+  );
+}
 
-      {/* Modal de Seleção de Escopo para Exclusão de Compra Programada */}
-      <AppleScopeModal
-        isOpen={deleteRecurringScopeModal}
-        onClose={() => {
-          setDeleteRecurringScopeModal(false);
-          setRecurringToDelete(null);
-        }}
-        onSelectScope={(scope) => handleConfirmDeleteRecurringScope(scope, recurringToDelete)}
-        title="Excluir Compra Programada"
-        description={`Deseja excluir "${recurringToDelete?.title}" apenas da fatura de ${selectedMonth.name} ou cancelar a programação de todas as faturas futuras?`}
-        singleLabel={`Apenas na fatura de ${selectedMonth.short}`}
-        allLabel="Todas as faturas futuras"
-        cancelLabel="Cancelar"
-        variant="danger"
-      />
+function FocusChip({ active, onClick, label, card }: { active: boolean; onClick: () => void; label: string; card?: CardItem }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
+        active ? "bg-[#1D1D1F] text-white" : "border border-black/[0.06] bg-white text-[#1D1D1F] hover:bg-[#F8F8FA]"
+      }`}
+    >
+      {card && <CardDot card={card} size={8} />}
+      {label}
+    </button>
+  );
+}
 
-      {/* Modal Detalhado de Edição de Transação Avulsa do Cartão */}
-      {editingTransaction && (
-        <TransactionDetailsSheet
-          transaction={editingTransaction}
-          accounts={accountOptions}
-          cards={cards}
-          initialEditing={true}
-          onClose={() => setEditingTransaction(null)}
-          onSave={async (id, updates) => {
-            await updateTransaction(id, updates);
-            setEditingTransaction(null);
-            setPaymentSuccessMessage("Lançamento atualizado com sucesso!");
-            setTimeout(() => setPaymentSuccessMessage(null), 4000);
-          }}
-          onDelete={(tx) => {
-            setEditingTransaction(null);
-            setTxToDelete(tx);
-          }}
-        />
-      )}
+const STATUS_DOT: Partial<Record<InvoiceStatus, string>> = {
+  overdue: "bg-rose-500",
+  closed: "bg-amber-500",
+  open: "bg-indigo-500",
+  paid: "bg-emerald-500",
+};
 
-      {/* Modal de Confirmação para Pagamento de Fatura */}
+function InvoiceMonthStrip({
+  activeKey,
+  defaultKey,
+  cards,
+  statements,
+  onSelect,
+}: {
+  activeKey: string;
+  defaultKey: string | null;
+  cards: CardItem[];
+  statements: ReturnType<typeof useWallet>["cardStatements"];
+  onSelect: (key: string) => void;
+}) {
+  const base = defaultKey || activeKey;
+  const keys = Array.from({ length: 12 }, (_, index) => shiftPeriodKey(base, index - 3));
+  if (!keys.includes(activeKey)) keys.push(activeKey);
+  keys.sort();
+  const index = keys.indexOf(activeKey);
+
+  const summary = (key: string) => {
+    let total = 0;
+    let outstanding = 0;
+    const statuses: InvoiceStatus[] = [];
+    let referenceMonth: number | null = null;
+    for (const card of cards) {
+      const invoice = statements[card.id]?.getInvoice(key);
+      if (!invoice) continue;
+      total += invoice.total;
+      outstanding += invoice.outstanding;
+      if (invoice.status !== "empty") statuses.push(invoice.status);
+      referenceMonth ??= invoice.referenceMonth;
+    }
+    const priority: InvoiceStatus[] = ["overdue", "closed", "open", "future", "paid", "settled"];
+    const status = priority.find((candidate) => statuses.includes(candidate)) || "empty";
+    return { total, outstanding, status, referenceMonth };
+  };
+
+  const active = summary(activeKey);
+
+  return (
+    <section className="space-y-3 rounded-[24px] border border-black/[0.05] bg-white p-4 shadow-[0_2px_8px_rgba(0,0,0,0.03)] sm:p-5">
+      <div className="flex items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={() => index > 0 && onSelect(keys[index - 1])}
+          disabled={index <= 0}
+          className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full bg-[#F2F2F7] text-[#1D1D1F] disabled:opacity-30"
+          aria-label="Fatura anterior"
+        >
+          <ChevronLeft size={16} />
+        </button>
+        <div className="min-w-0 text-center">
+          <p className="text-sm font-semibold text-[#1D1D1F]">
+            Fatura de {monthName(Number(activeKey.split("-")[1]) - 1)} {activeKey.split("-")[0]}
+          </p>
+          <p className="text-xs text-[#86868B]">
+            {active.referenceMonth !== null ? `Referente aos gastos de ${monthNameLower(active.referenceMonth)}` : ""}
+            {active.total > 0 && <> · <Money value={active.total} className="text-[#1D1D1F]" /></>}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => index < keys.length - 1 && onSelect(keys[index + 1])}
+          disabled={index >= keys.length - 1}
+          className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full bg-[#F2F2F7] text-[#1D1D1F] disabled:opacity-30"
+          aria-label="Próxima fatura"
+        >
+          <ChevronRight size={16} />
+        </button>
+      </div>
+
+      <div className="no-scrollbar flex gap-1.5 overflow-x-auto py-0.5">
+        {keys.map((key) => {
+          const info = summary(key);
+          const selected = key === activeKey;
+          const month = Number(key.split("-")[1]) - 1;
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => onSelect(key)}
+              aria-pressed={selected}
+              className={`flex min-w-[78px] shrink-0 cursor-pointer flex-col items-center gap-0.5 rounded-2xl px-2.5 py-2 transition-all ${
+                selected ? "bg-[#1D1D1F] text-white" : "bg-[#F8F8FA] text-[#1D1D1F] hover:bg-[#F2F2F7]"
+              }`}
+            >
+              <span className="flex items-center gap-1 text-xs font-semibold">
+                {STATUS_DOT[info.status] && <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[info.status]}`} />}
+                {monthName(month).slice(0, 3)}
+                {key === defaultKey && !selected && <span className="text-[9px] font-bold uppercase text-indigo-600">agora</span>}
+              </span>
+              <span className={`text-[10px] ${selected ? "text-white/60" : "text-[#86868B]"}`}>
+                {info.referenceMonth !== null ? `gastos ${monthNameLower(info.referenceMonth).slice(0, 3)}` : ""}
+              </span>
+              <span className="font-mono text-[11px] font-semibold tabular-nums">
+                {info.total > 0 ? formatBRL(info.total) : "—"}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <p className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-[#86868B]">
+        <Legend dot="bg-rose-500" label="vencida" />
+        <Legend dot="bg-amber-500" label="fechada, a pagar" />
+        <Legend dot="bg-indigo-500" label="aberta" />
+        <Legend dot="bg-emerald-500" label="paga" />
+      </p>
+    </section>
+  );
+}
+
+function Legend({ dot, label }: { dot: string; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className={`h-1.5 w-1.5 rounded-full ${dot}`} /> {label}
+    </span>
+  );
+}
+
+function ManageCardSheet({ card, onClose }: { card: CardItem | null; onClose: () => void }) {
+  if (!card) return null;
+  return <ManageCardSheetInner key={card.id} card={card} onClose={onClose} />;
+}
+
+function ManageCardSheetInner({ card, onClose }: { card: CardItem; onClose: () => void }) {
+  const { updateCardLimit, updateCardBillingCycle, deleteCard, cards } = useWallet();
+  const notify = useNotify();
+  const [limit, setLimit] = useState(formatBRL(card.limit || 0));
+  const [closingDay, setClosingDay] = useState(String(card.closingDay || 1));
+  const [dueDay, setDueDay] = useState(String(card.dueDay || 10));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const save = async () => {
+    const parsedLimit = parseCurrencyInput(limit);
+    const closing = Number(closingDay);
+    const due = Number(dueDay);
+    if (!Number.isFinite(parsedLimit) || parsedLimit <= 0) {
+      setError("Informe um limite válido.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      if (Math.abs(parsedLimit - (card.limit || 0)) >= 0.005) updateCardLimit(card.id, parsedLimit);
+      if (closing !== card.closingDay || due !== card.dueDay) await updateCardBillingCycle(card.id, closing, due);
+      notify.success(`${card.name} atualizado.`);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível salvar.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <Sheet
+        isOpen
+        onClose={onClose}
+        title={`Ajustes do ${card.name}`}
+        subtitle="Limite e datas da fatura"
+        footer={
+          <div className="flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              disabled={cards.length <= 1}
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-full px-3 py-2 text-sm font-medium text-rose-600 disabled:opacity-40"
+            >
+              <Trash2 size={15} /> Excluir cartão
+            </button>
+            <button
+              type="button"
+              onClick={save}
+              disabled={saving}
+              className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-[#1D1D1F] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              {saving && <Loader2 size={15} className="animate-spin" />} Salvar
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <label className="block">
+            <span className="text-xs font-semibold uppercase tracking-wider text-[#86868B]">Limite total</span>
+            <div className="mt-1.5 flex items-center gap-2 rounded-2xl border border-black/[0.08] bg-[#F8F8FA] px-4 py-3 focus-within:border-[#0071E3]">
+              <span className="font-semibold text-[#86868B]">R$</span>
+              <input value={limit} onChange={(e) => setLimit(e.target.value)} inputMode="decimal" className="w-full bg-transparent font-mono text-lg font-semibold tabular-nums text-[#1D1D1F] outline-none" />
+            </div>
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <DayField label="Fecha no dia" value={closingDay} onChange={setClosingDay} />
+            <DayField label="Vence no dia" value={dueDay} onChange={setDueDay} />
+          </div>
+          <p className="rounded-2xl bg-[#F8F8FA] px-4 py-3 text-xs leading-relaxed text-[#86868B]">
+            Compras até o dia {closingDay || "?"} entram na fatura que vence no dia {dueDay || "?"}
+            {Number(dueDay) <= Number(closingDay) ? " do mês seguinte" : " do mesmo mês"}. Mudar as datas redistribui as compras e parcelas nas faturas.
+          </p>
+          {error && <p role="alert" className="text-xs text-rose-600">{error}</p>}
+        </div>
+      </Sheet>
       <AppleConfirmModal
-        isOpen={!!confirmPayModal?.isOpen}
-        onClose={() => setConfirmPayModal(null)}
-        onConfirm={handleExecutePayInvoice}
-        isLoading={isPayingInvoice}
-        title="Marcar fatura como paga"
-        description={`Confirme somente se você já pagou a fatura de ${confirmPayModal?.monthName} do cartão ${confirmPayModal?.cardName}. Será registrada uma saída de R$ ${formatCurrency(confirmPayModal?.amount || 0)} na conta ${invoicePaymentAccount?.name || "principal"} (saldo atual: R$ ${formatCurrency(invoicePaymentAccount?.balance || 0)}). O pagamento ao banco é feito por você.`}
-        confirmLabel="Marcar como paga"
-        cancelLabel="Cancelar"
-        variant="primary"
-        iconType="payment"
-      />
-
-      {/* Modal de Confirmação para Excluir Cartão */}
-      <AppleConfirmModal
-        isOpen={!!confirmDeleteCardModal?.isOpen}
-        onClose={() => setConfirmDeleteCardModal(null)}
+        isOpen={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
         onConfirm={() => {
-          if (confirmDeleteCardModal) {
-            deleteCard(confirmDeleteCardModal.cardId);
-            setConfirmDeleteCardModal(null);
-          }
+          deleteCard(card.id);
+          setConfirmDelete(false);
+          onClose();
         }}
-        title="Excluir Cartão"
-        description={`Tem certeza que deseja remover o cartão ${confirmDeleteCardModal?.cardName}? Esta ação removerá os limites e faturas associadas a ele.`}
-        confirmLabel="Excluir Cartão"
+        title="Excluir cartão"
+        description={`Remover o ${card.name}? As compras lançadas nele continuam no seu extrato.`}
+        confirmLabel="Excluir cartão"
         cancelLabel="Cancelar"
         variant="danger"
         iconType="trash"
       />
+    </>
+  );
+}
 
-      {/* Modal de Confirmação para Excluir Compra da Fatura */}
-      {txToDelete && (
-        <AppleConfirmModal
-          isOpen={Boolean(txToDelete)}
-          onClose={() => setTxToDelete(null)}
-          onConfirm={async () => {
-            if (txToDelete) {
-              await deleteTransaction(txToDelete.id);
-              setTxToDelete(null);
-              setPaymentSuccessMessage("Lançamento excluído com sucesso!");
-              setTimeout(() => setPaymentSuccessMessage(null), 4000);
-            }
-          }}
-          title="Excluir Lançamento"
-          description={`Deseja excluir a compra "${txToDelete.title}" de R$ ${formatCurrency(txToDelete.amount)}?`}
-          confirmLabel="Excluir"
-          cancelLabel="Cancelar"
-          variant="danger"
-          iconType="trash"
-        />
-      )}
-
-      {/* Modal Unificado de Lançamento de Transação / Compra */}
-      <AddTransactionSheet
-        isOpen={isAddTransactionOpen}
-        onClose={() => setIsAddTransactionOpen(false)}
-        accounts={accountOptions}
-        initialAccount={selectedCardForTx}
-        initialType="despesa"
+function DayField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="block">
+      <span className="text-xs font-semibold uppercase tracking-wider text-[#86868B]">{label}</span>
+      <input
+        type="number"
+        min={1}
+        max={31}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="mt-1.5 w-full rounded-2xl border border-black/[0.08] bg-[#F8F8FA] px-4 py-3 font-mono text-lg font-semibold tabular-nums text-[#1D1D1F] outline-none focus:border-[#0071E3]"
       />
-    </div>
+    </label>
   );
 }

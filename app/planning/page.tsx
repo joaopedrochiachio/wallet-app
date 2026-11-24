@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { useWallet, TransactionItem } from "@/context/WalletContext";
+import { useWallet } from "@/context/WalletContext";
 import {
   Plus,
   Trash2,
@@ -20,7 +20,7 @@ import { AppleConfirmModal } from "@/components/ui/AppleConfirmModal";
 import { AppleScopeModal } from "@/components/ui/AppleScopeModal";
 import { AddTransactionSheet } from "@/components/ui/AddTransactionSheet";
 import { MonthlyMovementOverview } from "@/components/planning/MonthlyMovementOverview";
-import { MiniCard } from "@/components/wallet";
+import { CardInvoicesBoard } from "@/components/cards/CardInvoicesBoard";
 import {
   get5thBusinessDay,
   getEffectiveDueDay,
@@ -82,17 +82,13 @@ export default function PlanningPage() {
     deleteRecurringItemOccurrence,
     toggleRecurringItem,
     deleteRecurringItem,
+    endRecurringItemFrom,
     realizeRecurringItemNow,
     unrealizeRecurringItem,
     getMonthlyProjection,
     accountOptions,
     cards,
     transactions,
-    addTransaction,
-    deleteTransaction,
-    payInvoice,
-    unpayInvoice,
-    mainBalance,
   } = useWallet();
   const notify = useNotify();
 
@@ -117,7 +113,6 @@ export default function PlanningPage() {
   const [itemToDelete, setItemToDelete] = useState<RecurringItem | null>(null);
   const [isCardAddSheetOpen, setIsCardAddSheetOpen] = useState(false);
   const [selectedCardForAdd, setSelectedCardForAdd] = useState<string>("NuBank");
-  const [txToDelete, setTxToDelete] = useState<TransactionItem | null>(null);
 
   // Form para novo item de planejamento
   const [newTitle, setNewTitle] = useState("");
@@ -163,17 +158,6 @@ export default function PlanningPage() {
     updates: Partial<RecurringItem>;
   } | null>(null);
 
-  const [confirmPayModal, setConfirmPayModal] = useState<{
-    isOpen: boolean;
-    cardId: string;
-    cardName: string;
-    amount: number;
-    periodKey?: string;
-    monthName?: string;
-  } | null>(null);
-  const [isPayingInvoice, setIsPayingInvoice] = useState(false);
-  const [paymentSuccessMessage, setPaymentSuccessMessage] = useState<string | null>(null);
-  const [paymentErrorMessage, setPaymentErrorMessage] = useState<string | null>(null);
 
   const activeMonthObj = planningMonths[selectedMonthIndex] || planningMonths[currentMonthIdx >= 0 ? currentMonthIdx : 0];
   const targetYear = activeMonthObj.year;
@@ -182,10 +166,6 @@ export default function PlanningPage() {
   const currentMonth5thBusinessDay = get5thBusinessDay(targetYear, targetMonth);
 
   const projection = getMonthlyProjection(selectedMonthIndex, planningMonths);
-  const nextMonthProjection =
-    selectedMonthIndex + 1 < planningMonths.length
-      ? getMonthlyProjection(selectedMonthIndex + 1, planningMonths)
-      : null;
   const previousProjection = selectedMonthIndex > 0
     ? getMonthlyProjection(selectedMonthIndex - 1, planningMonths)
     : null;
@@ -250,6 +230,7 @@ export default function PlanningPage() {
 
   const isScheduledForSelectedMonth = (item: RecurringItem) => {
     if (isInstallmentPaidInMonth(item, targetYear, targetMonth)) return false;
+    if (item.endPeriodKey && targetPeriodKey >= item.endPeriodKey) return false;
     if (item.excludedPeriods?.includes(targetPeriodKey) || item.overrides?.[targetPeriodKey]?.isDeleted) {
       return false;
     }
@@ -596,7 +577,8 @@ export default function PlanningPage() {
       if (scope === "single") {
         await deleteRecurringItemOccurrence(itemToDelete.id, targetPeriodKey);
       } else {
-        await deleteRecurringItem(itemToDelete.id);
+        // "Deste mês em diante" encerra a série sem apagar os meses anteriores.
+        await endRecurringItemFrom(itemToDelete.id, targetPeriodKey);
       }
     } catch (error) {
       notify.error(error instanceof Error ? error.message : "Não foi possível excluir o planejamento.");
@@ -644,41 +626,6 @@ export default function PlanningPage() {
       notify.error(error instanceof Error ? error.message : "Não foi possível efetivar o planejamento.");
     } finally {
       setProcessingItemId(null);
-    }
-  };
-
-  const handleExecutePayInvoice = async () => {
-    if (!confirmPayModal) return;
-    const { cardId, cardName, amount, periodKey, monthName } = confirmPayModal;
-    setIsPayingInvoice(true);
-    try {
-      await payInvoice(cardId, amount, periodKey || targetPeriodKey);
-      setConfirmPayModal(null);
-      setPaymentSuccessMessage(
-        `Fatura do ${cardName}${monthName ? ` (${monthName})` : ""} paga e debitada da conta como planejado!`
-      );
-      setTimeout(() => setPaymentSuccessMessage(null), 4500);
-    } catch (error) {
-      setPaymentErrorMessage(error instanceof Error ? error.message : "Não foi possível pagar a fatura.");
-      setTimeout(() => setPaymentErrorMessage(null), 5000);
-    } finally {
-      setIsPayingInvoice(false);
-    }
-  };
-
-  const handleUndoPayInvoice = async (cardId: string, cardName: string, periodKey: string) => {
-    setIsPayingInvoice(true);
-    try {
-      await unpayInvoice(cardId, periodKey);
-      setPaymentSuccessMessage(`Pagamento da fatura do ${cardName} desfeito.`);
-      setTimeout(() => setPaymentSuccessMessage(null), 4000);
-    } catch (error) {
-      setPaymentErrorMessage(
-        error instanceof Error ? error.message : "Não foi possível desfazer o pagamento da fatura."
-      );
-      setTimeout(() => setPaymentErrorMessage(null), 5000);
-    } finally {
-      setIsPayingInvoice(false);
     }
   };
 
@@ -1089,17 +1036,6 @@ export default function PlanningPage() {
       </header>
 
       <div className="max-w-4xl mx-auto space-y-6">
-        {paymentSuccessMessage && (
-          <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-2xl flex items-center gap-2.5 text-xs font-medium animate-in fade-in">
-            <span>✓ {paymentSuccessMessage}</span>
-          </div>
-        )}
-
-        {paymentErrorMessage && (
-          <div className="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-3 rounded-2xl flex items-center gap-2.5 text-xs font-medium animate-in fade-in">
-            <span>⚠ {paymentErrorMessage}</span>
-          </div>
-        )}
 
         {/* Navegação entre Meses (Controle Segmentado Suave Estilo iOS com opção de arquivar) */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
@@ -1482,251 +1418,33 @@ export default function PlanningPage() {
             </div>
           </div>
 
-          {/* 4.3 Faturas de Cartão de Crédito */}
+          {/* 4.3 Faturas de Cartão de Crédito — mesmo componente da tela Cartões */}
           <div className="space-y-3">
             <div className="flex items-center justify-between px-1">
               <div className="flex items-center gap-2">
                 <CreditCard size={15} className="text-[#6366F1]" strokeWidth={2} />
-                <h3 className="text-sm font-semibold text-[#1D1D1F] tracking-tight">
-                  Faturas de cartão de crédito
-                </h3>
+                <div>
+                  <h3 className="text-sm font-semibold text-[#1D1D1F] tracking-tight">
+                    Faturas que vencem em {activeMonthObj.short}
+                  </h3>
+                  <p className="text-[11px] text-[#86868B]">Cada fatura reúne os gastos do ciclo anterior ao vencimento.</p>
+                </div>
               </div>
-
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-semibold text-[#1D1D1F] font-mono tabular-nums">
-                  {(projection.totalInvoicesPending ?? creditCommitments) === 0 &&
-                  projection.totalInvoicesPaid > 0 ? (
-                    <span className="text-emerald-600 font-semibold">
-                      R$ {formatCurrency(projection.totalInvoicesScheduled || projection.totalInvoicesPaid)} (Paga)
-                    </span>
-                  ) : (
-                    <>
-                      − R$ {formatCurrency(projection.totalInvoicesPending ?? creditCommitments)}
-                      {projection.totalInvoicesPaid > 0 && (
-                        <span className="text-emerald-600 font-normal ml-1.5">
-                          (R$ {formatCurrency(projection.totalInvoicesPaid)} pagos)
-                        </span>
-                      )}
-                    </>
-                  )}
-                </span>
-
-                <button
-                  type="button"
-                  onClick={() => handleOpenModal("expense-credit")}
-                  className="text-xs font-medium text-[#0071E3] hover:text-[#0077ED] transition-colors flex items-center gap-1 cursor-pointer select-none"
-                >
-                  <Plus size={13} strokeWidth={2.2} />
-                  <span>Compra no cartão</span>
-                </button>
-              </div>
+              <span className="text-xs font-semibold text-[#1D1D1F] font-mono tabular-nums">
+                {projection.totalInvoicesPending > 0
+                  ? `− R$ ${formatCurrency(projection.totalInvoicesPending)}`
+                  : projection.totalInvoicesScheduled > 0
+                    ? <span className="text-emerald-600">Pagas</span>
+                    : null}
+              </span>
             </div>
-
-            {projection.cardInvoices.length === 0 ? (
-              <div className="bg-white rounded-[22px] border border-black/[0.04] shadow-[0_1px_4px_rgba(0,0,0,0.02)] p-7 text-center space-y-1.5">
-                <p className="text-sm font-medium text-[#1D1D1F]">
-                  Nenhum cartão de crédito cadastrado
-                </p>
-                <p className="text-xs text-[#86868B]">
-                  Cadastre seus cartões em Cartões &amp; Faturas para acompanhar e quitar faturas no planejamento.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {projection.cardInvoices.map((ci) => {
-                  const nextCardInvoice = nextMonthProjection?.cardInvoices.find(
-                    (n) => n.cardId === ci.cardId
-                  );
-                  const hasNextOpenToAdvance =
-                    ci.totalInvoice === 0 &&
-                    !ci.isPaid &&
-                    nextCardInvoice &&
-                    nextCardInvoice.pendingInvoice > 0;
-
-                  return (
-                    <div
-                      key={ci.cardId}
-                      className="bg-white rounded-[22px] border border-black/[0.04] shadow-[0_1px_4px_rgba(0,0,0,0.02)] overflow-hidden divide-y divide-gray-100"
-                    >
-                      {/* Cabeçalho da Fatura do Cartão */}
-                      <div className="p-4 sm:p-5 bg-[#FBFBFD] flex flex-col sm:flex-row sm:items-center justify-between gap-3.5">
-                        <div className="flex items-start sm:items-center gap-3 min-w-0">
-                          <div
-                            className="w-9 h-9 rounded-xl flex items-center justify-center text-white shrink-0 shadow-2xs"
-                            style={{ backgroundColor: ci.cardColor || "#1D1D1F" }}
-                          >
-                            <CreditCard size={17} strokeWidth={2} />
-                          </div>
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <h4 className="text-sm font-semibold text-[#1D1D1F] truncate">
-                                Fatura {ci.cardName}
-                              </h4>
-                              {ci.isPaid && ci.paidAmount > 0 ? (
-                                <span className="inline-flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                  <Check size={10} strokeWidth={3} />
-                                  Fatura paga
-                                </span>
-                              ) : ci.pendingInvoice > 0 ? (
-                                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200/70">
-                                  Vence dia {ci.dueDay} de {ci.invoiceDueMonthName || activeMonthObj.name}
-                                </span>
-                              ) : (
-                                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-gray-100 text-[#86868B]">
-                                  Sem fatura neste mês
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-xs text-[#86868B] mt-0.5">
-                              {ci.paidAmount > 0 && ci.pendingInvoice > 0
-                                ? `Pago: R$ ${formatCurrency(ci.paidAmount)} · Falta pagar: R$ ${formatCurrency(ci.pendingInvoice)}`
-                                : ci.isPaid && ci.paidAmount > 0
-                                  ? `Debitado da conta principal: R$ ${formatCurrency(ci.paidAmount)}`
-                                  : `Parcelas/compras: R$ ${formatCurrency(ci.installmentsAmount)} · Recorrentes: R$ ${formatCurrency(ci.recurringAmount)}`}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-gray-100">
-                          {!ci.isPaid && ci.pendingInvoice > 0 ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setConfirmPayModal({
-                                  isOpen: true,
-                                  cardId: ci.cardId,
-                                  cardName: ci.cardName,
-                                  amount: ci.pendingInvoice,
-                                  periodKey: ci.invoicePeriodKey || targetPeriodKey,
-                                  monthName: ci.invoiceDueMonthName || activeMonthObj.name,
-                                })
-                              }
-                              disabled={isPayingInvoice}
-                              className="touch-target inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-[#1D1D1F] hover:bg-black text-white transition-all cursor-pointer active:scale-95 disabled:opacity-50 shadow-2xs"
-                              title="Marcar fatura como paga e debitar da conta corrente como planejado"
-                            >
-                              {isPayingInvoice ? (
-                                <Loader2 size={13} className="animate-spin text-white" />
-                              ) : (
-                                <Zap size={13} className="text-amber-400 fill-amber-400 shrink-0" />
-                              )}
-                              <span>Paguei a fatura</span>
-                            </button>
-                          ) : ci.paidAmount > 0 ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                void handleUndoPayInvoice(
-                                  ci.cardId,
-                                  ci.cardName,
-                                  ci.invoicePeriodKey || targetPeriodKey
-                                )
-                              }
-                              disabled={isPayingInvoice}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-50 hover:bg-rose-50 hover:text-rose-600 text-emerald-700 border border-emerald-200/70 hover:border-rose-200 transition-all cursor-pointer active:scale-95 disabled:opacity-50 group"
-                              title="Desfazer pagamento da fatura"
-                            >
-                              <RotateCcw size={12} className="group-hover:rotate-[-45deg] transition-transform" />
-                              <span>Desfazer pagamento</span>
-                            </button>
-                          ) : hasNextOpenToAdvance && nextCardInvoice ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setConfirmPayModal({
-                                  isOpen: true,
-                                  cardId: ci.cardId,
-                                  cardName: ci.cardName,
-                                  amount: nextCardInvoice.pendingInvoice,
-                                  periodKey: nextCardInvoice.invoicePeriodKey,
-                                  monthName: nextCardInvoice.invoiceDueMonthName,
-                                })
-                              }
-                              disabled={isPayingInvoice}
-                              className="touch-target inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white transition-all cursor-pointer active:scale-95 disabled:opacity-50 shadow-2xs"
-                              title={`Antecipar e pagar agora a fatura de ${nextCardInvoice.invoiceDueMonthName}`}
-                            >
-                              <Zap size={12} className="text-amber-300 fill-amber-300 shrink-0" />
-                              <span>
-                                Paguei a fatura de {nextCardInvoice.invoiceDueMonthName} (R${" "}
-                                {formatCurrency(nextCardInvoice.pendingInvoice)})
-                              </span>
-                            </button>
-                          ) : null}
-
-                          <span
-                            className={`text-sm sm:text-base font-bold tracking-tight min-w-[95px] text-right font-mono tabular-nums ${
-                              ci.isPaid && ci.paidAmount > 0
-                                ? "text-emerald-600"
-                                : ci.pendingInvoice > 0
-                                  ? "text-[#1D1D1F]"
-                                  : "text-[#86868B]"
-                            }`}
-                          >
-                            R$ {formatCurrency(ci.isPaid ? ci.paidAmount : ci.pendingInvoice)}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Itens recorrentes que caem nesta fatura */}
-                      {ci.recurringItems.length > 0 && (
-                        <div className="divide-y divide-gray-100">
-                          {ci.recurringItems.map((item) =>
-                            renderItemRow(
-                              getEffectiveRecurringItemForPeriod(
-                                item,
-                                ci.invoicePeriodKey || targetPeriodKey
-                              ),
-                              "credit",
-                              ci.isPaid && ci.paidAmount > 0
-                            )
-                          )}
-                        </div>
-                      )}
-
-                      {/* Compras e parcelas faturadas nesta competência */}
-                      {ci.transactions.length > 0 && (
-                        <div className="divide-y divide-gray-100 bg-white">
-                          {ci.transactions.map((tx) => (
-                            <div
-                              key={tx.id}
-                              className="flex items-center justify-between gap-3 px-4 py-3 text-xs hover:bg-[#F9F9FB] transition-colors"
-                            >
-                              <div className="flex items-center gap-3 min-w-0">
-                                <span
-                                  className={`w-2 h-2 rounded-full shrink-0 ${
-                                    ci.isPaid && ci.paidAmount > 0 ? "bg-emerald-500" : "bg-indigo-500"
-                                  }`}
-                                />
-                                <div className="min-w-0">
-                                  <p className="font-medium text-[#1D1D1F] truncate">{tx.title}</p>
-                                  <p className="text-[11px] text-[#86868B] truncate">
-                                    {tx.category} · {tx.date}
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2 shrink-0">
-                                <span className="font-semibold text-[#1D1D1F] font-mono tabular-nums">
-                                  R$ {formatCurrency(tx.amount)}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => setTxToDelete(tx)}
-                                  className="touch-pad text-gray-300 hover:text-rose-500 transition-colors p-1 rounded-lg hover:bg-rose-50 cursor-pointer"
-                                  title="Excluir lançamento"
-                                >
-                                  <Trash2 size={13} />
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            <CardInvoicesBoard
+              periodKey={targetPeriodKey}
+              onAddPurchase={(name) => {
+                setSelectedCardForAdd(name);
+                setIsCardAddSheetOpen(true);
+              }}
+            />
           </div>
         </section>
 
@@ -2800,9 +2518,9 @@ export default function PlanningPage() {
           onClose={() => setItemToDelete(null)}
           onSelectScope={handleApplyDeleteScope}
           title="Excluir Planejamento"
-          description={`"${itemToDelete.title}" é um compromisso recorrente. Deseja remover apenas a ocorrência de ${activeMonthObj.name} ou todas as ocorrências deste compromisso?`}
+          description={`"${itemToDelete.title}" se repete. Os meses anteriores a ${activeMonthObj.short} ficam como estão em qualquer opção.`}
           singleLabel={`Excluir apenas deste mês (${activeMonthObj.short})`}
-          allLabel="Excluir de todos os meses"
+          allLabel={`De ${activeMonthObj.short} em diante`}
           cancelLabel="Manter compromisso"
           variant="danger"
         />
@@ -2830,21 +2548,6 @@ export default function PlanningPage() {
         />
       )}
 
-      {/* CONFIRMAÇÃO DE PAGAMENTO DE FATURA VIA CONTA PRINCIPAL */}
-      {confirmPayModal && (
-        <AppleConfirmModal
-          isOpen={confirmPayModal.isOpen}
-          onClose={() => setConfirmPayModal(null)}
-          onConfirm={handleExecutePayInvoice}
-          title={`Pagar Fatura do ${confirmPayModal.cardName}${confirmPayModal.monthName ? ` (${confirmPayModal.monthName})` : ""}`}
-          description={`Deseja confirmar o pagamento da fatura do ${confirmPayModal.cardName} no valor de R$ ${formatCurrency(confirmPayModal.amount)}? O valor será debitado da sua Conta Principal conforme planejado.`}
-          confirmLabel={isPayingInvoice ? "Pagando..." : "Confirmar Pagamento"}
-          cancelLabel="Cancelar"
-          variant="primary"
-          iconType="payment"
-        />
-      )}
-
       {/* MODAL SIMPLES UNIFICADO PARA LANÇAR COMPRAS EM CARTÃO */}
       <AddTransactionSheet
         isOpen={isCardAddSheetOpen}
@@ -2854,30 +2557,6 @@ export default function PlanningPage() {
         initialType="despesa"
       />
 
-      {/* CONFIRMAÇÃO DE EXCLUSÃO DE LANÇAMENTO */}
-      {txToDelete && (
-        <AppleConfirmModal
-          isOpen={Boolean(txToDelete)}
-          onClose={() => setTxToDelete(null)}
-          onConfirm={async () => {
-            if (txToDelete) {
-              try {
-                await deleteTransaction(txToDelete.id);
-              } catch (error) {
-                notify.error(error instanceof Error ? error.message : "Não foi possível excluir o lançamento.");
-              } finally {
-                setTxToDelete(null);
-              }
-            }
-          }}
-          title="Excluir Lançamento"
-          description={`Deseja excluir a compra "${txToDelete.title}" de R$ ${formatCurrency(txToDelete.amount)}?`}
-          confirmLabel="Excluir"
-          cancelLabel="Cancelar"
-          variant="danger"
-          iconType="trash"
-        />
-      )}
     </div>
   );
 }

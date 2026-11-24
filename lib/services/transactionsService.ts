@@ -358,33 +358,74 @@ export async function deleteTransactionFromFirestore(
     relatedSnapshot.docs.forEach((item) => batch.delete(item.ref));
   }
 
-  if (transaction.recurringItemId) {
+  if (transaction.recurringItemId && transaction.periodKey) {
     const recurringRef = doc(db, "users", userId, "recurring", transaction.recurringItemId);
     const recurringSnapshot = await getDoc(recurringRef);
     if (recurringSnapshot.exists()) {
-      const recData = recurringSnapshot.data() as RecurringItem;
-      const isInstallmentOrLimited = Boolean(
-        recData.installmentsCount && recData.installmentsCount >= 1
-      );
-      const realizedCount = recData.realizedPeriods?.length ?? 0;
-
-      // Se for compra parcelada/limitada com apenas essa ocorrência ou sem outras realizações,
-      // exclui a série inteira para não ficar órfã nem recriar transações indesejadas
-      if (isInstallmentOrLimited && realizedCount <= 1) {
-        batch.delete(recurringRef);
-      } else {
-        // Marca o período como excluído pontualmente para que o timeProgressionService
-        // JAMAIS recrie a transação automaticamente pelo catch-up!
-        const updates: Record<string, unknown> = {};
-        if (transaction.periodKey) {
-          updates.realizedPeriods = arrayRemove(transaction.periodKey);
-          updates.excludedPeriods = arrayUnion(transaction.periodKey);
-        }
-        batch.update(recurringRef, updates);
-      }
+      // Excluir um lançamento remove só aquela competência. A série (parcelas
+      // seguintes, assinatura) continua; encerrar a série é uma ação explícita.
+      batch.update(recurringRef, {
+        realizedPeriods: arrayRemove(transaction.periodKey),
+        excludedPeriods: arrayUnion(transaction.periodKey),
+      });
     }
   }
 
+  await batch.commit();
+}
+
+/**
+ * Encerra uma série (parcelamento/assinatura) a partir de `fromPeriodKey`.
+ * Competências anteriores e seus lançamentos ficam intactos; os lançamentos
+ * da competência escolhida em diante são removidos.
+ */
+export async function endRecurringSeriesFrom(
+  userId: string,
+  recurringItemId: string,
+  fromPeriodKey: string
+): Promise<void> {
+  if (!userId || !recurringItemId || !/^\d{4}-(0[1-9]|1[0-2])$/.test(fromPeriodKey)) {
+    throw new Error("Não foi possível identificar a partir de quando encerrar.");
+  }
+  const recurringRef = doc(db, "users", userId, "recurring", recurringItemId);
+  const [recurringSnapshot, linked] = await Promise.all([
+    getDoc(recurringRef),
+    getDocs(query(getTransactionsCollectionRef(userId), where("recurringItemId", "==", recurringItemId))),
+  ]);
+  const batch = writeBatch(db);
+  linked.docs.forEach((snapshotDoc) => {
+    const data = snapshotDoc.data();
+    let period: string | null = data.periodKey || null;
+    if (!period && data.occurredAt) {
+      const date = data.occurredAt?.toDate ? data.occurredAt.toDate() : new Date(data.occurredAt);
+      if (!Number.isNaN(date.getTime())) {
+        period = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      }
+    }
+    if (period && period >= fromPeriodKey) batch.delete(snapshotDoc.ref);
+  });
+  if (recurringSnapshot.exists()) {
+    const data = recurringSnapshot.data() as RecurringItem;
+    batch.update(recurringRef, {
+      endPeriodKey: fromPeriodKey,
+      realizedPeriods: (data.realizedPeriods || []).filter((period) => period < fromPeriodKey),
+    });
+  }
+  await batch.commit();
+}
+
+/** Apaga a série e TODOS os lançamentos dela, inclusive de faturas passadas. */
+export async function deleteRecurringSeriesWithHistory(
+  userId: string,
+  recurringItemId: string
+): Promise<void> {
+  if (!userId || !recurringItemId) return;
+  const linked = await getDocs(
+    query(getTransactionsCollectionRef(userId), where("recurringItemId", "==", recurringItemId))
+  );
+  const batch = writeBatch(db);
+  linked.docs.forEach((snapshotDoc) => batch.delete(snapshotDoc.ref));
+  batch.delete(doc(db, "users", userId, "recurring", recurringItemId));
   await batch.commit();
 }
 

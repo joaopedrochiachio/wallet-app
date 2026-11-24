@@ -124,6 +124,10 @@ export function getDueOccurrencesForRecurringItem(
       break;
     }
 
+    if (item.endPeriodKey && getPeriodKey(curYear, curMonth) >= item.endPeriodKey) {
+      break;
+    }
+
     if (monthOffset >= 0) {
       const periodKey = getPeriodKey(curYear, curMonth);
 

@@ -181,6 +181,18 @@ export function isInstallmentPaidInMonth(
   );
 }
 
+/**
+ * Série encerrada pelo usuário ("excluir desta competência em diante").
+ * As competências anteriores a `endPeriodKey` continuam valendo como histórico.
+ */
+export function isRecurringEndedInMonth(
+  item: { endPeriodKey?: string | null },
+  year: number,
+  month: number
+): boolean {
+  return Boolean(item.endPeriodKey && getPeriodKey(year, month) >= item.endPeriodKey);
+}
+
 export function isRecurringActiveInMonth(
   item: {
     active: boolean;
@@ -191,6 +203,7 @@ export function isRecurringActiveInMonth(
     startMonthIndex?: number;
     realizedPeriods?: string[];
     excludedPeriods?: string[];
+    endPeriodKey?: string | null;
     overrides?: Record<string, RecurringOverrideLike>;
   },
   targetYear: number,
@@ -199,6 +212,7 @@ export function isRecurringActiveInMonth(
   const periodKey = getPeriodKey(targetYear, targetMonth);
   if (
     !item.active ||
+    isRecurringEndedInMonth(item, targetYear, targetMonth) ||
     isInstallmentPaidInMonth(item, targetYear, targetMonth) ||
     item.realizedPeriods?.includes(periodKey) ||
     item.excludedPeriods?.includes(periodKey) ||

@@ -25,7 +25,8 @@ test.beforeAll(async () => {
     "next/link": `import React from "react";export default function Link({children,href,...props}){return <a href={href} {...props}>{children}</a>}`,
     "@/components/import/StatementImportModal": `export function StatementImportModal(){return null}`,
     "@/context/WalletContext": `
-      import React,{createContext,useContext,useState} from "react";
+      import React,{createContext,useContext,useMemo,useState} from "react";
+      import {buildCardStatement} from "@/lib/utils/creditCardEngine";
       const Context=createContext(null);export const useWallet=()=>useContext(Context);
       export function FixtureProvider({children}){
         const [active,setActive]=useState("nu");
@@ -41,7 +42,8 @@ test.beforeAll(async () => {
           if(window.__failNext){window.__failNext=false;throw new Error("Falha simulada. Tente novamente.");}
           window.__calls=[...(window.__calls||[]),{kind,...JSON.parse(JSON.stringify(payload))}];
         };
-        const wallet={cards,activeCard:cards.find(c=>c.id===active),selectCard:setActive,accountOptions:cards.map(c=>c.name),transactions,recurringItems:[],goals:[],isDataLoaded:true,mainBalance:1000,userProfile:{name:"Pessoa teste",persona:"guardian",categoryBudgets:[]},
+        const cardStatements=useMemo(()=>Object.fromEntries(cards.filter(c=>c.type==="credit").map(c=>[c.id,buildCardStatement(c,transactions,[],{today:new Date()})])),[transactions]);
+        const wallet={cards,cardStatements,moveCardCharge:async()=>{},removeCardCharge:async()=>{},endRecurringItemFrom:async()=>{},activeCard:cards.find(c=>c.id===active),selectCard:setActive,accountOptions:cards.map(c=>c.name),transactions,recurringItems:[],goals:[],isDataLoaded:true,mainBalance:1000,userProfile:{name:"Pessoa teste",persona:"guardian",categoryBudgets:[]},
           getMonthlyProjection:()=>({cardInstallments:0,recurringCreditTotal:0}),
           addTransaction:async tx=>record("add",{transaction:tx}),
           updateTransaction:async(id,updates)=>{await record("update",{id,updates});setTransactions(items=>items.map(tx=>tx.id===id?{...tx,...updates}:tx));},
@@ -146,20 +148,26 @@ test("movimentação de meta oferece destino útil em vez de edição ou exclus�
 
 test("fatura informa conta e valor ao registrar pagamento e mantém opção de desfazer", async ({ page }) => {
   await open(page, "/cards", 320);
-  for (const name of ["Nova Compra", "Novo Cartão"]) {
+  for (const name of ["Nova compra", "Novo cartão"]) {
     const bounds = await page.getByRole("button", { name, exact: true }).boundingBox();
     expect(bounds).not.toBeNull();
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(320);
   }
-  await page.getByRole("button", { name: "Marcar como paga", exact: true }).click();
-  await expect(page.getByText(/Será registrada uma saída de R\$ 35,00 na conta Conta Principal/)).toBeVisible();
+  await page.getByRole("button", { name: "Faturas", exact: true }).click();
+  await expect(page.getByText("Fatura de Dezembro 2026", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Referente aos gastos de novembro/)).toBeVisible();
+  await page.getByRole("button", { name: "Paguei a fatura", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Valor pago" })).toHaveValue("35,00");
+  await expect(page.getByText(/Sai da conta/)).toContainText("Conta Principal");
   await expect(page.getByRole("button", { name: "Pagar com W Pay", exact: true })).toHaveCount(0);
   await page.screenshot({ path: path.join(fixture.directory, "invoice-confirmation-mobile.png"), fullPage: true, animations: "disabled" });
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
-  await page.getByRole("button", { name: "Marcar como paga", exact: true }).last().click();
+  await page.getByRole("button", { name: "Confirmar pagamento", exact: true }).click();
   await expect.poll(() => calls(page)).toHaveLength(1);
-  expect((await calls(page))[0]).toMatchObject({ kind: "invoice", id: "nu", amount: 35 });
+  expect((await calls(page))[0]).toMatchObject({ kind: "invoice", id: "nu", amount: 35, periodKey: "2026-12" });
   await expect(page.getByRole("button", { name: "Desfazer pagamento", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Desfazer pagamento", exact: true }).click();
-  expect((await calls(page))[1]).toMatchObject({ kind: "undo", id: "nu" });
+  await page.getByRole("button", { name: "Desfazer", exact: true }).click();
+  await expect.poll(() => calls(page)).toHaveLength(2);
+  expect((await calls(page))[1]).toMatchObject({ kind: "undo", id: "nu", periodKey: "2026-12" });
 });

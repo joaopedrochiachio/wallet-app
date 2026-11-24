@@ -126,6 +126,8 @@ export interface RecurringItem {
   active: boolean;
   overrides?: Record<string, RecurringOverride>; // Competências customizadas individualmente, indexadas por YYYY-MM
   excludedPeriods?: string[]; // Competências excluídas individualmente, no formato YYYY-MM
+  /** Primeira competência (YYYY-MM) que deixa de ser cobrada. As anteriores ficam como histórico. */
+  endPeriodKey?: string | null;
 }
 
 export interface NewCardInput {

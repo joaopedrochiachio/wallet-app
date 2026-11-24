@@ -6,7 +6,9 @@ import {
   getEffectiveRecurringItemForPeriod,
   getEffectiveDueDay,
   MONTH_NAMES_PT,
+  isRecurringEndedInMonth,
 } from "./dateUtils.ts";
+import { getCachedCardStatement } from "./creditCardEngine.ts";
 
 export interface LedgerEntry {
   id?: string;
@@ -172,11 +174,9 @@ export function getCardInvoiceRecurringDetails(
   }
 
   const targetPeriodKey = getPeriodKey(invoiceYear, invoiceMonth);
-  const matchingCreditItems = recurringItems.filter(
-    (candidate) =>
-      candidate.type !== "income" &&
-      matchesLedgerCard(card, candidate.account, candidate.cardId)
-  );
+  // O cartão é avaliado por competência: uma compra movida para outro cartão
+  // continua no cartão antigo nos meses anteriores à mudança.
+  const matchingCreditItems = recurringItems.filter((candidate) => candidate.type !== "income");
 
   const matchedItems: RecurringItem[] = [];
   const itemDetails: CardInvoiceRecurringItemDetail[] = [];
@@ -193,8 +193,10 @@ export function getCardInvoiceRecurringDetails(
     for (const rawItem of matchingCreditItems) {
       if (!rawItem.active) continue;
       if (isInstallmentPaidInMonth(rawItem, candYear, candMonth)) continue;
+      if (isRecurringEndedInMonth(rawItem, candYear, candMonth)) continue;
 
       const item = getEffectiveRecurringItemForPeriod(rawItem, candPeriodKey);
+      if (!matchesLedgerCard(card, item.account, item.cardId)) continue;
 
       const monthOffset = getRecurringMonthOffset(rawItem, candYear, candMonth);
       const isScheduledForMonth =
@@ -499,7 +501,8 @@ export function calculateCreditInvoice(
   recurringItems: RecurringItem[] = [],
   referenceDate: Date = new Date()
 ): number {
-  return getCardOpenInvoiceDetails(card, entries, recurringItems, referenceDate).totalInvoice;
+  if (card.type !== "credit") return 0;
+  return getCachedCardStatement(card, entries, recurringItems, referenceDate).amountDue;
 }
 
 export interface InstallmentPurchaseSplit {
@@ -540,11 +543,8 @@ export function splitInstallmentPurchase(
 }
 
 /**
- * Calcula o limite total comprometido (utilizado) no cartão de crédito,
- * reproduzindo o funcionamento real de um cartão:
- * - Soma a fatura aberta atual (compras à vista, parcela do mês atual e assinaturas do ciclo aberto)
- * - Soma todas as parcelas futuras ainda não quitadas de compras parceladas (installmentsCount > 1),
- *   descontando do limite o valor integral da compra e liberando a cada fatura paga.
+ * Limite comprometido no cartão, como num cartão real: a compra parcelada
+ * consome o valor inteiro na hora e cada pagamento devolve o mesmo valor.
  */
 export function calculateCreditCardUsedLimit(
   card: CardItem,
@@ -553,63 +553,7 @@ export function calculateCreditCardUsedLimit(
   referenceDate: Date = new Date()
 ): number {
   if (card.type !== "credit") return 0;
-
-  const openDetails = getCardOpenInvoiceDetails(card, entries, recurringItems, referenceDate);
-  const { schedule, creditsByPeriod } = calculateInvoiceScheduleWithCredits(
-    card,
-    entries,
-    referenceDate
-  );
-
-  // 1. Fatura aberta atual
-  let totalCommitted = openDetails.totalInvoice;
-
-  // 2. Compras lançadas diretamente em entries com vencimento após a fatura aberta
-  for (const [periodKey, amount] of Object.entries(schedule)) {
-    if (periodKey > openDetails.periodKey && amount > 0) {
-      totalCommitted += amount;
-    }
-  }
-
-  // 3. Parcelas futuras de compras parceladas (installmentsCount > 1) que vencem após a fatura aberta
-  const installmentRecurringItems = recurringItems.filter(
-    (item) =>
-      item.active &&
-      item.type !== "income" &&
-      Boolean(item.installmentsCount && item.installmentsCount > 1) &&
-      matchesLedgerCard(card, item.account, item.cardId)
-  );
-
-  if (installmentRecurringItems.length > 0) {
-    const maxInstallments = installmentRecurringItems.reduce(
-      (max, item) => Math.max(max, Math.min(360, item.installmentsCount || 1)),
-      1
-    );
-    const horizonMonths = Math.min(360, maxInstallments + 2);
-
-    for (let offset = 1; offset <= horizonMonths; offset++) {
-      const futDate = new Date(openDetails.targetYear, openDetails.targetMonth + offset, 1);
-      const futYear = futDate.getFullYear();
-      const futMonth = futDate.getMonth();
-      const futPeriodKey = getPeriodKey(futYear, futMonth);
-
-      const futRecDetails = getCardInvoiceRecurringDetails(
-        card,
-        installmentRecurringItems,
-        futYear,
-        futMonth,
-        entries
-      );
-
-      if (futRecDetails.pendingAmount > 0) {
-        const futCredit = creditsByPeriod?.[futPeriodKey] || 0;
-        const netFutInstallments = Math.max(0, futRecDetails.pendingAmount - futCredit);
-        totalCommitted += netFutInstallments;
-      }
-    }
-  }
-
-  return Math.round(Math.max(0, totalCommitted) * 100) / 100;
+  return getCachedCardStatement(card, entries, recurringItems, referenceDate).usedLimit;
 }
 
 export interface CardMonthInvoiceDetails {
@@ -640,10 +584,9 @@ export interface CardMonthInvoiceDetails {
 }
 
 /**
- * Retorna os detalhes da fatura do cartão para qualquer mês específico (passado, presente ou futuro),
- * distribuindo compras parceladas, cobranças programadas e pagamentos daquela competência.
- * Quando a fatura é paga, o valor real (totalInvoice) é preservado para exibição e análises de IA,
- * enquanto pendingInvoice zera para evitar dupla contagem no fluxo de caixa e liberar o limite.
+ * Detalhes da fatura que vence em (invoiceYear, invoiceMonth), derivados do
+ * motor único de cartões. Depois de paga, a fatura mantém o valor total
+ * (totalInvoice) e zera apenas o que falta pagar (pendingInvoice).
  */
 export function getCardInvoiceDetailsForMonth(
   card: CardItem,
@@ -662,196 +605,42 @@ export function getCardInvoiceDetailsForMonth(
 
   if (card.type !== "credit") {
     return {
-      card,
-      targetYear: invoiceYear,
-      targetMonth: invoiceMonth,
-      periodKey: targetPeriodKey,
-      dueDate: effectiveDueDate,
-      dueDay,
-      dueMonthName,
-      closingDay,
-      installmentsAmount: 0,
-      recurringAmount: 0,
-      totalInvoice: 0,
-      pendingInvoice: 0,
-      paidAmount: 0,
-      isPaid: true,
-      isOpenInvoice: false,
-      isFutureInvoice: false,
-      isPastInvoice: false,
-      availableLimit: card.limit || 0,
-      percentUsed: 0,
-      cardTransactions: [],
-      recurringItems: [],
-      recurringItemDetails: [],
-      hasInstallments: false,
-      hasRecurring: false,
+      card, targetYear: invoiceYear, targetMonth: invoiceMonth, periodKey: targetPeriodKey,
+      dueDate: effectiveDueDate, dueDay, dueMonthName, closingDay,
+      installmentsAmount: 0, recurringAmount: 0, totalInvoice: 0, pendingInvoice: 0, paidAmount: 0,
+      isPaid: true, isOpenInvoice: false, isFutureInvoice: false, isPastInvoice: false,
+      availableLimit: card.limit || 0, percentUsed: 0,
+      cardTransactions: [], recurringItems: [], recurringItemDetails: [],
+      hasInstallments: false, hasRecurring: false,
     };
   }
 
-  const { schedule, creditsByPeriod } = calculateInvoiceScheduleWithCredits(card, entries, referenceDate);
-  const netInstallments = schedule[targetPeriodKey] || 0;
+  const statement = getCachedCardStatement(card, entries, recurringItems, referenceDate);
+  const invoice = statement.getInvoice(targetPeriodKey);
+  const posted = invoice.charges.filter((charge) => charge.status === "posted");
+  const scheduled = invoice.charges.filter((charge) => charge.status === "scheduled");
+  const postedPurchases = posted.filter((charge) => charge.kind !== "refund").reduce((sum, charge) => sum + charge.amount, 0);
+  const refunds = posted.filter((charge) => charge.kind === "refund").reduce((sum, charge) => sum + charge.amount, 0);
+  const installmentsAmount = Math.round(Math.max(0, postedPurchases - refunds) * 100) / 100;
+  const recurringAmount = Math.round(scheduled.reduce((sum, charge) => sum + charge.amount, 0) * 100) / 100;
 
-  const recurringDetails = getCardInvoiceRecurringDetails(
-    card,
-    recurringItems,
-    invoiceYear,
-    invoiceMonth,
-    entries
-  );
-
-  const periodCredit = creditsByPeriod?.[targetPeriodKey] || 0;
-  const netRecurring = Math.round(Math.max(0, recurringDetails.pendingAmount - periodCredit) * 100) / 100;
-  let pendingInvoice = Math.round(Math.max(0, netInstallments + netRecurring) * 100) / 100;
-
-  // Compras faturadas que vencem nesta competência
-  const cardTransactions = entries.filter((entry) => {
-    if (entry.id?.startsWith("planned-")) return false;
-    if (entry.type !== "despesa") return false;
-    if (entry.kind === "invoice_payment" || entry.kind === "invoice_settlement") return false;
-    if (!matchesLedgerCard(card, entry.account, entry.cardId)) return false;
-    const dDate = getInvoiceDueDate(card, getLedgerEntryDate(entry) || new Date(invoiceYear, invoiceMonth, 1));
-    const dKey = getPeriodKey(dDate.getFullYear(), dDate.getMonth());
-    return dKey === targetPeriodKey;
+  const recurringCharges = invoice.charges.filter((charge) => charge.recurringItemId);
+  const recurringItemDetails: CardInvoiceRecurringItemDetail[] = recurringCharges.map((charge) => {
+    const item = (charge.item || recurringItems.find((candidate) => candidate.id === charge.recurringItemId)) as RecurringItem;
+    const isContinuous = charge.kind === "subscription";
+    return {
+      item: getEffectiveRecurringItemForPeriod(item, charge.chargePeriodKey),
+      installmentIndex: isContinuous ? undefined : charge.installmentIndex,
+      totalInstallments: isContinuous ? undefined : charge.installmentsCount,
+      isContinuous,
+      chargeDate: charge.chargeDate,
+      candPeriodKey: charge.chargePeriodKey,
+    };
   });
+  const uniqueRecurringItems = [...new Map(recurringItemDetails.map((detail) => [detail.item.id, detail.item])).values()];
 
-  // Estornos/créditos avulsos no cartão (que não sejam pagamento/baixa de fatura)
-  const cardRefundsTotal = entries
-    .filter((entry) => {
-      if (entry.id?.startsWith("planned-")) return false;
-      if (entry.type !== "receita") return false;
-      if (isInvoicePaymentOrSettlement(entry, card)) return false;
-      if (!matchesLedgerCard(card, entry.account, entry.cardId)) return false;
-      const dDate = getInvoiceDueDate(card, getLedgerEntryDate(entry) || new Date(invoiceYear, invoiceMonth, 1));
-      const dKey = getPeriodKey(dDate.getFullYear(), dDate.getMonth());
-      return dKey === targetPeriodKey;
-    })
-    .reduce((sum, entry) => sum + entry.amount, 0);
-
-  const grossInstallments = Math.round(
-    Math.max(0, cardTransactions.reduce((sum, entry) => sum + entry.amount, 0) - cardRefundsTotal) * 100
-  ) / 100;
-  const grossRecurring = Math.round(Math.max(0, recurringDetails.pendingAmount) * 100) / 100;
-
-  // Pagamentos desta competência
-  const processedPaymentGroups = new Set<string>();
-  const paidAmount = Math.round(
-    entries
-      .filter((entry) => isInvoicePaymentOrSettlement(entry, card))
-      .filter((entry) => {
-        const pDate = getLedgerEntryDate(entry);
-        const pKey = entry.periodKey || (pDate ? getPeriodKey(pDate.getFullYear(), pDate.getMonth()) : null);
-        return pKey === targetPeriodKey;
-      })
-      .filter((entry) => {
-        const groupKey = entry.groupId || entry.id;
-        if (groupKey && processedPaymentGroups.has(groupKey)) return false;
-        if (groupKey) processedPaymentGroups.add(groupKey);
-        return true;
-      })
-      .reduce((sum, entry) => sum + entry.amount, 0) * 100
-  ) / 100;
-
-  // Fatura aberta do ciclo corrente de referência
-  const refYear = referenceDate.getFullYear();
-  const refMonth = referenceDate.getMonth();
-  const refMonthKey = getPeriodKey(refYear, refMonth);
-
-  const openDueDate = getInvoiceDueDate(card, referenceDate);
-  const openPeriodKey = getPeriodKey(openDueDate.getFullYear(), openDueDate.getMonth());
-
-  const nextMonthRef = new Date(refYear, refMonth + 1, 1);
-  const nextMonthPeriodKey = getPeriodKey(nextMonthRef.getFullYear(), nextMonthRef.getMonth());
-
-  let effectiveOpenPeriodKey = openPeriodKey;
-  const currentRecDetails = getCardInvoiceRecurringDetails(
-    card,
-    recurringItems,
-    openDueDate.getFullYear(),
-    openDueDate.getMonth(),
-    entries
-  );
-  const currentNetRecurring = Math.max(
-    0,
-    currentRecDetails.pendingAmount - (creditsByPeriod?.[openPeriodKey] || 0)
-  );
-
-  if (
-    openPeriodKey < nextMonthPeriodKey &&
-    (schedule[openPeriodKey] || 0) === 0 &&
-    currentNetRecurring === 0
-  ) {
-    const nextRecDetails = getCardInvoiceRecurringDetails(
-      card,
-      recurringItems,
-      nextMonthRef.getFullYear(),
-      nextMonthRef.getMonth(),
-      entries
-    );
-    const nextNetRecurring = Math.max(
-      0,
-      nextRecDetails.pendingAmount - (creditsByPeriod?.[nextMonthPeriodKey] || 0)
-    );
-    if ((schedule[nextMonthPeriodKey] || 0) > 0 || nextNetRecurring > 0) {
-      effectiveOpenPeriodKey = nextMonthPeriodKey;
-    }
-  }
-
-  const isOpenInvoice = targetPeriodKey === effectiveOpenPeriodKey;
-  const isFutureInvoice = targetPeriodKey > effectiveOpenPeriodKey;
-  const isPastInvoice = targetPeriodKey < effectiveOpenPeriodKey;
-
-  // Fallback se for fatura aberta sem itens distribuídos nem pagamentos, mas com gastos brutos
-  if (
-    isOpenInvoice &&
-    pendingInvoice === 0 &&
-    paidAmount === 0 &&
-    Object.keys(schedule).length === 0 &&
-    schedule[targetPeriodKey] === undefined &&
-    recurringDetails.pendingAmount === 0
-  ) {
-    const rawInvoice = entries
-      .filter((entry) => isActualEntry(entry) && matchesLedgerCard(card, entry.account, entry.cardId))
-      .reduce((total, entry) => total + (entry.type === "despesa" ? entry.amount : -entry.amount), 0);
-    pendingInvoice = Math.max(0, rawInvoice);
-  }
-
-  // Preserva o valor real da fatura mesmo quando paga (não zera ao pagar!)
-  const installmentsAmount =
-    paidAmount > 0
-      ? Math.round(
-          Math.max(
-            grossInstallments,
-            netInstallments,
-            grossInstallments + grossRecurring === 0 ? paidAmount : 0
-          ) * 100
-        ) / 100
-      : netInstallments;
-
-  const recurringAmount =
-    paidAmount > 0
-      ? Math.round(Math.max(grossRecurring, netRecurring) * 100) / 100
-      : netRecurring;
-
-  const totalInvoice =
-    paidAmount > 0
-      ? Math.round(Math.max(installmentsAmount + recurringAmount, paidAmount + pendingInvoice) * 100) / 100
-      : pendingInvoice;
-
-  const hasInstallments = cardTransactions.length > 0 || installmentsAmount > 0;
-  const hasRecurring = recurringDetails.items.length > 0 || recurringAmount > 0;
-  const isPaid =
-    (isPastInvoice && pendingInvoice <= 0.005) ||
-    targetPeriodKey < refMonthKey ||
-    (paidAmount > 0 && pendingInvoice <= 0.005);
-
-  const effectiveSpent =
-    card.spent > 0
-      ? card.spent
-      : calculateCreditCardUsedLimit(card, entries, recurringItems, referenceDate);
-  const availableLimit = Math.round(Math.max(0, card.limit - effectiveSpent) * 100) / 100;
-  const percentUsed =
-    card.limit > 0 ? Math.min(100, Math.round((effectiveSpent / card.limit) * 100)) : 0;
+  const effectiveSpent = card.spent > 0 ? card.spent : statement.usedLimit;
+  const isPastInvoice = targetPeriodKey < statement.currentCycleKey;
 
   return {
     card,
@@ -864,20 +653,23 @@ export function getCardInvoiceDetailsForMonth(
     closingDay,
     installmentsAmount,
     recurringAmount,
-    totalInvoice,
-    pendingInvoice,
-    paidAmount,
-    isPaid,
-    isOpenInvoice,
-    isFutureInvoice,
+    totalInvoice: invoice.total,
+    pendingInvoice: invoice.outstanding,
+    paidAmount: invoice.paid,
+    isPaid:
+      invoice.status === "paid" ||
+      invoice.status === "settled" ||
+      (targetPeriodKey < statement.currentMonthKey && invoice.outstanding <= 0.005),
+    isOpenInvoice: invoice.isCurrentCycle,
+    isFutureInvoice: targetPeriodKey > statement.currentCycleKey,
     isPastInvoice,
-    availableLimit,
-    percentUsed,
-    cardTransactions,
-    recurringItems: recurringDetails.items,
-    recurringItemDetails: recurringDetails.itemDetails || [],
-    hasInstallments,
-    hasRecurring,
+    availableLimit: Math.round(Math.max(0, card.limit - effectiveSpent) * 100) / 100,
+    percentUsed: card.limit > 0 ? Math.min(100, Math.round((effectiveSpent / card.limit) * 100)) : 0,
+    cardTransactions: posted.filter((charge) => charge.entry && charge.kind !== "refund").map((charge) => charge.entry!),
+    recurringItems: uniqueRecurringItems,
+    recurringItemDetails,
+    hasInstallments: posted.length > 0 || installmentsAmount > 0,
+    hasRecurring: recurringCharges.length > 0,
   };
 }
 

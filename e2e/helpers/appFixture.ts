@@ -73,6 +73,7 @@ export async function buildAppFixture() {
       `,
       "@/context/WalletContext": `
         import React from "react";
+        import { buildCardStatement } from "@/lib/utils/creditCardEngine";
         const now = new Date();
         const iso = (d) => new Date(now.getFullYear(), now.getMonth(), d, 12).toISOString();
         const scheme = (g) => ({ gradient: g, border: "border-white/10", accent: "#111", badgeText: "Pass", chipGradient: "from-zinc-300 to-zinc-500" });
@@ -99,7 +100,11 @@ export async function buildAppFixture() {
           { id: "rent", title: "Aluguel do apartamento com condomínio incluso", amount: 4850, type: "expense", account: "Conta Principal Itaú Personnalité", cardId: "checking", category: "Moradia & Contas", dueDay: 10, active: true, startYear: now.getFullYear(), startMonth: now.getMonth() },
           { id: "salary", title: "Salário", amount: 18750.5, type: "income", account: "Conta Principal Itaú Personnalité", cardId: "checking", category: "Salário / Extra", dueDay: 5, recurrenceType: "business_day_5", active: true, startYear: now.getFullYear(), startMonth: now.getMonth() },
           { id: "phone", title: "iPhone 17 Pro Max 1TB", amount: 1249.9, type: "expense", account: "Nubank Ultravioleta Black", cardId: "nubank", category: "Tecnologia", dueDay: 5, installmentsCount: 12, active: true, startYear: now.getFullYear(), startMonth: now.getMonth() },
+          { id: "notebook", title: "MacBook Air", amount: 899.9, type: "expense", account: "XP Visa Infinite", cardId: "xp", category: "Tecnologia", dueDay: 12, installmentsCount: 10, active: true, startYear: now.getFullYear(), startMonth: now.getMonth() - 3 },
+          { id: "spotify", title: "Spotify Família", amount: 34.9, type: "expense", account: "Inter Black", cardId: "inter", category: "Assinaturas & Lazer", dueDay: 15, active: true, startYear: now.getFullYear(), startMonth: now.getMonth() - 2 },
+          { id: "icloud", title: "iCloud+ 2TB", amount: 49.9, type: "expense", account: "Nubank Ultravioleta Black", cardId: "nubank", category: "Assinaturas & Lazer", dueDay: 20, active: true, startYear: now.getFullYear(), startMonth: now.getMonth() - 1 },
         ];
+        const cardStatements = Object.fromEntries(cards.filter(c => c.type === "credit").map(c => [c.id, buildCardStatement(c, transactions, recurringItems, { today: now })]));
         const goals = [
           { id: "g1", title: "Reserva de emergência para doze meses de custo de vida", category: "Segurança", current: 48250.75, target: 120000 },
           { id: "g2", title: "Viagem", category: "Lazer", current: 3200, target: 15000, deadline: iso(28) },
@@ -119,7 +124,7 @@ export async function buildAppFixture() {
           updateUserProfile(){}, saveCategoryBudgets: noop, addTransaction: noop, reconcileCheckingBalance: async () => 0,
           updateTransaction: noop, payInvoice: noop, unpayInvoice: noop, deleteTransaction: noop, addRecurringItem: noop,
           updateRecurringItem: noop, updateRecurringItemOccurrence: noop, deleteRecurringItemOccurrence: noop, toggleRecurringItem: noop,
-          deleteRecurringItem: noop, realizeRecurringItemNow: noop, unrealizeRecurringItem: noop, getMonthlyProjection,
+          deleteRecurringItem: noop, cardStatements, endRecurringItemFrom: noop, moveCardCharge: noop, removeCardCharge: noop, realizeRecurringItemNow: noop, unrealizeRecurringItem: noop, getMonthlyProjection,
           addGoal: async (g) => ({ ...g, id: "new-goal" }), contributeToGoal: noop, withdrawFromGoal: noop, updateGoal: noop, deleteGoal(){},
         };
         export function WalletProvider({children}){ return children; }
