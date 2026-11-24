@@ -13,6 +13,7 @@ import { useWallet } from "@/context/WalletContext";
 import { get5thBusinessDay, MONTH_NAMES_PT } from "@/lib/utils/dateUtils";
 import { formatAccountLabel, getInvoiceDueDate } from "@/lib/utils/ledger";
 import { buildInstallmentPurchasePlan } from "@/lib/utils/installments";
+import { chargeDateForInvoice, getInvoiceCycle, monthName, monthNameLower, formatShortDate, shiftPeriodKey } from "@/lib/utils/creditCardEngine";
 import { RecurrenceType } from "@/types";
 import { Portal } from "./Portal";
 import { AutoConfirmToggle } from "./AutoConfirmToggle";
@@ -36,6 +37,8 @@ export interface AddTransactionSheetProps {
   accounts?: string[];
   initialAccount?: string;
   initialType?: "despesa" | "receita";
+  /** Fatura (YYYY-MM do vencimento) sugerida para a primeira cobrança de uma assinatura. */
+  initialInvoiceKey?: string;
   onAdd?: (transaction: {
     title: string;
     amount: number;
@@ -82,6 +85,7 @@ export function AddTransactionSheet({
   accounts = DEFAULT_ACCOUNTS,
   initialAccount,
   initialType,
+  initialInvoiceKey,
   onAdd,
 }: AddTransactionSheetProps) {
   const { cards, addTransaction, userProfile, transactions } = useWallet();
@@ -105,6 +109,7 @@ export function AddTransactionSheet({
   const [installmentsInput, setInstallmentsInput] = useState("3");
   const [paidInstallmentsInput, setPaidInstallmentsInput] = useState("0");
   const [creditPurchaseMode, setCreditPurchaseMode] = useState<"single" | "installments" | "subscription">("single");
+  const [subscriptionInvoiceKey, setSubscriptionInvoiceKey] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -120,6 +125,7 @@ export function AddTransactionSheet({
         setRecurrenceType(initialType === "receita" ? "business_day_5" : "fixed_day");
       }
       const todayDay = new Date().getDate();
+      setSubscriptionInvoiceKey(initialInvoiceKey || null);
       setRecurrenceDay(todayDay);
       setCustomDayInput(String(todayDay));
     }
@@ -193,6 +199,24 @@ export function AddTransactionSheet({
       ? current5thBusinessDay
       : recurrenceDay;
 
+  // Assinatura no cartão: em qual fatura entra a primeira cobrança.
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const subscriptionOptions = isSelectedAccountCreditCard && selectedCardObj
+    ? Array.from({ length: 4 }, (_, index) => {
+        const due = getInvoiceDueDate(selectedCardObj, now);
+        const key = shiftPeriodKey(`${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, "0")}`, index);
+        const cycle = getInvoiceCycle(selectedCardObj, key);
+        const chargeDate = chargeDateForInvoice(selectedCardObj, key, recurrenceDay);
+        return { key, cycle, chargeDate, alreadyCharged: chargeDate < todayStart };
+      })
+    : [];
+  const defaultSubscriptionKey =
+    subscriptionOptions.find((option) => !option.alreadyCharged)?.key ?? subscriptionOptions[0]?.key ?? null;
+  const selectedSubscriptionOption =
+    subscriptionOptions.find((option) => option.key === subscriptionInvoiceKey) ||
+    subscriptionOptions.find((option) => option.key === defaultSubscriptionKey) ||
+    null;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
@@ -218,7 +242,10 @@ export function AddTransactionSheet({
       const txDescription = sanitizedTitle || sanitizedCategory;
 
       const [y, m, d] = resolveDateInput(datePreset, dateInput).split("-").map(Number);
-      const chosenDate = (y && m && d) ? new Date(y, m - 1, d, 12, 0, 0) : new Date();
+      const isCardSubscription = isSelectedAccountCreditCard && creditPurchaseMode === "subscription";
+      const chosenDate = isCardSubscription && selectedSubscriptionOption
+        ? selectedSubscriptionOption.chargeDate
+        : (y && m && d) ? new Date(y, m - 1, d, 12, 0, 0) : new Date();
       const isToday =
         chosenDate.getFullYear() === now.getFullYear() &&
         chosenDate.getMonth() === now.getMonth() &&
@@ -679,6 +706,37 @@ export function AddTransactionSheet({
                       className="w-14 rounded-lg border border-black/15 bg-[#FBFBFD] px-2 py-1 text-center text-xs font-semibold text-[#1D1D1F] outline-none"
                     />
                   </div>
+                  {subscriptionOptions.length > 0 && (
+                    <div className="space-y-1.5 border-t border-black/[0.04] pt-2">
+                      <span className="text-[#86868B]">Primeira cobrança na fatura de:</span>
+                      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+                        {subscriptionOptions.map((option) => {
+                          const selected = option.key === selectedSubscriptionOption?.key;
+                          return (
+                            <button
+                              key={option.key}
+                              type="button"
+                              onClick={() => setSubscriptionInvoiceKey(option.key)}
+                              aria-pressed={selected}
+                              className={`touch-target cursor-pointer rounded-xl border px-2 py-2 text-left transition-colors ${
+                                selected ? "border-[#299D91] bg-[#299D91]/10" : "border-black/10 bg-[#FBFBFD] hover:bg-[#F2F2F7]"
+                              }`}
+                            >
+                              <span className="block text-xs font-semibold text-[#1D1D1F]">{monthName(option.cycle.month)}</span>
+                              <span className="block text-[10px] text-[#86868B]">gastos de {monthNameLower(option.cycle.referenceMonth).slice(0, 3)}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {selectedSubscriptionOption && (
+                        <p className="text-[11px] leading-relaxed text-[#86868B]">
+                          {selectedSubscriptionOption.alreadyCharged
+                            ? <>Conta como já cobrada em <strong className="text-[#1D1D1F]">{formatShortDate(selectedSubscriptionOption.chargeDate)}</strong> e entra na fatura de {monthName(selectedSubscriptionOption.cycle.month)}.</>
+                            : <>Primeira cobrança em <strong className="text-[#1D1D1F]">{formatShortDate(selectedSubscriptionOption.chargeDate)}</strong>, na fatura de {monthName(selectedSubscriptionOption.cycle.month)}. Nada entra nas faturas anteriores.</>}
+                        </p>
+                      )}
+                    </div>
+                  )}
                   <p className="text-[11px] text-[#86868B]">
                     Ideal para Netflix, Spotify, iCloud ou academia. Entra todo mês na fatura sem bloquear o limite dos meses futuros.
                   </p>

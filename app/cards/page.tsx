@@ -63,7 +63,7 @@ export default function CardsPage() {
 
   return (
     <div className="min-h-full space-y-5 bg-[#F2F2F7] p-4 font-sans text-[#1D1D1F] animate-in fade-in duration-500 sm:p-6 md:p-10">
-      <header className="mx-auto flex max-w-4xl flex-col justify-between gap-4 pt-2 sm:flex-row sm:items-end md:pt-0">
+      <header className="mx-auto flex max-w-6xl flex-col justify-between gap-4 pt-2 sm:flex-row sm:items-end md:pt-0">
         <div>
           <span className="text-xs font-semibold uppercase tracking-wider text-[#86868B]">Crédito</span>
           <h1 className="mt-0.5 text-3xl font-semibold tracking-tight text-[#1D1D1F]">Cartões</h1>
@@ -91,7 +91,7 @@ export default function CardsPage() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-4xl space-y-5">
+      <div className="mx-auto max-w-6xl space-y-5">
         {creditCards.length === 0 ? (
           <div className="space-y-3 rounded-[24px] border border-black/[0.04] bg-white p-8 text-center">
             <h2 className="text-base font-semibold text-[#1D1D1F]">Nenhum cartão de crédito ainda</h2>
@@ -137,9 +137,9 @@ export default function CardsPage() {
               <CardsDashboard
                 creditCards={creditCards}
                 statements={cardStatements}
-                focusIds={focusIds}
-                onToggleFocus={toggleFocus}
-                onOpenInvoice={(key) => openInvoice(key)}
+                focusId={focusIds.length === 1 ? focusIds[0] : null}
+                onFocusChange={(id) => setFocusIds(id ? [id] : [])}
+                onOpenInvoice={(key, cardId) => openInvoice(key, cardId)}
                 onOpenPlans={() => setTab("plans")}
                 onManageCard={setManagingCard}
               />
@@ -176,6 +176,7 @@ export default function CardsPage() {
         accounts={accountOptions}
         initialAccount={purchaseAccount || undefined}
         initialType="despesa"
+        initialInvoiceKey={tab === "invoices" && activeKey ? activeKey : undefined}
       />
       <ManageCardSheet card={managingCard} onClose={() => setManagingCard(null)} />
     </div>
@@ -245,7 +246,7 @@ function InvoiceMonthStrip({
   const active = summary(activeKey);
 
   return (
-    <section className="space-y-3 rounded-[24px] border border-black/[0.05] bg-white p-4 shadow-[0_2px_8px_rgba(0,0,0,0.03)] sm:p-5">
+    <section className="space-y-3 rounded-[12px] bg-[var(--fb-card)] p-4 shadow-[var(--fb-shadow)] sm:p-5">
       <div className="flex items-center justify-between gap-2">
         <button
           type="button"

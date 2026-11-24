@@ -2555,6 +2555,7 @@ export default function PlanningPage() {
         accounts={accountOptions}
         initialAccount={selectedCardForAdd}
         initialType="despesa"
+        initialInvoiceKey={targetPeriodKey}
       />
 
     </div>

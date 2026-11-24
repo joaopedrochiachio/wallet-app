@@ -13,6 +13,7 @@ export function weekdayOf(year: number, monthIndex: number, day: number) {
 }
 
 interface Geometry {
+  ticks: number[];
   x: (day: number) => number;
   y: (value: number) => number;
   invertDay: (px: number) => number;
@@ -73,7 +74,7 @@ export function CashFlowChart({
 
   const g: Geometry | null = useMemo(() => {
     if (!series.length) return null;
-    const left = 4;
+    const left = 50; // eixo de valores à esquerda (estilo do kit de painéis)
     const right = width - 64; // espaço para os rótulos à direita (estilo Bolsa do iPhone)
     const top = 14;
     const bottom = height - 24;
@@ -86,7 +87,14 @@ export function CashFlowChart({
     const pad = (hi - lo) * 0.12;
     lo -= pad;
     hi += pad;
+    // Linhas de grade em valores redondos
+    const rawStep = (hi - lo) / 4;
+    const magnitude = 10 ** Math.floor(Math.log10(Math.max(rawStep, 1)));
+    const step = [1, 2, 2.5, 5, 10].map((m) => m * magnitude).find((c) => c >= rawStep) ?? rawStep;
+    const ticks: number[] = [];
+    for (let t = Math.ceil(lo / step) * step; t <= hi; t += step) ticks.push(t);
     return {
+      ticks,
       left,
       right,
       top,
@@ -153,7 +161,7 @@ export function CashFlowChart({
       >
         <defs>
           <linearGradient id={`fill-${uid}`} x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="var(--ai-accent)" stopOpacity="0.22" />
+            <stop offset="0%" stopColor="var(--ai-accent)" stopOpacity="0.3" />
             <stop offset="100%" stopColor="var(--ai-accent)" stopOpacity="0" />
           </linearGradient>
           <clipPath id={`above-${uid}`}>
@@ -163,6 +171,16 @@ export function CashFlowChart({
             <rect x="0" y={zeroY} width={width} height={Math.max(0, height - zeroY)} />
           </clipPath>
         </defs>
+
+        {/* Grade e eixo de valores */}
+        {g.ticks.map((tick) => (
+          <g key={tick}>
+            <line x1={g.left} x2={g.right} y1={g.y(tick)} y2={g.y(tick)} stroke="var(--fb-line)" strokeWidth="1" />
+            <text x={g.left - 8} y={g.y(tick) + 4} textAnchor="end" className="fill-[var(--fb-text-4)] text-[10px]">
+              {Math.abs(tick) >= 1000 ? `${(tick / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mil` : Math.round(tick)}
+            </text>
+          </g>
+        ))}
 
         {/* Linhas de referência */}
         {hasNegative && <line x1={g.left} x2={g.right} y1={zeroY} y2={zeroY} stroke="var(--ai-text-3)" strokeOpacity="0.5" strokeWidth="1" />}

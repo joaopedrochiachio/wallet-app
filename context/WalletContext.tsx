@@ -25,9 +25,10 @@ import {
   unrealizePlannedOccurrence,
   endRecurringSeriesFrom,
   deleteRecurringSeriesWithHistory,
+  moveRecurringSeriesStart,
   TransactionUpdateInput,
 } from "@/lib/services/transactionsService";
-import { buildCardStatement, type CardCharge, type CardStatement } from "@/lib/utils/creditCardEngine";
+import { buildCardStatement, chargeDateForInvoice, type CardCharge, type CardStatement } from "@/lib/utils/creditCardEngine";
 import {
   subscribeToGoals,
   deleteGoalFromFirestore,
@@ -229,6 +230,8 @@ interface WalletContextType {
   endRecurringItemFrom: (id: string, periodKey: string) => Promise<void>;
   /** Move uma compra/assinatura para outro cartão (só nesta fatura ou desta em diante). */
   moveCardCharge: (charge: CardCharge, destinationCardId: string, scope: "single" | "forward") => Promise<void>;
+  /** Faz uma série do cartão começar só na fatura escolhida (YYYY-MM do vencimento). */
+  startRecurringAtInvoice: (recurringItemId: string, invoiceKey: string) => Promise<void>;
   /** Remove uma cobrança do cartão (só esta, desta em diante ou a compra inteira). */
   removeCardCharge: (charge: CardCharge, scope: "single" | "forward" | "everything") => Promise<void>;
   addGoal: (
@@ -813,6 +816,20 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         };
       }
 
+      // Série que só começa no futuro (ex.: assinatura a partir da fatura de
+      // janeiro): grava só o planejamento; o lançamento nasce na data certa.
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      if (
+        recurringToPersist &&
+        !matchingRecurring &&
+        !isInstallmentPurchase &&
+        safeTxDate.getTime() >= todayStart.getTime() + 24 * 60 * 60 * 1000
+      ) {
+        await saveRecurringToFirestore(user.uid, { ...recurringToPersist, realizedPeriods: [] });
+        return;
+      }
+
       // Uma compra já quitada é apenas histórico de planejamento; não gera cobrança.
       if (installmentPlan && !firstUnpaid && recurringToPersist) {
         await saveRecurringToFirestore(user.uid, recurringToPersist);
@@ -1212,6 +1229,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
   }, [recurringItems, transactions, user]);
 
+  const startRecurringAtInvoice = useCallback(async (recurringItemId: string, invoiceKey: string) => {
+    if (!user) throw new Error("Entre na sua conta para alterar a compra.");
+    const item = recurringItems.find((candidate) => candidate.id === recurringItemId);
+    if (!item) throw new Error("Compra não encontrada.");
+    const card = cards.find((candidate) => matchesLedgerCard(candidate, item.account, item.cardId));
+    if (!card || card.type !== "credit") throw new Error("Esta compra não está em um cartão de crédito.");
+    const chargeDate = chargeDateForInvoice(card, invoiceKey, item.dueDay || 10);
+    await moveRecurringSeriesStart(user.uid, item.id, { year: chargeDate.getFullYear(), month: chargeDate.getMonth() });
+  }, [cards, recurringItems, user]);
+
   const realizeRecurringItemNow = useCallback(async (
     item: RecurringItem,
     targetYear: number,
@@ -1555,6 +1582,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       endRecurringItemFrom,
       moveCardCharge,
       removeCardCharge,
+      startRecurringAtInvoice,
       addGoal,
       contributeToGoal,
       withdrawFromGoal,
@@ -1601,6 +1629,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       endRecurringItemFrom,
       moveCardCharge,
       removeCardCharge,
+      startRecurringAtInvoice,
       addGoal,
       contributeToGoal,
       withdrawFromGoal,

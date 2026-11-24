@@ -19,7 +19,7 @@ export function Money({
   sign?: "+" | "−";
 }) {
   return (
-    <span className={`font-mono tabular-nums ${className}`}>
+    <span className={`[font-variant-numeric:tabular-nums] ${className}`}>
       {sign ? `${sign} ` : ""}R$ {formatBRL(value)}
     </span>
   );

@@ -182,3 +182,32 @@ test("lançamento órfão (série apagada) não quebra e vira compra comum", asy
   assert.equal(details.totalInvoice, 55.9);
   assert.equal(details.recurringItemDetails.length, 0);
 });
+
+test("assinatura que começa na fatura de janeiro não aparece na de dezembro", async () => {
+  const { chargeDateForInvoice } = await import("../lib/utils/creditCardEngine.ts");
+  const { getInvoiceDueDate } = await import("../lib/utils/ledger.ts");
+  const nu = { ...nubank, closingDay: 1, dueDay: 10 };
+  // Cobrança todo dia 15: a fatura de janeiro recebe a cobrança de 15/dez.
+  const date = chargeDateForInvoice(nu, "2027-01", 15);
+  assert.equal(date.getFullYear(), 2026);
+  assert.equal(date.getMonth(), 11);
+  assert.equal(date.getDate(), 15);
+  assert.equal(getInvoiceDueDate(nu, date).getMonth(), 0);
+  // Dia 1 (o próprio fechamento) também cai na fatura certa.
+  const closingDayCharge = chargeDateForInvoice(nu, "2027-01", 1);
+  assert.equal(getInvoiceDueDate(nu, closingDayCharge).getMonth(), 0);
+  // Cartão que fecha no fim do mês e vence no início do seguinte.
+  const late = { ...nubank, closingDay: 28, dueDay: 5 };
+  const lateDate = chargeDateForInvoice(late, "2027-01", 2);
+  assert.equal(getInvoiceDueDate(late, lateDate).getMonth(), 0);
+
+  const today = new Date(2026, 10, 24, 12);
+  const spotify = {
+    id: "rec-spotify", title: "Spotify", amount: 21.9, type: "expense", account: "Nubank", cardId: "nu",
+    category: "Assinaturas", dueDay: 15, startYear: 2026, startMonth: 11, active: true,
+  };
+  const s = buildCardStatement(nu, [], [spotify], { today });
+  assert.equal(s.getInvoice("2026-12").charges.length, 0, "nada na fatura de dezembro");
+  assert.equal(s.getInvoice("2027-01").total, 21.9, "começa na fatura de janeiro");
+  assert.equal(s.usedLimit, 0, "assinatura futura não ocupa limite");
+});

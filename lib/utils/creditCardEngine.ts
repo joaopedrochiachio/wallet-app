@@ -196,6 +196,23 @@ export function getInvoiceCycle(card: CardItem, key: string) {
   };
 }
 
+/**
+ * Data da cobrança mensal (no dia `day`) que cai na fatura `invoiceKey`.
+ * Ex.: Nubank fecha dia 1; assinatura todo dia 15; fatura de janeiro →
+ * cobrança em 15/dez.
+ */
+export function chargeDateForInvoice(card: CardItem, invoiceKey: string, day: number): Date {
+  const { cycleStart, closingDate } = getInvoiceCycle(card, invoiceKey);
+  const start = startOfDay(cycleStart).getTime();
+  const end = startOfDay(closingDate).getTime();
+  for (const ref of [closingDate, cycleStart]) {
+    const candidate = clampDay(ref.getFullYear(), ref.getMonth(), day);
+    const time = startOfDay(candidate).getTime();
+    if (time >= start && time <= end) return candidate;
+  }
+  return new Date(closingDate.getFullYear(), closingDate.getMonth(), closingDate.getDate(), 12);
+}
+
 function isActual(entry: LedgerEntry): boolean {
   return !entry.id?.startsWith("planned-");
 }

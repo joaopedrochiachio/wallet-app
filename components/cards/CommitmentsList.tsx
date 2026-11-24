@@ -24,7 +24,7 @@ export function CommitmentsList({
 
   return (
     <div className="space-y-4">
-      <section className="overflow-hidden rounded-[24px] border border-black/[0.05] bg-white shadow-[0_2px_8px_rgba(0,0,0,0.03)]">
+      <section className="overflow-hidden rounded-[12px] bg-[var(--fb-card)] shadow-[var(--fb-shadow)]">
         <header className="flex flex-col gap-2 px-5 pb-3 pt-5 sm:flex-row sm:items-end sm:justify-between sm:gap-3">
           <div>
             <h2 className="text-sm font-semibold text-[#1D1D1F]">Compras parceladas</h2>
@@ -63,7 +63,7 @@ export function CommitmentsList({
                         <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#F2F2F7]">
                           <span className="block h-full rounded-full bg-indigo-500" style={{ width: `${(plan.chargedCount / plan.installmentsCount) * 100}%` }} />
                         </span>
-                        <span className="shrink-0 font-mono text-[11px] tabular-nums text-[#86868B]">{plan.chargedCount}/{plan.installmentsCount}</span>
+                        <span className="shrink-0 font-mono text-[11px] [font-variant-numeric:tabular-nums] text-[#86868B]">{plan.chargedCount}/{plan.installmentsCount}</span>
                       </span>
                     </span>
                     <span className="shrink-0 text-right">
@@ -79,7 +79,7 @@ export function CommitmentsList({
         )}
       </section>
 
-      <section className="overflow-hidden rounded-[24px] border border-black/[0.05] bg-white shadow-[0_2px_8px_rgba(0,0,0,0.03)]">
+      <section className="overflow-hidden rounded-[12px] bg-[var(--fb-card)] shadow-[var(--fb-shadow)]">
         <header className="flex flex-col gap-2 px-5 pb-3 pt-5 sm:flex-row sm:items-end sm:justify-between sm:gap-3">
           <div>
             <h2 className="text-sm font-semibold text-[#1D1D1F]">Assinaturas</h2>

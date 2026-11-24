@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import {
   ArrowLeftRight,
   CalendarClock,
+  CalendarRange,
   Check,
   ChevronRight,
   Loader2,
@@ -14,7 +15,13 @@ import {
   Undo2,
 } from "lucide-react";
 import type { CardItem } from "@/types";
+import { getInvoiceDueDate } from "@/lib/utils/ledger";
 import {
+  chargeDateForInvoice,
+  getInvoiceCycle,
+  monthName,
+  monthNameLower,
+  shiftPeriodKey,
   chargeKindLabel,
   formatShortDate,
   invoiceReference,
@@ -25,7 +32,7 @@ import {
 } from "@/lib/utils/creditCardEngine";
 import { CardDot, Money, Sheet } from "./cardUi";
 
-type View = "details" | "move" | "delete";
+type View = "details" | "move" | "delete" | "start";
 type MoveScope = "forward" | "single";
 type RemoveScope = "single" | "forward" | "everything";
 
@@ -40,6 +47,8 @@ export interface ChargeSheetProps {
   onEdit: (charge: CardCharge) => void;
   onMove: (charge: CardCharge, destinationCardId: string, scope: MoveScope) => Promise<void>;
   onRemove: (charge: CardCharge, scope: RemoveScope) => Promise<void>;
+  /** Faz a série começar só na fatura escolhida (remove as cobranças anteriores a ela). */
+  onStartAt?: (charge: CardCharge, invoiceKey: string) => Promise<void>;
 }
 
 export function ChargeSheet(props: ChargeSheetProps) {
@@ -57,7 +66,9 @@ function ChargeSheetInner({
   onEdit,
   onMove,
   onRemove,
+  onStartAt,
 }: ChargeSheetProps & { charge: CardCharge; card: CardItem; invoice: CardInvoice }) {
+  const [startKey, setStartKey] = useState<string | null>(null);
   const [view, setView] = useState<View>("details");
   const [destinationId, setDestinationId] = useState<string>(
     creditCards.find((candidate) => candidate.id !== card.id)?.id || ""
@@ -92,7 +103,16 @@ function ChargeSheetInner({
     details: charge.title,
     move: "Mover para outro cartão",
     delete: "Excluir",
+    start: "Mudar a fatura de início",
   };
+  const chargeDay = charge.item?.dueDay || charge.chargeDate.getDate();
+  const currentDue = getInvoiceDueDate(card, new Date());
+  const currentKey = `${currentDue.getFullYear()}-${String(currentDue.getMonth() + 1).padStart(2, "0")}`;
+  const startOptions = Array.from({ length: 6 }, (_, index) => {
+    const key = shiftPeriodKey(currentKey, index);
+    return { key, cycle: getInvoiceCycle(card, key), chargeDate: chargeDateForInvoice(card, key, chargeDay) };
+  });
+  const chosenStart = startOptions.find((option) => option.key === startKey) || null;
 
   return (
     <Sheet
@@ -119,6 +139,17 @@ function ChargeSheetInner({
             >
               Voltar
             </button>
+            {view === "start" && (
+              <button
+                type="button"
+                disabled={busy || !chosenStart || !onStartAt}
+                onClick={() => chosenStart && onStartAt && run(() => onStartAt(charge, chosenStart.key))}
+                className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-[#1D1D1F] px-5 py-2.5 text-sm font-semibold text-white transition-transform active:scale-[0.98] disabled:opacity-40"
+              >
+                {busy ? <Loader2 size={15} className="animate-spin" /> : <CalendarRange size={15} />}
+                {chosenStart ? `Começar em ${monthName(chosenStart.cycle.month)}` : "Escolha a fatura"}
+              </button>
+            )}
             {view === "move" && (
               <button
                 type="button"
@@ -191,6 +222,14 @@ function ChargeSheetInner({
             {charge.kind !== "refund" && (
               <ActionRow icon={<Pencil size={16} />} label="Editar" hint="Valor, nome, categoria e dia" onClick={() => onEdit(charge)} />
             )}
+            {isSeries && onStartAt && (
+              <ActionRow
+                icon={<CalendarRange size={16} />}
+                label="Mudar a fatura de início"
+                hint={isInstallment ? "Em qual fatura entra a 1ª parcela" : "Em qual fatura entra a 1ª cobrança"}
+                onClick={() => setView("start")}
+              />
+            )}
             {charge.kind !== "refund" && otherCards.length > 0 && (
               <ActionRow
                 icon={<ArrowLeftRight size={16} />}
@@ -259,6 +298,38 @@ function ChargeSheetInner({
               A compra sai da fatura do {card.name} e entra na fatura do {destination?.name || "outro cartão"} conforme o fechamento dele.
             </p>
           )}
+          {error && <p role="alert" className="text-xs text-rose-600">{error}</p>}
+        </div>
+      )}
+
+      {view === "start" && (
+        <div className="space-y-3">
+          <p className="text-xs leading-relaxed text-[#86868B]">
+            {isInstallment
+              ? "A 1ª parcela passa a cair na fatura escolhida e as outras seguem mês a mês."
+              : `A cobrança de todo dia ${chargeDay} passa a começar na fatura escolhida.`}{" "}
+            Cobranças que já entraram em faturas anteriores a ela são removidas.
+          </p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {startOptions.map((option) => {
+              const selected = option.key === startKey;
+              return (
+                <button
+                  key={option.key}
+                  type="button"
+                  onClick={() => setStartKey(option.key)}
+                  aria-pressed={selected}
+                  className={`cursor-pointer rounded-2xl border px-3 py-2.5 text-left transition-all ${
+                    selected ? "border-[#1D1D1F] bg-white shadow-xs" : "border-black/[0.06] bg-[#F8F8FA] hover:bg-[#F2F2F7]"
+                  }`}
+                >
+                  <span className="block text-sm font-semibold text-[#1D1D1F]">{monthName(option.cycle.month)}</span>
+                  <span className="block text-[11px] text-[#86868B]">gastos de {monthNameLower(option.cycle.referenceMonth)}</span>
+                  <span className="block text-[11px] text-[#86868B]">cobra {formatShortDate(option.chargeDate)}</span>
+                </button>
+              );
+            })}
+          </div>
           {error && <p role="alert" className="text-xs text-rose-600">{error}</p>}
         </div>
       )}

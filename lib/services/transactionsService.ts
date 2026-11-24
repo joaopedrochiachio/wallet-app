@@ -414,6 +414,66 @@ export async function endRecurringSeriesFrom(
   await batch.commit();
 }
 
+/**
+ * Muda a competência em que uma série começa (ex.: "só começa na fatura de
+ * janeiro"). Lançamentos de competências anteriores ao novo início são
+ * removidos. Em compras parceladas, os ajustes por parcela acompanham a mudança.
+ */
+export async function moveRecurringSeriesStart(
+  userId: string,
+  recurringItemId: string,
+  newStart: { year: number; month: number }
+): Promise<void> {
+  const recurringRef = doc(db, "users", userId, "recurring", recurringItemId);
+  const [recurringSnapshot, linked] = await Promise.all([
+    getDoc(recurringRef),
+    getDocs(query(getTransactionsCollectionRef(userId), where("recurringItemId", "==", recurringItemId))),
+  ]);
+  if (!recurringSnapshot.exists()) throw new Error("Esta compra não está mais disponível.");
+  const item = recurringSnapshot.data() as RecurringItem;
+  const newKey = `${newStart.year}-${String(newStart.month + 1).padStart(2, "0")}`;
+  const oldYear = Number(item.startYear);
+  const oldMonth = Number(item.startMonth);
+  const delta = Number.isFinite(oldYear) && Number.isFinite(oldMonth)
+    ? (newStart.year - oldYear) * 12 + (newStart.month - oldMonth)
+    : 0;
+  const isInstallment = Boolean(item.installmentsCount && item.installmentsCount > 1);
+  const shiftKey = (key: string) => {
+    const [y, m] = key.split("-").map(Number);
+    const date = new Date(y, m - 1 + delta, 1);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+  };
+
+  const batch = writeBatch(db);
+  linked.docs.forEach((snapshotDoc) => {
+    const data = snapshotDoc.data();
+    let period: string | null = data.periodKey || null;
+    if (!period && data.occurredAt) {
+      const date = data.occurredAt?.toDate ? data.occurredAt.toDate() : new Date(data.occurredAt);
+      if (!Number.isNaN(date.getTime())) {
+        period = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      }
+    }
+    if (period && period < newKey) batch.delete(snapshotDoc.ref);
+  });
+
+  const updates: Record<string, unknown> = {
+    startYear: newStart.year,
+    startMonth: newStart.month,
+    realizedPeriods: (item.realizedPeriods || []).filter((period) => period >= newKey),
+    excludedPeriods: (item.excludedPeriods || []).filter((period) => period >= newKey),
+    manualConfirmationPeriods: (item.manualConfirmationPeriods || []).filter((period) => period >= newKey),
+  };
+  if (isInstallment && delta !== 0) {
+    updates.overrides = Object.fromEntries(
+      Object.entries(item.overrides || {}).map(([key, value]) => [shiftKey(key), value])
+    );
+    if (item.endPeriodKey) updates.endPeriodKey = shiftKey(item.endPeriodKey);
+  }
+  batch.update(recurringRef, JSON.parse(JSON.stringify(updates)));
+  await batch.commit();
+}
+
 /** Apaga a série e TODOS os lançamentos dela, inclusive de faturas passadas. */
 export async function deleteRecurringSeriesWithHistory(
   userId: string,

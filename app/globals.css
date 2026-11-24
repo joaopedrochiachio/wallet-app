@@ -1337,15 +1337,15 @@ button:disabled,
   --ai-text: #1D1D1F;
   --ai-text-2: #6E6E73;
   --ai-text-3: #8E8E93;
-  --ai-accent: #0A6CFF;
-  --ai-accent-bg: rgba(10, 108, 255, 0.1);
+  --ai-accent: #299D91;
+  --ai-accent-bg: rgba(41, 157, 145, 0.1);
   --ai-good: #1A8A45;
   --ai-good-bg: rgba(52, 199, 89, 0.13);
   --ai-bad: #D12C22;
   --ai-bad-bg: rgba(255, 59, 48, 0.1);
   --ai-warn: #B35C00;
   --ai-warn-bg: rgba(255, 149, 0, 0.14);
-  --ai-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.04);
+  --ai-shadow: 0 20px 25px rgba(76, 103, 100, 0.1);
   --ai-user-bubble: #0A6CFF;
   --cofi-top: #5BE584;
   --cofi-bottom: #22B357;
@@ -1359,8 +1359,8 @@ button:disabled,
   --ai-text: #F5F5F7;
   --ai-text-2: #A1A1A6;
   --ai-text-3: #8E8E93;
-  --ai-accent: #4DA3FF;
-  --ai-accent-bg: rgba(77, 163, 255, 0.16);
+  --ai-accent: #3CC2B4;
+  --ai-accent-bg: rgba(60, 194, 180, 0.14);
   --ai-good: #4CD97B;
   --ai-good-bg: rgba(48, 209, 88, 0.16);
   --ai-bad: #FF7A70;
@@ -1453,4 +1453,50 @@ button:disabled,
   --sb-warn-bg: rgba(255, 159, 10, 0.16);
   --sb-bad: #FF7A70;
   --sb-bad-bg: rgba(255, 69, 58, 0.16);
+}
+
+/* =====================================================================
+ * PAINÉIS FINANCEIROS (linguagem do kit Finebank) — claro e escuro
+ * Usado por Cartões, gráficos da IA e Planejamento. Um único acento
+ * (verde-azulado), cinza para comparação, cartões com sombra suave.
+ * ===================================================================== */
+:root {
+  --fb-bg: #F4F5F7;
+  --fb-card: #FFFFFF;
+  --fb-card-2: rgba(210, 210, 210, 0.25);
+  --fb-line: #F3F3F3;
+  --fb-line-2: #E8E8E8;
+  --fb-text: #191919;
+  --fb-text-2: #525256;
+  --fb-text-3: #878787;
+  --fb-text-4: #9F9F9F;
+  --fb-text-5: #A3A3A3;
+  --fb-accent: #299D91;
+  --fb-accent-2: #7CC6BE;
+  --fb-accent-bg: rgba(41, 157, 145, 0.1);
+  --fb-compare: #E8E8E8;
+  --fb-up: #E73D1C;
+  --fb-down: #4DAF6E;
+  --fb-warn: #D9822B;
+  --fb-shadow: 0 20px 25px rgba(76, 103, 100, 0.1);
+}
+.theme-dark {
+  --fb-bg: #000000;
+  --fb-card: #1C1C1E;
+  --fb-card-2: rgba(255, 255, 255, 0.06);
+  --fb-line: rgba(255, 255, 255, 0.07);
+  --fb-line-2: rgba(255, 255, 255, 0.12);
+  --fb-text: #F5F5F7;
+  --fb-text-2: #C7C7CC;
+  --fb-text-3: #8E8E93;
+  --fb-text-4: #8E8E93;
+  --fb-text-5: #8E8E93;
+  --fb-accent: #3CC2B4;
+  --fb-accent-2: #1F6F68;
+  --fb-accent-bg: rgba(60, 194, 180, 0.14);
+  --fb-compare: #3A3A3C;
+  --fb-up: #FF7A60;
+  --fb-down: #5FD08A;
+  --fb-warn: #FFB547;
+  --fb-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.06);
 }

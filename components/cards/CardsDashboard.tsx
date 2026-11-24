@@ -1,381 +1,462 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { CalendarClock, ChevronRight, Repeat, Settings2 } from "lucide-react";
+import { CalendarClock, ChevronLeft, ChevronRight, Repeat, Settings2, Target, Wallet } from "lucide-react";
 import type { CardItem } from "@/types";
 import {
   formatShortDate,
   monthName,
   monthNameLower,
   shiftPeriodKey,
+  type CardInvoice,
   type CardStatement,
 } from "@/lib/utils/creditCardEngine";
-import { MiniCard } from "@/components/wallet";
-import { CardDot, InvoiceStatusPill, Money, cardAccent, formatBRL } from "./cardUi";
+import { CardBrandLogo } from "@/components/wallet/CardBrandLogo";
+import {
+  AmountPill,
+  BarChart,
+  DateBlock,
+  Delta,
+  Gauge,
+  Legend,
+  MeterBar,
+  Panel,
+  PanelLink,
+  brl,
+  brlShort,
+  type BarDatum,
+} from "@/components/charts/finance";
+import { CategoryIconTile } from "@/components/charts/categoryIcon";
+import { cardAccent } from "./cardUi";
 
 interface Props {
   creditCards: CardItem[];
   statements: Record<string, CardStatement>;
-  /** Cartões em foco (vazio = todos). */
-  focusIds: string[];
-  onToggleFocus: (cardId: string) => void;
-  onOpenInvoice: (periodKey: string) => void;
+  /** Cartão em foco (null = todos). */
+  focusId: string | null;
+  onFocusChange: (cardId: string | null) => void;
+  onOpenInvoice: (periodKey: string, cardId?: string) => void;
   onOpenPlans: () => void;
   onManageCard: (card: CardItem) => void;
 }
 
-export function CardsDashboard({
-  creditCards,
-  statements,
-  focusIds,
-  onToggleFocus,
-  onOpenInvoice,
-  onOpenPlans,
-  onManageCard,
-}: Props) {
-  const focused = focusIds.length > 0 ? creditCards.filter((card) => focusIds.includes(card.id)) : creditCards;
-  const focusedStatements = focused.map((card) => statements[card.id]).filter(Boolean);
+export function CardsDashboard({ creditCards, statements, focusId, onFocusChange, onOpenInvoice, onOpenPlans, onManageCard }: Props) {
+  const focused = focusId ? creditCards.filter((card) => card.id === focusId) : creditCards;
+  const list = focused.map((card) => ({ card, s: statements[card.id] })).filter((entry) => entry.s);
 
   const totals = useMemo(() => {
-    const limit = focused.reduce((sum, card) => sum + (card.limit || 0), 0);
-    const used = focusedStatements.reduce((sum, s) => sum + s.usedLimit, 0);
-    const due = focusedStatements.reduce((sum, s) => sum + s.amountDue, 0);
-    const future = focusedStatements.reduce((sum, s) => sum + s.futureCommitted, 0);
-    const subs = focusedStatements.reduce((sum, s) => sum + s.subscriptions.reduce((a, b) => a + b.amount, 0), 0);
-    const nextDue = focusedStatements
-      .flatMap((s) => s.invoices.filter((invoice) => invoice.outstanding > 0.005 && invoice.key <= s.currentCycleKey))
-      .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())[0];
-    return { limit, used, due, future, subs, available: Math.max(0, limit - used), nextDue };
-  }, [focused, focusedStatements]);
+    const limit = list.reduce((sum, { card }) => sum + (card.limit || 0), 0);
+    const used = list.reduce((sum, { s }) => sum + s.usedLimit, 0);
+    const due = list.reduce((sum, { s }) => sum + s.amountDue, 0);
+    return { limit, used, due, available: Math.max(0, limit - used) };
+  }, [list]);
+
+  const upcoming = useMemo(() => {
+    const items: { card: CardItem; invoice: CardInvoice }[] = [];
+    for (const { card, s } of list) {
+      const unpaid = s.invoices.filter((invoice) => invoice.outstanding > 0.005 && invoice.key <= s.currentCycleKey);
+      const current = s.getInvoice(s.currentCycleKey);
+      const chosen = unpaid.length > 0 ? unpaid : current.total > 0 ? [current] : [];
+      for (const invoice of chosen) items.push({ card, invoice });
+    }
+    return items.sort((a, b) => a.invoice.dueDate.getTime() - b.invoice.dueDate.getTime());
+  }, [list]);
+
+  const nextDue = upcoming.find((entry) => entry.invoice.outstanding > 0.005);
 
   return (
-    <div className="space-y-4">
-      {/* Limite: um número principal, o resto ao tocar */}
-      <section className="rounded-[24px] border border-black/[0.05] bg-white p-5 shadow-[0_2px_8px_rgba(0,0,0,0.03)] sm:p-6">
-        <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <span className="text-xs font-semibold uppercase tracking-wider text-[#86868B]">Limite disponível</span>
-            <Money value={totals.available} className="mt-1 block text-[34px] font-semibold leading-none tracking-tight text-[#1D1D1F]" />
-            <p className="mt-2 text-xs text-[#86868B]">
-              de <Money value={totals.limit} /> · <Money value={totals.used} className="text-[#1D1D1F]" /> em uso
-            </p>
-          </div>
-          <div className="grid grid-cols-1 gap-2 sm:w-[440px] sm:grid-cols-3">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <CardCarousel
+        creditCards={creditCards}
+        statements={statements}
+        focusId={focusId}
+        onFocusChange={onFocusChange}
+        onManageCard={onManageCard}
+        onOpenInvoice={onOpenInvoice}
+      />
+
+      {/* Quanto ainda posso gastar */}
+      <Panel title="Limite">
+        <div className="flex items-center justify-between gap-3 border-b border-[var(--fb-line)] pb-3">
+          <span className="text-[22px] font-extrabold leading-8 [font-variant-numeric:tabular-nums] text-[var(--fb-text)]">{brl(totals.available)}</span>
+          <span className="text-sm font-medium text-[var(--fb-text-2)]">disponível</span>
+        </div>
+        <div className="mt-4 flex items-center gap-4">
+          <div className="flex min-w-0 flex-1 flex-col gap-5">
+            <Stat icon={<Wallet size={20} strokeWidth={1.75} />} label="Em uso" value={brl(totals.used)} />
             <Stat
-              label="A pagar agora"
-              value={totals.due}
-              hint={totals.nextDue ? `próx. venc. ${formatShortDate(totals.nextDue.dueDate)}` : "nada pendente"}
-              onClick={totals.nextDue ? () => onOpenInvoice(totals.nextDue!.key) : undefined}
+              icon={<Target size={20} strokeWidth={1.75} />}
+              label={nextDue ? `A pagar até ${formatShortDate(nextDue.invoice.dueDate)}` : "A pagar"}
+              value={brl(totals.due)}
             />
-            <Stat label="Parcelas futuras" value={totals.future} hint="já comprometido" onClick={onOpenPlans} />
-            <Stat label="Assinaturas" value={totals.subs} hint="por mês" onClick={onOpenPlans} />
           </div>
+          <Gauge
+            value={totals.used}
+            max={totals.limit}
+            size={132}
+            minLabel="R$ 0"
+            maxLabel={brlShort(totals.limit)}
+            centerLabel={`${totals.limit > 0 ? Math.round((totals.used / totals.limit) * 100) : 0}%`}
+            caption="do limite usado"
+          />
         </div>
+      </Panel>
 
-        {totals.limit > 0 && (
-          <div className="mt-5">
-            <div className="flex h-3 w-full gap-[2px] overflow-hidden rounded-full bg-[#F2F2F7]" role="img" aria-label="Uso do limite por cartão">
-              {focused.map((card) => {
-                const used = statements[card.id]?.usedLimit || 0;
-                if (used <= 0) return null;
-                return (
-                  <div
-                    key={card.id}
-                    title={`${card.name}: R$ ${formatBRL(used)} em uso`}
-                    className="h-full transition-all duration-500"
-                    style={{ width: `${(used / totals.limit) * 100}%`, backgroundColor: cardAccent(card) }}
-                  />
-                );
-              })}
-            </div>
-            {focused.length > 1 && (
-              <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1">
-                {focused.map((card) => (
-                  <span key={card.id} className="inline-flex items-center gap-1.5 text-[11px] text-[#86868B]">
-                    <CardDot card={card} size={8} />
-                    {card.name}
-                    <Money value={statements[card.id]?.usedLimit || 0} className="text-[#1D1D1F]" />
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </section>
-
-      {/* Meus cartões */}
-      <section>
-        <div className="mb-2 flex items-center justify-between px-1">
-          <h2 className="text-sm font-semibold text-[#1D1D1F]">Meus cartões</h2>
-          {focusIds.length > 0 && (
-            <button type="button" onClick={() => focusIds.forEach(onToggleFocus)} className="touch-target cursor-pointer text-xs font-medium text-[#0071E3]">
-              Ver todos
-            </button>
-          )}
-        </div>
-        <div className="no-scrollbar -mx-1 flex snap-x gap-3 overflow-x-auto px-1 pb-1">
-          {creditCards.map((card) => {
-            const statement = statements[card.id];
-            if (!statement) return null;
-            const current = statement.getInvoice(statement.currentCycleKey);
-            const pending = statement.invoices.find((invoice) => invoice.outstanding > 0.005 && invoice.key < statement.currentCycleKey);
-            const isFocused = focusIds.includes(card.id);
-            return (
-              <div
-                key={card.id}
-                className={`w-[260px] shrink-0 snap-start rounded-[22px] border bg-white p-4 transition-all sm:w-[280px] ${
-                  isFocused ? "border-[#1D1D1F] shadow-xs" : "border-black/[0.05]"
-                }`}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <button type="button" onClick={() => onToggleFocus(card.id)} className="flex min-w-0 cursor-pointer items-center gap-2.5 text-left" aria-pressed={isFocused}>
-                    <MiniCard cardName={card.name} brand={card.brand} colorScheme={card.colorScheme} />
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-semibold text-[#1D1D1F]">{card.name}</span>
-                      <span className="block text-[11px] text-[#86868B]">fecha {card.closingDay || 1} · vence {card.dueDay || 10}</span>
-                    </span>
-                  </button>
+      {/* O que tenho para pagar */}
+      <Panel title="Próximas faturas">
+        {upcoming.length === 0 ? (
+          <p className="py-6 text-center text-sm text-[var(--fb-text-3)]">Nenhuma fatura a pagar agora.</p>
+        ) : (
+          <ul className="-my-1">
+            {upcoming.slice(0, 3).map(({ card, invoice }) => {
+              const overdue = invoice.status === "overdue";
+              return (
+                <li key={`${card.id}-${invoice.key}`} className="border-b border-[var(--fb-line)] last:border-0">
                   <button
                     type="button"
-                    onClick={() => onManageCard(card)}
-                    className="touch-min flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#86868B] hover:bg-[#F2F2F7] hover:text-[#1D1D1F]"
-                    aria-label={`Ajustes do ${card.name}`}
+                    onClick={() => onOpenInvoice(invoice.key, card.id)}
+                    className="flex w-full cursor-pointer items-center gap-3 py-3 text-left"
                   >
-                    <Settings2 size={15} />
-                  </button>
-                </div>
-
-                <div className="mt-4">
-                  <div className="flex items-baseline justify-between text-[11px] text-[#86868B]">
-                    <span>Disponível</span>
-                    <span>{statement.percentUsed}% usado</span>
-                  </div>
-                  <Money value={statement.availableLimit} className="block text-lg font-semibold text-[#1D1D1F]" />
-                  <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-[#F2F2F7]">
-                    <div
-                      className="h-full rounded-full transition-all duration-500"
-                      style={{ width: `${statement.percentUsed}%`, backgroundColor: statement.percentUsed > 85 ? "#E11D48" : cardAccent(card) }}
-                    />
-                  </div>
-                  <p className="mt-1 text-[11px] text-[#86868B]">de <Money value={card.limit || 0} /></p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => onOpenInvoice((pending || current).key)}
-                  className="mt-3 flex w-full cursor-pointer items-center justify-between gap-2 rounded-2xl bg-[#F8F8FA] px-3 py-2.5 text-left transition-colors hover:bg-[#F2F2F7]"
-                >
-                  <span className="min-w-0">
-                    <span className="flex items-center gap-1.5 text-[11px] text-[#86868B]">
-                      Fatura de {monthName((pending || current).month)} <InvoiceStatusPill status={(pending || current).status} />
+                    <DateBlock date={invoice.dueDate} tone={overdue ? "danger" : "neutral"} />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1.5 truncate text-xs font-semibold text-[var(--fb-text-3)]">
+                        <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: cardAccent(card) }} aria-hidden />
+                        {card.name}
+                      </span>
+                      <span className="block truncate text-[15px] font-bold leading-6 text-[var(--fb-text-2)]">
+                        {monthName(invoice.month)}
+                      </span>
+                      <span className="block truncate text-xs text-[var(--fb-text-4)]">
+                        {overdue ? "Venceu — falta pagar" : `gastos de ${monthNameLower(invoice.referenceMonth)}`}
+                      </span>
                     </span>
-                    <Money value={(pending || current).outstanding || (pending || current).total} className="block text-sm font-semibold text-[#1D1D1F]" />
-                  </span>
-                  <ChevronRight size={16} className="shrink-0 text-[#86868B]" />
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      </section>
+                    <AmountPill value={invoice.outstanding || invoice.total} />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </Panel>
 
-      <InvoiceTimelineChart cards={focused} statements={statements} onOpenInvoice={onOpenInvoice} />
-
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <CategoryBreakdown cards={focused} statements={statements} />
-        <CommitmentsPreview cards={focused} statements={statements} onOpenPlans={onOpenPlans} />
-      </div>
+      <InvoiceHistory list={list} onOpenInvoice={onOpenInvoice} className="lg:col-span-2" />
+      <CommitmentsPanel list={list} onOpenPlans={onOpenPlans} />
+      <CategoryBreakdown list={list} className="lg:col-span-3" />
     </div>
   );
 }
 
-function Stat({ label, value, hint, onClick }: { label: string; value: number; hint: string; onClick?: () => void }) {
+function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={!onClick}
-      className="flex min-w-0 cursor-pointer items-center justify-between gap-3 rounded-2xl bg-[#F8F8FA] px-3.5 py-2.5 text-left transition-colors hover:bg-[#F2F2F7] disabled:cursor-default sm:block sm:px-3"
-    >
+    <div className="flex items-start gap-2">
+      <span className="text-[var(--fb-text-3)]">{icon}</span>
       <span className="min-w-0">
-        <span className="block text-[10px] font-semibold uppercase tracking-wider text-[#86868B]">{label}</span>
-        <span className="block text-[10px] text-[#86868B] sm:hidden">{hint}</span>
+        <span className="block text-xs text-[var(--fb-text-3)]">{label}</span>
+        <span className="block truncate text-base font-bold [font-variant-numeric:tabular-nums] text-[var(--fb-text)]">{value}</span>
       </span>
-      <span className="shrink-0 text-right sm:text-left">
-        <Money value={value} className="block text-sm font-semibold text-[#1D1D1F] sm:mt-0.5" />
-        <span className="hidden text-[10px] text-[#86868B] sm:block">{hint}</span>
-      </span>
-    </button>
+    </div>
   );
 }
 
 /* ------------------------------------------------------------------ */
-/* Linha do tempo de faturas: barras empilhadas por cartão               */
+/* Carrossel de cartões (como o "Total Balance" do kit)                 */
 /* ------------------------------------------------------------------ */
 
-function InvoiceTimelineChart({
-  cards,
+function CardCarousel({
+  creditCards,
   statements,
+  focusId,
+  onFocusChange,
+  onManageCard,
   onOpenInvoice,
 }: {
-  cards: CardItem[];
+  creditCards: CardItem[];
   statements: Record<string, CardStatement>;
-  onOpenInvoice: (periodKey: string) => void;
+  focusId: string | null;
+  onFocusChange: (cardId: string | null) => void;
+  onManageCard: (card: CardItem) => void;
+  onOpenInvoice: (periodKey: string, cardId?: string) => void;
 }) {
-  const [hoverKey, setHoverKey] = useState<string | null>(null);
-  const anyStatement = cards.map((card) => statements[card.id]).find(Boolean);
-  if (!anyStatement) return null;
+  const slides: (CardItem | null)[] = creditCards.length > 1 ? [null, ...creditCards] : creditCards;
+  const index = Math.max(0, slides.findIndex((slide) => (slide?.id ?? null) === focusId));
+  const card = slides[index];
+  const go = (delta: number) => {
+    const next = slides[(index + delta + slides.length) % slides.length];
+    onFocusChange(next?.id ?? null);
+  };
 
-  const baseKey = anyStatement.currentMonthKey;
-  const keys = Array.from({ length: 9 }, (_, index) => shiftPeriodKey(baseKey, index - 2));
-  const columns = keys.map((key) => {
-    const parts = cards.map((card) => {
-      const invoice = statements[card.id]?.getInvoice(key);
-      return { card, value: invoice?.total || 0, invoice };
-    });
-    const sample = parts[0]?.invoice;
-    return { key, parts, total: parts.reduce((sum, part) => sum + part.value, 0), sample };
-  });
-  const max = Math.max(1, ...columns.map((column) => column.total));
-  const active = columns.find((column) => column.key === hoverKey) || null;
+  const totalLimit = creditCards.reduce((sum, item) => sum + (item.limit || 0), 0);
+  const totalUsed = creditCards.reduce((sum, item) => sum + (statements[item.id]?.usedLimit || 0), 0);
+  const statement = card ? statements[card.id] : undefined;
+  const current = statement ? statement.getInvoice(statement.currentCycleKey) : null;
+  const used = card ? statement?.usedLimit || 0 : totalUsed;
+  const limit = card ? card.limit || 0 : totalLimit;
+  const accent = card ? cardAccent(card) : "var(--fb-accent)";
+  // Número do topo: a fatura atual (o limite já aparece no painel ao lado).
+  const currentKey = statement?.currentCycleKey ?? Object.values(statements)[0]?.currentCycleKey;
+  const invoiceTotal = card
+    ? current?.total ?? 0
+    : creditCards.reduce((sum, item) => sum + (currentKey ? statements[item.id]?.getInvoice(currentKey).total ?? 0 : 0), 0);
+  const invoiceMonth = currentKey ? monthName(Number(currentKey.split("-")[1]) - 1) : "";
 
   return (
-    <section className="rounded-[24px] border border-black/[0.05] bg-white p-5 shadow-[0_2px_8px_rgba(0,0,0,0.03)] sm:p-6">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h2 className="text-sm font-semibold text-[#1D1D1F]">Minhas faturas</h2>
-          <p className="text-xs text-[#86868B]">Cada fatura mostra os gastos do mês anterior. Toque numa barra para abrir.</p>
-        </div>
-        <div className="min-h-[34px] text-right">
-          {active ? (
-            <>
-              <span className="block text-[11px] text-[#86868B]">
-                Fatura de {monthName(Number(active.key.split("-")[1]) - 1)}
-                {active.sample && <> · gastos de {monthNameLower(active.sample.referenceMonth)}</>}
-              </span>
-              <Money value={active.total} className="text-sm font-semibold text-[#1D1D1F]" />
-            </>
-          ) : null}
-        </div>
+    <Panel title={card ? card.name : "Meus cartões"}>
+      <div className="flex items-center justify-between gap-3 border-b border-[var(--fb-line)] pb-3">
+        <span className="text-[22px] font-extrabold leading-8 [font-variant-numeric:tabular-nums] text-[var(--fb-text)]">{brl(invoiceTotal)}</span>
+        <span className="text-sm font-medium text-[var(--fb-text-2)]">fatura de {invoiceMonth}</span>
       </div>
 
-      <div className="mt-4 flex h-44 items-end gap-1.5 sm:gap-2.5" onMouseLeave={() => setHoverKey(null)}>
-        {columns.map((column, columnIndex) => {
-          const isCurrent = column.key === baseKey;
-          // No celular mostra 6 meses (1 antes, atual e 4 à frente) para alvos de toque confortáveis.
-          const hiddenOnPhone = columnIndex === 0 || columnIndex === columns.length - 1;
-          const isPast = column.key < baseKey;
-          const height = (column.total / max) * 100;
-          return (
-            <button
-              key={column.key}
-              type="button"
-              onMouseEnter={() => setHoverKey(column.key)}
-              onFocus={() => setHoverKey(column.key)}
-              onClick={() => onOpenInvoice(column.key)}
-              className={`group h-full min-w-[32px] flex-1 cursor-pointer flex-col items-center justify-end gap-1.5 ${hiddenOnPhone ? "hidden sm:flex" : "flex"}`}
-              aria-label={`Fatura de ${monthName(Number(column.key.split("-")[1]) - 1)}: R$ ${formatBRL(column.total)}`}
-            >
-              <div
-                className={`flex w-full max-w-[44px] flex-col-reverse gap-[2px] overflow-hidden rounded-t-[4px] transition-opacity ${
-                  hoverKey && hoverKey !== column.key ? "opacity-40" : isPast ? "opacity-60" : "opacity-100"
-                }`}
-                style={{ height: `${Math.max(column.total > 0 ? 3 : 0, height)}%` }}
+      <div
+        className="relative mt-4 overflow-hidden rounded-[8px] px-4 py-3.5 text-white"
+        style={{ background: `linear-gradient(135deg, ${accent}, color-mix(in srgb, ${accent} 55%, #000))` }}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <span className="min-w-0">
+            <span className="block text-xs text-white/70">{card ? "Cartão de crédito" : "Todos os cartões"}</span>
+            <span className="block truncate text-base font-semibold">{card ? card.name : "Visão geral"}</span>
+          </span>
+          {card && (
+            <span className="flex shrink-0 items-center gap-2">
+              <CardBrandLogo brand={card.brand} className="h-6" />
+              <button
+                type="button"
+                onClick={() => onManageCard(card)}
+                className="touch-target flex h-7 w-7 cursor-pointer items-center justify-center rounded-full bg-white/15 hover:bg-white/25"
+                aria-label={`Ajustes do ${card.name}`}
               >
-                {column.parts.filter((part) => part.value > 0).map((part) => (
-                  <div
-                    key={part.card.id}
-                    style={{ flexGrow: part.value, backgroundColor: cardAccent(part.card) }}
-                    className="min-h-[2px] w-full"
-                  />
-                ))}
-              </div>
-              <span className={`text-[11px] ${isCurrent ? "font-semibold text-[#1D1D1F]" : "text-[#86868B]"}`}>
-                {monthName(Number(column.key.split("-")[1]) - 1).slice(0, 3)}
-              </span>
+                <Settings2 size={14} />
+              </button>
+            </span>
+          )}
+        </div>
+        <div className="mt-3 flex flex-wrap items-end justify-between gap-2 text-xs text-white/80">
+          <span>{card ? `fecha dia ${card.closingDay || 1} · vence dia ${card.dueDay || 10}` : `limite total ${brl(limit)}`}</span>
+          {card && current && (
+            <button
+              type="button"
+              onClick={() => onOpenInvoice(current.key, card.id)}
+              className="touch-target cursor-pointer rounded-full bg-white/15 px-2.5 py-1 font-semibold text-white hover:bg-white/25"
+            >
+              Fatura {brl(current.outstanding || current.total)}
             </button>
-          );
-        })}
+          )}
+        </div>
       </div>
 
-      {active && cards.length > 1 && (
-        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-black/[0.05] pt-3">
-          {active.parts.map((part) => (
-            <span key={part.card.id} className="inline-flex items-center gap-1.5 text-[11px] text-[#86868B]">
-              <CardDot card={part.card} size={8} /> {part.card.name} <Money value={part.value} className="text-[#1D1D1F]" />
-            </span>
-          ))}
+      <div className="mt-4 space-y-1.5">
+        <div className="flex justify-between gap-2 text-xs text-[var(--fb-text-3)]">
+          <span>Limite usado</span>
+          <span className="[font-variant-numeric:tabular-nums]">{brl(used)} de {brl(limit)}</span>
+        </div>
+        <MeterBar value={used} max={limit} />
+      </div>
+
+      {slides.length > 1 && (
+        <div className="mt-4 flex items-center justify-between">
+          <button type="button" onClick={() => go(-1)} className="touch-target flex cursor-pointer items-center gap-1 text-sm text-[var(--fb-text-3)] hover:text-[var(--fb-text)]">
+            <ChevronLeft size={16} /> Anterior
+          </button>
+          <span className="flex gap-2" aria-hidden>
+            {slides.map((slide, dot) => (
+              <span key={slide?.id ?? "all"} className="h-2 w-2 rounded-full transition-colors" style={{ backgroundColor: dot === index ? "var(--fb-accent)" : "var(--fb-compare)" }} />
+            ))}
+          </span>
+          <button type="button" onClick={() => go(1)} className="touch-target flex cursor-pointer items-center gap-1 text-sm font-medium text-[var(--fb-text)]">
+            Próximo <ChevronRight size={16} />
+          </button>
         </div>
       )}
-      {!active && cards.length > 1 && (
-        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-black/[0.05] pt-3">
-          {cards.map((card) => (
-            <span key={card.id} className="inline-flex items-center gap-1.5 text-[11px] text-[#86868B]">
-              <CardDot card={card} size={8} /> {card.name}
-            </span>
-          ))}
-        </div>
-      )}
-    </section>
+    </Panel>
   );
 }
 
 /* ------------------------------------------------------------------ */
 
-function CategoryBreakdown({ cards, statements }: { cards: CardItem[]; statements: Record<string, CardStatement> }) {
-  const [open, setOpen] = useState<string | null>(null);
-  const rows = useMemo(() => {
-    const map = new Map<string, { total: number; items: { title: string; amount: number; card: CardItem }[] }>();
-    for (const card of cards) {
-      const statement = statements[card.id];
-      if (!statement) continue;
-      const invoice = statement.getInvoice(statement.currentCycleKey);
-      for (const charge of invoice.charges) {
-        if (charge.kind === "refund") continue;
-        const entry = map.get(charge.category) || { total: 0, items: [] };
-        entry.total += charge.amount;
-        entry.items.push({ title: charge.title, amount: charge.amount, card });
-        map.set(charge.category, entry);
-      }
-    }
-    return [...map.entries()].map(([category, data]) => ({ category, ...data })).sort((a, b) => b.total - a.total);
-  }, [cards, statements]);
-  const max = Math.max(1, ...rows.map((row) => row.total));
-  const sample = cards.map((card) => statements[card.id]).find(Boolean);
-  const reference = sample ? sample.getInvoice(sample.currentCycleKey) : null;
+function InvoiceHistory({
+  list,
+  onOpenInvoice,
+  className = "",
+}: {
+  list: { card: CardItem; s: CardStatement }[];
+  onOpenInvoice: (periodKey: string, cardId?: string) => void;
+  className?: string;
+}) {
+  const base = list[0]?.s.currentMonthKey;
+  if (!base) return null;
+  const current = list[0].s.currentCycleKey;
+  const keys = Array.from({ length: 9 }, (_, i) => shiftPeriodKey(base, i - 3));
+
+  const data: BarDatum[] = keys.map((key) => {
+    const parts = list.map(({ card, s }) => ({ card, invoice: s.getInvoice(key) }));
+    const total = parts.reduce((sum, part) => sum + part.invoice.total, 0);
+    const sample = parts[0]?.invoice;
+    const month = Number(key.split("-")[1]) - 1;
+    return {
+      key,
+      label: monthName(month).slice(0, 3),
+      value: total,
+      state: key < current ? "past" : key === current ? "current" : "future",
+      tooltip: (
+        <>
+          <span className="font-medium text-[var(--fb-text)]">
+            Fatura de {monthName(month)}
+            {sample && <span className="font-normal text-[var(--fb-text-3)]"> · gastos de {monthNameLower(sample.referenceMonth)}</span>}
+          </span>
+          <span className="flex flex-wrap gap-x-3 [font-variant-numeric:tabular-nums]">
+            {list.length > 1 && parts.filter((p) => p.invoice.total > 0).map((p) => (
+              <span key={p.card.id}>{p.card.name} {brl(p.invoice.total)}</span>
+            ))}
+            <strong className="text-[var(--fb-text)]">{brl(total)}</strong>
+          </span>
+        </>
+      ),
+    };
+  });
 
   return (
-    <section className="rounded-[24px] border border-black/[0.05] bg-white p-5 shadow-[0_2px_8px_rgba(0,0,0,0.03)]">
-      <h2 className="text-sm font-semibold text-[#1D1D1F]">Onde estou gastando</h2>
-      <p className="text-xs text-[#86868B]">
-        {reference ? `Fatura atual (${monthName(reference.month)}) · gastos de ${monthNameLower(reference.referenceMonth)}` : "Fatura atual"}
+    <Panel title="Faturas mês a mês" className={className}>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <span className="text-base font-semibold text-[var(--fb-text)]">Valor de cada fatura</span>
+        <Legend items={[
+          { label: "Fechadas", color: "var(--fb-compare)" },
+          { label: "Atual", color: "var(--fb-accent)" },
+          { label: "Previstas", color: "var(--fb-accent-2)" },
+        ]} />
+      </div>
+      <BarChart data={data} height={210} onSelect={(key) => onOpenInvoice(key, list.length === 1 ? list[0].card.id : undefined)} />
+    </Panel>
+  );
+}
+
+function CommitmentsPanel({ list, onOpenPlans }: { list: { card: CardItem; s: CardStatement }[]; onOpenPlans: () => void }) {
+  const [tab, setTab] = useState<"plans" | "subs">("plans");
+  const plans = list.flatMap(({ card, s }) => s.plans.map((plan) => ({ card, plan })))
+    .sort((a, b) => a.plan.remainingCount - b.plan.remainingCount);
+  const subs = list.flatMap(({ card, s }) => s.subscriptions.map((sub) => ({ card, sub })));
+
+  return (
+    <Panel title="Compromissos" action={<PanelLink onClick={onOpenPlans}>Ver tudo</PanelLink>}>
+      <div className="mb-1 flex gap-5 border-b border-[var(--fb-line)]" role="tablist">
+        {([["plans", `Parcelas (${plans.length})`], ["subs", `Assinaturas (${subs.length})`]] as const).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={tab === id}
+            onClick={() => setTab(id)}
+            className={`-mb-px cursor-pointer border-b-2 px-1 pb-2.5 text-sm font-semibold transition-colors ${
+              tab === id ? "border-[var(--fb-accent)] text-[var(--fb-accent)]" : "border-transparent text-[var(--fb-text-2)]"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <ul>
+        {tab === "plans" && plans.slice(0, 4).map(({ card, plan }) => (
+          <li key={plan.recurringItemId} className="flex items-center gap-3 border-b border-[var(--fb-line)] py-3 last:border-0">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[8px] bg-[var(--fb-card-2)] text-[var(--fb-text-3)]"><CalendarClock size={18} strokeWidth={1.75} /></span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-medium text-[var(--fb-text)]">{plan.title}</span>
+              <span className="block truncate text-xs text-[var(--fb-text-4)]">{card.name} · {plan.chargedCount}/{plan.installmentsCount} cobradas</span>
+            </span>
+            <span className="shrink-0 text-right">
+              <span className="block text-sm font-semibold [font-variant-numeric:tabular-nums] text-[var(--fb-text)]">{brl(plan.remainingAmount)}</span>
+              <span className="block text-xs text-[var(--fb-text-4)]">faltam {plan.remainingCount}</span>
+            </span>
+          </li>
+        ))}
+        {tab === "subs" && subs.slice(0, 4).map(({ card, sub }) => (
+          <li key={sub.recurringItemId} className="flex items-center gap-3 border-b border-[var(--fb-line)] py-3 last:border-0">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[8px] bg-[var(--fb-card-2)] text-[var(--fb-text-3)]"><Repeat size={18} strokeWidth={1.75} /></span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-medium text-[var(--fb-text)]">{sub.title}</span>
+              <span className="block truncate text-xs text-[var(--fb-text-4)]">
+                {card.name}{sub.nextCharge && ` · próxima ${formatShortDate(sub.nextCharge.chargeDate)}`}
+              </span>
+            </span>
+            <span className="shrink-0 text-sm font-semibold [font-variant-numeric:tabular-nums] text-[var(--fb-text)]">{brl(sub.amount)}</span>
+          </li>
+        ))}
+        {((tab === "plans" && plans.length === 0) || (tab === "subs" && subs.length === 0)) && (
+          <li className="py-6 text-center text-sm text-[var(--fb-text-3)]">
+            {tab === "plans" ? "Nenhuma compra parcelada em andamento." : "Nenhuma assinatura no cartão."}
+          </li>
+        )}
+      </ul>
+    </Panel>
+  );
+}
+
+function CategoryBreakdown({ list, className = "" }: { list: { card: CardItem; s: CardStatement }[]; className?: string }) {
+  const [open, setOpen] = useState<string | null>(null);
+  const sample = list[0]?.s;
+  const rows = useMemo(() => {
+    if (!sample) return [];
+    const currentKey = sample.currentCycleKey;
+    const previousKey = shiftPeriodKey(currentKey, -1);
+    const sum = (key: string) => {
+      const map = new Map<string, { total: number; items: { title: string; amount: number; card: CardItem }[] }>();
+      for (const { card, s } of list) {
+        for (const charge of s.getInvoice(key).charges) {
+          if (charge.kind === "refund") continue;
+          const entry = map.get(charge.category) || { total: 0, items: [] };
+          entry.total += charge.amount;
+          entry.items.push({ title: charge.title, amount: charge.amount, card });
+          map.set(charge.category, entry);
+        }
+      }
+      return map;
+    };
+    const now = sum(currentKey);
+    const before = sum(previousKey);
+    return [...now.entries()]
+      .map(([category, data]) => {
+        const previous = before.get(category)?.total ?? 0;
+        return { category, ...data, delta: previous > 0 ? ((data.total - previous) / previous) * 100 : null };
+      })
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 6);
+  }, [list, sample]);
+
+  if (!sample) return null;
+  const invoice = sample.getInvoice(sample.currentCycleKey);
+
+  return (
+    <Panel
+      title="Onde estou gastando"
+      className={className}
+      action={<span className="pb-1.5 text-xs text-[var(--fb-text-3)]">*comparado à fatura anterior</span>}
+    >
+      <p className="mb-2 text-sm font-semibold text-[var(--fb-text)]">
+        Fatura de {monthName(invoice.month)} <span className="font-normal text-[var(--fb-text-3)]">· gastos de {monthNameLower(invoice.referenceMonth)}</span>
       </p>
       {rows.length === 0 ? (
-        <p className="mt-4 text-xs text-[#86868B]">Nenhuma compra na fatura atual ainda.</p>
+        <p className="py-6 text-center text-sm text-[var(--fb-text-3)]">Nenhuma compra na fatura atual ainda.</p>
       ) : (
-        <ul className="mt-3 space-y-1">
-          {rows.slice(0, 7).map((row) => (
-            <li key={row.category}>
+        <ul className="grid grid-cols-1 gap-x-6 sm:grid-cols-2 lg:grid-cols-3">
+          {rows.map((row) => (
+            <li key={row.category} className="border-b border-[var(--fb-line)]">
               <button
                 type="button"
                 onClick={() => setOpen(open === row.category ? null : row.category)}
-                className="w-full cursor-pointer rounded-xl px-2 py-1.5 text-left transition-colors hover:bg-[#F8F8FA]"
                 aria-expanded={open === row.category}
+                className="flex w-full cursor-pointer items-center gap-3 rounded-[8px] px-2 py-4 text-left transition-colors hover:bg-[var(--fb-card-2)]"
               >
-                <span className="flex items-baseline justify-between gap-2 text-xs">
-                  <span className="truncate text-[#1D1D1F]">{row.category}</span>
-                  <Money value={row.total} className="shrink-0 font-semibold text-[#1D1D1F]" />
+                <CategoryIconTile category={row.category} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-xs text-[var(--fb-text-3)]">{row.category}</span>
+                  <span className="block text-base font-bold [font-variant-numeric:tabular-nums] text-[var(--fb-text)]">{brl(row.total)}</span>
+                  <Delta value={row.delta} />
                 </span>
-                <span className="mt-1 block h-1.5 w-full overflow-hidden rounded-full bg-[#F2F2F7]">
-                  <span className="block h-full rounded-full bg-indigo-500" style={{ width: `${(row.total / max) * 100}%` }} />
-                </span>
+                <ChevronRight size={18} className={`shrink-0 transition-transform ${open === row.category ? "rotate-90 text-[var(--fb-accent)]" : "text-[var(--fb-text-5)]"}`} />
               </button>
               {open === row.category && (
-                <ul className="mb-1 ml-2 space-y-1 border-l border-black/[0.06] pl-3 animate-in fade-in duration-200">
-                  {row.items.sort((a, b) => b.amount - a.amount).map((item, index) => (
-                    <li key={`${item.title}-${index}`} className="flex items-center justify-between gap-2 text-[11px] text-[#86868B]">
-                      <span className="flex min-w-0 items-center gap-1.5 truncate"><CardDot card={item.card} size={6} /> {item.title}</span>
-                      <Money value={item.amount} />
+                <ul className="space-y-1.5 px-2 pb-4 animate-in fade-in duration-200">
+                  {row.items.sort((a, b) => b.amount - a.amount).slice(0, 6).map((item, index) => (
+                    <li key={`${item.title}-${index}`} className="flex items-center justify-between gap-2 text-xs text-[var(--fb-text-2)]">
+                      <span className="truncate">{item.title}{list.length > 1 && <span className="text-[var(--fb-text-4)]"> · {item.card.name}</span>}</span>
+                      <span className="shrink-0 [font-variant-numeric:tabular-nums]">{brl(item.amount)}</span>
                     </li>
                   ))}
                 </ul>
@@ -384,60 +465,6 @@ function CategoryBreakdown({ cards, statements }: { cards: CardItem[]; statement
           ))}
         </ul>
       )}
-    </section>
-  );
-}
-
-function CommitmentsPreview({
-  cards,
-  statements,
-  onOpenPlans,
-}: {
-  cards: CardItem[];
-  statements: Record<string, CardStatement>;
-  onOpenPlans: () => void;
-}) {
-  const plans = cards.flatMap((card) => (statements[card.id]?.plans || []).map((plan) => ({ plan, card })));
-  const subs = cards.flatMap((card) => (statements[card.id]?.subscriptions || []).map((sub) => ({ sub, card })));
-  const endingSoon = [...plans].sort((a, b) => a.plan.remainingCount - b.plan.remainingCount).slice(0, 4);
-
-  return (
-    <section className="rounded-[24px] border border-black/[0.05] bg-white p-5 shadow-[0_2px_8px_rgba(0,0,0,0.03)]">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <h2 className="text-sm font-semibold text-[#1D1D1F]">Parcelas e assinaturas</h2>
-          <p className="text-xs text-[#86868B]">{plans.length} parcelamentos · {subs.length} assinaturas</p>
-        </div>
-        <button type="button" onClick={onOpenPlans} className="touch-target cursor-pointer text-xs font-medium text-[#0071E3]">Ver tudo</button>
-      </div>
-      {endingSoon.length === 0 && subs.length === 0 ? (
-        <p className="mt-4 text-xs text-[#86868B]">Nenhuma compra parcelada ou assinatura ativa.</p>
-      ) : (
-        <ul className="mt-3 space-y-2.5">
-          {endingSoon.map(({ plan, card }) => (
-            <li key={plan.recurringItemId} className="flex items-center gap-3">
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-700"><CalendarClock size={15} /></span>
-              <span className="min-w-0 flex-1">
-                <span className="flex items-center gap-1.5 truncate text-xs font-medium text-[#1D1D1F]"><CardDot card={card} size={6} />{plan.title}</span>
-                <span className="mt-1 block h-1 w-full overflow-hidden rounded-full bg-[#F2F2F7]">
-                  <span className="block h-full rounded-full bg-indigo-500" style={{ width: `${(plan.chargedCount / plan.installmentsCount) * 100}%` }} />
-                </span>
-              </span>
-              <span className="shrink-0 text-right text-[11px] text-[#86868B]">
-                {plan.chargedCount}/{plan.installmentsCount}
-                <Money value={plan.remainingAmount} className="block text-xs font-semibold text-[#1D1D1F]" />
-              </span>
-            </li>
-          ))}
-          {subs.slice(0, Math.max(0, 5 - endingSoon.length)).map(({ sub, card }) => (
-            <li key={sub.recurringItemId} className="flex items-center gap-3">
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700"><Repeat size={15} /></span>
-              <span className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-xs font-medium text-[#1D1D1F]"><CardDot card={card} size={6} />{sub.title}</span>
-              <Money value={sub.amount} className="shrink-0 text-xs font-semibold text-[#1D1D1F]" />
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+    </Panel>
   );
 }

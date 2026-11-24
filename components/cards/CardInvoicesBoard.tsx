@@ -59,6 +59,7 @@ export function CardInvoicesBoard({ periodKey, cardIds, defaultExpanded = false,
     unpayInvoice,
     moveCardCharge,
     removeCardCharge,
+    startRecurringAtInvoice,
     updateRecurringItem,
     updateRecurringItemOccurrence,
     updateTransaction,
@@ -142,6 +143,11 @@ export function CardInvoicesBoard({ periodKey, cardIds, defaultExpanded = false,
               ? `${charge.title} agora cobra no ${destination?.name} a partir desta fatura. As anteriores não mudaram.`
               : `${charge.title} foi para o ${destination?.name}.`
           );
+        }}
+        onStartAt={async (charge, invoiceKey) => {
+          if (!charge.recurringItemId) return;
+          await startRecurringAtInvoice(charge.recurringItemId, invoiceKey);
+          notify.success(`${charge.title} agora começa na fatura de ${monthName(Number(invoiceKey.split("-")[1]) - 1)}. As faturas anteriores foram limpas.`);
         }}
         onRemove={async (charge, scope) => {
           await removeCardCharge(charge, scope);
@@ -292,7 +298,7 @@ function InvoicePanel({
   const headline = invoice.status === "paid" || invoice.status === "settled" ? invoice.total : invoice.outstanding || invoice.total;
 
   return (
-    <article className="overflow-hidden rounded-[22px] border border-black/[0.05] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.03)]">
+    <article className="overflow-hidden rounded-[12px] bg-[var(--fb-card)] shadow-[var(--fb-shadow)]">
       <div className="space-y-3 p-4 sm:p-5">
         <div className="flex items-start gap-3">
           <MiniCard cardName={card.name} brand={card.brand} colorScheme={card.colorScheme} className="shrink-0" />
@@ -323,7 +329,7 @@ function InvoicePanel({
         {(isPartial || invoice.creditApplied > 0) && (
           <div className="space-y-1.5">
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#F2F2F7]">
-              <div className="h-full rounded-full bg-emerald-500 transition-all duration-500" style={{ width: `${paidShare}%` }} />
+              <div className="h-full rounded-full bg-[var(--fb-accent)] transition-all duration-500" style={{ width: `${paidShare}%` }} />
             </div>
             <p className="text-[11px] text-[#86868B]">
               Fatura de <Money value={invoice.total} className="text-[#1D1D1F]" />
@@ -338,7 +344,7 @@ function InvoicePanel({
             <button
               type="button"
               onClick={() => onPay(invoice)}
-              className="touch-target inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-[#1D1D1F] px-3.5 py-1.5 text-xs font-semibold text-white shadow-2xs transition-transform active:scale-95"
+              className="touch-target inline-flex cursor-pointer items-center gap-1.5 rounded-[8px] bg-[var(--fb-accent)] px-3.5 py-1.5 text-xs font-semibold text-white transition-transform active:scale-95"
             >
               <Wallet size={13} /> {isPartial ? "Pagar o restante" : "Paguei a fatura"}
             </button>
