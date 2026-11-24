@@ -166,3 +166,19 @@ test("dados malformados (início em texto, NaN, objeto) não travam o cálculo",
     assert.equal(getPendingDueOccurrences([{ ...base, ...extra }], [nubank], [], today).length >= 0, true);
   }
 });
+
+test("lançamento órfão (série apagada) não quebra e vira compra comum", async () => {
+  const { getCardInvoiceDetailsForMonth } = await import("../lib/utils/ledger.ts");
+  const today = new Date(2026, 10, 24, 12);
+  const orphan = {
+    id: "tx-orfa", title: "Netflix antiga", amount: 55.9, type: "despesa", account: "Nubank", cardId: "nu",
+    recurringItemId: "rec-apagada", periodKey: "2026-11", occurredAt: new Date(2026, 10, 10, 12),
+  };
+  const s = buildCardStatement(nubank, [orphan], [], { today });
+  const charge = s.getInvoice("2026-12").charges[0];
+  assert.equal(charge.kind, "purchase");
+  assert.equal(charge.recurringItemId, null);
+  const details = getCardInvoiceDetailsForMonth(nubank, [orphan], [], 2026, 11, today);
+  assert.equal(details.totalInvoice, 55.9);
+  assert.equal(details.recurringItemDetails.length, 0);
+});

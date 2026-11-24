@@ -312,7 +312,7 @@ export function buildCardStatement(
       chargeDate: date,
       invoiceKey,
       chargePeriodKey,
-      recurringItemId: entry.recurringItemId || null,
+      recurringItemId: item ? item.id : null, // série apagada = compra comum
       transactionId: entry.id || null,
       ...(kind === "installment" && item
         ? { installmentIndex: offset + 1, installmentsCount: item.installmentsCount }

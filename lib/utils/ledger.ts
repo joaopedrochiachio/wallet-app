@@ -624,7 +624,12 @@ export function getCardInvoiceDetailsForMonth(
   const installmentsAmount = Math.round(Math.max(0, postedPurchases - refunds) * 100) / 100;
   const recurringAmount = Math.round(scheduled.reduce((sum, charge) => sum + charge.amount, 0) * 100) / 100;
 
-  const recurringCharges = invoice.charges.filter((charge) => charge.recurringItemId);
+  // Lançamentos podem apontar para uma série que já foi apagada (órfãos):
+  // eles continuam na fatura como compra comum, sem detalhe de série.
+  const recurringCharges = invoice.charges.filter((charge) =>
+    charge.recurringItemId &&
+    (charge.item || recurringItems.some((candidate) => candidate.id === charge.recurringItemId))
+  );
   const recurringItemDetails: CardInvoiceRecurringItemDetail[] = recurringCharges.map((charge) => {
     const item = (charge.item || recurringItems.find((candidate) => candidate.id === charge.recurringItemId)) as RecurringItem;
     const isContinuous = charge.kind === "subscription";
