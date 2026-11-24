@@ -99,8 +99,13 @@ export function getDueOccurrencesForRecurringItem(
 ): DueOccurrence[] {
   if (!item.active) return [];
 
-  const startYear = item.startYear ?? asOfDate.getFullYear();
-  const startMonth = item.startMonth ?? asOfDate.getMonth();
+  // Valores inválidos (texto, NaN) viram o padrão para o laço abaixo sempre terminar.
+  const rawYear = Number(item.startYear);
+  const rawMonth = Number(item.startMonth);
+  const startYear = item.startYear != null && Number.isFinite(rawYear) ? Math.trunc(rawYear) : asOfDate.getFullYear();
+  const startMonth = item.startMonth != null && Number.isFinite(rawMonth) && rawMonth >= 0 && rawMonth <= 11
+    ? Math.trunc(rawMonth)
+    : asOfDate.getMonth();
   const targetEndYear = asOfDate.getFullYear();
   const targetEndMonth = asOfDate.getMonth();
 

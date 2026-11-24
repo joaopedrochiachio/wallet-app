@@ -553,7 +553,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     const today = new Date();
     const result: Record<string, CardStatement> = {};
     for (const card of cards.filter((item) => item.type === "credit")) {
-      result[card.id] = buildCardStatement({ ...card, spent: 0 }, transactions, recurringItems, { today });
+      try {
+        result[card.id] = buildCardStatement({ ...card, spent: 0 }, transactions, recurringItems, { today });
+      } catch (error) {
+        // Um dado malformado não pode derrubar o app inteiro: o cartão fica sem extrato.
+        console.error(`Erro ao calcular o extrato do cartão ${card.name}:`, error);
+        result[card.id] = buildCardStatement({ ...card, spent: 0 }, [], [], { today });
+      }
     }
     return result;
   }, [transactions, cards, recurringItems]);

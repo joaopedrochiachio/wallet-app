@@ -23,6 +23,7 @@ import {
   getEffectiveRecurringItemForPeriod,
   getPeriodKey,
   getRecurringMonthOffset,
+  getRecurringStartPeriod,
   isInstallmentPaidInMonth,
   isRecurringEndedInMonth,
 } from "./dateUtils.ts";
@@ -206,8 +207,8 @@ function entryPeriodKey(entry: LedgerEntry): string | null {
 }
 
 function getRecurringStart(item: RecurringItem, reference: Date) {
-  const offset = getRecurringMonthOffset(item, reference.getFullYear(), reference.getMonth());
-  return new Date(reference.getFullYear(), reference.getMonth() - offset, 1);
+  const start = getRecurringStartPeriod(item, reference.getFullYear());
+  return new Date(start.year, start.month, 1);
 }
 
 function classifyRecurring(item: RecurringItem): CardChargeKind {
@@ -330,6 +331,7 @@ export function buildCardStatement(
       if (item.type === "income") continue;
       const kind = classifyRecurring(item);
       const start = getRecurringStart(item, today);
+      if (Number.isNaN(start.getTime())) continue;
       const count = item.installmentsCount && item.installmentsCount > 0
         ? Math.min(360, item.installmentsCount)
         : null;
@@ -339,9 +341,11 @@ export function buildCardStatement(
       let belongsToCard = false;
       let totalAmount = 0;
 
-      for (let offset = 0; ; offset++) {
+      // Teto rígido: nenhuma série pode gerar mais de 600 meses (evita travar a tela).
+      for (let offset = 0; offset < 600; offset++) {
         if (count !== null && offset >= count) break;
         const periodDate = new Date(start.getFullYear(), start.getMonth() + offset, 1);
+        if (Number.isNaN(periodDate.getTime())) break;
         if (count === null && periodDate >= horizonEnd) break;
         const year = periodDate.getFullYear();
         const month = periodDate.getMonth();

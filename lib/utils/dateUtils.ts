@@ -154,12 +154,30 @@ export function getRecurringMonthOffset(
   targetYear: number,
   targetMonth: number
 ): number {
-  const startYear = item.startYear ?? targetYear;
+  const start = getRecurringStartPeriod(item, targetYear);
+  return (targetYear - start.year) * 12 + targetMonth - start.month;
+}
+
+/**
+ * Início (ano, mês 0-11) de uma série, sempre como números inteiros válidos.
+ * Dados antigos ou importados podem trazer texto, null ou NaN nesses campos;
+ * sem esta normalização os laços mês a mês nunca terminam.
+ */
+export function getRecurringStartPeriod(
+  item: { startYear?: unknown; startMonth?: unknown; startMonthIndex?: unknown },
+  fallbackYear: number = new Date().getFullYear()
+): { year: number; month: number } {
+  const toInt = (value: unknown): number | null => {
+    if (value === null || value === undefined || value === "") return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
+  };
+  const year = toInt(item.startYear) ?? fallbackYear;
+  const month = toInt(item.startMonth);
+  if (month !== null && month >= 0 && month <= 11) return { year, month };
   // Compatibilidade com dados antigos: a tela original começava em setembro/2026.
-  const legacyDate = new Date(startYear, 8 + (item.startMonthIndex ?? 0), 1);
-  const startMonth = item.startMonth ?? legacyDate.getMonth();
-  const normalizedStartYear = item.startMonth === undefined ? legacyDate.getFullYear() : startYear;
-  return (targetYear - normalizedStartYear) * 12 + targetMonth - startMonth;
+  const legacy = new Date(year, 8 + (toInt(item.startMonthIndex) ?? 0), 1);
+  return { year: legacy.getFullYear(), month: legacy.getMonth() };
 }
 
 /** As parcelas pagas antes do cadastro não geram novas cobranças ou saídas de caixa. */

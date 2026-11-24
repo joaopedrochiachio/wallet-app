@@ -147,3 +147,22 @@ test("estorno no cartão abate da fatura do ciclo em que ocorreu", () => {
   assert.equal(s.getInvoice("2026-12").total, 0);
   assert.equal(s.usedLimit, 0);
 });
+
+test("dados malformados (início em texto, NaN, objeto) não travam o cálculo", () => {
+  const today = new Date(2026, 10, 24, 12);
+  const base = { id: "bad", title: "X", amount: 10, type: "expense", account: "Nubank", cardId: "nu", category: "c", dueDay: 5, active: true };
+  for (const extra of [
+    { startMonth: "Outubro", startYear: 2026 },
+    { startMonth: 9, startYear: "abc" },
+    { startMonth: null, startYear: null },
+    { startMonth: NaN, startYear: 2026 },
+    { startYear: { seconds: 1 } },
+    { startMonth: 9, startYear: 2026, installmentsCount: 5, dueDay: "x" },
+  ]) {
+    const started = Date.now();
+    const s = buildCardStatement(nubank, [], [{ ...base, ...extra }], { today });
+    assert.ok(Date.now() - started < 1000, `travou com ${JSON.stringify(extra)}`);
+    assert.ok(Number.isFinite(s.usedLimit));
+    assert.equal(getPendingDueOccurrences([{ ...base, ...extra }], [nubank], [], today).length >= 0, true);
+  }
+});
