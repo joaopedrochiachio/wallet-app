@@ -433,7 +433,7 @@ export default function PresentationPage() {
               {
                 id: "optimizer",
                 icon: TrendingUp,
-                name: "The Optimizer",
+                name: "Aproveitar o crédito",
                 badge: "Pontos & Cashback",
                 desc: "Concentra o fluxo no crédito, maximiza prazos de vencimento e quita faturas no dia exato sem incidência de juros.",
                 metric: "Retorno por Gasto",
@@ -443,7 +443,7 @@ export default function PresentationPage() {
               {
                 id: "guardian",
                 icon: ShieldCheck,
-                name: "The Guardian",
+                name: "Ter segurança",
                 badge: "Segurança 12 Meses",
                 desc: "Privilegia a previsibilidade absoluta, mantém colchão de liquidez protegido e evita compromissos de longo prazo.",
                 metric: "Reserva Intocável",
@@ -453,7 +453,7 @@ export default function PresentationPage() {
               {
                 id: "scaler",
                 icon: Compass,
-                name: "The Scaler",
+                name: "Fazer o dinheiro crescer",
                 badge: "Crescimento Ativo",
                 desc: "Gerencia múltiplos cartões com estratégia, suporta alavancagem planejada e direciona fluxo para metas de alto impacto.",
                 metric: "Aporte Patrimonial",
@@ -463,7 +463,7 @@ export default function PresentationPage() {
               {
                 id: "minimalist",
                 icon: Sliders,
-                name: "The Minimalist",
+                name: "Gastar menos",
                 badge: "Poupança > 50%",
                 desc: "Elimina custos fixos supérfluos, mantém poucas assinaturas ativas e foca na clareza de viver abaixo da renda.",
                 metric: "Custo Fixo Mínimo",
@@ -572,7 +572,7 @@ export default function PresentationPage() {
               </span>
               <h4 className="font-semibold text-xs text-[#1D1D1F]">Escolha seu Arquétipo</h4>
               <p className="text-[11px] text-[#86868B]">
-                Selecione entre The Optimizer, The Guardian, The Scaler ou The Minimalist.
+                Escolha seu objetivo: aproveitar o crédito, ter segurança, fazer o dinheiro crescer ou gastar menos.
               </p>
             </div>
 

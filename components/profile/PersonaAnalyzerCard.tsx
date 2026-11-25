@@ -5,38 +5,6 @@ import { FinancialPersonaId, AIToneId } from "@/types";
 import { PERSONA_METADATA } from "./WalletIdTitaniumCard";
 import { Check } from "lucide-react";
 
-interface PersonaTrait {
-  label: string;
-  value: number;
-}
-
-const PERSONA_TRAITS: Record<FinancialPersonaId, PersonaTrait[]> = {
-  optimizer: [
-    { label: "Eficiência no Uso de Crédito", value: 96 },
-    { label: "Otimização de Custos e Benefícios", value: 92 },
-    { label: "Previsibilidade de Fluxo de Caixa", value: 78 },
-    { label: "Disciplina de Teto Orçamentário", value: 85 },
-  ],
-  guardian: [
-    { label: "Reserva de Liquidez e Blindagem", value: 98 },
-    { label: "Previsibilidade Contábil", value: 95 },
-    { label: "Aversão a Riscos e Juros", value: 94 },
-    { label: "Alavancagem no Cartão", value: 45 },
-  ],
-  scaler: [
-    { label: "Expansão Patrimonial e Aportes", value: 96 },
-    { label: "Visão Estratégica de Longo Prazo", value: 92 },
-    { label: "Alavancagem Inteligente de Caixa", value: 88 },
-    { label: "Tolerância a Volatilidade", value: 80 },
-  ],
-  minimalist: [
-    { label: "Taxa de Poupança Real", value: 97 },
-    { label: "Frugalidade e Despesas Essenciais", value: 95 },
-    { label: "Independência Financeira (FIRE)", value: 91 },
-    { label: "Simplicidade de Instrumentos", value: 94 },
-  ],
-};
-
 interface PersonaAnalyzerCardProps {
   currentPersonaId: FinancialPersonaId;
   aiTone: AIToneId;
@@ -57,7 +25,6 @@ export function PersonaAnalyzerCard({
   formatCurrency,
 }: PersonaAnalyzerCardProps) {
   const currentPersona = PERSONA_METADATA[currentPersonaId] || PERSONA_METADATA.optimizer;
-  const traits = PERSONA_TRAITS[currentPersonaId] || PERSONA_TRAITS.optimizer;
 
   const firstName = userName ? userName.split(" ")[0] : "João";
 
@@ -68,7 +35,7 @@ export function PersonaAnalyzerCard({
     if (aiTone === "analytical") {
       switch (currentPersonaId) {
         case "optimizer":
-          return `Análise para ${firstName}: com renda base de R$ ${formattedIncome} e saldo livre de R$ ${formattedBalance}, o índice de eficiência da carteira é de 96%. Recomendamos liquidar parcelas antecipadas no fechamento para manter o custo financeiro zerado.`;
+          return `Análise para ${firstName}: com renda base de R$ ${formattedIncome} e saldo livre de R$ ${formattedBalance}, recomendamos liquidar parcelas antecipadas no fechamento para manter o custo financeiro zerado.`;
         case "guardian":
           return `Auditoria contábil para ${firstName}: seu saldo atual de R$ ${formattedBalance} cobre compromissos imediatos. Para blindar a reserva de emergência equivalente a 3 meses (R$ ${formatCurrency(monthlyIncome * 3)}), limite despesas fixas a no máximo 60% da renda.`;
         case "scaler":
@@ -107,13 +74,13 @@ export function PersonaAnalyzerCard({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-black/[0.05]">
         <div>
           <span className="text-[10px] font-mono tracking-[0.2em] uppercase text-[#86868B] font-semibold block">
-            MODELO COGNITIVO · ADVISOR IA
+            COFI · SEU ANALISTA
           </span>
           <h3 className="text-base sm:text-lg font-semibold tracking-tight text-[#1D1D1F] mt-0.5">
-            Diretriz Estratégica do Arquétipo
+            Como o Cofi deve te orientar
           </h3>
           <p className="text-xs text-[#86868B] mt-0.5">
-            Define a lente contábil utilizada pela IA para avaliar seu fluxo de caixa e formular recomendações
+            Escolha o seu objetivo principal. O Cofi prioriza as dicas de acordo com ele.
           </p>
         </div>
 
@@ -126,7 +93,7 @@ export function PersonaAnalyzerCard({
       {/* 4 Cards Arquiteturais de Seleção (Estilo Fintech / Linear) */}
       <div className="space-y-2.5">
         <label className="text-[11px] font-mono uppercase tracking-wider text-[#86868B] font-semibold block">
-          Selecione o Arquétipo da Carteira
+          Seu objetivo principal
         </label>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {(Object.keys(PERSONA_METADATA) as FinancialPersonaId[]).map((personaId) => {
@@ -181,40 +148,11 @@ export function PersonaAnalyzerCard({
         </div>
       </div>
 
-      {/* Dimensões do Modelo (Barras de Telemetria Contábil) */}
-      <div className="space-y-3 pt-2">
-        <div className="flex items-center justify-between">
-          <label className="text-[11px] font-mono uppercase tracking-wider text-[#86868B] font-semibold">
-            Calibração Contábil do Modelo
-          </label>
-          <span className="text-[10px] font-mono text-[#86868B]">Valores Ponderados</span>
-        </div>
-
-        <div className="bg-[#F9F9FB] rounded-2xl p-4 sm:p-5 border border-black/[0.05] space-y-3.5">
-          {traits.map((trait, index) => (
-            <div key={index} className="space-y-1.5">
-              <div className="flex justify-between items-center text-xs">
-                <span className="font-medium text-[#1D1D1F] text-xs">{trait.label}</span>
-                <span className="font-mono font-medium text-[#1D1D1F] text-xs tabular-nums">
-                  {trait.value}%
-                </span>
-              </div>
-              <div className="w-full h-1.5 bg-[#E5E5EA] rounded-full overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-[#1D1D1F] transition-all duration-500 ease-out"
-                  style={{ width: `${trait.value}%` }}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
       {/* Briefing Executivo do Advisor (Claude / OpenAI Memo) */}
       <div className="space-y-2 pt-2 border-t border-black/[0.05]">
         <div className="flex items-center justify-between">
           <span className="text-[10px] font-mono uppercase tracking-wider text-[#86868B] font-semibold">
-            Demonstração de Postura do Advisor
+            Exemplo de como o Cofi fala com você
           </span>
           <span className="text-[10px] font-mono text-[#86868B] uppercase">
             {aiTone === "analytical"

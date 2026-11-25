@@ -49,7 +49,7 @@ export function CategoryBudgets() {
       </div>
       <div className="flex items-center justify-between gap-2 text-xs">
         <button type="button" aria-label="Ver orçamento do mês anterior" onClick={() => setMonthOffset((offset) => offset - 1)} className="rounded-full bg-[#F2F2F7] p-2 cursor-pointer"><ChevronLeft size={16} /></button>
-        <span className="font-semibold capitalize">{month.toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}</span>
+        <span className="font-semibold">{(() => { const label = month.toLocaleDateString("pt-BR", { month: "long", year: "numeric" }); return label.charAt(0).toUpperCase() + label.slice(1); })()}</span>
         <button type="button" aria-label="Ver orçamento do próximo mês" disabled={monthOffset >= 0} onClick={() => setMonthOffset((offset) => offset + 1)} className="rounded-full bg-[#F2F2F7] p-2 disabled:opacity-30 cursor-pointer"><ChevronRight size={16} /></button>
       </div>
 

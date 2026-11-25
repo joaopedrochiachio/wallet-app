@@ -15,31 +15,31 @@ export interface PersonaInfo {
 export const PERSONA_METADATA: Record<FinancialPersonaId, PersonaInfo> = {
   optimizer: {
     id: "optimizer",
-    title: "The Optimizer",
+    title: "Aproveitar o crédito",
     subtitle: "Eficiência e Otimização de Capital",
-    categoryTag: "Eficiência de Crédito",
-    tagline: "Maximizador de benefícios, prazos e menor custo financeiro",
+    categoryTag: "Cartão sem juros",
+    tagline: "Usar cartões e prazos a seu favor, sem pagar juros",
   },
   guardian: {
     id: "guardian",
-    title: "The Guardian",
+    title: "Ter segurança",
     subtitle: "Preservação e Segurança de Caixa",
-    categoryTag: "Reserva & Blindagem",
-    tagline: "Proteção de liquidez de emergência e controle prudencial",
+    categoryTag: "Reserva de emergência",
+    tagline: "Montar uma reserva e evitar sustos no fim do mês",
   },
   scaler: {
     id: "scaler",
-    title: "The Scaler",
+    title: "Fazer o dinheiro crescer",
     subtitle: "Crescimento e Expansão Patrimonial",
-    categoryTag: "Alavancagem Estratégica",
-    tagline: "Canalização de excedentes para aportes e metas de longo prazo",
+    categoryTag: "Investir e metas",
+    tagline: "Direcionar o que sobra para investimentos e metas de longo prazo",
   },
   minimalist: {
     id: "minimalist",
-    title: "The Minimalist",
+    title: "Gastar menos",
     subtitle: "Frugalidade Consciente e Simplicidade",
-    categoryTag: "Independência & Poupança",
-    tagline: "Foco em despesas essenciais e alta taxa de poupança (FIRE)",
+    categoryTag: "Poupar mais",
+    tagline: "Manter só o essencial e guardar a maior parte da renda",
   },
 };
 
@@ -172,10 +172,10 @@ export function WalletIdTitaniumCard({
 
             <div className="px-2">
               <span className="text-[10px] font-mono uppercase tracking-wider text-white/40 block truncate">
-                Cartões Ativos
+                Contas e cartões
               </span>
               <span className="text-xs sm:text-sm font-semibold text-white tracking-tight mt-0.5 block truncate font-mono">
-                {cardsCount} {cardsCount === 1 ? "ativo" : "ativos"}
+                {cardsCount}
               </span>
             </div>
 

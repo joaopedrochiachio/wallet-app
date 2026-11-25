@@ -22,7 +22,7 @@ export function WalletActions({
           className="h-9 px-3.5 bg-black/[0.04] hover:bg-black/[0.07] text-[#1D1D1F] border border-black/[0.06] rounded-full flex items-center justify-center gap-1.5 text-xs font-semibold shadow-2xs transition-all active:scale-[0.98] cursor-pointer"
         >
           <Plus size={14} strokeWidth={2} className="text-[#86868B]" />
-          <span>Novo Cartão</span>
+          <span>Novo cartão</span>
         </button>
       )}
 
@@ -34,7 +34,7 @@ export function WalletActions({
           className="h-9 px-3.5 sm:px-4 bg-[#1D1D1F] hover:bg-black text-white rounded-full flex items-center justify-center gap-1.5 text-xs font-semibold shadow-2xs hover:shadow-xs transition-all active:scale-[0.98] cursor-pointer"
         >
           <Plus size={14} strokeWidth={2.5} />
-          <span>Nova Transação</span>
+          <span>Novo lançamento</span>
         </button>
       )}
     </div>

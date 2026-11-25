@@ -87,7 +87,7 @@ export function LgpdTermsModal({
             <ul className="list-disc pl-5 space-y-1 text-[#636366]">
               <li><strong>Dados de Identificação e Acesso:</strong> Endereço de e-mail, nome de exibição e identificador único de usuário (UID do Firebase Auth).</li>
               <li><strong>Dados Financeiros Fornecidos Voluntariamente:</strong> Lançamentos de despesas e receitas, valores, categorias contábeis, datas, descrições, contas, nomes de cartões (sem número PAN completo e sem CVV) e metas patrimoniais.</li>
-              <li><strong>Preferências de Configuração:</strong> Arquétipo financeiro selecionado (The Optimizer, The Guardian, etc.), teto percentual de comprometimento de renda e tom de resposta da IA.</li>
+              <li><strong>Preferências de Configuração:</strong> Objetivo financeiro escolhido (ex.: ter segurança, gastar menos), teto percentual de comprometimento de renda e tom de resposta da IA.</li>
             </ul>
           </div>
 

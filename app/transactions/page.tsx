@@ -429,7 +429,7 @@ export default function TransactionsPage() {
             data-testid="transactions-import-statement-btn"
           >
             <FileText strokeWidth={2} size={13} />
-            <span>Importar Extrato PDF</span>
+            <span>Importar extrato</span>
           </button>
 
           {/* Botão Secundário Elegante: + Nova Transação */}
@@ -439,7 +439,7 @@ export default function TransactionsPage() {
             className="bg-[#1D1D1F] hover:bg-black active:scale-[0.98] text-white text-xs font-semibold px-3.5 py-2 rounded-full shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all flex items-center gap-1.5 cursor-pointer select-none"
           >
             <Plus strokeWidth={2} size={14} />
-            <span>Nova Transação</span>
+            <span>Novo lançamento</span>
           </button>
         </div>
       </header>

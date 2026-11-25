@@ -68,7 +68,7 @@ export function WalletHeader({
             data-testid="header-new-transaction-btn"
           >
             <Plus size={16} strokeWidth={2.5} />
-            <span>Lançar Gasto</span>
+            <span>Novo lançamento</span>
           </button>
         )}
 
@@ -93,7 +93,7 @@ export function WalletHeader({
             data-testid="header-import-statement-btn"
           >
             <FileText size={14} strokeWidth={2} className="text-[#1D1D1F]" />
-            <span className="hidden sm:inline">Importar Extrato PDF</span>
+            <span className="hidden sm:inline">Importar extrato</span>
             <span className="sm:hidden">Extrato</span>
           </button>
         )}
@@ -106,7 +106,7 @@ export function WalletHeader({
             title="Cadastrar novo cartão"
           >
             <CreditCard size={14} strokeWidth={2} className="text-[#86868B]" />
-            <span className="hidden sm:inline">Novo Cartão</span>
+            <span className="hidden sm:inline">Novo cartão</span>
             <span className="sm:hidden">Cartão</span>
           </button>
         )}

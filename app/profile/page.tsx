@@ -320,13 +320,13 @@ export default function ProfilePage() {
           <section className="bg-white rounded-[24px] p-6 sm:p-7 border border-black/[0.06] shadow-[0_2px_10px_rgba(0,0,0,0.03)] space-y-6">
             <div>
               <span className="text-[10px] font-mono tracking-[0.2em] uppercase text-[#86868B] font-semibold block">
-                PARÂMETROS DE RESPOSTA
+                PREFERÊNCIAS
               </span>
               <h3 className="text-base font-semibold tracking-tight text-[#1D1D1F] mt-0.5">
-                Tom e Limites do Advisor
+                Como o Cofi conversa com você
               </h3>
               <p className="text-xs text-[#86868B] mt-0.5">
-                Defina a postura de comunicação e o teto prudencial de comprometimento de renda
+                Escolha o jeito de falar do Cofi e quando ele deve te avisar
               </p>
             </div>
 
@@ -381,10 +381,10 @@ export default function ProfilePage() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                 <div>
                   <label className="text-xs font-semibold text-[#1D1D1F]">
-                    Teto de Alerta de Comprometimento de Fatura
+                    Avisar quando as faturas passarem de
                   </label>
                   <p className="text-xs text-[#86868B]">
-                    O Advisor emitirá alerta prioritário se a fatura somada ultrapassar esse limite da renda.
+                    O Cofi avisa quando a soma das faturas do mês passar dessa parte da sua renda.
                   </p>
                 </div>
                 <div className="self-start sm:self-auto flex items-center gap-1.5">
@@ -399,7 +399,7 @@ export default function ProfilePage() {
 
               {/* Botões Táteis com Barra de Teto Visual */}
               <div className="flex flex-wrap items-center gap-2 pt-1">
-                {[25, 35, 45, 50].map((pct) => (
+                {[...new Set([25, 35, 45, 50, maxCommitment])].sort((x, y) => x - y).map((pct) => (
                   <button
                     key={pct}
                     type="button"

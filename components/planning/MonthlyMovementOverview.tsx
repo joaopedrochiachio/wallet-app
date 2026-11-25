@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import type { CardItem, TransactionItem } from "@/context/WalletContext";
 import { formatAccountLabel } from "@/lib/utils/ledger";
+import { formatDisplayDate } from "@/lib/utils/displayDate";
 import { PopUpButton } from "@/components/ui/macos/PopUpButton";
 
 type PaymentFilter = "all" | "balance" | "credit";
@@ -31,19 +32,7 @@ const formatCurrency = (value: number) =>
   });
 
 function formatTransactionDate(dateStr?: string, occurredAt?: unknown): string {
-  if (dateStr) {
-    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-      const parts = dateStr.split("-");
-      return `${parts[2]}/${parts[1]}`;
-    }
-    return dateStr;
-  }
-  if (occurredAt instanceof Date && !Number.isNaN(occurredAt.getTime())) {
-    return `${String(occurredAt.getDate()).padStart(2, "0")}/${String(
-      occurredAt.getMonth() + 1
-    ).padStart(2, "0")}`;
-  }
-  return "Este mês";
+  return formatDisplayDate(occurredAt || dateStr) || "Este mês";
 }
 
 export function MonthlyMovementOverview({

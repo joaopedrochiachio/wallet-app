@@ -95,6 +95,7 @@ export default function PlanningPage() {
   const [showArchivedMonths, setShowArchivedMonths] = useState(true);
   const planningMonths = getPlanningMonthsWindow(showArchivedMonths ? 1 : 0, 3, referenceDay);
   const currentMonthIdx = planningMonths.findIndex((m) => m.isCurrent);
+  const previousMonthName = getPlanningMonthsWindow(1, 0, referenceDay)[0]?.short ?? "mês anterior";
   const [selectedMonthIndex, setSelectedMonthIndex] = useState(
     currentMonthIdx >= 0 ? currentMonthIdx : 0
   );
@@ -1053,9 +1054,9 @@ export default function PlanningPage() {
             type="button"
             onClick={toggleArchivePastMonths}
             className="touch-target text-[11px] font-medium text-[#86868B] hover:text-[#1D1D1F] px-3 py-1.5 rounded-full bg-white border border-black/[0.06] hover:bg-[#F2F2F7] transition-all cursor-pointer shrink-0 self-end sm:self-auto shadow-2xs active:scale-95"
-            title={showArchivedMonths ? "Ocultar meses anteriores no planejamento" : "Exibir Setembro e histórico de meses anteriores"}
+            title={showArchivedMonths ? `Esconder ${previousMonthName} da lista de meses` : `Mostrar ${previousMonthName} para consultar o que já aconteceu`}
           >
-            {showArchivedMonths ? "Arquivar Setembro" : "Exibir Setembro"}
+            {showArchivedMonths ? `Esconder ${previousMonthName}` : `Ver ${previousMonthName}`}
           </button>
         </div>
 
@@ -1067,7 +1068,7 @@ export default function PlanningPage() {
               <span className="text-xs font-medium text-[#86868B] tracking-tight">
                 Entradas previstas
               </span>
-              <div className="text-2xl sm:text-3xl font-semibold tracking-tight text-[#1D1D1F] font-mono tabular-nums">
+              <div className="text-xl lg:text-2xl font-semibold tracking-tight text-[#1D1D1F] whitespace-nowrap [font-variant-numeric:tabular-nums]">
                 + R$ {formatCurrency(projection.projectedIncome)}
               </div>
               <p className="text-xs text-[#86868B] pt-0.5">
@@ -1081,7 +1082,7 @@ export default function PlanningPage() {
               <span className="text-xs font-medium text-[#86868B] tracking-tight">
                 Compromissos
               </span>
-              <div className="text-2xl sm:text-3xl font-semibold tracking-tight text-[#1D1D1F] font-mono tabular-nums">
+              <div className="text-xl lg:text-2xl font-semibold tracking-tight text-[#1D1D1F] whitespace-nowrap [font-variant-numeric:tabular-nums]">
                 − R$ {formatCurrency(projection.totalCommitted)}
               </div>
               <p className="text-xs text-[#86868B] pt-0.5">
@@ -1096,7 +1097,7 @@ export default function PlanningPage() {
                 Sobra do mês
               </span>
               <div
-                className={`text-2xl sm:text-3xl font-bold tracking-tight font-mono tabular-nums ${
+                className={`text-xl lg:text-2xl font-bold tracking-tight whitespace-nowrap [font-variant-numeric:tabular-nums] ${
                   monthNetSurplus >= 0 ? "text-emerald-600" : "text-rose-600"
                 }`}
               >
@@ -1113,7 +1114,7 @@ export default function PlanningPage() {
                 Saldo final projetado
               </span>
               <div
-                className={`text-2xl sm:text-3xl font-bold tracking-tight font-mono tabular-nums ${
+                className={`text-xl lg:text-2xl font-bold tracking-tight whitespace-nowrap [font-variant-numeric:tabular-nums] ${
                   projection.projectedFreeBalance >= 0 ? "text-[#1D1D1F]" : "text-rose-600"
                 }`}
               >

@@ -14,26 +14,26 @@ export interface ArchetypeModalOption {
 export const ARCHETYPE_MODAL_OPTIONS: ArchetypeModalOption[] = [
   {
     id: "optimizer",
-    title: "The Optimizer",
+    title: "Aproveitar o crédito",
     subtitle: "Eficiência e otimização financeira",
     modalSummary: "Prioriza eficiência, benefícios e melhor utilização dos recursos.",
   },
   {
     id: "guardian",
-    title: "The Guardian",
+    title: "Ter segurança",
     subtitle: "Segurança e previsibilidade",
     modalSummary: "Prioriza reserva, estabilidade e controle dos compromissos.",
   },
   {
     id: "scaler",
-    title: "The Scaler",
+    title: "Fazer o dinheiro crescer",
     subtitle: "Crescimento e oportunidades",
     modalSummary:
       "Prioriza expansão patrimonial, investimentos e utilização estratégica da renda.",
   },
   {
     id: "minimalist",
-    title: "The Minimalist",
+    title: "Gastar menos",
     subtitle: "Simplicidade e independência",
     modalSummary:
       "Prioriza redução de custos, controle financeiro e construção de independência.",

@@ -269,7 +269,7 @@ export function InteractiveCard({
               className="bg-[#1D1D1F] hover:bg-black text-white text-xs font-semibold px-5 py-3 rounded-full transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
             >
               <Plus strokeWidth={2.5} size={15} />
-              <span>Novo Lançamento</span>
+              <span>Novo lançamento</span>
             </button>
 
             {isCredit && onPayInvoice && (

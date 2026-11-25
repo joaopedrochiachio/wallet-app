@@ -234,9 +234,9 @@ export function GettingStartedChecklist({
       step: "Passo 5",
       title: "Anote gastos avulsos do dia a dia",
       description:
-        "Fez um Pix ou comprou algo hoje? Clique em '+ Nova Transação' ou use a Captura Rápida.",
+        "Fez um Pix ou comprou algo hoje? Clique em '+ Novo lançamento' ou use a Captura Rápida.",
       done: mergedStepsStatus.transactions,
-      buttonLabel: "Lançar Gasto Agora",
+      buttonLabel: "Novo lançamento",
       onAction: onOpenNewTransaction,
     },
   ];

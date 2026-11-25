@@ -1,5 +1,6 @@
 "use client";
 
+import { formatDisplayDate } from "@/lib/utils/displayDate";
 import { useState, useMemo, useRef } from "react";
 import { useWallet } from "@/context/WalletContext";
 import {
@@ -449,7 +450,7 @@ export default function GoalsPage() {
 
           <div className="w-full h-2 bg-[#F2F2F7] rounded-full overflow-hidden">
             <div
-              className="h-full bg-[#1D1D1F] rounded-full transition-all duration-500"
+              className="h-full bg-[var(--fb-accent)] rounded-full transition-all duration-500"
               style={{ width: `${overallPercentage}%` }}
             />
           </div>
@@ -567,14 +568,6 @@ export default function GoalsPage() {
                       </span>
                       <button
                         type="button"
-                        onClick={() => handleOpenEditGoal(goal)}
-                        className="touch-pad text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#F2F2F7] rounded-lg transition-colors p-1.5 cursor-pointer"
-                        title="Editar detalhes da meta"
-                      >
-                        <Pencil size={14} />
-                      </button>
-                      <button
-                        type="button"
                         onClick={() => setGoalToDelete(goal)}
                         className="touch-pad text-gray-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors p-1.5 cursor-pointer"
                         title="Excluir meta"
@@ -598,7 +591,7 @@ export default function GoalsPage() {
                     {/* Barra de Progresso Fina estilo Pass Kit */}
                     <div className="w-full h-2 bg-[#F2F2F7] rounded-full overflow-hidden">
                       <div
-                        className="h-full bg-[#1D1D1F] rounded-full transition-all duration-500"
+                        className="h-full bg-[var(--fb-accent)] rounded-full transition-all duration-500"
                         style={{ width: `${percentage}%` }}
                       />
                     </div>
@@ -606,7 +599,7 @@ export default function GoalsPage() {
                     <div className="flex items-center justify-between pt-1">
                       {goal.deadline ? (
                         <span className="text-[11px] text-[#86868B]">
-                          Prazo: {goal.deadline}
+                          Prazo: {formatDisplayDate(goal.deadline)}
                         </span>
                       ) : (
                         <span />

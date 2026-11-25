@@ -1,5 +1,6 @@
 "use client";
 
+import { formatDisplayDate } from "@/lib/utils/displayDate";
 import { useState, useMemo } from "react";
 import { useWallet } from "@/context/WalletContext";
 import { AddTransactionSheet } from "@/components/ui/AddTransactionSheet";
@@ -39,7 +40,6 @@ import { CategoryBudgets } from "@/components/planning/CategoryBudgets";
 import { PendingConfirmations } from "@/components/planning/PendingConfirmations";
 import { useCalendarDay } from "@/lib/hooks/useCalendarDay";
 import {
-  calculateDailySafeSpend,
   getBestCardToSpendToday,
 } from "@/lib/services/dailyCompanionService";
 import { MacSegmentedControl } from "@/components/ui/macos/SegmentedControl";
@@ -60,7 +60,6 @@ export default function DashboardPage() {
     monthIncome,
     monthExpense,
     isDataLoaded,
-    getMonthlyProjection,
   } = useWallet();
 
   const [isSheetOpen, setIsSheetOpen] = useState(false);
@@ -75,19 +74,6 @@ export default function DashboardPage() {
     val.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const balanceIsPositive = mainBalance >= 0;
-
-  // Projeção e Margem Diária
-  const currentMonthProj = getMonthlyProjection(0);
-  const effectiveProjectedFree =
-    currentMonthProj?.projectedFreeBalance ?? (mainBalance - monthExpense);
-  const targetEndMonthBalance = userProfile?.targetMonthEndBalance || 700;
-
-  const safeSpendMetric = useMemo(() => {
-    return calculateDailySafeSpend({
-      projectedFreeBalance: effectiveProjectedFree,
-      targetEndMonthBalance,
-    });
-  }, [effectiveProjectedFree, targetEndMonthBalance]);
 
   // Melhor Cartão para Gastar Hoje
   const bestCard = useMemo(() => {
@@ -165,20 +151,9 @@ export default function DashboardPage() {
         {/* 2. RESUMO PRINCIPAL DIRETO DA CONTA & CONSOLIDADO DO MÊS */}
         <section className="space-y-3" data-testid="dashboard-consolidated">
           <div className="flex items-center justify-between px-1">
-            <div>
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-[#86868B]">
-                Resumo da Conta
-              </h2>
-              <p className="text-[11px] text-[#A1A1A6]">Posição financeira em tempo real</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setIsSheetOpen(true)}
-              className="touch-target inline-flex sm:hidden items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#1D1D1F] text-white text-xs font-semibold shadow-xs active:scale-95 transition-transform"
-            >
-              <Plus size={13} strokeWidth={2.5} />
-              <span>Lançar Gasto</span>
-            </button>
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-[#86868B]">
+              Resumo da conta
+            </h2>
           </div>
 
           <div className="overflow-hidden rounded-[24px] border border-black/[0.06] bg-white shadow-[0_4px_20px_rgba(0,0,0,0.03)] backdrop-blur-xl">
@@ -235,17 +210,6 @@ export default function DashboardPage() {
 
             {/* Barra Inferior Útil: Teto Seguro + Melhor Cartão */}
             <div className="px-5 py-3.5 bg-[#F9F9FB] border-t border-black/[0.05] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                <span className="text-[#86868B]">Teto diário seguro hoje:</span>
-                <strong className="font-mono font-semibold text-emerald-700">
-                  R$ {formatCurrency(safeSpendMetric.safeDailyAllowance)}
-                </strong>
-                <span className="text-[11px] text-[#A1A1A6]">
-                  • {safeSpendMetric.remainingDaysInMonth} dias no mês
-                </span>
-              </div>
-
               {bestCard && (
                 <div className="flex items-center gap-1.5 text-[11px] text-[#6E6E73]">
                   <CreditCard size={13} className="text-indigo-500 shrink-0" />
@@ -383,9 +347,7 @@ export default function DashboardPage() {
             ) : (
               recentTransactions.map((tx, idx) => {
                 const accountLabel = formatAccountLabel(tx.account);
-                const dateLabel = typeof tx.date === "string"
-                  ? tx.date
-                  : new Date(tx.date).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }).replace(".", "");
+                const dateLabel = formatDisplayDate(tx.occurredAt || tx.date);
 
                 return (
                   <ListItem
