@@ -33,8 +33,8 @@ const COLOR_PRESETS: ColorPreset[] = [
     id: "sapphire",
     name: "Sapphire Blue",
     gradient: "from-[#0A192F] via-[#081224] to-[#040914]",
-    border: "border-blue-500/25",
-    accent: "text-blue-300",
+    border: "border-[var(--fb-accent)]/25",
+    accent: "text-[var(--fb-accent-2)]",
     chipGradient: "from-blue-200 to-amber-300",
   },
   {

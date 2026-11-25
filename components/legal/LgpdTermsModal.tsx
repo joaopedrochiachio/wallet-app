@@ -78,7 +78,7 @@ export function LgpdTermsModal({
           {/* Dados Coletados */}
           <div className="space-y-2">
             <h3 className="font-semibold text-sm text-[#1D1D1F] flex items-center gap-2">
-              <Database size={16} className="text-blue-600" />
+              <Database size={16} className="text-[var(--fb-accent)]" />
               <span>2. Dados Coletados e Tratados</span>
             </h3>
             <p className="text-[#636366]">

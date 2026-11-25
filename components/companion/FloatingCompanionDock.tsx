@@ -89,7 +89,7 @@ export function FloatingCompanionDock() {
               }}
               className="w-full text-left px-3 py-2 rounded-xl hover:bg-[#F2F2F7] text-[#1D1D1F] text-xs font-semibold flex items-center gap-2.5 transition-colors cursor-pointer"
             >
-              <div className="w-6 h-6 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center">
+              <div className="w-6 h-6 rounded-lg bg-[var(--fb-accent-bg)] text-[var(--fb-accent)] flex items-center justify-center">
                 <Calculator size={14} />
               </div>
               <div className="flex flex-col">

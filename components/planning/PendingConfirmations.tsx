@@ -48,7 +48,7 @@ export function PendingConfirmations() {
           </div>;
         })}
       </div>
-      {pending.length > 5 && <button type="button" onClick={() => setShowAll((value) => !value)} className="text-xs font-semibold text-[#0071E3] cursor-pointer">{showAll ? "Mostrar menos" : `Ver todos os ${pending.length} itens`}</button>}
+      {pending.length > 5 && <button type="button" onClick={() => setShowAll((value) => !value)} className="text-xs font-semibold text-[var(--fb-accent)] cursor-pointer">{showAll ? "Mostrar menos" : `Ver todos os ${pending.length} itens`}</button>}
     </section>
   );
 }

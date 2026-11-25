@@ -393,7 +393,7 @@ function ManageCardSheetInner({ card, onClose }: { card: CardItem; onClose: () =
         <div className="space-y-4">
           <label className="block">
             <span className="text-xs font-semibold uppercase tracking-wider text-[#86868B]">Limite total</span>
-            <div className="mt-1.5 flex items-center gap-2 rounded-2xl border border-black/[0.08] bg-[#F8F8FA] px-4 py-3 focus-within:border-[#0071E3]">
+            <div className="mt-1.5 flex items-center gap-2 rounded-2xl border border-black/[0.08] bg-[#F8F8FA] px-4 py-3 focus-within:border-[var(--fb-accent)]">
               <span className="font-semibold text-[#86868B]">R$</span>
               <input value={limit} onChange={(e) => setLimit(e.target.value)} inputMode="decimal" className="w-full bg-transparent font-mono text-lg font-semibold tabular-nums text-[#1D1D1F] outline-none" />
             </div>
@@ -438,7 +438,7 @@ function DayField({ label, value, onChange }: { label: string; value: string; on
         max={31}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1.5 w-full rounded-2xl border border-black/[0.08] bg-[#F8F8FA] px-4 py-3 font-mono text-lg font-semibold tabular-nums text-[#1D1D1F] outline-none focus:border-[#0071E3]"
+        className="mt-1.5 w-full rounded-2xl border border-black/[0.08] bg-[#F8F8FA] px-4 py-3 font-mono text-lg font-semibold tabular-nums text-[#1D1D1F] outline-none focus:border-[var(--fb-accent)]"
       />
     </label>
   );

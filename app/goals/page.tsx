@@ -490,7 +490,7 @@ export default function GoalsPage() {
                     category: "Lazer & Turismo",
                     target: 10000,
                     deadline: "Julho 2027",
-                    icon: <Plane size={18} className="text-blue-600" />,
+                    icon: <Plane size={18} className="text-[var(--fb-accent)]" />,
                   },
                   {
                     title: "Novo Notebook / Setup",
@@ -509,7 +509,7 @@ export default function GoalsPage() {
                       <div className="w-8 h-8 rounded-xl bg-white flex items-center justify-center shadow-2xs">
                         {tmpl.icon}
                       </div>
-                      <span className="text-[11px] font-semibold text-[#0071E3] group-hover:text-[#0077ED] flex items-center gap-0.5">
+                      <span className="text-[11px] font-semibold text-[var(--fb-accent)] group-hover:text-[var(--fb-accent)] flex items-center gap-0.5">
                         Personalizar &rarr;
                       </span>
                     </div>
@@ -820,7 +820,7 @@ export default function GoalsPage() {
                       }`}
                     >
                       <div className="flex items-center justify-between">
-                        <CreditCard size={16} className={initialSourceType === "account" ? "text-blue-600" : ""} />
+                        <CreditCard size={16} className={initialSourceType === "account" ? "text-[var(--fb-accent)]" : ""} />
                         {initialSourceType === "account" && (
                           <div className="w-4 h-4 rounded-full bg-black text-white flex items-center justify-center">
                             <Check size={10} strokeWidth={3} />
@@ -1023,7 +1023,7 @@ export default function GoalsPage() {
                       }`}
                     >
                       <div className="flex items-center justify-between">
-                        <CreditCard size={16} className={contributeSourceType === "account" ? "text-blue-600" : ""} />
+                        <CreditCard size={16} className={contributeSourceType === "account" ? "text-[var(--fb-accent)]" : ""} />
                         {contributeSourceType === "account" && (
                           <div className="w-4 h-4 rounded-full bg-black text-white flex items-center justify-center">
                             <Check size={10} strokeWidth={3} />

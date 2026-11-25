@@ -202,7 +202,7 @@ export function DailyBriefingCard() {
             {/* 2. RITMO SEMANAL DE CONSUMO (NOVO - VELOCIDADE REAL) */}
             <div className="p-4 rounded-2xl bg-[#FAFAFC] border border-black/[0.04] space-y-1">
               <span className="text-[11px] font-semibold text-[#86868B] uppercase tracking-wider block flex items-center gap-1">
-                <Activity size={12} className="text-blue-500" />
+                <Activity size={12} className="text-[var(--fb-accent)]" />
                 <span>Últimos 7 Dias</span>
               </span>
               <strong className="text-xl font-bold font-mono text-[#1D1D1F] block tabular-nums">
@@ -214,7 +214,7 @@ export function DailyBriefingCard() {
                     ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
                     : weeklyVelocity.trend === "accelerated"
                     ? "bg-rose-50 text-rose-700 border border-rose-200"
-                    : "bg-blue-50 text-blue-700 border border-blue-200"
+                    : "bg-[var(--fb-accent-bg)] text-[var(--fb-accent)] border border-[color-mix(in_srgb,var(--fb-accent)_30%,transparent)]"
                 }`}
               >
                 {weeklyVelocity.headline}
@@ -326,7 +326,7 @@ export function DailyBriefingCard() {
                 <button
                   type="button"
                   onClick={() => handleDoCheckIn("tight_savings")}
-                  className="flex-1 sm:flex-initial justify-center text-center px-3 py-2 rounded-full bg-[#F2F2F7] hover:bg-blue-50 text-[#1D1D1F] hover:text-blue-800 text-[11px] sm:text-xs font-medium border border-transparent hover:border-blue-200 transition-all cursor-pointer min-h-[36px]"
+                  className="flex-1 sm:flex-initial justify-center text-center px-3 py-2 rounded-full bg-[#F2F2F7] hover:bg-[var(--fb-accent-bg)] text-[#1D1D1F] hover:text-[var(--fb-accent)] text-[11px] sm:text-xs font-medium border border-transparent hover:border-[color-mix(in_srgb,var(--fb-accent)_30%,transparent)] transition-all cursor-pointer min-h-[36px]"
                 >
                   🛡️ Modo Economia
                 </button>

@@ -225,9 +225,6 @@ export default function PlanningPage() {
   const plannedDebitExpenses = recurringItems.filter(
     (r) => r.type !== "income" && isCheckingAccount(r)
   );
-  const plannedCreditExpenses = recurringItems.filter(
-    (r) => r.type !== "income" && !isCheckingAccount(r)
-  );
 
   const isScheduledForSelectedMonth = (item: RecurringItem) => {
     if (isInstallmentPaidInMonth(item, targetYear, targetMonth)) return false;
@@ -249,9 +246,6 @@ export default function PlanningPage() {
   const visiblePlannedDebitExpenses = plannedDebitExpenses
     .filter(isScheduledForSelectedMonth)
     .map((item) => getEffectiveRecurringItemForPeriod(item, targetPeriodKey));
-  const visiblePlannedCreditExpenses = plannedCreditExpenses
-    .filter(isScheduledForSelectedMonth)
-    .map((item) => getEffectiveRecurringItemForPeriod(item, targetPeriodKey));
 
   // Agrupamento inteligente por data com subtotais diários
   const groupedPlannedIncomes = groupRecurringItemsByDate(
@@ -261,11 +255,6 @@ export default function PlanningPage() {
   );
   const groupedPlannedDebitExpenses = groupRecurringItemsByDate(
     visiblePlannedDebitExpenses,
-    targetYear,
-    targetMonth
-  );
-  const groupedPlannedCreditExpenses = groupRecurringItemsByDate(
-    visiblePlannedCreditExpenses,
     targetYear,
     targetMonth
   );
@@ -297,36 +286,6 @@ export default function PlanningPage() {
           Math.round((projection.projectedFreeBalance / totalAvailable) * 100)
         )
       : 0;
-
-  const creditCommitments =
-    projection.cardInstallments + projection.recurringCreditTotal;
-  const debitCommitments = projection.recurringDebitTotal;
-
-  const realizedShare =
-    projection.totalCommitted > 0
-      ? (projection.actualOutflowTotal / projection.totalCommitted) * 100
-      : 0;
-  const creditShare =
-    projection.totalCommitted > 0
-      ? (creditCommitments / projection.totalCommitted) * 100
-      : 0;
-  const debitShare =
-    projection.totalCommitted > 0
-      ? (debitCommitments / projection.totalCommitted) * 100
-      : 0;
-
-  // Informações de cartões de crédito
-  const creditCards = cards.filter((c) => c.type === "credit");
-  const primaryCreditCard = creditCards[0];
-  const creditCardNameText =
-    creditCards.length > 0
-      ? creditCards.length === 1
-        ? creditCards[0].name
-        : creditCards.map((c) => c.name).join(", ")
-      : "Nubank";
-  const creditCardDueDayText = primaryCreditCard?.dueDay
-    ? `dia ${primaryCreditCard.dueDay}`
-    : "dia 15";
 
   const handleOpenModal = (
     mode: "income" | "expense" | "expense-debit" | "expense-credit",
@@ -1202,88 +1161,6 @@ export default function PlanningPage() {
           </div>
         </div>
 
-        {/* 3. COMPOSIÇÃO DOS COMPROMISSOS (Área Simples e Silenciosa) */}
-        <section
-          data-testid="monthly-macro-summary"
-          className="bg-white rounded-[22px] p-5 sm:p-6 border border-black/[0.04] shadow-[0_1px_4px_rgba(0,0,0,0.02)] space-y-4"
-        >
-          <div className="flex items-center justify-between">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-[#86868B]">
-              Composição dos compromissos
-            </h2>
-            <span className="text-xs text-[#86868B]">
-              Total: <span className="font-mono tabular-nums">R$ {formatCurrency(projection.totalCommitted)}</span>
-            </span>
-          </div>
-
-          {/* Três métricas limpas */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 pt-1">
-            <div>
-              <span className="text-xs text-[#86868B] flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#8E8E93]" />
-                Já saiu da conta
-              </span>
-              <div className="text-base sm:text-lg font-semibold text-[#1D1D1F] mt-0.5 font-mono tabular-nums">
-                R$ {formatCurrency(projection.actualOutflowTotal)}
-              </div>
-            </div>
-
-            <div>
-              <span className="text-xs text-[#86868B] flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#1D1D1F]" />
-                Contas diretas a pagar
-              </span>
-              <div className="text-base sm:text-lg font-semibold text-[#1D1D1F] mt-0.5 font-mono tabular-nums">
-                R$ {formatCurrency(debitCommitments)}
-              </div>
-            </div>
-
-            <div>
-              <span className="text-xs text-[#86868B] flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#6366F1]" />
-                Faturas de cartão a pagar
-              </span>
-              <div className="text-base sm:text-lg font-semibold text-[#1D1D1F] mt-0.5 font-mono tabular-nums">
-                R$ {formatCurrency(projection.totalInvoicesPending ?? creditCommitments)}
-              </div>
-            </div>
-          </div>
-
-          {/* Barra Horizontal de Composição */}
-          <div
-            className="h-2 rounded-full bg-[#F2F2F7] overflow-hidden flex gap-0.5"
-            aria-label="Distribuição dos compromissos"
-          >
-            {projection.totalCommitted > 0 ? (
-              <>
-                <div
-                  className="h-full bg-[#8E8E93] transition-all duration-500"
-                  style={{ width: `${realizedShare}%` }}
-                  title={`Já saiu: R$ ${formatCurrency(projection.actualOutflowTotal)}`}
-                />
-                <div
-                  className="h-full bg-[#1D1D1F] transition-all duration-500"
-                  style={{ width: `${debitShare}%` }}
-                  title={`Contas diretas: R$ ${formatCurrency(debitCommitments)}`}
-                />
-                <div
-                  className="h-full bg-[#6366F1] transition-all duration-500"
-                  style={{ width: `${creditShare}%` }}
-                  title={`Faturas de cartão: R$ ${formatCurrency(creditCommitments)}`}
-                />
-              </>
-            ) : (
-              <div className="h-full w-full bg-gray-200/50" />
-            )}
-          </div>
-
-          {/* Pequeno Insight Complementar */}
-          <p className="text-xs text-[#86868B] leading-relaxed pt-0.5">
-            <span className="font-mono tabular-nums">R$ {formatCurrency(debitCommitments)}</span> em contas diretas + <span className="font-mono tabular-nums">R$ {formatCurrency(projection.totalInvoicesPending ?? creditCommitments)}</span> em faturas de cartão totalizam <span className="font-mono tabular-nums">R${" "}
-            {formatCurrency(projection.pendingCommitted)}</span> que sairão da sua conta.
-          </p>
-        </section>
-
         {/* 4. PLANEJAMENTO DO MÊS */}
         <section className="space-y-6 pt-2">
           <div>
@@ -1312,7 +1189,7 @@ export default function PlanningPage() {
                 <button
                   type="button"
                   onClick={() => handleOpenModal("income")}
-                  className="touch-target text-xs font-semibold text-[#0071E3] hover:text-[#0077ED] cursor-pointer"
+                  className="touch-target text-xs font-semibold text-[var(--fb-accent)] hover:text-[var(--fb-accent)] cursor-pointer"
                 >
                   Adicionar
                 </button>
@@ -1378,7 +1255,7 @@ export default function PlanningPage() {
                 <button
                   type="button"
                   onClick={() => handleOpenModal("expense-debit")}
-                  className="touch-target text-xs font-semibold text-[#0071E3] hover:text-[#0077ED] cursor-pointer"
+                  className="touch-target text-xs font-semibold text-[var(--fb-accent)] hover:text-[var(--fb-accent)] cursor-pointer"
                 >
                   Adicionar
                 </button>
@@ -1475,7 +1352,7 @@ export default function PlanningPage() {
                 <button
                   type="button"
                   onClick={() => setIsAddingModalOpen(false)}
-                  className="touch-target text-[#0071E3] hover:text-[#0077ED] font-normal text-sm sm:text-base cursor-pointer active:opacity-60 transition-opacity py-1 px-1"
+                  className="touch-target text-[var(--fb-accent)] hover:text-[var(--fb-accent)] font-normal text-sm sm:text-base cursor-pointer active:opacity-60 transition-opacity py-1 px-1"
                 >
                   Cancelar
                 </button>
@@ -1497,7 +1374,7 @@ export default function PlanningPage() {
                 <button
                   type="submit"
                   disabled={!newTitle.trim() || !newAmount.trim()}
-                  className="touch-target text-[#0071E3] hover:text-[#0077ED] font-semibold text-sm sm:text-base cursor-pointer active:opacity-60 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed py-1 px-1"
+                  className="touch-target text-[var(--fb-accent)] hover:text-[var(--fb-accent)] font-semibold text-sm sm:text-base cursor-pointer active:opacity-60 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed py-1 px-1"
                 >
                   Salvar
                 </button>
@@ -1899,7 +1776,7 @@ export default function PlanningPage() {
                           const count = Math.max(2, parseInt(installmentsInput, 10) || installmentsCount || 2);
                           if (clean <= 0) return null;
                           return (
-                            <div className="text-[11px] bg-blue-50/60 border border-blue-100 rounded-lg p-2 text-blue-900 flex items-center justify-between">
+                            <div className="text-[11px] bg-[var(--fb-accent-bg)]/60 border border-[color-mix(in_srgb,var(--fb-accent)_30%,transparent)] rounded-lg p-2 text-[var(--fb-accent)] flex items-center justify-between">
                               {installmentPricingType === "total" ? (
                                 <span>
                                   Total <strong className="font-mono tabular-nums">R$ {formatCurrency(clean)}</strong> ÷ {count}x = <strong className="font-mono tabular-nums">R$ {formatCurrency(clean / count)}/mês</strong>
@@ -1909,7 +1786,7 @@ export default function PlanningPage() {
                                   {count}x de <strong className="font-mono tabular-nums">R$ {formatCurrency(clean)}</strong> = Total de <strong className="font-mono tabular-nums">R$ {formatCurrency(clean * count)}</strong>
                                 </span>
                               )}
-                              <span className="text-[10px] text-blue-700/80 font-medium ml-2 shrink-0">
+                              <span className="text-[10px] text-[var(--fb-accent)]/80 font-medium ml-2 shrink-0">
                                 {installmentPricingType === "total" ? "Divisão automática" : "Valor fixo por mês"}
                               </span>
                             </div>
@@ -1996,7 +1873,7 @@ export default function PlanningPage() {
                     setIsEditModalOpen(false);
                     setEditingItem(null);
                   }}
-                  className="touch-target text-[#0071E3] hover:text-[#0077ED] font-normal text-sm sm:text-base cursor-pointer active:opacity-60 transition-opacity py-1 px-1"
+                  className="touch-target text-[var(--fb-accent)] hover:text-[var(--fb-accent)] font-normal text-sm sm:text-base cursor-pointer active:opacity-60 transition-opacity py-1 px-1"
                 >
                   Cancelar
                 </button>
@@ -2018,7 +1895,7 @@ export default function PlanningPage() {
                 <button
                   type="submit"
                   disabled={!editTitle.trim() || !editAmount.trim()}
-                  className="touch-target text-[#0071E3] hover:text-[#0077ED] font-semibold text-sm sm:text-base cursor-pointer active:opacity-60 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed py-1 px-1"
+                  className="touch-target text-[var(--fb-accent)] hover:text-[var(--fb-accent)] font-semibold text-sm sm:text-base cursor-pointer active:opacity-60 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed py-1 px-1"
                 >
                   Salvar
                 </button>
@@ -2402,7 +2279,7 @@ export default function PlanningPage() {
                           const count = Math.max(2, parseInt(editInstallmentsInput, 10) || editInstallmentsCount || 2);
                           if (clean <= 0) return null;
                           return (
-                            <div className="text-[11px] bg-blue-50/60 border border-blue-100 rounded-lg p-2 text-blue-900 flex items-center justify-between">
+                            <div className="text-[11px] bg-[var(--fb-accent-bg)]/60 border border-[color-mix(in_srgb,var(--fb-accent)_30%,transparent)] rounded-lg p-2 text-[var(--fb-accent)] flex items-center justify-between">
                               {editInstallmentPricingType === "total" ? (
                                 <span>
                                   Total <strong>R$ {formatCurrency(clean)}</strong> ÷ {count}x = <strong>R$ {formatCurrency(clean / count)}/mês</strong>
@@ -2412,7 +2289,7 @@ export default function PlanningPage() {
                                   {count}x de <strong>R$ {formatCurrency(clean)}</strong> = Total de <strong>R$ {formatCurrency(clean * count)}</strong>
                                 </span>
                               )}
-                              <span className="text-[10px] text-blue-700/80 font-medium ml-2 shrink-0">
+                              <span className="text-[10px] text-[var(--fb-accent)]/80 font-medium ml-2 shrink-0">
                                 {editInstallmentPricingType === "total" ? "Divisão automática" : "Valor fixo por mês"}
                               </span>
                             </div>

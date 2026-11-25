@@ -712,7 +712,7 @@ export function StatementImportModal({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="bg-white rounded-2xl p-4 border border-black/[0.04] space-y-1">
                   <div className="flex items-center gap-2 text-xs font-semibold text-[#1D1D1F]">
-                    <Building2 size={15} className="text-blue-600" />
+                    <Building2 size={15} className="text-[var(--fb-accent)]" />
                     <span>1. Identifica Contas e Cartões</span>
                   </div>
                   <p className="text-[11px] text-[#86868B] leading-relaxed">
@@ -944,7 +944,7 @@ export function StatementImportModal({
                               <span
                                 className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
                                   acc.action === "link_existing"
-                                    ? "bg-blue-50 text-blue-700 border border-blue-200"
+                                    ? "bg-[var(--fb-accent-bg)] text-[var(--fb-accent)] border border-[color-mix(in_srgb,var(--fb-accent)_30%,transparent)]"
                                     : "bg-emerald-50 text-emerald-700 border border-emerald-200"
                                 }`}
                               >

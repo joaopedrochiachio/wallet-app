@@ -266,7 +266,7 @@ export function MonthlyMovementOverview({
                 <button
                   type="button"
                   onClick={resetFilters}
-                  className="touch-target text-xs font-semibold text-[#0071E3] hover:text-[#0077ED] transition-colors cursor-pointer"
+                  className="touch-target text-xs font-semibold text-[var(--fb-accent)] hover:text-[var(--fb-accent)] transition-colors cursor-pointer"
                 >
                   Limpar filtros
                 </button>

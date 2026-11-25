@@ -135,7 +135,7 @@ function ChargeSheetInner({
               type="button"
               onClick={() => { setView("details"); setError(null); }}
               disabled={busy}
-              className="cursor-pointer rounded-full px-3 py-2 text-sm font-medium text-[#0071E3] disabled:opacity-50"
+              className="cursor-pointer rounded-full px-3 py-2 text-sm font-medium text-[var(--fb-accent)] disabled:opacity-50"
             >
               Voltar
             </button>

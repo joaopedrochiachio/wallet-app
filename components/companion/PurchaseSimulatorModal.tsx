@@ -153,10 +153,10 @@ export function PurchaseSimulatorModal({
             />
             <div>
               <div className="flex items-center gap-1.5">
-                <span className="text-xs font-bold uppercase tracking-wider text-blue-600">
+                <span className="text-xs font-bold uppercase tracking-wider text-[var(--fb-accent)]">
                   Simulador de Decisão
                 </span>
-                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-blue-100 text-blue-800">
+                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[var(--fb-accent-bg)] text-[var(--fb-accent)]">
                   Devo Comprar?
                 </span>
               </div>
@@ -205,7 +205,7 @@ export function PurchaseSimulatorModal({
                       value={title}
                       onChange={(e) => setTitle(e.target.value)}
                       placeholder="Ex: Tênis esportivo"
-                      className="w-full text-sm font-medium px-3.5 py-2.5 rounded-xl bg-[#F2F2F7] border border-black/5 focus:bg-white focus:border-blue-500 outline-none"
+                      className="w-full text-sm font-medium px-3.5 py-2.5 rounded-xl bg-[#F2F2F7] border border-black/5 focus:bg-white focus:border-[var(--fb-accent)] outline-none"
                     />
                   </div>
 
@@ -218,7 +218,7 @@ export function PurchaseSimulatorModal({
                       value={amountStr}
                       onChange={(e) => setAmountStr(e.target.value)}
                       placeholder="Ex: 350,00"
-                      className="w-full text-sm font-semibold px-3.5 py-2.5 rounded-xl bg-[#F2F2F7] border border-black/5 focus:bg-white focus:border-blue-500 outline-none font-mono"
+                      className="w-full text-sm font-semibold px-3.5 py-2.5 rounded-xl bg-[#F2F2F7] border border-black/5 focus:bg-white focus:border-[var(--fb-accent)] outline-none font-mono"
                     />
                   </div>
                 </div>

@@ -247,10 +247,10 @@ export function InteractiveCard({
           {/* Símbolo Circular do Leitor Apple Wallet */}
           <div
             onClick={onAddClick}
-            className="w-16 h-16 rounded-full border-2 border-[#007AFF] bg-[#007AFF]/5 hover:bg-[#007AFF]/10 active:scale-95 transition-all flex items-center justify-center cursor-pointer shadow-xs group"
+            className="w-16 h-16 rounded-full border-2 border-[var(--fb-accent)] bg-[var(--fb-accent)]/5 hover:bg-[var(--fb-accent)]/10 active:scale-95 transition-all flex items-center justify-center cursor-pointer shadow-xs group"
             title="Lançamento Rápido"
           >
-            <Smartphone size={26} strokeWidth={1.5} className="text-[#007AFF] group-hover:scale-105 transition-transform" />
+            <Smartphone size={26} strokeWidth={1.5} className="text-[var(--fb-accent)] group-hover:scale-105 transition-transform" />
           </div>
 
           <div className="space-y-1">

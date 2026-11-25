@@ -416,7 +416,7 @@ export function FormattedMessage({ content, role = "assistant" }: FormattedMessa
                   const keyLower = item.key.toLowerCase();
                   const isAlert = keyLower.includes("alerta") || keyLower.includes("risco");
                   const isCard = keyLower.includes("pagamento") || keyLower.includes("cartão") || keyLower.includes("fatura");
-                  const dotColor = isAlert ? "bg-amber-500" : isCard ? "bg-blue-600" : "bg-emerald-500";
+                  const dotColor = isAlert ? "bg-amber-500" : isCard ? "bg-[var(--fb-accent)]" : "bg-emerald-500";
 
                   return (
                     <div

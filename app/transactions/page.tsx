@@ -401,27 +401,19 @@ export default function TransactionsPage() {
     <div className="min-h-full bg-[#F2F2F7] p-4 sm:p-6 md:p-10 text-[#1D1D1F] font-sans space-y-6 animate-in fade-in duration-500">
       {saveFeedback && <p role="status" className="mx-auto max-w-4xl text-sm text-emerald-700">{saveFeedback}</p>}
       {/* 1. CABEÇALHO (Eyebrow, Título Dominante e Controles macOS) */}
-      <header className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-4 max-w-4xl mx-auto pt-2 md:pt-0">
+      {/* Mesmo cabeçalho de Cartões e Planejamento: título à esquerda, ações à direita */}
+      <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 max-w-4xl mx-auto pt-2 md:pt-0">
         <div>
           <span className="text-xs font-semibold tracking-wider uppercase text-[#86868B]">
-            Histórico de Lançamentos
+            Histórico
           </span>
           <h1 className="text-3xl font-semibold tracking-tight text-[#1D1D1F] mt-0.5">
             Transações
           </h1>
         </div>
 
-        {/* Controles de Topo: Segmented Control do Mês + Botão Secundário Nova Transação */}
-        <div className="flex items-center gap-3 flex-wrap self-start sm:self-auto">
-          {/* Mês Segmented Control (Padrão Apple idêntico ao Planejamento Mensal) */}
-          <MacSegmentedControl
-            ariaLabel="Mês"
-            value={selectedMonth}
-            onChange={setSelectedMonth}
-            options={monthOptions.map((month) => ({ value: month.periodKey, label: month.label }))}
-          />
-
-          {/* Botão Importar Extrato PDF */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Botão Importar Extrato */}
           <button
             type="button"
             onClick={() => setIsStatementModalOpen(true)}
@@ -443,6 +435,16 @@ export default function TransactionsPage() {
           </button>
         </div>
       </header>
+
+      {/* Navegação por mês em linha própria, como no Planejamento */}
+      <nav aria-label="Mês" className="max-w-4xl mx-auto overflow-x-auto no-scrollbar">
+        <MacSegmentedControl
+          ariaLabel="Mês"
+          value={selectedMonth}
+          onChange={setSelectedMonth}
+          options={monthOptions.map((month) => ({ value: month.periodKey, label: month.label }))}
+        />
+      </nav>
 
       <div className="max-w-4xl mx-auto space-y-4">
         {/* 2. PAINEL DE FILTROS COMPLETO (Busca, Tipo, Categoria e Conta/Cartão) */}
@@ -535,7 +537,7 @@ export default function TransactionsPage() {
                 <button
                   type="button"
                   onClick={clearAllFilters}
-                  className="touch-target inline-flex items-center gap-1 text-xs font-semibold text-[#0071E3] hover:text-[#0077ED] cursor-pointer"
+                  className="touch-target inline-flex items-center gap-1 text-xs font-semibold text-[var(--fb-accent)] hover:text-[var(--fb-accent)] cursor-pointer"
                 >
                   <RotateCcw size={11} />
                   <span>Limpar filtros</span>

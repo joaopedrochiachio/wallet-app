@@ -362,7 +362,7 @@ function InvoicePanel({
             <button
               type="button"
               onClick={() => onAddPurchase(card.name)}
-              className="touch-target inline-flex cursor-pointer items-center gap-1 rounded-full px-2.5 py-1.5 text-xs font-semibold text-[#0071E3] transition-colors hover:bg-blue-50"
+              className="touch-target inline-flex cursor-pointer items-center gap-1 rounded-full px-2.5 py-1.5 text-xs font-semibold text-[var(--fb-accent)] transition-colors hover:bg-[var(--fb-accent-bg)]"
             >
               <Plus size={13} /> Compra
             </button>
@@ -564,7 +564,7 @@ function PayInvoiceSheetInner({
       <div className="space-y-4">
         <label className="block">
           <span className="text-xs font-semibold uppercase tracking-wider text-[#86868B]">Quanto você pagou</span>
-          <div className="mt-1.5 flex items-center gap-2 rounded-2xl border border-black/[0.08] bg-[#F8F8FA] px-4 py-3 focus-within:border-[#0071E3]">
+          <div className="mt-1.5 flex items-center gap-2 rounded-2xl border border-black/[0.08] bg-[#F8F8FA] px-4 py-3 focus-within:border-[var(--fb-accent)]">
             <span className="text-lg font-semibold text-[#86868B]">R$</span>
             <input
               value={input}

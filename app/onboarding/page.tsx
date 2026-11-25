@@ -121,7 +121,7 @@ export default function OnboardingPage() {
       subtitle: "Crescimento & Risco Calculado",
       desc: "Foco em alocar a maior parcela possível da renda em ativos e expansão patrimonial.",
       icon: Compass,
-      accent: "text-blue-500",
+      accent: "text-[var(--fb-accent)]",
     },
     {
       id: "minimalist" as FinancialPersonaId,

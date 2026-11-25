@@ -64,7 +64,7 @@
   /* Tabelas e listas */
   --mac-window-bg: #ffffff;
   --mac-row-alternating: rgba(0, 0, 0, 0.05);
-  --mac-selection: #0165e2;
+  --mac-selection: #299D91;
   --mac-selection-inactive: rgba(0, 0, 0, 0.1);
   /* Accents (Opaque Tint Colors) */
   --mac-red: #ff383c;
@@ -75,7 +75,7 @@
   --mac-mint: #00c8b3;
   --mac-teal: #00c3d0;
   --mac-cyan: #00c0e8;
-  --mac-blue: #0088ff;
+  --mac-blue: #299D91;
   --mac-indigo: #6155f5;
   --mac-purple: #cb30e0;
   --mac-pink: #ff2d55;
@@ -119,7 +119,7 @@
   --mac-mint: #00dac3;
   --mac-teal: #00d2e0;
   --mac-cyan: #3cd3fe;
-  --mac-blue: #0091ff;
+  --mac-blue: #1B7A71;
   --mac-indigo: #6d7cff;
   --mac-purple: #db34f2;
   --mac-pink: #ff375f;
@@ -631,7 +631,7 @@ button:disabled,
     0 0 0 0.5px #e8e8e8, 0 8px 15px rgba(0, 0, 0, 0.02), inset 0 1px 0 rgba(255, 255, 255, 0.9);
   --mac-sidebar-bg: rgba(232, 232, 236, 0.86);
   --mac-sidebar-selection: rgba(0, 0, 0, 0.07);
-  --mac-sidebar-icon: #0078f0;
+  --mac-sidebar-icon: var(--fb-accent);
   --mac-window-shadow: 0 0 1px rgba(0, 0, 0, 0.8), 0 18px 54px rgba(0, 0, 0, 0.3);
   --mac-sheet-shadow: 0 0 0.5px rgba(0, 0, 0, 0.8), 0 18px 27px rgba(0, 0, 0, 0.3);
   --mac-focus-ring: 0 0 0 3.5px color-mix(in srgb, var(--mac-blue) 50%, transparent);
@@ -1426,8 +1426,8 @@ button:disabled,
   --sb-text: #1D1D1F;
   --sb-text-2: #6E6E73;
   --sb-icon: #969699;
-  --sb-brand: #1D8DF4;
-  --sb-brand-bg: rgba(29, 141, 244, 0.12);
+  --sb-brand: #299D91;
+  --sb-brand-bg: rgba(41, 157, 145, 0.12);
   --sb-sep: rgba(60, 60, 67, 0.2);
   --sb-hover: rgba(0, 0, 0, 0.04);
   --sb-good: #1A8A45;
@@ -1443,8 +1443,8 @@ button:disabled,
   --sb-text: #F5F5F7;
   --sb-text-2: #A1A1A6;
   --sb-icon: #8E8E93;
-  --sb-brand: #0A84FF;
-  --sb-brand-bg: rgba(10, 132, 255, 0.2);
+  --sb-brand: #3CC2B4;
+  --sb-brand-bg: rgba(60, 194, 180, 0.2);
   --sb-sep: rgba(84, 84, 88, 0.6);
   --sb-hover: rgba(255, 255, 255, 0.06);
   --sb-good: #4CD97B;

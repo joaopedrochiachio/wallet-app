@@ -467,7 +467,7 @@ export default function ProfilePage() {
               {/* Linha 1: Nome Completo */}
               <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-[#F9F9FB] transition-colors">
                 <div className="flex items-center gap-3 sm:w-1/3">
-                  <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                  <div className="w-8 h-8 rounded-xl bg-[var(--fb-accent-bg)] text-[var(--fb-accent)] flex items-center justify-center shrink-0">
                     <User size={16} />
                   </div>
                   <span className="text-xs font-semibold text-[#1D1D1F]">Nome Completo</span>
