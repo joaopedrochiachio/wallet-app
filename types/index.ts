@@ -77,6 +77,12 @@ export interface Transaction {
   userId?: string;
 }
 
+/** Ocorrência de uma conta planejada (série + competência YYYY-MM). */
+export interface GoalBillLink {
+  recurringItemId: string;
+  periodKey: string;
+}
+
 export interface GoalItem {
   id: string;
   title: string;
@@ -85,6 +91,8 @@ export interface GoalItem {
   target: number;
   deadline?: string;
   icon?: string;
+  /** Conta futura que esta meta ajuda a pagar. O valor guardado abate dela no planejamento. */
+  linkedBill?: GoalBillLink | null;
 }
 
 export type RecurrenceType = "business_day_5" | "fixed_day";

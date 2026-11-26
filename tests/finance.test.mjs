@@ -1672,7 +1672,9 @@ test("getCardInvoiceDetailsForMonth calcula corretamente fatura aberta com compr
   assert.equal(detailsNov.recurringAmount, 34.90);
   assert.equal(detailsNov.totalInvoice, 284.90);
   assert.equal(detailsNov.isPaid, false);
-  assert.equal(detailsNov.availableLimit, 2550);
+  // O limite vem do extrato, não do `spent` gravado no cartão: compra de 250
+  // + Spotify de setembro (34,90) na fatura de outubro, ainda não paga.
+  assert.equal(detailsNov.availableLimit, 2715.1);
   assert.equal(detailsNov.cardTransactions.length, 1);
   assert.equal(detailsNov.recurringItems.length, 1);
   assert.equal(detailsNov.recurringItemDetails[0].isContinuous, true);

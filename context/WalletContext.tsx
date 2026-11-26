@@ -46,6 +46,7 @@ import { buildInstallmentPurchasePlan } from "@/lib/utils/installments";
 import { validateCategoryBudgets } from "@/lib/utils/categoryBudgets";
 import { getPendingDueOccurrences } from "@/lib/utils/timeProgression";
 import { hasRecordedRecurringOccurrence } from "@/lib/utils/recurringOccurrences";
+import { getBillCoverageForPeriod, goalBillOperationId, type BillCoverage } from "@/lib/utils/goalBills";
 import {
   get5thBusinessDay,
   getEffectiveDueDay,
@@ -150,6 +151,8 @@ export interface MonthProjection {
   plannedIncomesTotal: number;
   projectedIncome: number;
   recurringDebitTotal: number;
+  /** Quanto das contas do débito já está guardado em metas vinculadas (abatido de recurringDebitTotal). */
+  goalCoverageTotal: number;
   recurringCreditTotal: number;
   cardInstallments: number;
   totalCommitted: number;
@@ -1248,11 +1251,43 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   ) => {
     if (!user) throw new Error("Entre na sua conta para efetivar o planejamento.");
     const periodKey = getPeriodKey(targetYear, targetMonth);
+    // Calcula antes de efetivar: depois a ocorrência deixa de estar pendente.
+    const coverage = item.type !== "income"
+      ? getBillCoverageForPeriod(goals, recurringItems, periodKey).get(item.id)
+      : undefined;
     await realizePlannedOccurrence(user.uid, item, periodKey, {
       customAmount,
       customDate,
     });
-  }, [user]);
+    if (!coverage) return;
+
+    // O dinheiro guardado volta para a conta que paga a conta, então só o que
+    // faltava sai do saldo de fato.
+    const payingAccount = cards.find((card) =>
+      card.type === "checking" && matchesLedgerCard(card, item.account, item.cardId)
+    ) || cards.find((card) => card.type === "checking");
+    const failures: string[] = [];
+    for (const { goal, covered } of coverage.goals) {
+      const cents = Math.round(covered * 100);
+      if (cents < 1 || !goal.linkedBill) continue;
+      try {
+        await saveGoalOperation(user.uid, {
+          action: "withdraw",
+          goalId: goal.id,
+          operationId: goalBillOperationId(goal.id, goal.linkedBill, cents),
+          amount: cents / 100,
+          occurredAt: (customDate ?? new Date()).toISOString(),
+          ...(payingAccount ? { accountId: payingAccount.id } : {}),
+        });
+      } catch (error) {
+        console.error(`Erro ao usar a meta ${goal.title} na conta:`, error);
+        failures.push(goal.title);
+      }
+    }
+    if (failures.length > 0) {
+      throw new Error(`Conta paga, mas não consegui usar o valor da meta ${failures.join(", ")}. Resgate pela tela de Metas.`);
+    }
+  }, [user, goals, recurringItems, cards]);
 
   const unrealizeRecurringItem = useCallback(async (
     item: RecurringItem,
@@ -1268,7 +1303,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     const account = input.cardId
       ? cards.find((card) => card.id === input.cardId)
       : cards.find((card) => card.type === "checking" && card.name === input.accountName) || cards.find((card) => card.type === "checking");
-    if (!account || account.type !== "checking") throw new Error("Selecione uma conta corrente v?lida.");
+    if (!account || account.type !== "checking") throw new Error("Selecione uma conta corrente válida.");
     return account.id;
   }, [cards]);
 
@@ -1403,6 +1438,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const overdueDebitTotal = isCurrentMonth ? getPendingDueOccurrences(
         recurringItems.filter((item) => item.type !== "income" && isCheckingRecurring(item)), cards, transactions, new Date()
       ).filter((occurrence) => occurrence.periodKey < targetPeriodKey).reduce((sum, occurrence) => sum + occurrence.amount, 0) : 0;
+      // Dinheiro já guardado em metas vinculadas abate a conta daquele mês.
+      const billCoverage = isPastMonth
+        ? new Map<string, BillCoverage>()
+        : getBillCoverageForPeriod(goals, recurringItems, targetPeriodKey);
+      let goalCoverageTotal = 0;
       const recurringDebitTotal = overdueDebitTotal + (isPastMonth
         ? 0
         : recurringItems
@@ -1410,7 +1450,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             .reduce((acc, r) => {
               const effective = getEffectiveRecurringItemForPeriod(r, targetPeriodKey);
               if (isRecurringAlreadyInTransactions(r)) return acc;
-              return acc + effective.amount;
+              const covered = Math.min(effective.amount, billCoverage.get(r.id)?.covered ?? 0);
+              goalCoverageTotal += covered;
+              return acc + effective.amount - covered;
             }, 0));
 
       // Faturas de cartão de crédito detalhadas por cartão
@@ -1519,6 +1561,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           plannedIncomesTotal,
           projectedIncome: actualIncomeTotal + plannedIncomesTotal,
           recurringDebitTotal,
+          goalCoverageTotal: Math.round(goalCoverageTotal * 100) / 100,
           recurringCreditTotal,
           cardInstallments,
           totalCommitted,
@@ -1539,7 +1582,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
 
     return projectionResult;
-  }, [userProfile.monthlyIncomeBase, recurringItems, cards, transactions]);
+  }, [userProfile.monthlyIncomeBase, recurringItems, cards, transactions, goals]);
 
   const contextValue = useMemo(
     () => ({

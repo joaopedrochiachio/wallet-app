@@ -12,6 +12,7 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import { commitGoalOperation, type GoalOperation } from "@/lib/utils/goalOperations";
+import { isValidGoalBillLink } from "@/lib/utils/goalBills";
 
 export async function saveGoalOperation(userId: string, input: GoalOperation): Promise<GoalItem> {
   if (!userId) throw new Error("Entre na sua conta para movimentar uma meta.");
@@ -37,7 +38,10 @@ export async function saveGoalOperation(userId: string, input: GoalOperation): P
 export async function updateGoalDetails(userId: string, goalId: string, updates: Partial<GoalItem>): Promise<void> {
   if (!userId) throw new Error("Entre na sua conta para editar uma meta.");
   if (updates.current !== undefined) throw new Error("Ajuste o saldo da meta usando aporte ou resgate.");
-  const details = Object.fromEntries(Object.entries(updates).filter(([key, value]) => ["title", "category", "target", "deadline", "icon"].includes(key) && value !== undefined));
+  if (updates.linkedBill !== undefined && updates.linkedBill !== null && !isValidGoalBillLink(updates.linkedBill)) {
+    throw new Error("Escolha uma conta válida para vincular à meta.");
+  }
+  const details = Object.fromEntries(Object.entries(updates).filter(([key, value]) => ["title", "category", "target", "deadline", "icon", "linkedBill"].includes(key) && value !== undefined));
   await updateDoc(doc(db, "users", userId, "goals", goalId), details);
 }
 

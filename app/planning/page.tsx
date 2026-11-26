@@ -53,6 +53,7 @@ import { useNotify } from "@/components/ui/macos/Notifications";
 import { PopUpButton } from "@/components/ui/macos/PopUpButton";
 import { MacMenu } from "@/components/ui/macos/Menu";
 import { MacSegmentedControl } from "@/components/ui/macos/SegmentedControl";
+import { getBillCoverageForPeriod } from "@/lib/utils/goalBills";
 
 const PLANNING_INCOME_CATEGORIES = [
   { value: "Salário / Extra", label: "Salário / Renda Principal" },
@@ -89,6 +90,7 @@ export default function PlanningPage() {
     accountOptions,
     cards,
     transactions,
+    goals,
   } = useWallet();
   const notify = useNotify();
 
@@ -265,9 +267,11 @@ export default function PlanningPage() {
   const totalIncomesScheduled = visiblePlannedIncomes
     .reduce((acc, r) => acc + r.amount, 0);
 
+  // Metas vinculadas a contas deste mês: o valor guardado abate a conta.
+  const billCoverage = getBillCoverageForPeriod(goals, recurringItems, targetPeriodKey);
   const totalDebitExpensesActive = visiblePlannedDebitExpenses
     .filter(isActiveInSelectedMonth)
-    .reduce((acc, r) => acc + r.amount, 0);
+    .reduce((acc, r) => acc + r.amount - Math.min(r.amount, billCoverage.get(r.id)?.covered ?? 0), 0);
   const totalDebitExpensesScheduled = visiblePlannedDebitExpenses
     .reduce((acc, r) => acc + r.amount, 0);
 
@@ -709,6 +713,7 @@ export default function PlanningPage() {
     const isRealizedInThisMonth = Boolean(item.realizedPeriods?.includes(recurrencePeriodKey));
     const paymentStatus = getRecurringPaymentStatus(item, plannedYear, plannedMonth);
     const isProcessing = processingItemId === item.id;
+    const goalCoverage = sectionKind === "debit" && !isRealizedInThisMonth ? billCoverage.get(item.id) : undefined;
 
     let dateDescription = "";
     if (sectionKind === "income") {
@@ -810,6 +815,11 @@ export default function PlanningPage() {
               {dateDescription} · {formatAccountLabel(item.account)} · {item.category}
               {hasInstallments && ` · Parcela ${currentInstallmentNum} de ${item.installmentsCount}`}
             </p>
+            {goalCoverage && (
+              <p className="text-xs text-emerald-700 mt-0.5 truncate">
+                {goalCoverage.goals.map((entry) => entry.goal.title).join(", ")}: R$ {formatCurrency(goalCoverage.covered)} guardados · faltam R$ {formatCurrency(goalCoverage.remaining)}
+              </p>
+            )}
           </div>
         </div>
 
@@ -886,6 +896,13 @@ export default function PlanningPage() {
               ? "Quitado"
               : sectionKind === "income"
               ? `+ R$ ${formatCurrency(item.amount)}`
+              : goalCoverage
+              ? (
+                <>
+                  <span className="block text-[11px] font-normal text-[#86868B] line-through">R$ {formatCurrency(item.amount)}</span>
+                  <span className="block">R$ {formatCurrency(goalCoverage.remaining)}</span>
+                </>
+              )
               : `R$ ${formatCurrency(item.amount)}`}
           </span>
 

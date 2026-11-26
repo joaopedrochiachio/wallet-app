@@ -22,8 +22,12 @@ import {
   Check,
   Pencil,
 } from "lucide-react";
-import { GoalItem } from "@/types";
+import { GoalBillLink, GoalItem, RecurringItem } from "@/types";
 import { AppleConfirmModal } from "@/components/ui/AppleConfirmModal";
+import { BillLinkPicker } from "@/components/goals/BillLinkPicker";
+import { getGoalBillStatus, listLinkableBills } from "@/lib/utils/goalBills";
+import { matchesLedgerCard } from "@/lib/utils/ledger";
+import { useCalendarDay } from "@/lib/hooks/useCalendarDay";
 import { sanitizeTextInput, validateCurrency } from "@/lib/utils/security";
 import { MacSegmentedControl } from "@/components/ui/macos/SegmentedControl";
 
@@ -31,6 +35,7 @@ export default function GoalsPage() {
   const {
     goals,
     cards,
+    recurringItems,
     mainBalance,
     addGoal,
     updateGoal,
@@ -61,6 +66,20 @@ export default function GoalsPage() {
   const [editTargetAmount, setEditTargetAmount] = useState("");
   const [editCurrentAmount, setEditCurrentAmount] = useState("");
   const [editDeadline, setEditDeadline] = useState("");
+  const [editLinkedBill, setEditLinkedBill] = useState<GoalBillLink | null>(null);
+  const [newLinkedBill, setNewLinkedBill] = useState<GoalBillLink | null>(null);
+
+  // Contas futuras que saem da conta corrente (débito/Pix) e podem receber uma meta.
+  const todayTime = useCalendarDay().getTime();
+  const linkableBills = useMemo(() => {
+    const isCheckingBill = (item: RecurringItem) =>
+      item.account === "Débito/Pix" ||
+      cards.some((card) => card.type === "checking" && matchesLedgerCard(card, item.account, item.cardId));
+    return listLinkableBills(recurringItems, isCheckingBill, new Date(todayTime));
+  }, [recurringItems, cards, todayTime]);
+
+  const formatPlainAmount = (value: number) =>
+    value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   // Formulário Nova Meta
   const [title, setTitle] = useState("");
@@ -162,6 +181,7 @@ export default function GoalsPage() {
           current: initialValidation.value,
           target: targetValidation.value,
           deadline: sanitizedDeadline,
+          ...(newLinkedBill ? { linkedBill: newLinkedBill } : {}),
         },
         hasInitialValue
           ? {
@@ -170,7 +190,7 @@ export default function GoalsPage() {
               accountName: isDeductFromAccount ? selectedInitialAccount?.name : undefined,
             }
           : undefined,
-        getMovementRequestId(["create", sanitizedTitle, sanitizedCategory, sanitizedDeadline, targetValidation.value, initialValidation.value, initialSourceType, selectedInitialAccount?.id])
+        getMovementRequestId(["create", sanitizedTitle, sanitizedCategory, sanitizedDeadline, targetValidation.value, initialValidation.value, initialSourceType, selectedInitialAccount?.id, newLinkedBill])
       );
 
       if (isDeductFromAccount) {
@@ -187,6 +207,7 @@ export default function GoalsPage() {
       setInitialAmount("");
       setDeadline("");
       setInitialSourceType("already_saved");
+      setNewLinkedBill(null);
       setIsNewGoalModalOpen(false);
       movementRequestRef.current = null;
     } catch (error) {
@@ -205,6 +226,7 @@ export default function GoalsPage() {
     setInitialAmount("");
     setDeadline("Dezembro 2026");
     setInitialSourceType("already_saved");
+    setNewLinkedBill(null);
     setSelectedInitialAccountId(checkingAccounts[0]?.id || "");
     setIsNewGoalModalOpen(true);
   };
@@ -221,6 +243,7 @@ export default function GoalsPage() {
     setInitialAmount("0,00");
     setDeadline(template.deadline);
     setInitialSourceType("already_saved");
+    setNewLinkedBill(null);
     setSelectedInitialAccountId(checkingAccounts[0]?.id || "");
     setIsNewGoalModalOpen(true);
   };
@@ -237,6 +260,7 @@ export default function GoalsPage() {
       goal.current.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     );
     setEditDeadline(goal.deadline || "");
+    setEditLinkedBill(goal.linkedBill ?? null);
   };
 
   const handleSaveEditGoal = async (e: React.FormEvent) => {
@@ -256,6 +280,7 @@ export default function GoalsPage() {
         category: sanitizedCategory,
         target: targetValidation.value,
         deadline: sanitizedDeadline,
+        linkedBill: editLinkedBill,
       });
 
       showToast(`Meta "${sanitizedTitle}" atualizada com sucesso!`);
@@ -543,6 +568,7 @@ export default function GoalsPage() {
                 100,
                 goal.target > 0 ? Math.round((goal.current / goal.target) * 100) : 0
               );
+              const bill = getGoalBillStatus(goal, goals, recurringItems);
 
               return (
                 <div
@@ -587,6 +613,35 @@ export default function GoalsPage() {
                         guardados de <span className="font-mono tabular-nums">{formatCurrency(goal.target)}</span>
                       </span>
                     </div>
+
+                    {bill && (
+                      <div
+                        className={`rounded-xl px-3 py-2 text-xs ${
+                          bill.state === "pending" ? "bg-[#F2F2F7] text-[#1D1D1F]" : bill.state === "paid" ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"
+                        }`}
+                      >
+                        {bill.state === "pending" ? (
+                          <>
+                            <span className="font-semibold">{bill.title}</span> · {bill.periodLabel} ·{" "}
+                            <span className="font-mono tabular-nums">{formatCurrency(bill.amount)}</span>
+                            <span className="block text-[#86868B]">
+                              {bill.remaining > 0 ? (
+                                <>No planejamento faltam <strong className="text-[#1D1D1F] font-mono tabular-nums">{formatCurrency(bill.remaining)}</strong> para essa conta</>
+                              ) : (
+                                <>Conta totalmente coberta pela meta</>
+                              )}
+                            </span>
+                          </>
+                        ) : bill.state === "paid" ? (
+                          <>
+                            <span className="font-semibold">{bill.title}</span> de {bill.periodLabel} paga.
+                            {goal.current > 0 && " O saldo restante continua na meta; resgate se quiser usar."}
+                          </>
+                        ) : (
+                          <>A conta vinculada ({bill.periodLabel}) não está mais no planejamento. Edite a meta para escolher outra.</>
+                        )}
+                      </div>
+                    )}
 
                     {/* Barra de Progresso Fina estilo Pass Kit */}
                     <div className="w-full h-2 bg-[#F2F2F7] rounded-full overflow-hidden">
@@ -741,6 +796,20 @@ export default function GoalsPage() {
                   className="w-full bg-[#F2F2F7] rounded-xl px-4 py-3 text-sm text-[#1D1D1F] outline-none focus:ring-2 focus:ring-black/10 transition-all"
                 />
               </div>
+
+              <BillLinkPicker
+                bills={linkableBills}
+                value={newLinkedBill}
+                saved={parsedInitialAmount}
+                onChange={(link, occurrence, bill) => {
+                  setNewLinkedBill(link);
+                  if (occurrence && bill) {
+                    setTargetAmount(formatPlainAmount(occurrence.amount));
+                    setDeadline(occurrence.periodLabel);
+                    if (!title.trim()) setTitle(bill.item.title);
+                  }
+                }}
+              />
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
@@ -1399,6 +1468,19 @@ export default function GoalsPage() {
                   ))}
                 </div>
               </div>
+
+              <BillLinkPicker
+                bills={linkableBills}
+                value={editLinkedBill}
+                saved={editingGoal.current}
+                onChange={(link, occurrence) => {
+                  setEditLinkedBill(link);
+                  if (occurrence) {
+                    setEditTargetAmount(formatPlainAmount(occurrence.amount));
+                    setEditDeadline(occurrence.periodLabel);
+                  }
+                }}
+              />
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">

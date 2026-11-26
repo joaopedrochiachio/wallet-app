@@ -644,7 +644,9 @@ export function getCardInvoiceDetailsForMonth(
   });
   const uniqueRecurringItems = [...new Map(recurringItemDetails.map((detail) => [detail.item.id, detail.item])).values()];
 
-  const effectiveSpent = card.spent > 0 ? card.spent : statement.usedLimit;
+  // Sempre o limite calculado pelo extrato: o `spent` gravado no cartão pode
+  // estar desatualizado e congelaria o limite mesmo depois de pagar a fatura.
+  const effectiveSpent = statement.usedLimit;
   const isPastInvoice = targetPeriodKey < statement.currentCycleKey;
 
   return {
