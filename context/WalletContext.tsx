@@ -1177,16 +1177,26 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       await updateRecurringInFirestore(user.uid, item.id, buildForwardRecurringUpdate(item, period, cardFields));
     }
 
-    // Lançamentos já feitos nas competências afetadas acompanham a mudança.
+    // Lançamentos já feitos nas competências afetadas acompanham a mudança,
+    // exceto os que estão em fatura já paga: tirar uma compra de fatura paga
+    // transforma o pagamento em "crédito" falso no cartão de origem.
+    const sourceStatement = cardStatements[charge.cardId];
     const affected = transactions.filter((tx) => {
       if (tx.recurringItemId !== item.id) return false;
-      const txPeriod = tx.periodKey || (getLedgerEntryDate(tx) ? getPeriodKey(getLedgerEntryDate(tx)!.getFullYear(), getLedgerEntryDate(tx)!.getMonth()) : "");
-      return scope === "single" ? txPeriod === period : txPeriod >= period;
+      const txDate = getLedgerEntryDate(tx);
+      const txPeriod = tx.periodKey || (txDate ? getPeriodKey(txDate.getFullYear(), txDate.getMonth()) : "");
+      if (scope === "single" ? txPeriod !== period : txPeriod < period) return false;
+      if (sourceStatement && txDate) {
+        const due = getInvoiceDueDate(sourceStatement.card, txDate);
+        const status = sourceStatement.getInvoice(getPeriodKey(due.getFullYear(), due.getMonth())).status;
+        if (status === "paid" || status === "settled") return false;
+      }
+      return true;
     });
     for (const tx of affected) {
       await retargetTransaction(tx, destination);
     }
-  }, [cards, recurringItems, transactions, retargetTransaction, user]);
+  }, [cards, cardStatements, recurringItems, transactions, retargetTransaction, user]);
 
   const removeCardCharge = useCallback(async (
     charge: CardCharge,

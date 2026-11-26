@@ -8,6 +8,7 @@ import {
   monthName,
   monthNameLower,
   shiftPeriodKey,
+  INVOICE_STATUS_LABEL,
   type CardInvoice,
   type CardStatement,
 } from "@/lib/utils/creditCardEngine";
@@ -249,6 +250,33 @@ function CardCarousel({
           <span className="[font-variant-numeric:tabular-nums]">{brl(used)} de {brl(limit)}</span>
         </div>
         <MeterBar value={used} max={limit} />
+        {card && statement && statement.limitBreakdown.length > 0 && (
+          <ul className="space-y-1 pt-1.5 text-xs text-[var(--fb-text-3)]" aria-label="De onde vem o limite usado">
+            {statement.limitBreakdown.map((part) => {
+              const pastDue = part.status === "overdue" || part.status === "closed";
+              return (
+                <li key={part.key}>
+                  <button
+                    type="button"
+                    onClick={() => onOpenInvoice(part.key, card.id)}
+                    className="flex w-full cursor-pointer justify-between gap-2 rounded px-1 py-0.5 text-left hover:bg-[var(--fb-compare)]"
+                  >
+                    <span className={pastDue ? "font-medium text-amber-700" : undefined}>
+                      Fatura de {monthNameLower(Number(part.key.split("-")[1]) - 1)} · {INVOICE_STATUS_LABEL[part.status].toLowerCase()}
+                      {part.status === "future" && " (parcelas)"}
+                    </span>
+                    <span className="[font-variant-numeric:tabular-nums]">{brl(part.amount)}</span>
+                  </button>
+                </li>
+              );
+            })}
+            {statement.limitBreakdown.some((part) => part.status === "overdue" || part.status === "closed") && (
+              <li className="px-1 pt-0.5 text-amber-700">
+                Já pagou essa fatura no banco? Abra e toque em &quot;Paguei a fatura&quot; para liberar o limite.
+              </li>
+            )}
+          </ul>
+        )}
       </div>
 
       {slides.length > 1 && (

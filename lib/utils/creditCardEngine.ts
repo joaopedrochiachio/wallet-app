@@ -134,6 +134,8 @@ export interface CardStatement {
   amountDue: number;
   /** Parcelas e compras já feitas que ainda vão cair em faturas futuras. */
   futureCommitted: number;
+  /** De onde vem o limite usado: quanto cada fatura ainda ocupa (soma = usedLimit). */
+  limitBreakdown: { key: string; amount: number; status: InvoiceStatus }[];
   plans: InstallmentPlanSummary[];
   subscriptions: SubscriptionSummary[];
   getInvoice: (key: string) => CardInvoice;
@@ -483,6 +485,7 @@ export function buildCardStatement(
   let usedLimit = 0;
   let amountDue = 0;
   let futureCommitted = 0;
+  const limitBreakdown: CardStatement["limitBreakdown"] = [];
 
   for (const key of sortedKeys) {
     const list = (byKey.get(key) || []).sort((a, b) => a.chargeDate.getTime() - b.chargeDate.getTime());
@@ -519,6 +522,7 @@ export function buildCardStatement(
       usedLimit += limitPart;
       if (key <= currentCycleKey) amountDue += outstanding;
       else futureCommitted += limitPart;
+      if (limitPart > EPSILON) limitBreakdown.push({ key, amount: round2(limitPart), status });
     }
 
     invoices.push({
@@ -574,6 +578,7 @@ export function buildCardStatement(
     percentUsed: limit > 0 ? Math.min(100, Math.round((usedLimit / limit) * 100)) : 0,
     amountDue: round2(amountDue),
     futureCommitted: round2(futureCommitted),
+    limitBreakdown,
     plans,
     subscriptions,
     getInvoice,
