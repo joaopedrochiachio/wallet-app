@@ -9,7 +9,7 @@ import { buildAppFixture } from "./helpers/appFixture";
  * cortado fora da tela, campo que dispara zoom no iOS ou erro de execução.
  */
 
-const ROUTES = ["/", "/login", "/onboarding", "/dashboard", "/transactions", "/planning", "/simulate", "/radar", "/cards", "/goals", "/profile", "/ai"];
+const ROUTES = ["/", "/login", "/onboarding", "/dashboard", "/transactions", "/planning", "/simulate", "/radar", "/news", "/cards", "/goals", "/profile", "/ai"];
 const WIDTHS = [320, 375, 390, 430];
 const REPORT = process.env.RESPONSIVE_REPORT === "1";
 

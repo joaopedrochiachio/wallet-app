@@ -8,6 +8,7 @@ import {
   type StatementAnalysisResult,
 } from "../../../../lib/services/statementImportService.ts";
 import { redactPersonalData } from "../../../../lib/services/privacyService.ts";
+import { extractPdfLines, PdfPasswordError } from "../../../../lib/services/pdfText.ts";
 import { callOpenAIResponses } from "../../../../lib/services/openaiService.ts";
 import { checkRateLimit } from "../../../../lib/utils/rateLimiter.ts";
 import { verifyServerAuth } from "../../../../lib/auth/serverAuth.ts";
@@ -110,7 +111,23 @@ export async function POST(req: NextRequest) {
               bytes[3] === 0x46);
 
           if (isPdf) {
-            const pdfText = extractTextFromPdfBytes(bytes, decompressPdfFlateStream);
+            // PDF.js primeiro (lê fontes, posições e objetos compactados como um leitor de PDF de verdade);
+            // o leitor próprio fica de reserva para PDFs que o PDF.js não abrir.
+            let pdfText = "";
+            try {
+              pdfText = await extractPdfLines(bytes);
+            } catch (error) {
+              if (error instanceof PdfPasswordError) {
+                return NextResponse.json(
+                  { success: false, error: `${currentFileName}: ${error.message}`, code: "PDF_PASSWORD" },
+                  { status: 422 }
+                );
+              }
+              console.error("PDF.js não conseguiu ler o arquivo; usando o leitor de reserva.", error);
+            }
+            if (pdfText.replace(/\s/g, "").length < 20) {
+              pdfText = extractTextFromPdfBytes(bytes, decompressPdfFlateStream);
+            }
             if (pdfText.trim()) {
               parsedFilesData.push({ fileName: currentFileName, text: pdfText.trim() });
             }

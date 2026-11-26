@@ -18,6 +18,7 @@ export async function buildAppFixture() {
     "/planning": "app/planning/page.tsx",
     "/simulate": "app/simulate/page.tsx",
     "/radar": "app/radar/page.tsx",
+    "/news": "app/news/page.tsx",
     "/cards": "app/cards/page.tsx",
     "/goals": "app/goals/page.tsx",
     "/profile": "app/profile/page.tsx",

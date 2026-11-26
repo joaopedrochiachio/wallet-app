@@ -18,6 +18,7 @@
 
 import type { CardItem, RecurringItem, RecurrenceType } from "../../types/index.ts";
 import { getPeriodKey } from "../utils/dateUtils.ts";
+import { convertCsvToStandardLines, parseCsvStatement } from "./statementCsv.ts";
 
 export interface BankInstitutionProfile {
   id: string;
@@ -1779,10 +1780,15 @@ export function analyzeBankStatementText(params: AnalyzeStatementParams): Statem
   const refYear = referenceDate.getFullYear();
 
   // Se for conteúdo OFX bruto, converte primeiro para linhas padronizadas
+  // CSV com cabeçalho reconhecido também vira linhas padronizadas (ex.: fatura do Nubank).
+  const csvStatement =
+    rawText.includes("<OFX>") || rawText.includes("<STMTTRN>") ? null : parseCsvStatement(rawText, fileName);
   const normalizedInputText =
     rawText.includes("<OFX>") || rawText.includes("<STMTTRN>")
       ? convertOfxToStandardLines(rawText)
-      : rawText;
+      : csvStatement
+        ? convertCsvToStandardLines(csvStatement)
+        : rawText;
 
   const institution = detectBankInstitution(normalizedInputText, fileName);
   const headerMeta = extractStatementHeaderMetadata(normalizedInputText);

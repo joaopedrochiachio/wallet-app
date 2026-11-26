@@ -15,8 +15,10 @@ import {
   BookOpen,
   FlaskConical,
   ScanLine,
+  Newspaper,
 } from "lucide-react";
 import { WalletProvider } from "@/context/WalletContext";
+import { MobileTabBar } from "@/components/layout/MobileTabBar";
 import { AuthProvider } from "@/context/AuthContext";
 import { AuthRouteGuard } from "@/components/auth/AuthRouteGuard";
 import { WalletLogo } from "@/components/ui/WalletLogo";
@@ -87,6 +89,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <MacSidebarSection>Inteligência</MacSidebarSection>
                     <NavItem href="/ai" icon={<Sparkles strokeWidth={1.75} size={16} />} label="Wallet+ IA" active={pathname === "/ai"} />
                     <NavItem href="/radar" icon={<ScanLine strokeWidth={1.75} size={16} />} label="Raio-X" active={pathname === "/radar"} />
+                    <NavItem href="/news" icon={<Newspaper strokeWidth={1.75} size={16} />} label="Notícias" active={pathname === "/news"} />
 
                     <MacSidebarSection>Conta</MacSidebarSection>
                     <NavItem href="/profile" icon={<User strokeWidth={1.75} size={16} />} label="Perfil & Arquétipo" active={pathname === "/profile"} />
@@ -119,52 +122,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </main>
 
               {/* BOTTOM BAR (Mobile) */}
-              <nav className="md:hidden fixed bottom-0 left-0 right-0 w-full bg-[var(--mac-glass-control-bg)] backdrop-blur-xl backdrop-saturate-[1.8] border-t border-black/[0.06] pb-safe z-40">
-                <div className="flex justify-around items-center h-14 sm:h-16 px-1">
-                  <MobileNavItem
-                    href="/dashboard"
-                    icon={<Home strokeWidth={1.5} size={21} />}
-                    active={pathname === "/dashboard"}
-                    label="Dashboard"
-                  />
-                  <MobileNavItem
-                    href="/transactions"
-                    icon={<ArrowLeftRight strokeWidth={1.5} size={21} />}
-                    active={pathname === "/transactions"}
-                    label="Transações"
-                  />
-                  <MobileNavItem
-                    href="/planning"
-                    icon={<CalendarDays strokeWidth={1.5} size={21} />}
-                    active={pathname === "/planning"}
-                    label="Planejamento"
-                  />
-                  {/* IA NO CENTRO COM COR DIFERENCIADA E EMOTE PLUS */}
-                  <MobileAiNavItem
-                    href="/ai"
-                    active={pathname === "/ai"}
-                    label="Wallet+"
-                  />
-                  <MobileNavItem
-                    href="/cards"
-                    icon={<CreditCard strokeWidth={1.5} size={21} />}
-                    active={pathname === "/cards"}
-                    label="Cartões"
-                  />
-                  <MobileNavItem
-                    href="/goals"
-                    icon={<Target strokeWidth={1.5} size={21} />}
-                    active={pathname === "/goals"}
-                    label="Metas"
-                  />
-                  <MobileNavItem
-                    href="/profile"
-                    icon={<User strokeWidth={1.5} size={21} />}
-                    active={pathname === "/profile"}
-                    label="Perfil"
-                  />
-                </div>
-              </nav>
+              {/* Início, grupos com submenus e a IA no centro */}
+              <MobileTabBar
+                pathname={pathname}
+                aiSlot={<MobileAiNavItem href="/ai" active={pathname === "/ai"} label="Wallet+" />}
+              />
             </div>
           )}
         </WalletProvider>
@@ -187,30 +149,6 @@ function NavItem({
   active?: boolean;
 }) {
   return <MacSidebarItem href={href} icon={icon} label={label} selected={active} />;
-}
-
-function MobileNavItem({
-  href,
-  icon,
-  active = false,
-  label,
-}: {
-  href: string;
-  icon: React.ReactNode;
-  active?: boolean;
-  label: string;
-}) {
-  return (
-    <Link
-      href={href}
-      aria-label={label}
-      className={`min-w-[42px] min-h-[42px] flex items-center justify-center rounded-2xl transition-colors ${
-        active ? "text-[#1D1D1F] bg-black/[0.04]" : "text-[#86868B] hover:text-[#1D1D1F]"
-      }`}
-    >
-      {icon}
-    </Link>
-  );
 }
 
 function MobileAiNavItem({
