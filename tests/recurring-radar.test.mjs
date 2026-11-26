@@ -79,3 +79,23 @@ test("conta no débito antes do salário e mudança de valor programada", () => 
   const change = r.alerts.find((a) => a.kind === "price_change");
   assert.deepEqual([change.periodKey, change.from, change.to], ["2027-02", 900, 950]);
 });
+
+test("o que já foi pago fica fora: iPhone 15x mostra o que falta e a próxima parcela", () => {
+  const r = buildRecurringRadar({
+    cards, today,
+    recurringItems: [
+      { ...base, id: "iphone", title: "Iphone", amount: 274.64, account: "Conta", cardId: "conta", dueDay: 20,
+        installmentsCount: 15, paidInstallmentsCount: 1, startYear: 2026, startMonth: 7, realizedPeriods: ["2026-09", "2026-10", "2026-11"] },
+      { ...base, id: "carona", title: "Carona", amount: 156, account: "Conta", cardId: "conta", dueDay: 7,
+        realizedPeriods: ["2026-11"], overrides: { "2026-11": { amount: 174.07 } } },
+    ],
+  });
+  const iphone = r.costs.find((c) => c.item.id === "iphone");
+  assert.equal(iphone.remainingCount, 11);
+  assert.equal(iphone.remainingAmount, 3021.04);
+  assert.equal(iphone.nextInstallment, 5);
+  assert.equal(iphone.lastPeriodKey, "2027-10");
+  const carona = r.costs.find((c) => c.item.id === "carona");
+  assert.equal(carona.monthly, 156, "próxima cobrança, não a de novembro já paga");
+  assert.equal(carona.nextYear, 1716, "11 cobranças de dez/26 a out/27");
+});

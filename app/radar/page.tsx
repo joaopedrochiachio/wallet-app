@@ -5,8 +5,8 @@ import Link from "next/link";
 import { AlertTriangle, CalendarClock, Copy, TrendingUp } from "lucide-react";
 import { useWallet } from "@/context/WalletContext";
 import { useCalendarDay } from "@/lib/hooks/useCalendarDay";
-import { buildRecurringRadar, type RadarAlert } from "@/lib/services/recurringRadar";
-import { MeterBar, Panel, brl } from "@/components/charts/finance";
+import { buildRecurringRadar, radarWeight, type RadarAlert } from "@/lib/services/recurringRadar";
+import { Panel, brl } from "@/components/charts/finance";
 import { CardDot } from "@/components/cards/cardUi";
 
 const periodLabel = (key: string) => {
@@ -22,7 +22,16 @@ export default function RadarPage() {
     [recurringItems, cards, todayTime]
   );
   const monthly = radar.fixedMonthly + radar.installmentsMonthly;
-  const topYear = radar.costs[0]?.nextYear ?? 0;
+  const topYear = radar.costs[0] ? radarWeight(radar.costs[0]) : 0;
+  const income = radar.monthlyIncome;
+  // A barra mede contra a renda; sem renda cadastrada, contra o próprio total.
+  const scale = Math.max(income, monthly, 0.01);
+  const pct = (value: number) => Math.max(0, (value / scale) * 100);
+  const lastInstallment = radar.costs
+    .filter((cost) => cost.kind === "installment" && cost.lastPeriodKey)
+    .map((cost) => cost.lastPeriodKey as string)
+    .sort()
+    .pop();
   const cumulativeRelief = radar.relief.map((_, index) =>
     radar.relief.slice(0, index + 1).reduce((sum, relief) => sum + relief.amount, 0));
 
@@ -48,20 +57,37 @@ export default function RadarPage() {
               <div className="space-y-4">
                 <div>
                   <span className="block text-[32px] font-extrabold leading-10 text-[var(--fb-text)] [font-variant-numeric:tabular-nums]">{brl(monthly)}</span>
-                  <span className="text-xs text-[var(--fb-text-3)]">
-                    {brl(radar.fixedMonthly)} em fixas · {brl(radar.installmentsMonthly)} em parcelas
-                  </span>
+                  <span className="text-sm text-[var(--fb-text-2)]">sai todo mês com contas fixas, assinaturas e parcelas, antes de qualquer gasto do dia a dia.</span>
                 </div>
-                {radar.incomeShare !== null && (
-                  <div className="space-y-1.5">
-                    {/* O percentual já vem no próprio medidor. */}
-                    <span className="block text-xs text-[var(--fb-text-3)]">da renda prevista</span>
-                    <MeterBar value={monthly} max={radar.monthlyIncome} danger={0.5} />
+
+                {/* Uma barra só: de onde vem o total e quanto ele ocupa da renda. */}
+                <div className="space-y-2">
+                  <div className="flex h-3 overflow-hidden rounded-full bg-[var(--fb-compare)]" role="img"
+                    aria-label={`Fixas ${brl(radar.fixedMonthly)}, parcelas ${brl(radar.installmentsMonthly)}${income > 0 ? `, sobra ${brl(Math.max(0, income - monthly))}` : ""}`}>
+                    <span className="h-full" style={{ width: `${pct(radar.fixedMonthly)}%`, backgroundColor: "var(--fb-accent)" }} />
+                    <span className="h-full border-l-2 border-[var(--fb-card)]" style={{ width: `${pct(radar.installmentsMonthly)}%`, backgroundColor: "var(--fb-accent-2)" }} />
                   </div>
-                )}
-                <p className="border-t border-[var(--fb-line)] pt-3 text-xs text-[var(--fb-text-3)]">
-                  Nos próximos 12 meses: <strong className="text-[var(--fb-text)] [font-variant-numeric:tabular-nums]">{brl(radar.nextYearTotal)}</strong>
-                </p>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--fb-text-2)]">
+                    <LegendDot color="var(--fb-accent)" label="Fixas e assinaturas" value={radar.fixedMonthly} />
+                    <LegendDot color="var(--fb-accent-2)" label="Parcelas" value={radar.installmentsMonthly} />
+                    {income > 0 && <LegendDot color="var(--fb-compare)" label="Sobra da renda" value={Math.max(0, income - monthly)} />}
+                  </div>
+                </div>
+
+                <ul className="space-y-1.5 border-t border-[var(--fb-line)] pt-3 text-xs leading-relaxed text-[var(--fb-text-3)]">
+                  {income > 0 && (
+                    <li>
+                      Você espera receber <strong className="text-[var(--fb-text)] [font-variant-numeric:tabular-nums]">{brl(income)}</strong> por mês.{" "}
+                      <strong className="text-[var(--fb-text)]">{Math.round((monthly / income) * 100)}%</strong> disso já tem destino certo.
+                    </li>
+                  )}
+                  {lastInstallment && (
+                    <li>As parcelas acabam até <strong className="text-[var(--fb-text)] capitalize">{periodLabel(lastInstallment)}</strong>; veja mês a mês em Alívio.</li>
+                  )}
+                  <li>
+                    Somando os próximos 12 meses, são <strong className="text-[var(--fb-text)] [font-variant-numeric:tabular-nums]">{brl(radar.nextYearTotal)}</strong>.
+                  </li>
+                </ul>
               </div>
             </Panel>
 
@@ -89,7 +115,7 @@ export default function RadarPage() {
                         <span className="text-right">
                           <span className="block text-sm font-semibold text-[var(--fb-text)] [font-variant-numeric:tabular-nums]">+ {brl(relief.amount)}</span>
                           <span className="block text-[11px] text-[var(--fb-text-3)] [font-variant-numeric:tabular-nums]">
-                            {index > 0 ? `${brl(cumulativeRelief[index])}/mês no total` : "por mês"}
+                            {index > 0 ? `${brl(cumulativeRelief[index])}/mês a mais que hoje` : "por mês a mais que hoje"}
                           </span>
                         </span>
                       </li>
@@ -101,28 +127,37 @@ export default function RadarPage() {
           </div>
 
           <div className="min-w-0">
-            <Panel title="O que mais pesa no ano">
+            <Panel title="O que mais pesa">
               <ul className="space-y-3.5">
                 {radar.costs.map((cost) => {
                   const card = cards.find((candidate) => candidate.id === cost.accountId);
+                  const isInstallment = cost.kind === "installment";
+                  const weight = radarWeight(cost);
                   return (
                     <li key={cost.item.id} className="space-y-1.5">
-                      <div className="flex items-baseline justify-between gap-3">
+                      <div className="flex items-start justify-between gap-3">
                         <span className="min-w-0">
                           <span className="block truncate text-sm font-medium text-[var(--fb-text)]">{cost.item.title}</span>
-                          <span className="flex items-center gap-1.5 text-xs text-[var(--fb-text-3)]">
+                          <span className="flex flex-wrap items-center gap-x-1.5 text-xs text-[var(--fb-text-3)]">
                             {card && <CardDot card={card} size={8} />}
-                            {cost.accountName} · {brl(cost.monthly)}/mês
-                            {cost.kind === "installment" && cost.lastPeriodKey && ` · até ${periodLabel(cost.lastPeriodKey)}`}
+                            <span>{cost.accountName}</span>
+                            <span>· próxima {brl(cost.monthly)}</span>
+                            {isInstallment && cost.nextInstallment && cost.item.installmentsCount && (
+                              <span>· {cost.nextInstallment}ª de {cost.item.installmentsCount}</span>
+                            )}
+                            {isInstallment && cost.lastPeriodKey && <span>· até {periodLabel(cost.lastPeriodKey)}</span>}
                           </span>
                         </span>
-                        <span className="shrink-0 text-sm font-semibold text-[var(--fb-text)] [font-variant-numeric:tabular-nums]">{brl(cost.nextYear)}</span>
+                        <span className="shrink-0 text-right">
+                          <span className="block text-sm font-semibold text-[var(--fb-text)] [font-variant-numeric:tabular-nums]">{brl(weight)}</span>
+                          <span className="block text-[11px] text-[var(--fb-text-3)]">{isInstallment ? "falta pagar" : "em 12 meses"}</span>
+                        </span>
                       </div>
                       <div className="h-1.5 overflow-hidden rounded-full bg-[var(--fb-compare)]" aria-hidden>
                         <div
                           className="h-full rounded-full"
                           style={{
-                            width: `${topYear > 0 ? Math.max(2, (cost.nextYear / topYear) * 100) : 0}%`,
+                            width: `${topYear > 0 ? Math.max(2, (weight / topYear) * 100) : 0}%`,
                             backgroundColor: cost.kind === "installment" ? "var(--fb-accent-2)" : "var(--fb-accent)",
                           }}
                         />
@@ -167,5 +202,14 @@ function AlertRow({ alert }: { alert: RadarAlert }) {
         <span className="block text-xs text-[var(--fb-text-3)]">{detail}</span>
       </span>
     </li>
+  );
+}
+
+function LegendDot({ color, label, value }: { color: string; label: string; value: number }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} aria-hidden />
+      {label} <span className="font-semibold text-[var(--fb-text)] [font-variant-numeric:tabular-nums]">{brl(value)}</span>
+    </span>
   );
 }

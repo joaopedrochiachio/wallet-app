@@ -9,6 +9,7 @@ import {
   getEffectiveDueDay,
   getEffectiveRecurringItemForPeriod,
   getPeriodKey,
+  getRecurringMonthOffset,
   isRecurringActiveInMonth,
 } from "../utils/dateUtils.ts";
 import { matchesLedgerCard } from "../utils/ledger.ts";
@@ -23,12 +24,15 @@ export interface RadarCost {
   accountName: string;
   accountId: string | null;
   isCredit: boolean;
-  /** Valor da próxima cobrança. */
+  /** Valor da próxima cobrança ainda não paga. */
   monthly: number;
-  /** Soma das cobranças nos próximos 12 meses. */
+  /** Soma do que ainda vai ser cobrado nos próximos 12 meses (o já pago fica fora). */
   nextYear: number;
-  /** Parcelamentos: parcelas que ainda vão cair e a última competência. */
+  /** Parcelamentos: parcelas que ainda faltam pagar, quanto somam e a última competência. */
   remainingCount?: number;
+  remainingAmount?: number;
+  /** Número da próxima parcela (ex.: 5 de 15). */
+  nextInstallment?: number;
   lastPeriodKey?: string;
 }
 
@@ -55,6 +59,11 @@ export interface RecurringRadar {
   incomeShare: number | null;
   relief: RadarRelief[];
   alerts: RadarAlert[];
+}
+
+/** O número que representa o peso da recorrente: parcelado = falta pagar; fixa = próximos 12 meses. */
+export function radarWeight(cost: RadarCost): number {
+  return cost.kind === "installment" ? cost.remainingAmount ?? cost.nextYear : cost.nextYear;
 }
 
 function periodLabel(periodKey: string): string {
@@ -100,12 +109,16 @@ export function buildRecurringRadar(params: {
     const isInstallment = Boolean(item.installmentsCount && item.installmentsCount > 1);
     // Uma compra única não é recorrente.
     if (item.installmentsCount === 1) continue;
-    // Já pago neste mês continua sendo custo do mês: ignora realizedPeriods aqui.
+    // `schedule` ignora o que já foi pago: diz se a série existe no mês.
+    // `item` respeita o pago: diz o que ainda vai ser cobrado.
     const schedule = { ...item, realizedPeriods: [] };
     const active = periods.filter((period) => isRecurringActiveInMonth(schedule, period.year, period.month));
     if (active.length === 0) continue;
+    const pending = periods.filter((period) => isRecurringActiveInMonth(item, period.year, period.month));
+    // Série que já pagou tudo o que tinha nos próximos 12 meses (ex.: última parcela paga hoje).
+    if (pending.length === 0) continue;
 
-    const amounts = active.map((period) => ({ key: period.key, amount: getEffectiveRecurringItemForPeriod(item, period.key).amount }));
+    const amountOf = (key: string) => getEffectiveRecurringItemForPeriod(item, key).amount;
     const account = accountOf(item);
     const cost: RadarCost = {
       item,
@@ -113,22 +126,34 @@ export function buildRecurringRadar(params: {
       accountName: account?.name ?? item.account,
       accountId: account?.id ?? null,
       isCredit: account?.type === "credit",
-      monthly: round2(amounts[0].amount),
-      nextYear: round2(amounts.reduce((sum, entry) => sum + entry.amount, 0)),
+      monthly: round2(amountOf(pending[0].key)),
+      nextYear: round2(pending.reduce((sum, period) => sum + amountOf(period.key), 0)),
     };
+    const amounts = active.map((period) => ({ key: period.key, amount: amountOf(period.key) }));
 
     if (isInstallment) {
-      // Parcelas restantes contadas até o fim da série (pode passar de 12 meses).
+      // Parcelas que faltam pagar, até o fim da série (pode passar de 12 meses).
       let remaining = 0;
+      let remainingAmount = 0;
       let last = amounts[amounts.length - 1].key;
+      let firstPendingOffset: number | null = null;
+      let seen = false;
       for (let offset = 0; offset < 360; offset++) {
         const date = new Date(today.getFullYear(), today.getMonth() + offset, 1);
+        const key = getPeriodKey(date.getFullYear(), date.getMonth());
         if (isRecurringActiveInMonth(schedule, date.getFullYear(), date.getMonth())) {
-          remaining++;
-          last = getPeriodKey(date.getFullYear(), date.getMonth());
-        } else if (remaining > 0 && offset > 0) break;
+          seen = true;
+          last = key;
+          if (isRecurringActiveInMonth(item, date.getFullYear(), date.getMonth())) {
+            remaining++;
+            remainingAmount += amountOf(key);
+            if (firstPendingOffset === null) firstPendingOffset = getRecurringMonthOffset(item, date.getFullYear(), date.getMonth());
+          }
+        } else if (seen) break;
       }
       cost.remainingCount = remaining;
+      cost.remainingAmount = round2(remainingAmount);
+      if (firstPendingOffset !== null) cost.nextInstallment = firstPendingOffset + 1;
       cost.lastPeriodKey = last;
       const [y, m] = last.split("-").map(Number);
       const freeKey = getPeriodKey(new Date(y, m, 1).getFullYear(), new Date(y, m, 1).getMonth());
@@ -197,7 +222,7 @@ export function buildRecurringRadar(params: {
   const alertOrder = { duplicate: 0, before_income: 1, price_change: 2 } as const;
 
   return {
-    costs: costs.sort((a, b) => b.nextYear - a.nextYear),
+    costs: costs.sort((a, b) => radarWeight(b) - radarWeight(a)),
     fixedMonthly,
     installmentsMonthly,
     nextYearTotal: round2(costs.reduce((sum, cost) => sum + cost.nextYear, 0)),
