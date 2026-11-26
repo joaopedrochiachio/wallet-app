@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useWallet } from "@/context/WalletContext";
 import {
   Plus,
@@ -1184,10 +1185,13 @@ export default function PlanningPage() {
 
         {/* 4. PLANEJAMENTO DO MÊS */}
         <section className="space-y-6 pt-2">
-          <div>
+          <div className="flex items-center justify-between gap-3">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-[#86868B]">
               Planejamento
             </h2>
+            <Link href="/radar" className="touch-target text-xs font-semibold text-[var(--fb-accent)]">
+              Raio-X das recorrentes
+            </Link>
           </div>
 
           {/* 4.1 Recebimentos Previstos */}

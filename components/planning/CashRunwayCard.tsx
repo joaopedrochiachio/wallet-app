@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CheckCircle2, AlertTriangle, ChevronDown } from "lucide-react";
+import Link from "next/link";
+import { CheckCircle2, AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
 import { useWallet } from "@/context/WalletContext";
 import { useCalendarDay } from "@/lib/hooks/useCalendarDay";
 import { buildCashRunway, collectRunwayEvents, type RunwaySegment } from "@/lib/services/cashRunway";
@@ -43,7 +44,12 @@ export function CashRunwayCard() {
       className="space-y-4 rounded-[22px] border border-black/[0.04] bg-white p-4 shadow-[0_1px_4px_rgba(0,0,0,0.02)] sm:p-5"
     >
       <header className="space-y-1">
-        <h3 className="text-base font-semibold tracking-tight text-[#1D1D1F]">Dá pra pagar?</h3>
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-base font-semibold tracking-tight text-[#1D1D1F]">Dá pra pagar?</h3>
+          <Link href="/simulate" className="touch-target inline-flex items-center gap-1 text-xs font-semibold text-[var(--fb-accent)]">
+            E se…? Simular <ChevronRight size={14} />
+          </Link>
+        </div>
         {problem ? (
           <p className="flex items-start gap-1.5 text-sm text-rose-700">
             <AlertTriangle size={16} className="mt-0.5 shrink-0" />
@@ -61,9 +67,6 @@ export function CashRunwayCard() {
             </span>
           </p>
         )}
-        <p className="text-xs text-[#86868B]">
-          Conta do saldo em conta corrente, dia a dia: entradas previstas, contas no débito/Pix e faturas no vencimento.
-        </p>
       </header>
 
       <ol className="space-y-2.5">

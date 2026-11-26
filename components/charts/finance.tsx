@@ -438,13 +438,21 @@ export function AreaChart({
     const top = 8;
     const bottom = height - 26;
     const maxValue = Math.max(0, ...points.map((p) => Math.max(p.value, p.compare ?? 0)));
-    const scale = niceScale(maxValue);
+    const minValue = Math.min(0, ...points.map((p) => Math.min(p.value, p.compare ?? 0)));
+    const upper = niceScale(maxValue);
+    // Saldo negativo: o eixo desce abaixo de zero com o mesmo passo de cima.
+    const lower = minValue < 0 ? niceScale(-minValue) : null;
+    const floor = lower ? -lower.top : 0;
+    const scale = {
+      top: upper.top,
+      ticks: [...(lower ? lower.ticks.filter((tick) => tick > 0).map((tick) => -tick).reverse() : []), ...upper.ticks],
+    };
     const x0 = points[0].x;
     const x1 = Math.max(points[points.length - 1].x, x0 + 1);
     return {
-      left, right, top, bottom, scale,
+      left, right, top, bottom, scale, hasNegative: minValue < 0,
       x: (value: number) => left + ((value - x0) / (x1 - x0)) * (right - left),
-      y: (value: number) => bottom - (value / scale.top) * (bottom - top),
+      y: (value: number) => bottom - ((value - floor) / (scale.top - floor)) * (bottom - top),
     };
   }, [points, width, height]);
 
@@ -453,7 +461,8 @@ export function AreaChart({
   const main = points.map((p) => ({ x: g.x(p.x), y: g.y(p.value) }));
   const comparePoints = points.filter((p) => p.compare !== undefined && p.compare !== null).map((p) => ({ x: g.x(p.x), y: g.y(p.compare as number) }));
   const mainPath = smoothPath(main);
-  const area = `${mainPath} L${main[main.length - 1].x},${g.bottom} L${main[0].x},${g.bottom} Z`;
+  const baseline = g.y(0);
+  const area = `${mainPath} L${main[main.length - 1].x},${baseline} L${main[0].x},${baseline} Z`;
   const step = ticksEvery ?? Math.max(1, Math.ceil(points.length / 6));
   const hovered = hoverIndex !== null ? points[hoverIndex] : null;
 
@@ -501,6 +510,9 @@ export function AreaChart({
               </text>
             </g>
           ) : null
+        )}
+        {g.hasNegative && (
+          <line x1={g.left} x2={g.right} y1={baseline} y2={baseline} stroke="var(--fb-up)" strokeWidth={1} strokeDasharray="3 3" />
         )}
         {markerX !== undefined && (
           <line x1={g.x(markerX)} x2={g.x(markerX)} y1={g.top} y2={g.bottom} stroke="var(--fb-text-3)" strokeDasharray="2 3" />

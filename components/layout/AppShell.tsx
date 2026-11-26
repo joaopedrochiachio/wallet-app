@@ -13,6 +13,8 @@ import {
   User,
   Sparkles,
   BookOpen,
+  FlaskConical,
+  ScanLine,
 } from "lucide-react";
 import { WalletProvider } from "@/context/WalletContext";
 import { AuthProvider } from "@/context/AuthContext";
@@ -78,11 +80,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <NavItem href="/dashboard" icon={<Home strokeWidth={1.75} size={16} />} label="Dashboard" active={pathname === "/dashboard"} />
                     <NavItem href="/transactions" icon={<ArrowLeftRight strokeWidth={1.75} size={16} />} label="Transações" active={pathname === "/transactions"} />
                     <NavItem href="/planning" icon={<CalendarDays strokeWidth={1.75} size={16} />} label="Planejamento" active={pathname === "/planning"} />
+                    <NavItem href="/simulate" icon={<FlaskConical strokeWidth={1.75} size={16} />} label="Simular" active={pathname === "/simulate"} />
                     <NavItem href="/cards" icon={<CreditCard strokeWidth={1.75} size={16} />} label="Cartões & Faturas" active={pathname === "/cards"} />
                     <NavItem href="/goals" icon={<Target strokeWidth={1.75} size={16} />} label="Metas" active={pathname === "/goals"} />
 
                     <MacSidebarSection>Inteligência</MacSidebarSection>
                     <NavItem href="/ai" icon={<Sparkles strokeWidth={1.75} size={16} />} label="Wallet+ IA" active={pathname === "/ai"} />
+                    <NavItem href="/radar" icon={<ScanLine strokeWidth={1.75} size={16} />} label="Raio-X" active={pathname === "/radar"} />
 
                     <MacSidebarSection>Conta</MacSidebarSection>
                     <NavItem href="/profile" icon={<User strokeWidth={1.75} size={16} />} label="Perfil & Arquétipo" active={pathname === "/profile"} />

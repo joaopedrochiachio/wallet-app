@@ -9,7 +9,7 @@ import { buildAppFixture } from "./helpers/appFixture";
  * cortado fora da tela, campo que dispara zoom no iOS ou erro de execução.
  */
 
-const ROUTES = ["/", "/login", "/onboarding", "/dashboard", "/transactions", "/planning", "/cards", "/goals", "/profile", "/ai"];
+const ROUTES = ["/", "/login", "/onboarding", "/dashboard", "/transactions", "/planning", "/simulate", "/radar", "/cards", "/goals", "/profile", "/ai"];
 const WIDTHS = [320, 375, 390, 430];
 const REPORT = process.env.RESPONSIVE_REPORT === "1";
 
@@ -173,6 +173,17 @@ const FLOWS: Array<{ name: string; route: string; steps: (page: Page) => Promise
   { name: "novo cartão", route: "/cards", steps: (p) => p.getByRole("button", { name: "Novo cartão", exact: true }).click() },
   { name: "nova compra", route: "/cards", steps: (p) => p.getByRole("button", { name: "Nova compra", exact: true }).click() },
   { name: "nova meta", route: "/goals", steps: (p) => p.getByRole("button", { name: /Nova Meta/ }).first().click() },
+  {
+    name: "simulação com compra parcelada", route: "/simulate",
+    steps: async (p) => {
+      await p.getByLabel("Valor").fill("100");
+      await p.getByRole("button", { name: "Adicionar à simulação" }).click();
+      await p.getByRole("radio", { name: "Cartão" }).or(p.getByRole("button", { name: "Cartão", exact: true })).first().click();
+      await p.getByLabel("Valor").fill("3000");
+      await p.getByLabel("Parcelas").fill("3");
+      await p.getByRole("button", { name: "Adicionar à simulação" }).click();
+    },
+  },
   {
     name: "adicionar planejamento", route: "/planning",
     steps: async (p) => {
