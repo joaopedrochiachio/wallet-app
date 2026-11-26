@@ -54,6 +54,7 @@ import { PopUpButton } from "@/components/ui/macos/PopUpButton";
 import { MacMenu } from "@/components/ui/macos/Menu";
 import { MacSegmentedControl } from "@/components/ui/macos/SegmentedControl";
 import { getBillCoverageForPeriod } from "@/lib/utils/goalBills";
+import { CashRunwayCard } from "@/components/planning/CashRunwayCard";
 
 const PLANNING_INCOME_CATEGORIES = [
   { value: "Salário / Extra", label: "Salário / Renda Principal" },
@@ -1177,6 +1178,9 @@ export default function PlanningPage() {
             )}
           </div>
         </div>
+
+        {/* 3. DÁ PRA PAGAR? Saldo dia a dia até o fim do mês que vem */}
+        {activeMonthObj.isCurrent && <CashRunwayCard />}
 
         {/* 4. PLANEJAMENTO DO MÊS */}
         <section className="space-y-6 pt-2">
